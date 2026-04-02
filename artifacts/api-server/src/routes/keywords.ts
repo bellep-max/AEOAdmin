@@ -27,16 +27,21 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const body = req.body;
+    if (!body.clientId || !body.keywordText?.trim()) {
+      return res.status(400).json({ error: "clientId and keywordText are required" });
+    }
     const [keyword] = await db
       .insert(keywordsTable)
       .values({
-        clientId: body.clientId,
-        keywordText: body.keywordText,
+        clientId: Number(body.clientId),
+        keywordText: body.keywordText.trim(),
         tierLabel: body.tierLabel ?? "aeo",
-        isActive: body.isActive ?? true,
-        isPrimary: body.isPrimary ?? 1,
-        webType: body.webType ?? 1,
-        keywordType: body.keywordType ?? 1,
+        isActive: body.isActive !== false,
+        isPrimary: body.isPrimary ? 1 : 0,
+        webType: Number(body.webType ?? 1),
+        keywordType: Number(body.keywordType ?? 1),
+        backlinkCount: Number(body.backlinkCount ?? 0),
+        verificationStatus: body.verificationStatus ?? "pending",
       })
       .returning();
     res.status(201).json(keyword);
