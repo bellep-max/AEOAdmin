@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Radio, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, Radio, Wifi } from "lucide-react";
 
 export default function Login() {
   const { login } = useAuth();
@@ -30,77 +29,141 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="w-full max-w-md px-4">
+    <div className="login-bg min-h-screen flex items-center justify-center overflow-hidden relative">
+      {/* Animated background orbs */}
+      <div
+        className="login-orb absolute top-1/4 left-1/4 w-80 h-80 rounded-full pointer-events-none"
+        style={{
+          background: "radial-gradient(circle, rgba(37,99,235,0.18) 0%, transparent 70%)",
+          filter: "blur(40px)",
+        }}
+      />
+      <div
+        className="login-orb absolute bottom-1/3 right-1/4 w-64 h-64 rounded-full pointer-events-none"
+        style={{
+          background: "radial-gradient(circle, rgba(16,185,129,0.12) 0%, transparent 70%)",
+          filter: "blur(35px)",
+          animationDelay: "-4s",
+        }}
+      />
+      <div
+        className="login-orb absolute top-1/2 right-1/3 w-48 h-48 rounded-full pointer-events-none"
+        style={{
+          background: "radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%)",
+          filter: "blur(30px)",
+          animationDelay: "-8s",
+        }}
+      />
+
+      {/* Grid overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.025]"
+        style={{
+          backgroundImage: `linear-gradient(hsl(215,20%,55%) 1px, transparent 1px),
+                            linear-gradient(90deg, hsl(215,20%,55%) 1px, transparent 1px)`,
+          backgroundSize: "48px 48px",
+        }}
+      />
+
+      <div className="relative w-full max-w-sm px-4 fade-in-up">
+        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Radio className="w-5 h-5 text-white" />
+          <div className="relative mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-xl"
+              style={{ boxShadow: "0 0 30px rgba(37,99,235,0.4), 0 4px 16px rgba(0,0,0,0.4)" }}>
+              <Radio className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Signal AEO</h1>
+            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[hsl(222,47%,8%)]">
+              <span className="absolute inset-0 rounded-full bg-emerald-400 dot-ping" />
+            </span>
           </div>
-          <p className="text-muted-foreground text-sm">Answer Engine Optimization Platform</p>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Signal AEO</h1>
+          <p className="text-muted-foreground text-sm mt-1">Answer Engine Optimization</p>
         </div>
 
-        <Card className="border-border/50">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-xl">Admin Login</CardTitle>
-            <CardDescription>Sign in to the operations dashboard</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@signalaeo.com"
-                  required
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="bg-background"
-                />
-              </div>
+        {/* Card */}
+        <div
+          className="login-card-glow rounded-2xl border border-border/60 bg-card/80 backdrop-blur-xl p-8 shadow-2xl"
+          style={{ boxShadow: "0 0 0 1px rgba(37,99,235,0.1), 0 24px 48px rgba(0,0,0,0.5)" }}
+        >
+          <h2 className="text-lg font-semibold text-foreground mb-1">Welcome back</h2>
+          <p className="text-sm text-muted-foreground mb-6">Sign in to the operations dashboard</p>
 
-              {error && (
-                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                    Signing in…
-                  </>
-                ) : (
-                  "Sign In"
-                )}
-              </Button>
-            </form>
-
-            <div className="mt-4 pt-4 border-t border-border/50">
-              <p className="text-xs text-muted-foreground text-center">
-                Default: <span className="font-mono">admin@signalaeo.com</span> / <span className="font-mono">Admin123!</span>
-              </p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@signalaeo.com"
+                required
+                className="h-10 bg-muted/40 border-border/60 focus:border-primary/60 transition-colors"
+              />
             </div>
-          </CardContent>
-        </Card>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Password
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="h-10 bg-muted/40 border-border/60 focus:border-primary/60 transition-colors"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full h-10 font-semibold mt-2"
+              disabled={loading}
+              style={{
+                background: loading ? undefined : "linear-gradient(135deg, hsl(217,91%,55%), hsl(217,91%,65%))",
+                boxShadow: loading ? undefined : "0 4px 16px rgba(37,99,235,0.3)",
+              }}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-6 pt-5 border-t border-border/40">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
+              <Wifi className="w-3.5 h-3.5" />
+              <span>
+                Default: <span className="font-mono text-muted-foreground">admin@signalaeo.com</span>
+                {" / "}
+                <span className="font-mono text-muted-foreground">Admin123!</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground/50 mt-6">
+          Signal AEO Platform © {new Date().getFullYear()}
+        </p>
       </div>
     </div>
   );
