@@ -1,0 +1,148 @@
+Database Schema — SEO Local Admin Panel
+There are 11 tables in total. Here's each one with real rows from the database and an explanation of what it does.
+________________________________________
+1. clients — Business Registry
+The core table. Every business being managed for AEO campaigns lives here.
+Column	Type	Example	Notes
+id	integer	4	Auto-increment primary key
+business_name	text	Lean Into Your Life	Display name
+gmb_url	text	https://maps.app.goo.gl/X5FTR...	Google Maps Business link
+website_url	text	https://leanintoyourlife.net/	Client's website
+published_address	text	220 Collingwood Dr, Ann Arbor, MI	GMB-registered address
+search_address	text	same or different	Address used in AI search prompts
+city / state	text	Ann Arbor / MI	Used for geo-targeting
+status	text	active	active or inactive
+plan_name	text	Signal SEO Trial	Linked plan name (denormalized)
+address_type	integer	1	1=GMB, 2=Custom, 3=GMB+Search
+place_id	text	ChIJLwVcLk6xPIgR...	Google Place ID for map matching
+location_ref	text	LEANINTOYOUR-48103	Internal slug reference
+contact_email	text	garymerel@gmail.com	Client contact
+created_at	timestamp	2026-03-10 21:17:00	When added to system
+________________________________________
+2. keywords — Per-Client Keyword Pool
+Each row is one keyword assigned to one client. OpenClaw picks randomly from this pool each session.
+Column	Type	Example	Notes
+id	integer	12	PK
+client_id	integer	5	FK → clients.id
+keyword_text	text	Basement Remodeling Contractors Johns Creek	The actual search term
+tier_label	text	aeo	aeo, seo, or both
+is_active	boolean	true	Only active keywords are used in sessions
+is_primary	integer	1	1 = primary, 0 = secondary
+click_count	integer	0	Total clicks delivered for this keyword
+last_30_days_click_count	integer	0	Rolling 30-day click count
+backlink_count	integer	0	Backlink clicks delivered
+web_type	integer	1	1=Web, 2=Maps
+keyword_type	integer	1	Classification type
+verification_status	text	pending	pending, verified, failed
+avg_scroll	integer	0	Average scroll depth during session
+________________________________________
+3. sessions — The Main AEO Log Table
+Every single AEO run gets one row here. This is what powers all reports, health scores, and charts.
+Column	Type	Example	Notes
+id	integer	1	PK
+client_id	integer	FK → clients	Which business this session was for
+keyword_id	integer	FK → keywords	Which keyword was used
+device_id	integer	FK → devices	Which Android device ran it
+proxy_id	integer	FK → proxies	Which proxy was assigned
+prompt_text	text	What is the best dentist near me?	The randomized AI prompt used
+followup_text	text	null or follow-up	The 50% chance follow-up question
+ai_platform	text	gemini	gemini, chatgpt, or perplexity
+screenshot_url	text	URL or null	Screenshot of the AI response
+timestamp	timestamp	2026-03-13 15:43:59	When the session ran
+________________________________________
+4. devices — Android Device Farm
+Tracks every physical Android device used by Appium. Each device is retired after one use per day.
+Column	Type	Example	Notes
+id	integer	1	PK
+device_identifier	text	device-001	ADB device ID
+model	text	Pixel 7 Pro	Device model
+status	text	offline	available, offline, in_use
+retired_today	boolean	false	Resets daily — prevents reuse same day
+last_used_at	timestamp	null	When it last ran a session
+________________________________________
+5. proxies — Proxy Pool
+Decodo rotating proxies. 50% residential, 50% mobile. A fresh one is assigned every session.
+Column	Type	Example	Notes
+id	integer	1	PK
+proxy_url	text	192.168.1.10:8080	Proxy host:port
+proxy_type	text	residential	residential or mobile
+session_count	integer	45	Total times this proxy has been used
+last_used	timestamp	null	Last time it served a session
+________________________________________
+6. plans — Subscription Plan Catalog
+Defines what each client is paying for — how many clicks, keywords, and days they get.
+Column	Type	Example	Notes
+id	integer	1	PK
+plan_id	text	0060	External plan code
+plan_name	text	Signal AEO Topic Expansion Bundle	Display name
+cost	numeric	99.00	Price
+number_of_days	integer	30	Plan duration
+no_of_keywords	integer	2	Keywords included
+no_of_clicks	integer	200	Total clicks to deliver
+total_daily_clicks	integer	7	Target clicks per day
+no_of_backlink_clicks	integer	7	Backlink clicks target
+backlink_click_percentage	integer	100	% of clicks that are backlink
+aeo_search	integer	0	AEO-specific search count
+page_traverse	boolean	true	Whether to browse pages during session
+radious	integer	1	Geo radius for search targeting
+status	boolean	true	Plan is active/available
+________________________________________
+7. schedules — Per-Client Cron Config
+Tells KiloClaw how many sessions to run per day for each client.
+Column	Type	Example	Notes
+id	integer	auto	PK
+client_id	integer	FK → clients	Which client this schedule is for
+frequency_per_day	integer	3	Sessions to fire daily (default 3)
+is_active	boolean	true	Whether this schedule is running
+________________________________________
+8. ranking_reports — Weekly AI Ranking Results
+Once a week, the system checks if the business appears in Gemini/ChatGPT/Perplexity top results.
+Column	Type	Example	Notes
+id	integer	auto	PK
+client_id	integer	FK → clients	Business being checked
+keyword_id	integer	FK → keywords	Keyword searched
+ranking_position	integer	1, 2, or 3	Position in AI results
+reason_recommended	text	"Top-rated local provider..."	The AI's reason text
+maps_presence	text	yes / no	Whether maps listing appeared
+created_at	timestamp	weekly	When the report was captured
+________________________________________
+9. tasks — Internal Task Board (Kanban)
+Admin team to-do items for AEO workflow management.
+Column	Type	Example
+id	integer	1
+title	text	Check indexes and database connections for speed
+category	text	Technical
+status	text	todo → in_progress → done
+priority	text	high, medium, low
+notes	text	Optional detail
+________________________________________
+10. subtasks — Task Checklist Items
+Each task can have multiple subtask checkboxes.
+Column	Type	Example
+id	integer	1
+task_id	integer	FK → tasks
+title	text	Check server connection with Atul
+done	boolean	false
+________________________________________
+11. users — Admin Accounts
+Login credentials for the admin panel. Passwords are bcrypt-hashed (never stored in plain text).
+Column	Type	Example
+id	integer	1
+email	text	admin@seolocal.us
+password_hash	text	$2b$12$E3WDDnvX... (bcrypt)
+name	text	Admin
+role	text	admin or viewer
+________________________________________
+How the Tables Connect
+users          → logs in to manage everything
+clients        → the businesses being served
+  └── keywords → the keyword pool for each client
+  └── sessions → every AEO run logged here
+       ├── device_id  → which Android device ran it
+       └── proxy_id   → which proxy was used
+  └── schedules     → how many sessions/day
+  └── ranking_reports → weekly AI position checks
+plans          → subscription tiers clients are on
+tasks/subtasks → internal team workflow board
+The sessions table is the most critical — it's the source of truth for all click counts, health scores, business health grades, and every chart in the dashboard.
+

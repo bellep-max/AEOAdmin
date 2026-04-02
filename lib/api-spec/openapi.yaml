@@ -1,22 +1,40 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Signal AEO Admin Panel API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: clients
+    description: Client business management
+  - name: keywords
+    description: Keyword pool management
+  - name: sessions
+    description: AEO session logs
+  - name: devices
+    description: Android device farm
+  - name: proxies
+    description: Proxy pool management
+  - name: plans
+    description: Subscription plans
+  - name: ranking-reports
+    description: Weekly AI ranking reports
+  - name: tasks
+    description: Internal task board
+  - name: dashboard
+    description: Dashboard summary data
+  - name: scaling
+    description: Hardware scaling plan
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +42,680 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/session-activity:
+    get:
+      operationId: getSessionActivity
+      tags: [dashboard]
+      summary: Get recent session activity by day
+      responses:
+        "200":
+          description: Session activity chart data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionActivityPoint"
+
+  /dashboard/platform-breakdown:
+    get:
+      operationId: getPlatformBreakdown
+      tags: [dashboard]
+      summary: Get AI platform session breakdown
+      responses:
+        "200":
+          description: Platform breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlatformBreakdownItem"
+
+  /dashboard/network-health:
+    get:
+      operationId: getNetworkHealth
+      tags: [dashboard]
+      summary: Get overall network health score and device status
+      responses:
+        "200":
+          description: Network health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkHealth"
+
+  /clients:
+    get:
+      operationId: getClients
+      tags: [clients]
+      summary: List all clients
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClientBody"
+      responses:
+        "201":
+          description: Client created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    get:
+      operationId: getClient
+      tags: [clients]
+      summary: Get client by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+    patch:
+      operationId: updateClient
+      tags: [clients]
+      summary: Update a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClientBody"
+      responses:
+        "200":
+          description: Updated client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: Delete a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /clients/{id}/gbp-snippet:
+    get:
+      operationId: getClientGbpSnippet
+      tags: [clients]
+      summary: Get GBP snippet and verification status for a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: GBP snippet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GbpSnippet"
+
+  /clients/{id}/aeo-summary:
+    get:
+      operationId: getClientAeoSummary
+      tags: [clients]
+      summary: AEO keyword summary for a client with before/after ranking dates
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: AEO summary per client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientAeoSummary"
+
+  /keywords:
+    get:
+      operationId: getKeywords
+      tags: [keywords]
+      summary: List keywords
+      parameters:
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: tierLabel
+          in: query
+          schema:
+            type: string
+            enum: [aeo, seo, both]
+      responses:
+        "200":
+          description: List of keywords
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Keyword"
+    post:
+      operationId: createKeyword
+      tags: [keywords]
+      summary: Create a keyword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKeywordBody"
+      responses:
+        "201":
+          description: Keyword created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keyword"
+
+  /keywords/{id}:
+    patch:
+      operationId: updateKeyword
+      tags: [keywords]
+      summary: Update a keyword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKeywordBody"
+      responses:
+        "200":
+          description: Updated keyword
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Keyword"
+    delete:
+      operationId: deleteKeyword
+      tags: [keywords]
+      summary: Delete a keyword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /sessions:
+    get:
+      operationId: getSessions
+      tags: [sessions]
+      summary: List AEO sessions
+      parameters:
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: deviceId
+          in: query
+          schema:
+            type: integer
+        - name: aiPlatform
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionsPage"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Log a new AEO session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionBody"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /sessions/stress-test:
+    get:
+      operationId: getStressTestStats
+      tags: [sessions]
+      summary: Get stress test metrics - timing, capacity, throughput
+      responses:
+        "200":
+          description: Stress test stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StressTestStats"
+
+  /devices:
+    get:
+      operationId: getDevices
+      tags: [devices]
+      summary: List all Android devices in the farm
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, offline, in_use]
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+    post:
+      operationId: createDevice
+      tags: [devices]
+      summary: Register a new device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeviceBody"
+      responses:
+        "201":
+          description: Device registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+
+  /devices/{id}:
+    patch:
+      operationId: updateDevice
+      tags: [devices]
+      summary: Update device status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeviceBody"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+
+  /devices/farm-status:
+    get:
+      operationId: getDeviceFarmStatus
+      tags: [devices]
+      summary: Get device farm status summary - available, in_use, offline counts and timing
+      responses:
+        "200":
+          description: Farm status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceFarmStatus"
+
+  /proxies:
+    get:
+      operationId: getProxies
+      tags: [proxies]
+      summary: List proxies
+      parameters:
+        - name: proxyType
+          in: query
+          schema:
+            type: string
+            enum: [residential, mobile]
+      responses:
+        "200":
+          description: Proxy list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Proxy"
+    post:
+      operationId: createProxy
+      tags: [proxies]
+      summary: Add a proxy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProxyBody"
+      responses:
+        "201":
+          description: Proxy added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Proxy"
+
+  /plans:
+    get:
+      operationId: getPlans
+      tags: [plans]
+      summary: List subscription plans
+      responses:
+        "200":
+          description: Plans list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+
+  /ranking-reports:
+    get:
+      operationId: getRankingReports
+      tags: [ranking-reports]
+      summary: List ranking reports
+      parameters:
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: keywordId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Ranking reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RankingReport"
+    post:
+      operationId: createRankingReport
+      tags: [ranking-reports]
+      summary: Create a ranking report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRankingReportBody"
+      responses:
+        "201":
+          description: Ranking report created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RankingReport"
+
+  /ranking-reports/initial-vs-current:
+    get:
+      operationId: getInitialVsCurrentRankings
+      tags: [ranking-reports]
+      summary: Get before/initial rankings vs current rankings for all clients and AEO keywords
+      responses:
+        "200":
+          description: Initial vs current rankings comparison
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RankingComparison"
+
+  /tasks:
+    get:
+      operationId: getTasks
+      tags: [tasks]
+      summary: List tasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [todo, in_progress, done]
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [high, medium, low]
+      responses:
+        "200":
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskBody"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskBody"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /tasks/{id}/subtasks:
+    post:
+      operationId: createSubtask
+      tags: [tasks]
+      summary: Add a subtask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubtaskBody"
+      responses:
+        "201":
+          description: Subtask created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subtask"
+
+  /tasks/{taskId}/subtasks/{subtaskId}:
+    patch:
+      operationId: updateSubtask
+      tags: [tasks]
+      summary: Update subtask done status
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: subtaskId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSubtaskBody"
+      responses:
+        "200":
+          description: Updated subtask
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subtask"
+
+  /scaling/plan:
+    get:
+      operationId: getScalingPlan
+      tags: [scaling]
+      summary: Get the hardware and company scaling plan with dates
+      responses:
+        "200":
+          description: Scaling plan milestones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScalingMilestone"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +723,839 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    DashboardSummary:
+      type: object
+      properties:
+        totalClients:
+          type: integer
+        activeClients:
+          type: integer
+        totalSessionsToday:
+          type: integer
+        totalSessionsAllTime:
+          type: integer
+        availableDevices:
+          type: integer
+        totalDevices:
+          type: integer
+        activeProxies:
+          type: integer
+        averageRankingPosition:
+          type: number
+        networkHealthScore:
+          type: number
+        sessionCapacityPerDay:
+          type: integer
+        completedToday:
+          type: integer
+        pendingToday:
+          type: integer
+      required:
+        - totalClients
+        - activeClients
+        - totalSessionsToday
+        - totalSessionsAllTime
+        - availableDevices
+        - totalDevices
+        - activeProxies
+        - averageRankingPosition
+        - networkHealthScore
+        - sessionCapacityPerDay
+        - completedToday
+        - pendingToday
+
+    SessionActivityPoint:
+      type: object
+      properties:
+        date:
+          type: string
+        sessions:
+          type: integer
+        gemini:
+          type: integer
+        chatgpt:
+          type: integer
+        perplexity:
+          type: integer
+      required: [date, sessions, gemini, chatgpt, perplexity]
+
+    PlatformBreakdownItem:
+      type: object
+      properties:
+        platform:
+          type: string
+        count:
+          type: integer
+        percentage:
+          type: number
+      required: [platform, count, percentage]
+
+    NetworkHealth:
+      type: object
+      properties:
+        score:
+          type: number
+        devicesOnline:
+          type: integer
+        devicesOffline:
+          type: integer
+        devicesInUse:
+          type: integer
+        activeProxies:
+          type: integer
+        sessionsPerHour:
+          type: number
+        uptime:
+          type: number
+      required: [score, devicesOnline, devicesOffline, devicesInUse, activeProxies, sessionsPerHour, uptime]
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        businessName:
+          type: string
+        gmbUrl:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        publishedAddress:
+          type: string
+          nullable: true
+        searchAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive]
+        planName:
+          type: string
+          nullable: true
+        addressType:
+          type: integer
+          nullable: true
+        placeId:
+          type: string
+          nullable: true
+        locationRef:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, businessName, status, createdAt]
+
+    CreateClientBody:
+      type: object
+      properties:
+        businessName:
+          type: string
+        gmbUrl:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        publishedAddress:
+          type: string
+          nullable: true
+        searchAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive]
+          default: active
+        planName:
+          type: string
+          nullable: true
+        addressType:
+          type: integer
+          nullable: true
+        placeId:
+          type: string
+          nullable: true
+        locationRef:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+      required: [businessName]
+
+    UpdateClientBody:
+      type: object
+      properties:
+        businessName:
+          type: string
+        gmbUrl:
+          type: string
+          nullable: true
+        websiteUrl:
+          type: string
+          nullable: true
+        publishedAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, inactive]
+        planName:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+
+    GbpSnippet:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        businessName:
+          type: string
+        gmbUrl:
+          type: string
+          nullable: true
+        placeId:
+          type: string
+          nullable: true
+        verificationStatus:
+          type: string
+          enum: [verified, pending, failed]
+        publishedAddress:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        mapsPresence:
+          type: string
+          nullable: true
+        lastChecked:
+          type: string
+          format: date-time
+          nullable: true
+      required: [clientId, businessName, verificationStatus]
+
+    ClientAeoSummary:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        businessName:
+          type: string
+        aeoKeywords:
+          type: array
+          items:
+            $ref: "#/components/schemas/AeoKeywordSummary"
+        totalClicksDelivered:
+          type: integer
+        averageRankingPosition:
+          type: number
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        lastSessionDate:
+          type: string
+          format: date-time
+          nullable: true
+      required: [clientId, businessName, aeoKeywords, totalClicksDelivered]
+
+    AeoKeywordSummary:
+      type: object
+      properties:
+        keywordId:
+          type: integer
+        keywordText:
+          type: string
+        initialRankingDate:
+          type: string
+          format: date-time
+          nullable: true
+        initialRankingPosition:
+          type: integer
+          nullable: true
+        currentRankingPosition:
+          type: integer
+          nullable: true
+        clicksDelivered:
+          type: integer
+        verificationStatus:
+          type: string
+      required: [keywordId, keywordText, clicksDelivered, verificationStatus]
+
+    Keyword:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        keywordText:
+          type: string
+        tierLabel:
+          type: string
+          enum: [aeo, seo, both]
+        isActive:
+          type: boolean
+        isPrimary:
+          type: integer
+        clickCount:
+          type: integer
+        last30DaysClickCount:
+          type: integer
+        backlinkCount:
+          type: integer
+        webType:
+          type: integer
+        keywordType:
+          type: integer
+        verificationStatus:
+          type: string
+          enum: [pending, verified, failed]
+        avgScroll:
+          type: integer
+      required: [id, clientId, keywordText, tierLabel, isActive, isPrimary, clickCount, last30DaysClickCount, backlinkCount, verificationStatus]
+
+    CreateKeywordBody:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        keywordText:
+          type: string
+        tierLabel:
+          type: string
+          enum: [aeo, seo, both]
+          default: aeo
+        isActive:
+          type: boolean
+          default: true
+        isPrimary:
+          type: integer
+          default: 1
+        webType:
+          type: integer
+          default: 1
+        keywordType:
+          type: integer
+          default: 1
+      required: [clientId, keywordText]
+
+    UpdateKeywordBody:
+      type: object
+      properties:
+        keywordText:
+          type: string
+        isActive:
+          type: boolean
+        verificationStatus:
+          type: string
+          enum: [pending, verified, failed]
+        tierLabel:
+          type: string
+          enum: [aeo, seo, both]
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        keywordId:
+          type: integer
+          nullable: true
+        deviceId:
+          type: integer
+          nullable: true
+        proxyId:
+          type: integer
+          nullable: true
+        promptText:
+          type: string
+          nullable: true
+        followupText:
+          type: string
+          nullable: true
+        aiPlatform:
+          type: string
+          enum: [gemini, chatgpt, perplexity]
+        screenshotUrl:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        clientName:
+          type: string
+          nullable: true
+        keywordText:
+          type: string
+          nullable: true
+        deviceIdentifier:
+          type: string
+          nullable: true
+        durationSeconds:
+          type: number
+          nullable: true
+      required: [id, clientId, aiPlatform, timestamp]
+
+    SessionsPage:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+      required: [sessions, total, offset, limit]
+
+    CreateSessionBody:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        keywordId:
+          type: integer
+          nullable: true
+        deviceId:
+          type: integer
+          nullable: true
+        proxyId:
+          type: integer
+          nullable: true
+        promptText:
+          type: string
+          nullable: true
+        followupText:
+          type: string
+          nullable: true
+        aiPlatform:
+          type: string
+          enum: [gemini, chatgpt, perplexity]
+      required: [clientId, aiPlatform]
+
+    StressTestStats:
+      type: object
+      properties:
+        maxSessionsPerDay:
+          type: integer
+        avgSessionDurationSeconds:
+          type: number
+        devicesAvailable:
+          type: integer
+        proxiesAvailable:
+          type: integer
+        estimatedCapacityPerHour:
+          type: number
+        currentThroughput:
+          type: number
+        peakThroughput:
+          type: number
+        successRate:
+          type: number
+        failureRate:
+          type: number
+        avgFollowupRate:
+          type: number
+        platformDistribution:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBreakdownItem"
+      required:
+        - maxSessionsPerDay
+        - avgSessionDurationSeconds
+        - devicesAvailable
+        - proxiesAvailable
+        - estimatedCapacityPerHour
+        - currentThroughput
+        - peakThroughput
+        - successRate
+        - failureRate
+        - avgFollowupRate
+        - platformDistribution
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: integer
+        deviceIdentifier:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [available, offline, in_use]
+        retiredToday:
+          type: boolean
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sessionsToday:
+          type: integer
+          nullable: true
+      required: [id, deviceIdentifier, model, status, retiredToday]
+
+    CreateDeviceBody:
+      type: object
+      properties:
+        deviceIdentifier:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [available, offline, in_use]
+          default: available
+      required: [deviceIdentifier, model]
+
+    UpdateDeviceBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [available, offline, in_use]
+        retiredToday:
+          type: boolean
+        model:
+          type: string
+
+    DeviceFarmStatus:
+      type: object
+      properties:
+        total:
+          type: integer
+        available:
+          type: integer
+        inUse:
+          type: integer
+        offline:
+          type: integer
+        retiredToday:
+          type: integer
+        averageSessionsPerDevice:
+          type: number
+        maxSessionsPerDevicePerDay:
+          type: integer
+        currentUtilization:
+          type: number
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+      required: [total, available, inUse, offline, retiredToday, averageSessionsPerDevice, maxSessionsPerDevicePerDay, currentUtilization, devices]
+
+    Proxy:
+      type: object
+      properties:
+        id:
+          type: integer
+        proxyUrl:
+          type: string
+        proxyType:
+          type: string
+          enum: [residential, mobile]
+        sessionCount:
+          type: integer
+        lastUsed:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, proxyUrl, proxyType, sessionCount]
+
+    CreateProxyBody:
+      type: object
+      properties:
+        proxyUrl:
+          type: string
+        proxyType:
+          type: string
+          enum: [residential, mobile]
+          default: residential
+      required: [proxyUrl, proxyType]
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+        planId:
+          type: string
+        planName:
+          type: string
+        cost:
+          type: number
+        numberOfDays:
+          type: integer
+        noOfKeywords:
+          type: integer
+        noOfClicks:
+          type: integer
+        totalDailyClicks:
+          type: integer
+        noOfBacklinkClicks:
+          type: integer
+        backlinkClickPercentage:
+          type: integer
+        aeoSearch:
+          type: integer
+        pageTraverse:
+          type: boolean
+        radious:
+          type: integer
+        status:
+          type: boolean
+      required: [id, planId, planName, cost, numberOfDays, noOfKeywords, noOfClicks, totalDailyClicks]
+
+    RankingReport:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        keywordId:
+          type: integer
+        rankingPosition:
+          type: integer
+          nullable: true
+        reasonRecommended:
+          type: string
+          nullable: true
+        mapsPresence:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        clientName:
+          type: string
+          nullable: true
+        keywordText:
+          type: string
+          nullable: true
+        isInitialRanking:
+          type: boolean
+          nullable: true
+      required: [id, clientId, keywordId, createdAt]
+
+    CreateRankingReportBody:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        keywordId:
+          type: integer
+        rankingPosition:
+          type: integer
+          nullable: true
+        reasonRecommended:
+          type: string
+          nullable: true
+        mapsPresence:
+          type: string
+          nullable: true
+        isInitialRanking:
+          type: boolean
+          nullable: true
+      required: [clientId, keywordId]
+
+    RankingComparison:
+      type: object
+      properties:
+        clientId:
+          type: integer
+        clientName:
+          type: string
+        keywordId:
+          type: integer
+        keywordText:
+          type: string
+        initialDate:
+          type: string
+          format: date-time
+          nullable: true
+        initialPosition:
+          type: integer
+          nullable: true
+        currentDate:
+          type: string
+          format: date-time
+          nullable: true
+        currentPosition:
+          type: integer
+          nullable: true
+        positionChange:
+          type: integer
+          nullable: true
+        isInTopTen:
+          type: boolean
+        mapsPresence:
+          type: string
+          nullable: true
+      required: [clientId, clientName, keywordId, keywordText, isInTopTen]
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [high, medium, low]
+        notes:
+          type: string
+          nullable: true
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subtask"
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, title, status, priority, createdAt]
+
+    CreateTaskBody:
+      type: object
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+          default: todo
+        priority:
+          type: string
+          enum: [high, medium, low]
+          default: medium
+        notes:
+          type: string
+          nullable: true
+      required: [title]
+
+    UpdateTaskBody:
+      type: object
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [high, medium, low]
+        notes:
+          type: string
+          nullable: true
+
+    Subtask:
+      type: object
+      properties:
+        id:
+          type: integer
+        taskId:
+          type: integer
+        title:
+          type: string
+        done:
+          type: boolean
+      required: [id, taskId, title, done]
+
+    CreateSubtaskBody:
+      type: object
+      properties:
+        title:
+          type: string
+        done:
+          type: boolean
+          default: false
+      required: [title]
+
+    UpdateSubtaskBody:
+      type: object
+      properties:
+        title:
+          type: string
+        done:
+          type: boolean
+
+    ScalingMilestone:
+      type: object
+      properties:
+        id:
+          type: integer
+        phase:
+          type: string
+        targetDate:
+          type: string
+          format: date-time
+        targetCompanies:
+          type: integer
+        currentCompanies:
+          type: integer
+        devicesNeeded:
+          type: integer
+        devicesAvailable:
+          type: integer
+        status:
+          type: string
+          enum: [completed, active, upcoming]
+        notes:
+          type: string
+          nullable: true
+      required: [id, phase, targetDate, targetCompanies, currentCompanies, devicesNeeded, devicesAvailable, status]
