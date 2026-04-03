@@ -1,17 +1,31 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { proxiesTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { proxiesTable, devicesTable } from "@workspace/db/schema";
+import { eq, sql } from "drizzle-orm";
 
 const router = Router();
 
+/* GET /api/proxies — list all, joined with device info */
 router.get("/", async (req, res) => {
   try {
-    const { proxyType } = req.query as Record<string, string>;
     const proxies = await db
-      .select()
+      .select({
+        id:           proxiesTable.id,
+        label:        proxiesTable.label,
+        proxyUrl:     proxiesTable.proxyUrl,
+        proxyType:    proxiesTable.proxyType,
+        host:         proxiesTable.host,
+        port:         proxiesTable.port,
+        username:     proxiesTable.username,
+        password:     proxiesTable.password,
+        deviceId:     proxiesTable.deviceId,
+        sessionCount: proxiesTable.sessionCount,
+        lastUsed:     proxiesTable.lastUsed,
+        deviceIdentifier: devicesTable.deviceIdentifier,
+        deviceModel:      devicesTable.model,
+      })
       .from(proxiesTable)
-      .where(proxyType ? eq(proxiesTable.proxyType, proxyType) : undefined);
+      .leftJoin(devicesTable, eq(proxiesTable.deviceId, devicesTable.id));
     res.json(proxies);
   } catch (err) {
     req.log.error({ err }, "Error fetching proxies");
@@ -19,18 +33,81 @@ router.get("/", async (req, res) => {
   }
 });
 
+/* POST /api/proxies — create */
 router.post("/", async (req, res) => {
   try {
+    const body = req.body;
+    const proxyUrl = body.proxyUrl
+      ?? (body.host && body.port
+          ? `http://${body.username ?? ""}:${body.password ?? ""}@${body.host}:${body.port}`
+          : null);
     const [proxy] = await db
       .insert(proxiesTable)
       .values({
-        proxyUrl: req.body.proxyUrl,
-        proxyType: req.body.proxyType ?? "residential",
+        label:     body.label ?? null,
+        proxyUrl:  proxyUrl,
+        proxyType: body.proxyType ?? "mobile",
+        host:      body.host ?? null,
+        port:      body.port ? Number(body.port) : null,
+        username:  body.username ?? null,
+        password:  body.password ?? null,
+        deviceId:  body.deviceId ? Number(body.deviceId) : null,
       })
       .returning();
     res.status(201).json(proxy);
   } catch (err) {
     req.log.error({ err }, "Error creating proxy");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* PATCH /api/proxies/:id — update fields */
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const body = req.body;
+    const updates: Record<string, unknown> = {};
+    if (body.label     !== undefined) updates.label     = body.label;
+    if (body.proxyType !== undefined) updates.proxyType = body.proxyType;
+    if (body.host      !== undefined) updates.host      = body.host;
+    if (body.port      !== undefined) updates.port      = body.port ? Number(body.port) : null;
+    if (body.username  !== undefined) updates.username  = body.username;
+    if (body.password  !== undefined) updates.password  = body.password;
+    if (body.deviceId  !== undefined) updates.deviceId  = body.deviceId ? Number(body.deviceId) : null;
+    // Rebuild proxyUrl when connection fields change
+    if (body.host || body.port || body.username || body.password) {
+      const current = await db.select().from(proxiesTable).where(eq(proxiesTable.id, id)).limit(1);
+      if (current[0]) {
+        const h = body.host     ?? current[0].host;
+        const p = body.port     ?? current[0].port;
+        const u = body.username ?? current[0].username;
+        const pw = body.password ?? current[0].password;
+        if (h && p) {
+          updates.proxyUrl = `http://${u ?? ""}:${pw ?? ""}@${h}:${p}`;
+        }
+      }
+    }
+    const [proxy] = await db
+      .update(proxiesTable)
+      .set(updates as Parameters<typeof db.update>[0])
+      .where(eq(proxiesTable.id, id))
+      .returning();
+    if (!proxy) return res.status(404).json({ error: "Not found" });
+    res.json(proxy);
+  } catch (err) {
+    req.log.error({ err }, "Error updating proxy");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* DELETE /api/proxies/:id */
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(proxiesTable).where(eq(proxiesTable.id, id));
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error deleting proxy");
     res.status(500).json({ error: "Internal server error" });
   }
 });
