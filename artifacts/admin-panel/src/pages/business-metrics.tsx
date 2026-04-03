@@ -178,10 +178,10 @@ export default function BusinessMetrics() {
 
   /* ── Filter + sort ── */
   const filtered = data.metrics
-    .filter((m) => m.client.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((m) => (m.client.name ?? "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       let av: number | string = 0, bv: number | string = 0;
-      if (sortKey === "name")           { av = a.client.name;                     bv = b.client.name; }
+      if (sortKey === "name")           { av = a.client.name ?? "";               bv = b.client.name ?? ""; }
       if (sortKey === "sessions")       { av = a.sessionTotal;                    bv = b.sessionTotal; }
       if (sortKey === "deviceRotation") { av = a.deviceRotation.value ?? -1;      bv = b.deviceRotation.value ?? -1; }
       if (sortKey === "ipRotation")     { av = a.ipRotation.value ?? -1;          bv = b.ipRotation.value ?? -1; }
