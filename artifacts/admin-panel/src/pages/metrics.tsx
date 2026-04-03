@@ -218,7 +218,7 @@ export default function Metrics() {
   }
 
   const bizList = bizData?.metrics ?? [];
-  const filtered = bizList.filter((m) => m.client.name.toLowerCase().includes(bmSearch.toLowerCase()));
+  const filtered = bizList.filter((m) => (m.client.name ?? "").toLowerCase().includes(bmSearch.toLowerCase()));
 
   if ((isLoading && !data)) {
     return (
