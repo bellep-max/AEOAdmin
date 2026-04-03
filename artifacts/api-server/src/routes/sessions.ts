@@ -81,6 +81,26 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.patch("/:id/followup", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { followupText } = req.body;
+    if (typeof followupText !== "string") {
+      return res.status(400).json({ error: "followupText must be a string" });
+    }
+    const [updated] = await db
+      .update(sessionsTable)
+      .set({ followupText: followupText.trim() || null })
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Session not found" });
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "Error updating session followup");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/stress-test", async (req, res) => {
   try {
     const [deviceCount] = await db
