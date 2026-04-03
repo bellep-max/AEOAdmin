@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -315,9 +315,8 @@ export default function BusinessMetrics() {
                 const isExp = expanded.has(bm.client.id);
                 const rowKey = `bm-${bm.client.id}`;
                 return (
-                  <>
+                  <React.Fragment key={rowKey}>
                     <tr
-                      key={rowKey}
                       className="hover:bg-muted/20 transition-colors cursor-pointer group"
                       onClick={() => toggleExpand(bm.client.id)}>
                       {/* Business info */}
@@ -431,7 +430,7 @@ export default function BusinessMetrics() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

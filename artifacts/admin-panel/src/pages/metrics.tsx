@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -319,9 +319,8 @@ export default function Metrics() {
                     : filtered.map((bm) => {
                         const isExp = expanded.has(bm.client.id);
                         return (
-                          <>
+                          <React.Fragment key={`bm-${bm.client.id}`}>
                             <tr
-                              key={`bm-${bm.client.id}`}
                               className="hover:bg-muted/20 transition-colors cursor-pointer group/row"
                               onClick={() => toggleExpand(bm.client.id)}>
                               {/* Business */}
@@ -411,7 +410,7 @@ export default function Metrics() {
                                 </td>
                               </tr>
                             )}
-                          </>
+                          </React.Fragment>
                         );
                       })
                 }
