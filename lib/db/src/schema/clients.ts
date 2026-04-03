@@ -17,6 +17,19 @@ export const clientsTable = pgTable("clients", {
   placeId: text("place_id"),
   locationRef: text("location_ref"),
   contactEmail: text("contact_email"),
+  /* ── Business / GMB extra ── */
+  websitePublishedOnGmb: text("website_published_on_gmb"),
+  websiteLinkedOnGmb:    text("website_linked_on_gmb"),
+  accountUser:           text("account_user"),
+  /* ── Account / Billing ── */
+  accountType:     text("account_type"),
+  accountUserName: text("account_user_name"),
+  accountEmail:    text("account_email"),
+  billingEmail:    text("billing_email"),
+  startDate:       text("start_date"),
+  nextBillDate:    text("next_bill_date"),
+  subscriptionId:  text("subscription_id"),
+  lastFourCard:    text("last_four_card"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

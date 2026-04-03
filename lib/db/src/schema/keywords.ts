@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -17,6 +17,17 @@ export const keywordsTable = pgTable("keywords", {
   keywordType: integer("keyword_type").notNull().default(1),
   verificationStatus: text("verification_status").notNull().default("pending"),
   avgScroll: integer("avg_scroll").notNull().default(0),
+  /* ── New tracking fields ── */
+  dateAdded:                 timestamp("date_added").defaultNow(),
+  initialSearchCount30Days:  integer("initial_search_count_30_days").notNull().default(0),
+  followupSearchCount30Days: integer("followup_search_count_30_days").notNull().default(0),
+  initialSearchCountLife:    integer("initial_search_count_life").notNull().default(0),
+  followupSearchCountLife:   integer("followup_search_count_life").notNull().default(0),
+  /* ── Associated link fields ── */
+  linkTypeLabel:        text("link_type_label"),
+  linkActive:           boolean("link_active").notNull().default(true),
+  initialRankReportLink: text("initial_rank_report_link"),
+  currentRankReportLink: text("current_rank_report_link"),
 });
 
 export const insertKeywordSchema = createInsertSchema(keywordsTable).omit({ id: true });

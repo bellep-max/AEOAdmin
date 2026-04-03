@@ -4,6 +4,10 @@
 
 Signal AEO Admin Panel — a full-stack operations dashboard for managing AEO (Answer Engine Optimization) campaigns using an Android device farm for local SEO businesses.
 
+## Recent Schema Changes (April 2026)
+- **clients table** — added 11 new fields: `websitePublishedOnGmb`, `websiteLinkedOnGmb`, `accountUser`, `accountType`, `accountUserName`, `accountEmail`, `billingEmail`, `startDate`, `nextBillDate`, `subscriptionId`, `lastFourCard`
+- **keywords table** — added 9 new fields: `dateAdded`, `initialSearchCount30Days`, `followupSearchCount30Days`, `initialSearchCountLife`, `followupSearchCountLife`, `linkTypeLabel`, `linkActive`, `initialRankReportLink`, `currentRankReportLink`
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
