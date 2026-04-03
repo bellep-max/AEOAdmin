@@ -16,7 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, ExternalLink, MessageSquare, Plus, Loader2,
-  MessagesSquare, ChevronRight,
+  MessagesSquare, ChevronRight, Camera, Link2, PencilLine, X,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -52,10 +52,47 @@ export default function Sessions() {
   const [platformFilter, setPF]   = useState<string>("all");
 
   /* Dialog state */
-  const [viewSession, setViewSession]   = useState<Session | null>(null);
-  const [editSession, setEditSession]   = useState<Session | null>(null);
+  const [viewSession, setViewSession]     = useState<Session | null>(null);
+  const [editSession, setEditSession]     = useState<Session | null>(null);
   const [followupDraft, setFollowupDraft] = useState("");
-  const [saving, setSaving]             = useState(false);
+  const [saving, setSaving]               = useState(false);
+
+  /* Screenshot dialogs */
+  const [lightboxSession, setLightboxSession]   = useState<Session | null>(null);
+  const [screenshotEdit, setScreenshotEdit]     = useState<Session | null>(null);
+  const [screenshotDraft, setScreenshotDraft]   = useState("");
+  const [savingShot, setSavingShot]             = useState(false);
+
+  function isImageUrl(url: string) {
+    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(url);
+  }
+
+  function openScreenshotEdit(s: Session) {
+    setScreenshotEdit(s);
+    setScreenshotDraft(s.screenshotUrl ?? "");
+    setLightboxSession(null);
+  }
+
+  async function saveScreenshot() {
+    if (!screenshotEdit) return;
+    setSavingShot(true);
+    try {
+      const res = await fetch(`${BASE}/api/sessions/${screenshotEdit.id}/screenshot`, {
+        method:      "PATCH",
+        credentials: "include",
+        headers:     { "Content-Type": "application/json" },
+        body:        JSON.stringify({ screenshotUrl: screenshotDraft }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      await queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      toast({ title: "Screenshot URL saved" });
+      setScreenshotEdit(null);
+    } catch (err: unknown) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    } finally {
+      setSavingShot(false);
+    }
+  }
 
   const { data: sessionsData, isLoading } = useGetSessions({ limit: 100 });
   const queryClient = useQueryClient();
@@ -244,13 +281,23 @@ export default function Sessions() {
 
                   <TableCell className="text-right">
                     {s.screenshotUrl ? (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                        <a href={s.screenshotUrl} target="_blank" rel="noreferrer" title="View screenshot">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      </Button>
+                      <button
+                        onClick={() => setLightboxSession(s)}
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-lg px-2.5 py-1"
+                        title="View screenshot"
+                      >
+                        <Camera className="w-3 h-3" />
+                        View
+                      </button>
                     ) : (
-                      <span className="text-muted-foreground/30 text-xs">—</span>
+                      <button
+                        onClick={() => openScreenshotEdit(s)}
+                        className="text-xs text-muted-foreground/40 hover:text-primary transition-colors border border-dashed border-border/30 hover:border-primary/40 rounded-lg px-2 py-1 flex items-center gap-1"
+                        title="Add screenshot URL"
+                      >
+                        <Plus className="w-2.5 h-2.5" />
+                        Add
+                      </button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -318,6 +365,163 @@ export default function Sessions() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════
+          Screenshot Lightbox Dialog
+      ════════════════════════════════════════ */}
+      <Dialog open={!!lightboxSession} onOpenChange={(o) => { if (!o) setLightboxSession(null); }}>
+        <DialogContent className="sm:max-w-[700px] border-border/60 bg-card p-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b border-border/40">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+                  <Camera className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm">{lightboxSession?.clientName}</DialogTitle>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {lightboxSession?.keywordText} · {lightboxSession?.aiPlatform} · {lightboxSession && format(new Date(lightboxSession.timestamp), "MMM d, HH:mm")}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openScreenshotEdit(lightboxSession!)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border/50 hover:border-border rounded-lg px-2.5 py-1.5"
+                >
+                  <PencilLine className="w-3 h-3" /> Edit URL
+                </button>
+                {lightboxSession?.screenshotUrl && (
+                  <a
+                    href={lightboxSession.screenshotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors border border-primary/30 rounded-lg px-2.5 py-1.5"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Open tab
+                  </a>
+                )}
+              </div>
+            </div>
+            <DialogDescription className="sr-only">Screenshot viewer</DialogDescription>
+          </DialogHeader>
+
+          {/* Image / URL preview area */}
+          <div className="p-5">
+            {lightboxSession?.screenshotUrl && isImageUrl(lightboxSession.screenshotUrl) ? (
+              <div className="rounded-xl overflow-hidden border border-border/40 bg-muted/20">
+                <img
+                  src={lightboxSession.screenshotUrl}
+                  alt="Session screenshot"
+                  className="w-full max-h-[480px] object-contain"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                  }}
+                />
+                <div className="hidden p-8 text-center text-muted-foreground text-sm">
+                  <Camera className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                  Could not load image. <a href={lightboxSession.screenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Open directly →</a>
+                </div>
+              </div>
+            ) : (
+              /* Non-image URL — show as styled link card */
+              <div className="rounded-xl border border-border/40 bg-muted/20 p-6 flex flex-col items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <ExternalLink className="w-6 h-6 text-primary" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-2">Screenshot stored at:</p>
+                  <p className="font-mono text-xs text-foreground/70 break-all max-w-[500px] bg-muted/40 px-3 py-2 rounded-lg border border-border/30">
+                    {lightboxSession?.screenshotUrl}
+                  </p>
+                </div>
+                <a
+                  href={lightboxSession?.screenshotUrl ?? "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-primary border border-primary/30 hover:bg-primary/10 transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" /> Open screenshot
+                </a>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════
+          Add / Edit Screenshot URL Dialog
+      ════════════════════════════════════════ */}
+      <Dialog open={!!screenshotEdit} onOpenChange={(o) => { if (!o && !savingShot) setScreenshotEdit(null); }}>
+        <DialogContent className="sm:max-w-[440px] border-border/60 bg-card">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+                <Camera className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <DialogTitle>{screenshotEdit?.screenshotUrl ? "Edit Screenshot URL" : "Add Screenshot URL"}</DialogTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {screenshotEdit?.clientName} · {screenshotEdit?.aiPlatform}
+                </p>
+              </div>
+            </div>
+            <DialogDescription className="sr-only">Add or edit the screenshot URL for this session</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Screenshot URL
+              </Label>
+              <div className="relative">
+                <Link2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-9 bg-muted/30 border-border/60 h-10 font-mono text-sm"
+                  placeholder="https://drive.google.com/… or https://…/screenshot.png"
+                  value={screenshotDraft}
+                  onChange={(e) => setScreenshotDraft(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && saveScreenshot()}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Paste a direct image URL, Google Drive link, or any URL. Leave blank to remove.
+              </p>
+            </div>
+
+            {screenshotDraft && (
+              <a
+                href={screenshotDraft}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Preview URL
+              </a>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1 border-border/50"
+                onClick={() => setScreenshotEdit(null)}
+                disabled={savingShot}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-2"
+                onClick={saveScreenshot}
+                disabled={savingShot}
+                style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}
+              >
+                {savingShot ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save URL"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

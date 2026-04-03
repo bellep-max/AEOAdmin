@@ -81,6 +81,23 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.patch("/:id/screenshot", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { screenshotUrl } = req.body;
+    const [updated] = await db
+      .update(sessionsTable)
+      .set({ screenshotUrl: screenshotUrl?.trim() || null })
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Session not found" });
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "Error updating session screenshot");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.patch("/:id/followup", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
