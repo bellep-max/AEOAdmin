@@ -11,19 +11,17 @@ import { useToast } from "@/hooks/use-toast";
 import {
   BarChart3, CheckCircle2, AlertTriangle, TrendingUp, Search, Link2, MapPin,
   Smartphone, FileSearch, Users, Zap, Cpu, Wifi, RefreshCcw, ShieldCheck,
-  BarChart2, Pencil, Target, Info,
+  BarChart2, Pencil, Target, ChevronDown, ChevronUp,
 } from "lucide-react";
-import { format } from "date-fns";
+import { Link } from "wouter";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ─── Types ─────────────────────────────────────────────── */
-interface PerformanceMetric {
-  value:     number | null;
-  target:    string;
-  updatedAt: string | null;
-  isManual?: boolean;
-  // extra detail fields
+interface MetricCell {
+  value:         number | null;
+  target:        number;
+  isManual?:     boolean;
   uniqueDevices?: number;
   withDevice?:    number;
   uniqueProxies?: number;
@@ -31,16 +29,25 @@ interface PerformanceMetric {
   withPrompt?:    number;
   total?:         number;
   actual?:        number;
-  targetCount?:   number;
+  monthlyTarget?: number;
 }
-interface PerformanceData {
-  total:           number;
-  deviceRotation:  PerformanceMetric;
-  ipRotation:      PerformanceMetric;
-  cacheClearing:   PerformanceMetric;
-  promptAccuracy:  PerformanceMetric;
-  volumeAccuracy:  PerformanceMetric;
+interface BusinessMetric {
+  client:         { id: number; name: string; status: string; plan: string | null };
+  sessionTotal:   number;
+  devices:        { deviceId: number; identifier: string; model: string }[];
+  activeKeywords: number;
+  monthlyTarget:  number;
+  deviceRotation: MetricCell;
+  ipRotation:     MetricCell;
+  cacheClearing:  MetricCell;
+  promptAccuracy: MetricCell;
+  volumeAccuracy: MetricCell;
 }
+interface BusinessData {
+  metrics: BusinessMetric[];
+  targets: Record<string, number>;
+}
+
 interface MetricsData {
   plans: { name: string; totalPerDay: number; totalPerMonth: number }[];
   type1: { label: string; description: string; percentage: number; subtotals: { current: number[]; future: number[] } };
@@ -52,92 +59,97 @@ interface MetricsData {
   liveStats:       { totalSessionsRun: number; followupRate: number; activeClients: number; aeoKeywordsActive: number; searchesPerDayPerDevice: number };
 }
 
-/* ─── Progress bar helper ────────────────────────────────── */
-function PctBar({ value, target }: { value: number | null; target: string }) {
-  if (value === null) return null;
-  const t       = parseFloat(target) || 100;
-  const pct     = Math.min(100, (value / t) * 100);
-  const barCls  = value >= t ? "bg-emerald-500" : value >= t * 0.8 ? "bg-amber-500" : "bg-destructive";
+/* ─── Metric column config ───────────────────────────────── */
+const METRIC_COLS = [
+  { key: "deviceRotation" as const, label: "Device Rotation",   icon: Cpu,        color: "text-primary",     bg: "bg-primary/10",     fmKey: "device_rotation"        },
+  { key: "ipRotation"     as const, label: "IP Rotation",        icon: Wifi,       color: "text-violet-400",  bg: "bg-violet-500/10",  fmKey: "ip_rotation"            },
+  { key: "cacheClearing"  as const, label: "Cache Clearing",     icon: RefreshCcw, color: "text-emerald-400", bg: "bg-emerald-500/10", fmKey: "cache_clearing"         },
+  { key: "promptAccuracy" as const, label: "Prompt Accuracy",    icon: ShieldCheck,color: "text-amber-400",   bg: "bg-amber-500/10",   fmKey: "prompt_exec_accuracy"   },
+  { key: "volumeAccuracy" as const, label: "Volume Accuracy",    icon: BarChart2,  color: "text-blue-400",    bg: "bg-blue-500/10",    fmKey: "volume_search_accuracy" },
+];
+
+/* ─── Inline metric cell ─────────────────────────────────── */
+function MCell({ cell, colKey }: { cell: MetricCell; colKey: string }) {
+  const val = cell.value;
+  const tgt = cell.target;
+  if (val === null) {
+    return (
+      <td className="px-2 py-0 border-l border-border/30 align-middle text-center">
+        <span className="text-[10px] text-muted-foreground/30 italic">{cell.isManual ? "Manual" : "—"}</span>
+      </td>
+    );
+  }
+  const pct    = Math.min(100, (val / tgt) * 100);
+  const vc     = val >= tgt ? "text-emerald-400" : val >= tgt * 0.8 ? "text-amber-400" : "text-destructive";
+  const bc     = val >= tgt ? "bg-emerald-500"   : val >= tgt * 0.8 ? "bg-amber-500"   : "bg-destructive";
+
+  let sub = "";
+  if (colKey === "deviceRotation")  sub = `${cell.uniqueDevices ?? 0}d/${cell.withDevice ?? 0}s`;
+  if (colKey === "ipRotation")      sub = `${cell.uniqueProxies ?? 0}p/${cell.withProxy ?? 0}s`;
+  if (colKey === "promptAccuracy")  sub = `${cell.withPrompt ?? 0}/${cell.total ?? 0}`;
+  if (colKey === "volumeAccuracy")  sub = `${cell.actual ?? 0}/${cell.monthlyTarget ?? 0}`;
+  if (colKey === "cacheClearing")   sub = "global";
+
   return (
-    <div className="mt-2">
-      <div className="w-full h-1.5 rounded-full bg-muted/30 overflow-hidden">
-        <div className={`h-full rounded-full ${barCls} transition-all duration-500`} style={{ width: `${pct}%` }} />
+    <td className="px-3 py-0 border-l border-border/30 align-middle">
+      <div className="flex flex-col items-center justify-center py-2.5 gap-1">
+        <span className={`text-lg font-bold font-mono leading-none ${vc}`}>
+          {val}<span className="text-[10px] font-normal text-muted-foreground">%</span>
+        </span>
+        <div className="w-12 h-1 rounded-full bg-muted/30 overflow-hidden">
+          <div className={`h-full rounded-full ${bc} transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-[9px] text-muted-foreground/40 whitespace-nowrap">{sub}</span>
       </div>
-      <div className="flex justify-between mt-0.5">
-        <span className="text-[9px] text-muted-foreground/40">0{target.includes("%") ? "%" : ""}</span>
-        <span className="text-[9px] text-muted-foreground/50">Target: {target}</span>
-      </div>
-    </div>
+    </td>
   );
 }
 
-/* ─── Edit target / manual value dialog ─────────────────── */
-function EditMetricDialog({
-  open, onOpenChange, metricKey, label, metric, isManual, saving, onSave,
+/* ─── Edit targets dialog ────────────────────────────────── */
+function EditTargetsDialog({
+  open, onOpenChange, col, currentTarget, currentValue, isManual, saving, onSave,
 }: {
-  open:         boolean;
-  onOpenChange: (v: boolean) => void;
-  metricKey:    string;
-  label:        string;
-  metric:       PerformanceMetric;
-  isManual:     boolean;
-  saving:       boolean;
-  onSave:       (target: string, value?: string) => void;
+  open:          boolean;
+  onOpenChange:  (v: boolean) => void;
+  col:           typeof METRIC_COLS[number];
+  currentTarget: number;
+  currentValue:  number | null;
+  isManual:      boolean;
+  saving:        boolean;
+  onSave:        (target: string, value?: string) => void;
 }) {
-  const [target, setTarget] = useState(metric.target);
-  const [manVal, setManVal] = useState(metric.value !== null ? String(metric.value) : "");
+  const [target, setTarget] = useState(String(currentTarget));
+  const [manVal, setManVal] = useState(currentValue !== null ? String(currentValue) : "");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px] border-border/60 bg-card">
+      <DialogContent className="sm:max-w-[380px] border-border/60 bg-card">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-              <Target className="w-4 h-4 text-primary" />
+            <div className={`w-9 h-9 rounded-xl ${col.bg} flex items-center justify-center`}>
+              <col.icon className={`w-4 h-4 ${col.color}`} />
             </div>
-            <DialogTitle className="text-base">{label}</DialogTitle>
+            <DialogTitle className="text-base">{col.label}</DialogTitle>
           </div>
           <DialogDescription className="text-xs">
-            {isManual
-              ? "This metric is manually set — enter the current value and your target."
-              : "This metric is computed live from session data. Set your performance target below."}
+            {isManual ? "Manually set the global value and target for all businesses." : "Set the global target threshold applied to all businesses."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 mt-2">
           {isManual && (
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground/60">Current Value (%)</Label>
-              <Input
-                className="bg-muted/30 border-border/60 h-10 text-lg font-bold font-mono"
-                type="number" min={0} max={100}
-                value={manVal}
-                onChange={(e) => setManVal(e.target.value)}
-                placeholder="e.g. 100"
-              />
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground/60">Global Value (%)</Label>
+              <Input className="bg-muted/30 border-border/60 h-10 text-lg font-bold font-mono" type="number" min={0} max={100} value={manVal} onChange={(e) => setManVal(e.target.value)} placeholder="e.g. 100" />
             </div>
           )}
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground/60">Target (%)</Label>
-            <Input
-              className="bg-muted/30 border-border/60 h-10 font-mono"
-              type="number" min={0} max={100}
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder="e.g. 95"
-            />
+            <Input className="bg-muted/30 border-border/60 h-10 font-mono" type="number" min={0} max={100} value={target} onChange={(e) => setTarget(e.target.value)} placeholder="e.g. 95" />
           </div>
-          {metric.updatedAt && (
-            <p className="text-[10px] text-muted-foreground/40">
-              Last updated: {format(new Date(metric.updatedAt), "MMM d, yyyy HH:mm")}
-            </p>
-          )}
         </div>
         <div className="flex gap-3 pt-2">
-          <Button variant="outline" className="flex-1 border-border/50"
-            onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button className="flex-1"
-            onClick={() => onSave(target, isManual ? manVal : undefined)}
-            disabled={saving || !target}
+          <Button variant="outline" className="flex-1 border-border/50" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button className="flex-1" onClick={() => onSave(target, isManual ? manVal : undefined)} disabled={saving || !target}
             style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
             Save
           </Button>
@@ -158,17 +170,18 @@ function CellVal({ value, highlight, dash }: { value?: number; highlight?: boole
 }
 
 /* ═══════════════════════════════════════════════════════════ */
-/* Main Page                                                    */
-/* ═══════════════════════════════════════════════════════════ */
 export default function Metrics() {
-  const [editKey,   setEditKey]   = useState<string | null>(null);
-  const [saving,    setSaving]    = useState(false);
-  const { toast }   = useToast();
-  const queryClient = useQueryClient();
+  const [editCol,    setEditCol]   = useState<typeof METRIC_COLS[number] | null>(null);
+  const [saving,     setSaving]    = useState(false);
+  const [expanded,   setExpanded]  = useState<Set<number>>(new Set());
+  const [bmSearch,   setBmSearch]  = useState("");
+  const { toast }    = useToast();
+  const queryClient  = useQueryClient();
 
-  const { data: perf, isLoading: perfLoading } = useQuery<PerformanceData>({
-    queryKey: ["metrics-performance"],
-    queryFn:  () => fetch(`${BASE}/api/metrics/performance`, { credentials: "include" }).then((r) => r.json()),
+  /* ─── Data fetching ─── */
+  const { data: bizData, isLoading: bizLoading } = useQuery<BusinessData>({
+    queryKey: ["business-metrics"],
+    queryFn:  () => fetch(`${BASE}/api/metrics/business`, { credentials: "include" }).then((r) => r.json()),
   });
 
   const { data, isLoading } = useQuery<MetricsData>({
@@ -176,18 +189,21 @@ export default function Metrics() {
     queryFn:  () => fetch(`${BASE}/api/metrics/session-breakdown`, { credentials: "include" }).then((r) => r.json()),
   });
 
-  async function saveTarget(key: string, target: string, value?: string) {
+  function toggleExpand(id: number) {
+    setExpanded((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  async function saveTarget(fmKey: string, target: string, value?: string) {
     setSaving(true);
     try {
-      await fetch(`${BASE}/api/metrics/performance/${key}`, {
-        method:      "PATCH",
-        credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify({ target, ...(value !== undefined ? { value } : {}) }),
+      await fetch(`${BASE}/api/metrics/performance/${fmKey}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, ...(value !== undefined ? { value } : {}) }),
       });
-      await queryClient.invalidateQueries({ queryKey: ["metrics-performance"] });
+      await queryClient.invalidateQueries({ queryKey: ["business-metrics"] });
       toast({ title: "Target updated" });
-      setEditKey(null);
+      setEditCol(null);
     } catch {
       toast({ title: "Failed to save", variant: "destructive" });
     } finally {
@@ -195,79 +211,19 @@ export default function Metrics() {
     }
   }
 
-  /* ── 5 core performance metrics definition ── */
-  const perfReady = perf && perf.deviceRotation && perf.ipRotation && perf.cacheClearing && perf.promptAccuracy && perf.volumeAccuracy;
-  const PERF_METRICS = perfReady ? [
-    {
-      key:      "device_rotation",
-      label:    "Device Rotation",
-      icon:     Cpu,
-      color:    "text-primary",
-      accent:   "bg-primary/10 border-primary/20",
-      metric:   perf!.deviceRotation,
-      isManual: false,
-      detail:   perf!.deviceRotation.withDevice
-        ? `${perf!.deviceRotation.uniqueDevices} unique devices across ${perf!.deviceRotation.withDevice} sessions`
-        : "No device data yet",
-      description: "% of sessions using a distinct device ID — measures how well the farm rotates hardware.",
-    },
-    {
-      key:      "ip_rotation",
-      label:    "IP Address Rotation",
-      icon:     Wifi,
-      color:    "text-violet-400",
-      accent:   "bg-violet-500/10 border-violet-500/20",
-      metric:   perf!.ipRotation,
-      isManual: false,
-      detail:   perf!.ipRotation.withProxy
-        ? `${perf!.ipRotation.uniqueProxies} unique proxies across ${perf!.ipRotation.withProxy} sessions`
-        : "No proxy data yet",
-      description: "% of sessions using a unique proxy / IP address to avoid fingerprinting.",
-    },
-    {
-      key:      "cache_clearing",
-      label:    "Cache Clearing",
-      icon:     RefreshCcw,
-      color:    "text-emerald-400",
-      accent:   "bg-emerald-500/10 border-emerald-500/20",
-      metric:   perf!.cacheClearing,
-      isManual: true,
-      detail:   "Manual — set actual % below via edit",
-      description: "% of sessions where device app cache is fully cleared before prompt execution.",
-    },
-    {
-      key:      "prompt_exec_accuracy",
-      label:    "Prompt Execution Accuracy",
-      icon:     ShieldCheck,
-      color:    "text-amber-400",
-      accent:   "bg-amber-500/10 border-amber-500/20",
-      metric:   perf!.promptAccuracy,
-      isManual: false,
-      detail:   `${perf!.promptAccuracy.withPrompt ?? 0} of ${perf!.promptAccuracy.total ?? 0} sessions executed with prompt`,
-      description: "% of sessions that successfully executed an AEO prompt without error or timeout.",
-    },
-    {
-      key:      "volume_search_accuracy",
-      label:    "Volume Searches Accuracy",
-      icon:     BarChart2,
-      color:    "text-blue-400",
-      accent:   "bg-blue-500/10 border-blue-500/20",
-      metric:   perf!.volumeAccuracy,
-      isManual: false,
-      detail:   `${perf!.volumeAccuracy.actual ?? 0} actual vs ${perf!.volumeAccuracy.targetCount ?? 0} monthly target`,
-      description: "Actual AEO searches delivered vs. target volume based on active keywords × 30 days.",
-    },
-  ] : [];
+  /* ─── Fleet averages ─── */
+  function avg(vals: (number | null)[]) {
+    const valid = vals.filter((v): v is number => v !== null);
+    return valid.length ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : null;
+  }
 
-  const editMetricDef = PERF_METRICS.find((m) => m.key === editKey);
+  const bizList = bizData?.metrics ?? [];
+  const filtered = bizList.filter((m) => m.client.name.toLowerCase().includes(bmSearch.toLowerCase()));
 
-  if ((isLoading && !data) || (perfLoading && !perf)) {
+  if ((isLoading && !data)) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-5 gap-4">
-          {[1,2,3,4,5].map((i) => <Skeleton key={i} className="h-36" />)}
-        </div>
         <div className="grid grid-cols-3 gap-4">
           {[1,2,3].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
@@ -285,99 +241,210 @@ export default function Metrics() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Session Metrics</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          AEO device farm performance + prompt search volume breakdown
+          Per-business AEO device farm performance · prompt search volume breakdown
         </p>
       </div>
 
       {/* ══════════════════════════════════════════════════════
-          SECTION 1 — Device Farm Performance (5 core metrics)
+          SECTION 1 — Device Farm Performance per Business
       ══════════════════════════════════════════════════════ */}
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
             <ShieldCheck className="w-3.5 h-3.5 text-primary" />
           </div>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-primary">Device Farm Performance</h2>
-          <div className="flex-1 h-px bg-border/30" />
-          <span className="text-[10px] text-muted-foreground/40">Live computed · hover to edit targets</span>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-primary">Device Farm Performance — Per Business</h2>
+          <div className="flex-1 h-px bg-border/30 min-w-[20px]" />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/40" />
+              <Input
+                className="pl-7 h-7 w-40 text-xs bg-muted/30 border-border/50"
+                placeholder="Filter businesses…"
+                value={bmSearch}
+                onChange={(e) => setBmSearch(e.target.value)}
+              />
+            </div>
+            <span className="text-[10px] text-muted-foreground/40 whitespace-nowrap">Hover column header to edit targets</span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {perfLoading
-            ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-xl" />)
-            : PERF_METRICS.map((m) => {
-                const Icon      = m.icon;
-                const val       = m.metric.value;
-                const tgt       = parseFloat(m.metric.target);
-                const valColor  = val === null ? "text-muted-foreground/40"
-                  : val >= tgt ? "text-emerald-400"
-                  : val >= tgt * 0.8 ? "text-amber-400"
-                  : "text-destructive";
-
-                return (
-                  <Card key={m.key}
-                    className="border-border/50 bg-card/60 hover:bg-card/80 transition-colors group relative overflow-hidden">
-                    {/* Edit button */}
-                    <button
-                      onClick={() => setEditKey(m.key)}
-                      className="absolute top-2 right-2 w-6 h-6 rounded-md bg-muted/40 hover:bg-primary/20 hover:text-primary text-muted-foreground/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10"
-                      title="Edit target">
-                      <Pencil className="w-3 h-3" />
-                    </button>
-
-                    <CardContent className="p-4">
-                      {/* Icon + label */}
-                      <div className="flex items-start gap-2 mb-3">
-                        <div className={`w-8 h-8 rounded-lg ${m.accent} border flex items-center justify-center flex-shrink-0`}>
-                          <Icon className={`w-3.5 h-3.5 ${m.color}`} />
+        <div className="rounded-xl border border-border/50 overflow-hidden bg-card/60">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse min-w-[780px]">
+              <thead className="bg-muted/20 border-b border-border/50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-muted-foreground/50 w-64">
+                    Business
+                  </th>
+                  <th className="px-3 py-3 text-center text-[10px] uppercase tracking-wider text-muted-foreground/50 border-l border-border/30 w-16">
+                    Sessions
+                  </th>
+                  {METRIC_COLS.map((col) => (
+                    <th
+                      key={col.key}
+                      className="px-3 py-3 border-l border-border/30 text-center group/th cursor-pointer hover:bg-muted/30 transition-colors"
+                      onClick={() => setEditCol(col)}>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-6 h-6 rounded-md ${col.bg} flex items-center justify-center group-hover/th:ring-1 ring-primary/30 transition-all`}>
+                          <col.icon className={`w-3.5 h-3.5 ${col.color}`} />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-semibold text-muted-foreground/70 leading-tight">
-                            {m.label}
-                          </p>
-                          {m.isManual && (
-                            <Badge variant="outline" className="text-[9px] mt-0.5 border-muted-foreground/20 text-muted-foreground/50 h-4">
-                              Manual
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Value */}
-                      <div className="flex items-baseline gap-1">
-                        <span className={`text-3xl font-bold font-mono leading-none ${valColor}`}>
-                          {val !== null ? val : "—"}
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 whitespace-nowrap leading-tight">{col.label}</span>
+                        <span className="text-[9px] text-muted-foreground/30 leading-none">
+                          tgt {bizData?.targets?.[col.fmKey] ?? "—"}%
                         </span>
-                        {val !== null && <span className="text-sm text-muted-foreground">%</span>}
+                        <Pencil className="w-2.5 h-2.5 text-muted-foreground/20 group-hover/th:text-primary/50 transition-colors" />
                       </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {bizLoading
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3"><Skeleton className="h-6 w-36" /></td>
+                        <td className="px-3 py-3 border-l border-border/30"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                        {METRIC_COLS.map((c) => <td key={c.key} className="px-3 py-3 border-l border-border/30"><Skeleton className="h-10 w-14 mx-auto" /></td>)}
+                      </tr>
+                    ))
+                  : filtered.length === 0
+                    ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground/40 text-sm">
+                          {bmSearch ? "No businesses match your search." : "No business data available yet."}
+                        </td>
+                      </tr>
+                    )
+                    : filtered.map((bm) => {
+                        const isExp = expanded.has(bm.client.id);
+                        return (
+                          <>
+                            <tr
+                              key={`bm-${bm.client.id}`}
+                              className="hover:bg-muted/20 transition-colors cursor-pointer group/row"
+                              onClick={() => toggleExpand(bm.client.id)}>
+                              {/* Business */}
+                              <td className="px-4 py-2 align-middle">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground/30 group-hover/row:text-muted-foreground/60 transition-colors">
+                                    {isExp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <Link
+                                      href={`/clients/${bm.client.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-sm font-semibold text-foreground hover:text-primary truncate block transition-colors">
+                                      {bm.client.name}
+                                    </Link>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <span className={`w-1.5 h-1.5 rounded-full ${bm.client.status === "active" ? "bg-emerald-500" : "bg-muted-foreground/30"}`} />
+                                      <span className="text-[10px] text-muted-foreground/50 capitalize">{bm.client.status}</span>
+                                      {bm.client.plan && <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground/50 border-border/40">{bm.client.plan}</Badge>}
+                                      <span className="text-[10px] text-muted-foreground/40">{bm.activeKeywords} kws</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              {/* Sessions */}
+                              <td className="px-3 py-2 text-center border-l border-border/30 align-middle">
+                                <span className="text-sm font-mono font-semibold text-foreground">{bm.sessionTotal}</span>
+                              </td>
+                              {/* 5 metric cells */}
+                              <MCell cell={bm.deviceRotation} colKey="deviceRotation" />
+                              <MCell cell={bm.ipRotation}     colKey="ipRotation"     />
+                              <MCell cell={bm.cacheClearing}  colKey="cacheClearing"  />
+                              <MCell cell={bm.promptAccuracy} colKey="promptAccuracy" />
+                              <MCell cell={bm.volumeAccuracy} colKey="volumeAccuracy" />
+                            </tr>
 
-                      {/* Progress bar */}
-                      <PctBar value={val} target={m.metric.target} />
+                            {/* Expanded device detail */}
+                            {isExp && (
+                              <tr key={`bm-${bm.client.id}-exp`} className="bg-muted/10">
+                                <td colSpan={7} className="px-6 py-3.5">
+                                  <div className="flex gap-8 flex-wrap">
+                                    {/* Devices */}
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/40 mb-2 flex items-center gap-1">
+                                        <Smartphone className="w-3 h-3" /> Devices Used
+                                      </p>
+                                      {bm.devices.length === 0
+                                        ? <span className="text-xs text-muted-foreground/30 italic">No device records yet</span>
+                                        : (
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {bm.devices.map((d) => (
+                                              <div key={d.deviceId} className="flex items-center gap-1.5 rounded-md border border-border/40 bg-card/60 px-2 py-1">
+                                                <Cpu className="w-3 h-3 text-primary/50 flex-shrink-0" />
+                                                <span className="text-[10px] font-mono font-semibold text-foreground">{d.identifier}</span>
+                                                <span className="text-[9px] text-muted-foreground/50">{d.model}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )
+                                      }
+                                    </div>
+                                    {/* Volume detail */}
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/40 mb-2">Volume Detail</p>
+                                      <div className="flex gap-5 text-xs">
+                                        <div>
+                                          <span className="text-muted-foreground/50 block">Active Keywords</span>
+                                          <span className="font-semibold text-foreground">{bm.activeKeywords}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-muted-foreground/50 block">Monthly Target</span>
+                                          <span className="font-semibold text-primary">{bm.monthlyTarget.toLocaleString()}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-muted-foreground/50 block">Actual Sessions</span>
+                                          <span className="font-semibold text-foreground">{bm.sessionTotal}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-muted-foreground/50 block">Remaining</span>
+                                          <span className={`font-semibold ${Math.max(0, bm.monthlyTarget - bm.sessionTotal) > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                                            {Math.max(0, bm.monthlyTarget - bm.sessionTotal).toLocaleString()}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })
+                }
+              </tbody>
 
-                      {/* Target */}
-                      <div className="flex items-center gap-1 mt-2">
-                        <Target className="w-2.5 h-2.5 text-muted-foreground/40" />
-                        <span className="text-[10px] text-muted-foreground/50">Target: {m.metric.target}%</span>
-                      </div>
-
-                      {/* Detail text */}
-                      <p className="text-[10px] text-muted-foreground/40 mt-1.5 leading-relaxed">
-                        {m.detail}
-                      </p>
-                    </CardContent>
-                  </Card>
-                );
-              })
-          }
-        </div>
-
-        {/* Info note */}
-        <div className="flex items-start gap-2 rounded-lg border border-border/30 bg-muted/10 px-3 py-2.5">
-          <Info className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0 mt-0.5" />
-          <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-            Device Rotation, IP Rotation, Prompt Accuracy, and Volume Accuracy are computed live from session records.
-            Cache Clearing is manually set. Hover any card and click the pencil to edit targets.
-          </p>
+              {/* Fleet averages footer */}
+              {!bizLoading && filtered.length > 0 && (
+                <tfoot className="border-t-2 border-border bg-muted/20">
+                  <tr>
+                    <td className="px-4 py-2.5 font-bold text-xs uppercase tracking-wider text-muted-foreground/60">
+                      Fleet Avg ({filtered.length})
+                    </td>
+                    <td className="px-3 py-2.5 text-center border-l border-border/30 font-mono font-bold text-foreground text-sm">
+                      {filtered.reduce((a, b) => a + b.sessionTotal, 0)}
+                    </td>
+                    {(["deviceRotation","ipRotation","cacheClearing","promptAccuracy","volumeAccuracy"] as const).map((k, i) => {
+                      const tgtKey = METRIC_COLS[i].fmKey;
+                      const tgt    = bizData?.targets?.[tgtKey] ?? 80;
+                      const val    = avg(filtered.map((m) => m[k].value));
+                      return (
+                        <td key={k} className="px-3 py-2.5 text-center border-l border-border/30">
+                          {val !== null
+                            ? <span className={`text-sm font-bold font-mono ${val >= tgt ? "text-emerald-400" : val >= tgt * 0.8 ? "text-amber-400" : "text-destructive"}`}>{val}%</span>
+                            : <span className="text-muted-foreground/30 text-xs">—</span>
+                          }
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </div>
       </div>
 
@@ -392,7 +459,6 @@ export default function Metrics() {
           <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-400">Live Campaign Stats</h2>
           <div className="flex-1 h-px bg-border/30" />
         </div>
-
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             { label: "Sessions Run",       value: liveStats.totalSessionsRun,               icon: Search,     color: "text-primary"    },
@@ -425,7 +491,6 @@ export default function Metrics() {
           <h2 className="text-sm font-bold uppercase tracking-wider text-amber-400">Plan Volume Targets</h2>
           <div className="flex-1 h-px bg-border/30" />
         </div>
-
         <div className="grid grid-cols-3 gap-4">
           {plans.map((plan) => (
             <div key={plan.name} className="rounded-xl border border-border/50 bg-card/60 p-4 text-center">
@@ -449,12 +514,9 @@ export default function Metrics() {
           <h2 className="text-sm font-bold uppercase tracking-wider text-primary">AEO Prompt Search Breakdown</h2>
           <div className="flex-1 h-px bg-border/30" />
         </div>
-
         <Card className="border-border/50 overflow-hidden">
           <CardHeader className="pb-2">
-            <CardDescription>
-              Current process vs. future process per plan tier — Type 1 (Geo Specific) and Type 2 (Backlink)
-            </CardDescription>
+            <CardDescription>Current process vs. future process per plan tier — Type 1 (Geo Specific) and Type 2 (Backlink)</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -472,7 +534,6 @@ export default function Metrics() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
-                  {/* Type 1 */}
                   <tr className="bg-muted/5">
                     <td className="px-4 py-3 text-left" colSpan={7}>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -494,7 +555,6 @@ export default function Metrics() {
                     {type1.subtotals.current.map((v, i) => <CellVal key={i} value={v} />)}
                     {type1.subtotals.future.map((v, i)  => <CellVal key={i} value={v} highlight />)}
                   </tr>
-                  {/* Type 2 */}
                   <tr className="bg-amber-500/5">
                     <td className="px-4 py-3 text-left" colSpan={7}>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -511,7 +571,6 @@ export default function Metrics() {
                     {type2.subtotals.current.map((v, i) => <CellVal key={i} value={v} />)}
                     {type2.subtotals.future.map((v, i)  => <CellVal key={i} value={v} highlight />)}
                   </tr>
-                  {/* Totals */}
                   <tr className="border-t-2 border-border bg-muted/30">
                     <td className="px-4 py-3 font-bold text-foreground text-xs uppercase tracking-wider">TOTAL PER DAY</td>
                     {totalsPerDay.current.map((v, i) => <td key={i} className="px-4 py-3 text-center text-sm font-bold font-mono text-foreground">{v}</td>)}
@@ -533,7 +592,6 @@ export default function Metrics() {
           SECTION 5 — Discrepancy Reports + User Dashboard
       ══════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Discrepancy Reports */}
         <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -543,8 +601,7 @@ export default function Metrics() {
           </CardHeader>
           <CardContent className="space-y-2">
             {discrepancyReports.map((report) => (
-              <div key={report.id}
-                className="flex items-start gap-3 rounded-md border border-border/40 bg-muted/20 px-3 py-2.5">
+              <div key={report.id} className="flex items-start gap-3 rounded-md border border-border/40 bg-muted/20 px-3 py-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-foreground">{report.label}</p>
@@ -562,7 +619,6 @@ export default function Metrics() {
           </CardContent>
         </Card>
 
-        {/* User Dashboard */}
         <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -572,8 +628,7 @@ export default function Metrics() {
           </CardHeader>
           <CardContent className="space-y-2">
             {userDashboard.sections.map((section, i) => (
-              <div key={i}
-                className="flex items-center justify-between rounded-md border border-border/40 bg-muted/20 px-3 py-2.5">
+              <div key={i} className="flex items-center justify-between rounded-md border border-border/40 bg-muted/20 px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">{i + 1}</div>
                   <span className="text-sm font-medium text-foreground">{section.label}</span>
@@ -587,9 +642,7 @@ export default function Metrics() {
                 {plans.map((plan) => (
                   <div key={plan.name}>
                     <p className="text-xs text-muted-foreground">{plan.name}</p>
-                    <p className="text-base font-bold text-emerald-400">
-                      {plan.totalPerDay}<span className="text-xs font-normal text-muted-foreground">/day</span>
-                    </p>
+                    <p className="text-base font-bold text-emerald-400">{plan.totalPerDay}<span className="text-xs font-normal text-muted-foreground">/day</span></p>
                   </div>
                 ))}
               </div>
@@ -598,17 +651,17 @@ export default function Metrics() {
         </Card>
       </div>
 
-      {/* ── Edit metric target dialog ── */}
-      {editKey && editMetricDef && (
-        <EditMetricDialog
+      {/* ── Edit column targets dialog ── */}
+      {editCol && bizData && (
+        <EditTargetsDialog
           open
-          onOpenChange={(o) => { if (!o) setEditKey(null); }}
-          metricKey={editKey}
-          label={editMetricDef.label}
-          metric={editMetricDef.metric}
-          isManual={editMetricDef.isManual}
+          onOpenChange={(o) => { if (!o) setEditCol(null); }}
+          col={editCol}
+          currentTarget={bizData.targets[editCol.fmKey] ?? 80}
+          currentValue={editCol.key === "cacheClearing" ? (bizList[0]?.cacheClearing.value ?? null) : null}
+          isManual={editCol.key === "cacheClearing"}
           saving={saving}
-          onSave={(target, value) => saveTarget(editKey, target, value)}
+          onSave={(target, value) => saveTarget(editCol.fmKey, target, value)}
         />
       )}
     </div>
