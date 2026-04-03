@@ -20,6 +20,7 @@ router.get("/", async (req, res) => {
         rankingPosition: rankingReportsTable.rankingPosition,
         reasonRecommended: rankingReportsTable.reasonRecommended,
         mapsPresence: rankingReportsTable.mapsPresence,
+        mapsUrl: rankingReportsTable.mapsUrl,
         isInitialRanking: rankingReportsTable.isInitialRanking,
         createdAt: rankingReportsTable.createdAt,
         clientName: clientsTable.businessName,
@@ -49,12 +50,37 @@ router.post("/", async (req, res) => {
         rankingPosition: body.rankingPosition ?? null,
         reasonRecommended: body.reasonRecommended ?? null,
         mapsPresence: body.mapsPresence ?? null,
+        mapsUrl: body.mapsUrl ?? null,
         isInitialRanking: body.isInitialRanking ?? false,
       })
       .returning();
     res.status(201).json(report);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* PATCH /api/ranking-reports/:id — update mapsUrl / mapsPresence / position */
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const body = req.body;
+    const updates: Record<string, unknown> = {};
+    if (body.mapsUrl        !== undefined) updates.mapsUrl        = body.mapsUrl ?? null;
+    if (body.mapsPresence   !== undefined) updates.mapsPresence   = body.mapsPresence;
+    if (body.rankingPosition !== undefined) updates.rankingPosition = body.rankingPosition;
+    if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
+
+    const [report] = await db
+      .update(rankingReportsTable)
+      .set(updates as Parameters<typeof db.update>[0])
+      .where(eq(rankingReportsTable.id, id))
+      .returning();
+    if (!report) return res.status(404).json({ error: "Not found" });
+    res.json(report);
+  } catch (err) {
+    req.log.error({ err }, "Error updating ranking report");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -74,29 +100,26 @@ router.get("/initial-vs-current", async (req, res) => {
         rankingPosition: rankingReportsTable.rankingPosition,
         isInitialRanking: rankingReportsTable.isInitialRanking,
         mapsPresence: rankingReportsTable.mapsPresence,
+        mapsUrl: rankingReportsTable.mapsUrl,
         createdAt: rankingReportsTable.createdAt,
       })
       .from(rankingReportsTable)
       .orderBy(asc(rankingReportsTable.createdAt));
 
-    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const clientMap  = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
 
-    // Group reports by client+keyword
-    const grouped: Record<
-      string,
-      {
-        clientId: number;
-        clientName: string;
-        keywordId: number;
-        keywordText: string;
-        reports: typeof allReports;
-      }
-    > = {};
+    const grouped: Record<string, {
+      clientId: number;
+      clientName: string;
+      keywordId: number;
+      keywordText: string;
+      reports: typeof allReports;
+    }> = {};
 
     for (const report of allReports) {
-      const key = `${report.clientId}-${report.keywordId}`;
-      const client = clientMap.get(report.clientId);
+      const key     = `${report.clientId}-${report.keywordId}`;
+      const client  = clientMap.get(report.clientId);
       const keyword = keywordMap.get(report.keywordId);
       if (!client || !keyword) continue;
       if (!grouped[key]) {
@@ -119,17 +142,19 @@ router.get("/initial-vs-current", async (req, res) => {
           ? initialReport.rankingPosition - currentReport.rankingPosition
           : null;
       return {
-        clientId: g.clientId,
-        clientName: g.clientName,
-        keywordId: g.keywordId,
-        keywordText: g.keywordText,
-        initialDate: initialReport?.createdAt ?? null,
+        clientId:        g.clientId,
+        clientName:      g.clientName,
+        keywordId:       g.keywordId,
+        keywordText:     g.keywordText,
+        currentReportId: currentReport?.id ?? null,
+        initialDate:     initialReport?.createdAt ?? null,
         initialPosition: initialReport?.rankingPosition ?? null,
-        currentDate: currentReport?.createdAt ?? null,
+        currentDate:     currentReport?.createdAt ?? null,
         currentPosition: currentReport?.rankingPosition ?? null,
-        positionChange: posChange,
-        isInTopTen: currentReport?.rankingPosition != null && currentReport.rankingPosition <= 10,
-        mapsPresence: currentReport?.mapsPresence ?? null,
+        positionChange:  posChange,
+        isInTopTen:      currentReport?.rankingPosition != null && currentReport.rankingPosition <= 10,
+        mapsPresence:    currentReport?.mapsPresence ?? null,
+        mapsUrl:         currentReport?.mapsUrl ?? null,
       };
     });
 
