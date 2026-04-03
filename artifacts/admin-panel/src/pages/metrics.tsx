@@ -196,17 +196,18 @@ export default function Metrics() {
   }
 
   /* ── 5 core performance metrics definition ── */
-  const PERF_METRICS = perf ? [
+  const perfReady = perf && perf.deviceRotation && perf.ipRotation && perf.cacheClearing && perf.promptAccuracy && perf.volumeAccuracy;
+  const PERF_METRICS = perfReady ? [
     {
       key:      "device_rotation",
       label:    "Device Rotation",
       icon:     Cpu,
       color:    "text-primary",
       accent:   "bg-primary/10 border-primary/20",
-      metric:   perf.deviceRotation,
+      metric:   perf!.deviceRotation,
       isManual: false,
-      detail:   perf.deviceRotation.withDevice
-        ? `${perf.deviceRotation.uniqueDevices} unique devices across ${perf.deviceRotation.withDevice} sessions`
+      detail:   perf!.deviceRotation.withDevice
+        ? `${perf!.deviceRotation.uniqueDevices} unique devices across ${perf!.deviceRotation.withDevice} sessions`
         : "No device data yet",
       description: "% of sessions using a distinct device ID — measures how well the farm rotates hardware.",
     },
@@ -216,10 +217,10 @@ export default function Metrics() {
       icon:     Wifi,
       color:    "text-violet-400",
       accent:   "bg-violet-500/10 border-violet-500/20",
-      metric:   perf.ipRotation,
+      metric:   perf!.ipRotation,
       isManual: false,
-      detail:   perf.ipRotation.withProxy
-        ? `${perf.ipRotation.uniqueProxies} unique proxies across ${perf.ipRotation.withProxy} sessions`
+      detail:   perf!.ipRotation.withProxy
+        ? `${perf!.ipRotation.uniqueProxies} unique proxies across ${perf!.ipRotation.withProxy} sessions`
         : "No proxy data yet",
       description: "% of sessions using a unique proxy / IP address to avoid fingerprinting.",
     },
@@ -229,7 +230,7 @@ export default function Metrics() {
       icon:     RefreshCcw,
       color:    "text-emerald-400",
       accent:   "bg-emerald-500/10 border-emerald-500/20",
-      metric:   perf.cacheClearing,
+      metric:   perf!.cacheClearing,
       isManual: true,
       detail:   "Manual — set actual % below via edit",
       description: "% of sessions where device app cache is fully cleared before prompt execution.",
@@ -240,9 +241,9 @@ export default function Metrics() {
       icon:     ShieldCheck,
       color:    "text-amber-400",
       accent:   "bg-amber-500/10 border-amber-500/20",
-      metric:   perf.promptAccuracy,
+      metric:   perf!.promptAccuracy,
       isManual: false,
-      detail:   `${perf.promptAccuracy.withPrompt ?? 0} of ${perf.promptAccuracy.total ?? 0} sessions executed with prompt`,
+      detail:   `${perf!.promptAccuracy.withPrompt ?? 0} of ${perf!.promptAccuracy.total ?? 0} sessions executed with prompt`,
       description: "% of sessions that successfully executed an AEO prompt without error or timeout.",
     },
     {
@@ -251,9 +252,9 @@ export default function Metrics() {
       icon:     BarChart2,
       color:    "text-blue-400",
       accent:   "bg-blue-500/10 border-blue-500/20",
-      metric:   perf.volumeAccuracy,
+      metric:   perf!.volumeAccuracy,
       isManual: false,
-      detail:   `${perf.volumeAccuracy.actual ?? 0} actual vs ${perf.volumeAccuracy.targetCount ?? 0} monthly target`,
+      detail:   `${perf!.volumeAccuracy.actual ?? 0} actual vs ${perf!.volumeAccuracy.targetCount ?? 0} monthly target`,
       description: "Actual AEO searches delivered vs. target volume based on active keywords × 30 days.",
     },
   ] : [];

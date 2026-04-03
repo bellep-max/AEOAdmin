@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sessionsTable, keywordsTable, clientsTable, farmMetrics } from "@workspace/db/schema";
-import { eq, count, sql, isNotNull } from "drizzle-orm";
+import { eq, count, sql, isNotNull, inArray } from "drizzle-orm";
 
 const router = Router();
 
@@ -146,7 +146,7 @@ router.get("/performance", async (req, res) => {
 
     /* ─── Targets from farm_metrics ─── */
     const KEYS = ["device_rotation", "ip_rotation", "cache_clearing", "prompt_exec_accuracy", "volume_search_accuracy"];
-    const fmRows = await db.select().from(farmMetrics).where(sql`${farmMetrics.key} = ANY(${KEYS})`);
+    const fmRows = await db.select().from(farmMetrics).where(inArray(farmMetrics.key, KEYS));
     const targets: Record<string, string> = {};
     const updatedAts: Record<string, string | null> = {};
     for (const row of fmRows) {
