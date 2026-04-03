@@ -238,7 +238,8 @@ function KeywordDialog({
 export default function Keywords() {
   const [search,     setSearch]     = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [collapsed,  setCollapsed]  = useState<Set<number>>(new Set());
+  /* All businesses start COLLAPSED — user clicks to expand */
+  const [expanded,   setExpanded]   = useState<Set<number>>(new Set());
   const [addOpen,    setAddOpen]    = useState(false);
   const [editKw,     setEditKw]     = useState<null | Record<string, unknown>>(null);
   const [saving,     setSaving]     = useState(false);
@@ -287,8 +288,8 @@ export default function Keywords() {
     }
   }
 
-  function toggleCollapse(clientId: number) {
-    setCollapsed((prev) => {
+  function toggleExpand(clientId: number) {
+    setExpanded((prev) => {
       const next = new Set(prev);
       next.has(clientId) ? next.delete(clientId) : next.add(clientId);
       return next;
@@ -298,9 +299,9 @@ export default function Keywords() {
   /* ── Filter ── */
   const searchLower = search.toLowerCase();
   const filteredKws = (keywords ?? []).filter((k) => {
-    const matchText = k.keywordText.toLowerCase().includes(searchLower);
-    const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    const client    = clients?.find((c) => c.id === k.clientId);
+    const matchText   = k.keywordText.toLowerCase().includes(searchLower);
+    const matchType   = typeFilter === "all" || String(k.keywordType) === typeFilter;
+    const client      = clients?.find((c) => c.id === k.clientId);
     const matchClient = client ? client.businessName.toLowerCase().includes(searchLower) : true;
     return (matchText || matchClient) && matchType;
   });
@@ -325,7 +326,7 @@ export default function Keywords() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">AEO Keywords</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">All prompt keywords grouped per business client</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Keywords organised per business — click a row to view details</p>
         </div>
         <Button
           className="gap-2 shadow-sm"
@@ -354,7 +355,7 @@ export default function Keywords() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input type="search" placeholder="Search keywords or business…"
+          <Input type="search" placeholder="Search business or keyword…"
             className="pl-9 bg-card/60 border-border/50 h-9"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
@@ -379,10 +380,19 @@ export default function Keywords() {
         )}
       </div>
 
-      {/* ── Per-business sections ── */}
+      {/* ── Business list ── */}
       {isLoading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+        <div className="rounded-xl border border-border/50 overflow-hidden">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-4 border-b border-border/30 last:border-0">
+              <Skeleton className="h-9 w-9 rounded-lg flex-shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-7 w-28 rounded-lg" />
+            </div>
+          ))}
         </div>
       ) : grouped.size === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 rounded-xl border border-dashed border-border/40 bg-card/30 text-muted-foreground gap-3">
@@ -395,55 +405,89 @@ export default function Keywords() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-5">
-          {Array.from(grouped.entries()).map(([clientId, kws]) => {
+        <div className="rounded-xl border border-border/50 overflow-hidden">
+          {Array.from(grouped.entries()).map(([clientId, kws], idx, arr) => {
             const client   = clients?.find((c) => c.id === clientId);
-            const isCollapsed = collapsed.has(clientId);
-            const clientInitials = client?.businessName
+            const isOpen   = expanded.has(clientId);
+            const initials = client?.businessName
               ? client.businessName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()
               : "?";
+            const activeCount = kws.filter((k) => k.isActive).length;
+            const type1 = kws.filter((k) => k.keywordType === 1).length;
+            const type2 = kws.filter((k) => k.keywordType === 2).length;
+            const isLast = idx === arr.length - 1;
 
             return (
-              <div key={clientId} className="rounded-xl border border-border/50 overflow-hidden">
+              <div key={clientId} className={!isLast || isOpen ? "border-b border-border/40" : ""}>
 
-                {/* ── Business header ── */}
-                <button
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-muted/20 hover:bg-muted/30 transition-colors border-b border-border/40"
-                  onClick={() => toggleCollapse(clientId)}>
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
-                    {clientInitials}
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-foreground">
-                        {client?.businessName ?? `Business #${clientId}`}
-                      </span>
-                      <Badge variant="outline" className="text-[9px] text-muted-foreground h-4">
-                        {kws.length} keyword{kws.length !== 1 ? "s" : ""}
-                      </Badge>
-                      <Badge variant="outline" className="text-[9px] text-emerald-400 border-emerald-500/20 bg-emerald-500/10 h-4">
-                        {kws.filter((k) => k.isActive).length} active
-                      </Badge>
+                {/* ═══ Business row (always visible) ═══ */}
+                <div className="flex items-center gap-0 bg-card/40 hover:bg-card/60 transition-colors">
+
+                  {/* LEFT: View keywords action */}
+                  <button
+                    onClick={() => toggleExpand(clientId)}
+                    className={`flex items-center gap-2 px-4 py-4 border-r border-border/40 h-full min-w-[170px] flex-shrink-0 transition-colors ${
+                      isOpen
+                        ? "bg-primary/10 text-primary border-primary/20"
+                        : "text-muted-foreground hover:text-primary hover:bg-primary/5"
+                    }`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
+                      isOpen ? "bg-primary/20" : "bg-muted/40"
+                    }`}>
+                      {isOpen
+                        ? <ChevronUp   className="w-3.5 h-3.5" />
+                        : <ChevronDown className="w-3.5 h-3.5" />}
                     </div>
-                    {client?.city && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{client.city}, {client.state}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Link href={`/clients/${clientId}`}
-                      className="text-[11px] text-primary hover:underline flex items-center gap-1 mr-2"
-                      onClick={(e) => e.stopPropagation()}>
-                      <Building2 className="w-3 h-3" /> View client
-                    </Link>
-                    {isCollapsed
-                      ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                      : <ChevronUp   className="w-4 h-4 text-muted-foreground" />}
-                  </div>
-                </button>
+                    <div className="text-left">
+                      <p className={`text-xs font-semibold leading-none ${isOpen ? "text-primary" : ""}`}>
+                        {isOpen ? "Hide keywords" : "View keywords"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{kws.length} total</p>
+                    </div>
+                  </button>
 
-                {/* ── Keyword cards ── */}
-                {!isCollapsed && (
-                  <div className="divide-y divide-border/30 bg-card/30">
+                  {/* MIDDLE: Business info */}
+                  <div className="flex items-center gap-3 flex-1 min-w-0 px-4 py-4">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+                      {initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-foreground leading-tight">
+                        {client?.businessName ?? `Business #${clientId}`}
+                      </p>
+                      {client?.city && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{client.city}{client.state ? `, ${client.state}` : ""}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* RIGHT: Keyword breakdown + link to client */}
+                  <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-400 border-emerald-500/20 h-5">
+                        {activeCount} active
+                      </Badge>
+                      {type1 > 0 && (
+                        <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/20 h-5">
+                          {type1} T1
+                        </Badge>
+                      )}
+                      {type2 > 0 && (
+                        <Badge variant="outline" className="text-[9px] bg-amber-500/10 text-amber-400 border-amber-500/20 h-5">
+                          {type2} T2
+                        </Badge>
+                      )}
+                    </div>
+                    <Link href={`/clients/${clientId}`}
+                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors border border-border/40 hover:border-primary/30 rounded-lg px-2.5 py-1.5 bg-muted/20 hover:bg-primary/5">
+                      <Building2 className="w-3 h-3" /> Client
+                    </Link>
+                  </div>
+                </div>
+
+                {/* ═══ Expanded keyword cards ═══ */}
+                {isOpen && (
+                  <div className="divide-y divide-border/25 bg-muted/5 border-t border-border/30">
                     {kws.map((kw) => {
                       const kwr        = kw as Record<string, unknown>;
                       const isType2    = kw.keywordType === 2;
@@ -452,9 +496,9 @@ export default function Keywords() {
                       const curLinkUrl = kwr.currentRankReportLink as string;
 
                       return (
-                        <div key={kw.id} className="p-0">
-                          {/* Card header */}
-                          <div className="flex items-start gap-3 px-4 py-3 border-b border-border/20 bg-card/20">
+                        <div key={kw.id}>
+                          {/* Keyword header */}
+                          <div className="flex items-start gap-3 pl-[170px] pr-4 py-3 border-b border-border/15">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 {isPrimary && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
@@ -466,9 +510,7 @@ export default function Keywords() {
                                   : "text-[10px] bg-primary/10 text-primary border-primary/20"}>
                                   {isType2 ? "Type 2 — Backlink" : "Type 1 — Geo Specific"}
                                 </Badge>
-                                {isPrimary && (
-                                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">1st</Badge>
-                                )}
+                                {isPrimary && <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">1st</Badge>}
                                 {(kwr.dateAdded as string) && (
                                   <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                                     <Calendar className="w-3 h-3" />
@@ -477,7 +519,6 @@ export default function Keywords() {
                                 )}
                               </div>
                             </div>
-                            {/* Active toggle + actions */}
                             <div className="flex items-center gap-3 flex-shrink-0">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">{kw.isActive ? "Active" : "Inactive"}</span>
@@ -502,31 +543,30 @@ export default function Keywords() {
                             </div>
                           </div>
 
-                          {/* Card body: search counts + links */}
-                          <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/20">
-
-                            {/* Search Counts */}
+                          {/* Keyword detail: search counts + links */}
+                          <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/15 pl-[170px]">
+                            {/* Search counts */}
                             <div className="px-4 py-3 space-y-2">
-                              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Search Counts</p>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Search Counts</p>
                               <div className="grid grid-cols-2 gap-2">
                                 {[
-                                  { label: "Initial · 30 days",     value: (kwr.initialSearchCount30Days  as number) ?? 0 },
-                                  { label: "Follow-up · 30 days",   value: (kwr.followupSearchCount30Days as number) ?? 0 },
-                                  { label: "Initial · Lifetime",    value: (kwr.initialSearchCountLife    as number) ?? 0 },
-                                  { label: "Follow-up · Lifetime",  value: (kwr.followupSearchCountLife   as number) ?? 0 },
+                                  { label: "Initial · 30 days",    value: (kwr.initialSearchCount30Days  as number) ?? 0 },
+                                  { label: "Follow-up · 30 days",  value: (kwr.followupSearchCount30Days as number) ?? 0 },
+                                  { label: "Initial · Lifetime",   value: (kwr.initialSearchCountLife    as number) ?? 0 },
+                                  { label: "Follow-up · Lifetime", value: (kwr.followupSearchCountLife   as number) ?? 0 },
                                 ].map(({ label, value }) => (
-                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/30 px-2.5 py-2">
-                                    <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide leading-none mb-1">{label}</p>
+                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/25 px-2.5 py-2">
+                                    <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wide leading-none mb-1">{label}</p>
                                     <p className="text-base font-bold font-mono text-foreground">{value}</p>
                                   </div>
                                 ))}
                               </div>
                             </div>
 
-                            {/* Associated Links */}
+                            {/* Associated links */}
                             <div className="px-4 py-3 space-y-2">
                               <div className="flex items-center justify-between">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Associated Links</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Associated Links</p>
                                 <div className="flex items-center gap-2">
                                   <span className="text-[10px] text-muted-foreground">
                                     {(kwr.linkActive as boolean) !== false ? "Active" : "Inactive"}
@@ -540,29 +580,25 @@ export default function Keywords() {
                                     className="data-[state=checked]:bg-emerald-500 scale-75" />
                                 </div>
                               </div>
-
-                              {/* Link type label */}
                               {(kwr.linkTypeLabel as string) ? (
                                 <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20">
                                   {kwr.linkTypeLabel as string}
                                 </Badge>
                               ) : (
-                                <p className="text-[11px] text-muted-foreground/40 italic">No link type set</p>
+                                <p className="text-[11px] text-muted-foreground/30 italic">No link type set</p>
                               )}
-
-                              {/* Report links */}
                               <div className="space-y-1.5">
                                 {[
                                   { label: "Initial Rank Report",  url: linkUrl },
                                   { label: "Current Rank Report",  url: curLinkUrl },
                                 ].map(({ label, url }) => (
-                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/30 px-3 py-2">
-                                    <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{label}</p>
+                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/25 px-3 py-2">
+                                    <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wide">{label}</p>
                                     {url ? (
                                       <a href={url} target="_blank" rel="noopener noreferrer"
-                                        className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5 truncate">
+                                        className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5">
                                         <Link2 className="w-3 h-3 flex-shrink-0" />
-                                        <span className="truncate">{url}</span>
+                                        <span className="truncate max-w-[240px]">{url}</span>
                                         <ExternalLink className="w-2.5 h-2.5 flex-shrink-0" />
                                       </a>
                                     ) : (
@@ -576,6 +612,15 @@ export default function Keywords() {
                         </div>
                       );
                     })}
+
+                    {/* Add keyword shortcut */}
+                    <div className="pl-[170px] pr-4 py-2.5 bg-muted/5">
+                      <button
+                        onClick={() => setAddOpen(true)}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-primary transition-colors border border-dashed border-border/30 hover:border-primary/30 rounded-lg px-3 py-1.5">
+                        <Plus className="w-3 h-3" /> Add keyword for {client?.businessName ?? "this client"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
