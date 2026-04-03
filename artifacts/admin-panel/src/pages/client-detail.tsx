@@ -309,129 +309,178 @@ export default function ClientDetail() {
         </TabsContent>
 
         {/* ══════════════════════ KEYWORDS ══════════════════════ */}
-        <TabsContent value="keywords" className="space-y-4 mt-0">
-          <Card className="border-border/50">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Key className="w-4 h-4 text-primary" /> Keywords
-                <Badge variant="outline" className="text-[10px] text-muted-foreground">{clientKeywords.length}</Badge>
-              </CardTitle>
-              <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs border-border/60" onClick={() => setKwOpen(true)}>
-                <Plus className="w-3 h-3" /> Add Keyword
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {clientKeywords.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-20 text-muted-foreground gap-2">
-                  <Key className="w-5 h-5 opacity-20" />
-                  <p className="text-xs">No keywords yet</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-border/50 hover:bg-transparent">
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 w-5"></TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Keyword</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Type</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Primary</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-center">Active</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Date Added</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-right">Init 30d</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-right">FU 30d</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-right">Init Life</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-right">FU Life</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Link Label</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-center">Link Active</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Init Report</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60">Curr Report</TableHead>
-                        <TableHead className="text-[10px] uppercase text-muted-foreground/60 text-right"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {clientKeywords.map((kw) => {
-                        const kwr = kw as Record<string, unknown>;
-                        return (
-                          <TableRow key={kw.id} className="border-border/30 hover:bg-muted/20 text-xs">
-                            <TableCell className="pl-4 w-5">
-                              {kw.isPrimary ? <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> : null}
-                            </TableCell>
-                            <TableCell className="font-medium max-w-[140px] truncate" title={kw.keywordText}>{kw.keywordText}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={kw.keywordType === 2
-                                ? "text-[9px] bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                : "text-[9px] bg-primary/10 text-primary border-primary/20"}>
-                                {kw.keywordType === 2 ? "Type 2" : "Type 1"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{kw.isPrimary ? <Badge variant="outline" className="text-[9px]">1st</Badge> : <span className="text-muted-foreground/40">—</span>}</TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={kw.isActive}
-                                onCheckedChange={(v) => updateKeyword.mutate(
-                                  { id: kw.id, data: { isActive: v } },
-                                  { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
-                                )}
-                                className="data-[state=checked]:bg-emerald-500 scale-75"
-                              />
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {(kwr.dateAdded as string) ? format(new Date(kwr.dateAdded as string), "MMM d, yyyy") : "—"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">{(kwr.initialSearchCount30Days as number) ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{(kwr.followupSearchCount30Days as number) ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{(kwr.initialSearchCountLife as number) ?? 0}</TableCell>
-                            <TableCell className="text-right font-mono">{(kwr.followupSearchCountLife as number) ?? 0}</TableCell>
-                            <TableCell className="max-w-[120px] truncate text-muted-foreground" title={(kwr.linkTypeLabel as string) ?? ""}>
-                              {(kwr.linkTypeLabel as string) || <span className="text-muted-foreground/30">—</span>}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={(kwr.linkActive as boolean) !== false}
-                                onCheckedChange={(v) => updateKeyword.mutate(
-                                  { id: kw.id, data: { linkActive: v } },
-                                  { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
-                                )}
-                                className="data-[state=checked]:bg-emerald-500 scale-75"
-                              />
-                            </TableCell>
-                            <TableCell>
-                              {(kwr.initialRankReportLink as string) ? (
-                                <a href={kwr.initialRankReportLink as string} target="_blank" rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1">
-                                  Link <ExternalLink className="w-2.5 h-2.5" />
+        <TabsContent value="keywords" className="space-y-3 mt-0">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold">Keywords</span>
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">{clientKeywords.length}</Badge>
+            </div>
+            <Button size="sm" className="gap-1.5 h-8 text-xs"
+              style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.2)" }}
+              onClick={() => setKwOpen(true)}>
+              <Plus className="w-3 h-3" /> Add Keyword
+            </Button>
+          </div>
+
+          {clientKeywords.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-3 rounded-xl border border-dashed border-border/40 bg-card/40">
+              <Key className="w-8 h-8 opacity-15" />
+              <p className="text-sm">No keywords yet — click Add Keyword to get started</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {clientKeywords.map((kw) => {
+                const kwr = kw as Record<string, unknown>;
+                const isType2     = kw.keywordType === 2;
+                const isPrimary   = !!kw.isPrimary;
+                const linkUrl     = kwr.initialRankReportLink as string;
+                const curLinkUrl  = kwr.currentRankReportLink as string;
+
+                return (
+                  <div key={kw.id} className="rounded-xl border border-border/50 bg-card/60 overflow-hidden">
+
+                    {/* ── Card header ── */}
+                    <div className="flex items-start gap-3 px-4 py-3 border-b border-border/40 bg-muted/10">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isPrimary && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                          <span className="font-semibold text-sm text-foreground">{kw.keywordText}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <Badge variant="outline" className={isType2
+                            ? "text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            : "text-[10px] bg-primary/10 text-primary border-primary/20"}>
+                            {isType2 ? "Type 2 — Backlink" : "Type 1 — Geo Specific"}
+                          </Badge>
+                          {isPrimary && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">
+                              1st
+                            </Badge>
+                          )}
+                          {(kwr.dateAdded as string) && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              Added {format(new Date(kwr.dateAdded as string), "MMM d, yyyy")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {/* Active toggle + actions */}
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{kw.isActive ? "Active" : "Inactive"}</span>
+                          <Switch
+                            checked={kw.isActive}
+                            onCheckedChange={(v) => updateKeyword.mutate(
+                              { id: kw.id, data: { isActive: v } },
+                              { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
+                            )}
+                            className="data-[state=checked]:bg-emerald-500"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-primary/10 hover:text-primary"
+                            onClick={() => setEditKw({ ...kwr, id: kw.id })}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive text-muted-foreground/40"
+                            onClick={() => deleteKeyword(kw.id)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Card body: two columns ── */}
+                    <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/30">
+
+                      {/* Search Counts */}
+                      <div className="p-4 space-y-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Search Counts</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-lg bg-muted/20 border border-border/30 p-2.5">
+                            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Initial · 30 days</p>
+                            <p className="text-lg font-bold font-mono text-foreground">{(kwr.initialSearchCount30Days as number) ?? 0}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/20 border border-border/30 p-2.5">
+                            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Follow-up · 30 days</p>
+                            <p className="text-lg font-bold font-mono text-foreground">{(kwr.followupSearchCount30Days as number) ?? 0}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/20 border border-border/30 p-2.5">
+                            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Initial · Lifetime</p>
+                            <p className="text-lg font-bold font-mono text-foreground">{(kwr.initialSearchCountLife as number) ?? 0}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/20 border border-border/30 p-2.5">
+                            <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Follow-up · Lifetime</p>
+                            <p className="text-lg font-bold font-mono text-foreground">{(kwr.followupSearchCountLife as number) ?? 0}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Associated Links */}
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Associated Links</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground">{(kwr.linkActive as boolean) !== false ? "Active" : "Inactive"}</span>
+                            <Switch
+                              checked={(kwr.linkActive as boolean) !== false}
+                              onCheckedChange={(v) => updateKeyword.mutate(
+                                { id: kw.id, data: { linkActive: v } },
+                                { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
+                              )}
+                              className="data-[state=checked]:bg-emerald-500 scale-[0.8]"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Link type label */}
+                        <div className="flex items-center gap-2">
+                          {(kwr.linkTypeLabel as string) ? (
+                            <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20">
+                              {kwr.linkTypeLabel as string}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/40 italic">No link type set</span>
+                          )}
+                        </div>
+
+                        {/* Report links */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/20 border border-border/30 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Initial Rank Report</p>
+                              {linkUrl ? (
+                                <a href={linkUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5 truncate max-w-[220px]">
+                                  <Link2 className="w-3 h-3 flex-shrink-0" /> {linkUrl}
                                 </a>
-                              ) : <span className="text-muted-foreground/30">—</span>}
-                            </TableCell>
-                            <TableCell>
-                              {(kwr.currentRankReportLink as string) ? (
-                                <a href={kwr.currentRankReportLink as string} target="_blank" rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1">
-                                  Link <ExternalLink className="w-2.5 h-2.5" />
+                              ) : <p className="text-xs text-muted-foreground/30 mt-0.5">Not set</p>}
+                            </div>
+                            {linkUrl && <ExternalLink className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />}
+                          </div>
+                          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/20 border border-border/30 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Current Rank Report</p>
+                              {curLinkUrl ? (
+                                <a href={curLinkUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5 truncate max-w-[220px]">
+                                  <Link2 className="w-3 h-3 flex-shrink-0" /> {curLinkUrl}
                                 </a>
-                              ) : <span className="text-muted-foreground/30">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right pr-3">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button variant="ghost" size="icon" className="h-6 w-6"
-                                  onClick={() => setEditKw({ ...kwr, id: kw.id })}>
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive"
-                                  onClick={() => deleteKeyword(kw.id)}>
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                              ) : <p className="text-xs text-muted-foreground/30 mt-0.5">Not set</p>}
+                            </div>
+                            {curLinkUrl && <ExternalLink className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         {/* ══════════════════════ METRICS ══════════════════════ */}
