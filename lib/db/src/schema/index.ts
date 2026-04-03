@@ -8,3 +8,4 @@ export * from "./schedules";
 export * from "./ranking_reports";
 export * from "./tasks";
 export * from "./users";
+export * from "./farm_metrics";

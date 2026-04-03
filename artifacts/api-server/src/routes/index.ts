@@ -12,6 +12,7 @@ import rankingReportsRouter from "./ranking-reports";
 import tasksRouter from "./tasks";
 import dashboardRouter from "./dashboard";
 import scalingRouter from "./scaling";
+import farmMetricsRouter from "./farm-metrics";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use("/ranking-reports", rankingReportsRouter);
 router.use("/tasks", tasksRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/scaling", scalingRouter);
+router.use("/farm-metrics", farmMetricsRouter);
 
 export default router;
