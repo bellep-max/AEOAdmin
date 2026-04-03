@@ -106,6 +106,115 @@ router.get("/session-breakdown", async (req, res) => {
   }
 });
 
+/* ── Per-business metrics matrix ────────────────────────── */
+router.get("/business", async (req, res) => {
+  try {
+    // All clients
+    const clients = await db.select().from(clientsTable);
+
+    // Per-client session aggregates (one query)
+    const rows = await db
+      .select({
+        clientId:      sessionsTable.clientId,
+        total:         sql<number>`COUNT(*)`,
+        withDevice:    sql<number>`COUNT(${sessionsTable.deviceId})`,
+        uniqueDevices: sql<number>`COUNT(DISTINCT ${sessionsTable.deviceId})`,
+        withProxy:     sql<number>`COUNT(${sessionsTable.proxyId})`,
+        uniqueProxies: sql<number>`COUNT(DISTINCT ${sessionsTable.proxyId})`,
+        withPrompt:    sql<number>`COUNT(${sessionsTable.promptText})`,
+      })
+      .from(sessionsTable)
+      .groupBy(sessionsTable.clientId);
+
+    // Active keywords per client
+    const kwRows = await db
+      .select({ clientId: keywordsTable.clientId, cnt: sql<number>`COUNT(*)` })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.tierLabel, "aeo"))
+      .groupBy(keywordsTable.clientId);
+
+    // Devices used per client (distinct device records)
+    const devRows = await db
+      .select({
+        clientId:         sessionsTable.clientId,
+        deviceIdentifier: sql<string>`MIN(${sql.raw('"devices"."device_identifier"')})`,
+        model:            sql<string>`MIN(${sql.raw('"devices"."model"')})`,
+        deviceId:         sessionsTable.deviceId,
+      })
+      .from(sessionsTable)
+      .leftJoin(sql`devices ON devices.id = ${sessionsTable.deviceId}`)
+      .where(isNotNull(sessionsTable.deviceId))
+      .groupBy(sessionsTable.clientId, sessionsTable.deviceId);
+
+    // Global cache clearing value (manual, from farm_metrics)
+    const cacheRow  = await db.select().from(farmMetrics).where(eq(farmMetrics.key, "cache_clearing")).limit(1);
+    const cacheValue = cacheRow[0]?.value ? parseFloat(cacheRow[0].value) : null;
+    const cacheTarget = cacheRow[0]?.targetValue ? parseFloat(cacheRow[0].targetValue) : 100;
+
+    // Targets from farm_metrics
+    const KEYS = ["device_rotation", "ip_rotation", "cache_clearing", "prompt_exec_accuracy", "volume_search_accuracy"];
+    const fmRows = await db.select().from(farmMetrics).where(inArray(farmMetrics.key, KEYS));
+    const targets: Record<string, number> = {
+      device_rotation: 80, ip_rotation: 90, cache_clearing: 100, prompt_exec_accuracy: 95, volume_search_accuracy: 98,
+    };
+    for (const row of fmRows) {
+      targets[row.key] = row.targetValue ? parseFloat(row.targetValue) : targets[row.key];
+    }
+
+    const statsByClient = Object.fromEntries(rows.map((r) => [r.clientId, r]));
+    const kwByClient    = Object.fromEntries(kwRows.map((r) => [r.clientId, Number(r.cnt)]));
+
+    // Group devices by client
+    const devicesByClient: Record<number, { deviceId: number; identifier: string; model: string }[]> = {};
+    for (const dr of devRows) {
+      if (!devicesByClient[dr.clientId]) devicesByClient[dr.clientId] = [];
+      devicesByClient[dr.clientId].push({
+        deviceId:   dr.deviceId!,
+        identifier: dr.deviceIdentifier ?? `DEV-${dr.deviceId}`,
+        model:      dr.model ?? "Unknown",
+      });
+    }
+
+    const result = clients.map((client) => {
+      const s = statsByClient[client.id];
+      const total        = s ? Number(s.total)        : 0;
+      const withDevice   = s ? Number(s.withDevice)   : 0;
+      const uniqueDevs   = s ? Number(s.uniqueDevices): 0;
+      const withProxy    = s ? Number(s.withProxy)    : 0;
+      const uniqueProxies= s ? Number(s.uniqueProxies): 0;
+      const withPrompt   = s ? Number(s.withPrompt)   : 0;
+      const activeKws    = kwByClient[client.id] ?? 0;
+      const monthlyTarget= activeKws * 30;
+
+      const deviceRotation = withDevice   > 0 ? Math.round((Math.min(uniqueDevs, withDevice)    / withDevice)    * 100) : null;
+      const ipRotation     = withProxy    > 0 ? Math.round((Math.min(uniqueProxies, withProxy)  / withProxy)     * 100) : null;
+      const promptAccuracy = total        > 0 ? Math.round((withPrompt / total) * 100)                                  : null;
+      const volumeAccuracy = monthlyTarget> 0 ? Math.min(100, Math.round((total / monthlyTarget) * 100))               : null;
+
+      return {
+        client: {
+          id: client.id, name: client.name, status: client.status,
+          plan: (client as any).plan ?? null,
+        },
+        sessionTotal:   total,
+        devices:        devicesByClient[client.id] ?? [],
+        activeKeywords: activeKws,
+        monthlyTarget,
+        deviceRotation: { value: deviceRotation, uniqueDevices: uniqueDevs, withDevice,    target: targets.device_rotation        },
+        ipRotation:     { value: ipRotation,     uniqueProxies,              withProxy,    target: targets.ip_rotation            },
+        cacheClearing:  { value: cacheValue,     isManual: true,                           target: cacheTarget                    },
+        promptAccuracy: { value: promptAccuracy, withPrompt,                 total,        target: targets.prompt_exec_accuracy   },
+        volumeAccuracy: { value: volumeAccuracy, actual: total, monthlyTarget,             target: targets.volume_search_accuracy },
+      };
+    });
+
+    res.json({ metrics: result, targets });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching business metrics");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ── Live performance metrics computed from sessions ─────── */
 router.get("/performance", async (req, res) => {
   try {

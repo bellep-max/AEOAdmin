@@ -22,6 +22,7 @@ import Scaling from "@/pages/scaling";
 import Tasks from "@/pages/tasks";
 import Plans from "@/pages/plans";
 import FarmMetrics from "@/pages/farm-metrics";
+import BusinessMetrics from "@/pages/business-metrics";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ function ProtectedRoutes() {
         <Route path="/tasks" component={Tasks} />
         <Route path="/plans" component={Plans} />
         <Route path="/farm-metrics" component={FarmMetrics} />
+        <Route path="/business-metrics" component={BusinessMetrics} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

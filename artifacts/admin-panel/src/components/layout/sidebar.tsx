@@ -6,7 +6,7 @@ import {
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, Key, Activity, Server, Network, Trophy,
-  TrendingUp, CheckSquare, CreditCard, Zap, BarChart3, LogOut, Radio, Gauge,
+  TrendingUp, CheckSquare, CreditCard, Zap, BarChart3, LogOut, Radio, Gauge, Building2,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -39,9 +39,10 @@ const navGroups = [
   {
     label: "Analytics",
     items: [
-      { name: "Rankings",             href: "/rankings",       icon: Trophy    },
-      { name: "Session Metrics",      href: "/metrics",        icon: BarChart3 },
-      { name: "Device Farm Metrics",  href: "/farm-metrics",   icon: Gauge     },
+      { name: "Rankings",             href: "/rankings",          icon: Trophy    },
+      { name: "Session Metrics",      href: "/metrics",           icon: BarChart3 },
+      { name: "Device Farm Metrics",  href: "/farm-metrics",      icon: Gauge     },
+      { name: "Business Metrics",     href: "/business-metrics",  icon: Building2 },
     ],
   },
   {
