@@ -1,54 +1,247 @@
 import { useState } from "react";
 import { useGetKeywords, useUpdateKeyword, useGetClients } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 import {
-  Search, Plus, CheckCircle2, XCircle, Clock, Key, Loader2, Star,
-  Filter, X, Link2, MapPin,
+  Search, Plus, Key, Loader2, Star, Filter, X, Link2, MapPin,
+  Building2, ExternalLink, Pencil, Trash2, Calendar, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { format } from "date-fns";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const addKeywordSchema = z.object({
-  keywordText:   z.string().min(2, "Keyword must be at least 2 characters"),
-  clientId:      z.string().min(1, "Please select a client"),
-  keywordType:   z.enum(["1", "2"]),    // 1 = Type 1 Geo Specific, 2 = Type 2 Backlink
-  isPrimary:     z.boolean(),
-  isActive:      z.boolean(),
-  backlinkCount: z.coerce.number().min(0).max(100),
-});
+const LINK_TYPES = ["GBP snippet", "Client website blog post", "External article", "Other"];
 
-type AddKeywordForm = z.infer<typeof addKeywordSchema>;
+/* ─────────────────────────────────────────────────────────── */
+/* Keyword add / edit dialog (full fields)                     */
+/* ─────────────────────────────────────────────────────────── */
+function KeywordDialog({
+  open, onOpenChange, title, saving, initial, clients, onSave,
+}: {
+  open:         boolean;
+  onOpenChange: (v: boolean) => void;
+  title:        string;
+  saving:       boolean;
+  initial?:     Record<string, unknown>;
+  clients?:     { id: number; businessName: string; city?: string | null; state?: string | null }[];
+  onSave:       (data: Record<string, unknown>) => void;
+}) {
+  const blank: Record<string, unknown> = {
+    clientId:                  "",
+    keywordText:               "",
+    keywordType:               "1",
+    isPrimary:                 "0",
+    isActive:                  true,
+    linkTypeLabel:             "",
+    linkActive:                true,
+    initialRankReportLink:     "",
+    currentRankReportLink:     "",
+    initialSearchCount30Days:  0,
+    followupSearchCount30Days: 0,
+    initialSearchCountLife:    0,
+    followupSearchCountLife:   0,
+  };
 
-// keywordType → badge display
-const TYPE_STYLES: Record<number, { label: string; cls: string; icon: React.ElementType; desc: string }> = {
-  1: { label: "Type 1", cls: "bg-primary/10 text-primary border-primary/20",         icon: MapPin, desc: "Geo Specific" },
-  2: { label: "Type 2", cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",   icon: Link2,  desc: "Backlink"     },
-};
+  const [vals, setVals] = useState<Record<string, unknown>>(initial ?? blank);
+  function set(k: string, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
 
-const VERIFY_MAP = {
-  verified: { icon: CheckCircle2, label: "Verified",  cls: "text-emerald-400"  },
-  failed:   { icon: XCircle,      label: "Failed",    cls: "text-destructive"  },
-  pending:  { icon: Clock,        label: "Pending",   cls: "text-amber-400"    },
-} as const;
+  const isEdit = !!initial;
 
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (o) setVals(initial ?? blank); }}>
+      <DialogContent className="sm:max-w-[640px] border-border/60 bg-card max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+              <Key className="w-4 h-4 text-primary" />
+            </div>
+            <DialogTitle>{title}</DialogTitle>
+          </div>
+          <DialogDescription className="sr-only">{title}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5 mt-2">
+          {/* Business / Keyword */}
+          <div className="grid grid-cols-2 gap-3">
+            {!isEdit && (
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase text-muted-foreground/60 tracking-wide">Business <span className="text-destructive">*</span></Label>
+                <Select value={vals.clientId as string} onValueChange={(v) => set("clientId", v)}>
+                  <SelectTrigger className="bg-muted/30 border-border/60 h-9 text-sm"><SelectValue placeholder="Select business…" /></SelectTrigger>
+                  <SelectContent>
+                    {clients?.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        <span className="font-medium">{c.businessName}</span>
+                        {c.city && <span className="text-muted-foreground ml-2 text-xs">{c.city}</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className={`space-y-1.5 ${!isEdit ? "" : "col-span-2"}`}>
+              <Label className="text-xs uppercase text-muted-foreground/60 tracking-wide">Keyword <span className="text-destructive">*</span></Label>
+              <Input className="bg-muted/30 border-border/60 h-9 text-sm"
+                placeholder="e.g. best plumber in Manchester"
+                value={vals.keywordText as string}
+                onChange={(e) => set("keywordText", e.target.value)} />
+            </div>
+          </div>
+
+          {/* Keyword type selector */}
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase text-muted-foreground/60 tracking-wide">Keyword Type <span className="text-destructive">*</span></Label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "1", label: "Type 1 — Geo Specific",  desc: "60% budget · 100% search rate",  icon: MapPin, accent: "border-primary/50 bg-primary/10 text-primary" },
+                { value: "2", label: "Type 2 — Backlink",       desc: "10% budget · 1st keyword only",  icon: Link2,  accent: "border-amber-400/50 bg-amber-500/10 text-amber-400" },
+              ].map((opt) => {
+                const Icon     = opt.icon;
+                const selected = String(vals.keywordType) === opt.value;
+                return (
+                  <button key={opt.value} type="button" onClick={() => set("keywordType", opt.value)}
+                    className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition-all ${
+                      selected ? opt.accent : "border-border/50 bg-muted/20 text-muted-foreground hover:border-border/80"
+                    }`}>
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="w-3.5 h-3.5" />
+                      <span className="text-xs font-semibold">{opt.label}</span>
+                    </div>
+                    <span className="text-[10px] opacity-70">{opt.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Primary + Active */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-3 bg-muted/20 border border-border/40 rounded-lg p-3">
+              <div className="flex-1">
+                <p className="text-xs font-medium">Primary (1st)</p>
+                <p className="text-[10px] text-muted-foreground">Mark as primary keyword</p>
+              </div>
+              <Switch
+                checked={vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true}
+                onCheckedChange={(v) => set("isPrimary", v ? "1" : "0")}
+                className="data-[state=checked]:bg-primary" />
+            </div>
+            <div className="flex items-center gap-3 bg-muted/20 border border-border/40 rounded-lg p-3">
+              <div className="flex-1">
+                <p className="text-xs font-medium">Active</p>
+                <p className="text-[10px] text-muted-foreground">Enable for campaigns</p>
+              </div>
+              <Switch
+                checked={vals.isActive !== false}
+                onCheckedChange={(v) => set("isActive", v)}
+                className="data-[state=checked]:bg-emerald-500" />
+            </div>
+          </div>
+
+          {/* Search counts */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60 mb-2">Search Counts</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { k: "initialSearchCount30Days",  label: "Initial · 30 days" },
+                { k: "followupSearchCount30Days", label: "Follow-up · 30 days" },
+                { k: "initialSearchCountLife",    label: "Initial · Lifetime" },
+                { k: "followupSearchCountLife",   label: "Follow-up · Lifetime" },
+              ].map(({ k, label }) => (
+                <div key={k} className="space-y-1.5">
+                  <Label className="text-[10px] uppercase text-muted-foreground/60">{label}</Label>
+                  <Input type="number" min={0}
+                    className="bg-muted/30 border-border/60 h-9 text-sm font-mono"
+                    value={vals[k] as number}
+                    onChange={(e) => set(k, parseInt(e.target.value) || 0)} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Associated links */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/60 mb-2">Associated Links</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-3 items-end">
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-[10px] uppercase text-muted-foreground/60">Link Type Label</Label>
+                  <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
+                    <SelectTrigger className="bg-muted/30 border-border/60 h-9 text-sm"><SelectValue placeholder="Select type…" /></SelectTrigger>
+                    <SelectContent>
+                      {LINK_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-3 bg-muted/20 border border-border/40 rounded-lg px-3 h-9">
+                  <p className="text-xs flex-1">Link Active</p>
+                  <Switch
+                    checked={vals.linkActive !== false}
+                    onCheckedChange={(v) => set("linkActive", v)}
+                    className="data-[state=checked]:bg-emerald-500 scale-75" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase text-muted-foreground/60 flex items-center gap-1"><Link2 className="w-3 h-3" /> Initial Rank Report</Label>
+                  <Input className="bg-muted/30 border-border/60 h-9 text-xs font-mono"
+                    placeholder="https://…"
+                    value={(vals.initialRankReportLink as string) || ""}
+                    onChange={(e) => set("initialRankReportLink", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase text-muted-foreground/60 flex items-center gap-1"><Link2 className="w-3 h-3" /> Current Rank Report</Label>
+                  <Input className="bg-muted/30 border-border/60 h-9 text-xs font-mono"
+                    placeholder="https://…"
+                    value={(vals.currentRankReportLink as string) || ""}
+                    onChange={(e) => set("currentRankReportLink", e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <Button variant="outline" className="flex-1 border-border/50"
+            onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button className="flex-1 gap-2" disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
+            onClick={() => onSave({
+              ...vals,
+              keywordType:               Number(vals.keywordType),
+              isPrimary:                 vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true ? 1 : 0,
+              initialSearchCount30Days:  Number(vals.initialSearchCount30Days)  || 0,
+              followupSearchCount30Days: Number(vals.followupSearchCount30Days) || 0,
+              initialSearchCountLife:    Number(vals.initialSearchCountLife)    || 0,
+              followupSearchCountLife:   Number(vals.followupSearchCountLife)   || 0,
+            })}
+            style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : isEdit ? "Save Changes" : "Add Keyword"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Main page                                                    */
+/* ─────────────────────────────────────────────────────────── */
 export default function Keywords() {
-  const [search, setSearch]           = useState("");
-  const [typeFilter, setTypeFilter]   = useState<string>("all");
-  const [dialogOpen, setDialogOpen]   = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
+  const [search,     setSearch]     = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [collapsed,  setCollapsed]  = useState<Set<number>>(new Set());
+  const [addOpen,    setAddOpen]    = useState(false);
+  const [editKw,     setEditKw]     = useState<null | Record<string, unknown>>(null);
+  const [saving,     setSaving]     = useState(false);
 
   const { data: keywords, isLoading } = useGetKeywords();
   const { data: clients }             = useGetClients();
@@ -56,451 +249,363 @@ export default function Keywords() {
   const { toast }                     = useToast();
   const queryClient                   = useQueryClient();
 
-  const form = useForm<AddKeywordForm>({
-    resolver: zodResolver(addKeywordSchema),
-    defaultValues: {
-      keywordText:   "",
-      clientId:      "",
-      keywordType:   "1",
-      isPrimary:     false,
-      isActive:      true,
-      backlinkCount: 0,
-    },
-  });
-
-  const filtered = keywords?.filter((k) => {
-    const matchText = k.keywordText.toLowerCase().includes(search.toLowerCase());
-    const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    return matchText && matchType;
-  });
-
-  function handleToggle(id: number, isActive: boolean) {
-    updateKeyword.mutate(
-      { id, data: { isActive } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
-          toast({ title: "Keyword updated" });
-        },
-        onError: () => toast({ title: "Update failed", variant: "destructive" }),
-      },
-    );
-  }
-
-  async function onSubmit(values: AddKeywordForm) {
-    setSubmitting(true);
+  /* ── Save (add / edit) ── */
+  async function saveKeyword(id: number | null, data: Record<string, unknown>) {
+    setSaving(true);
     try {
-      const res = await fetch(`${BASE}/api/keywords`, {
-        method:      "POST",
-        credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          keywordText:   values.keywordText,
-          clientId:      Number(values.clientId),
-          tierLabel:     "aeo",
-          keywordType:   Number(values.keywordType),
-          isPrimary:     values.isPrimary ? 1 : 0,
-          isActive:      values.isActive,
-          backlinkCount: values.backlinkCount,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Failed to create keyword");
+      if (id) {
+        await new Promise<void>((res, rej) =>
+          updateKeyword.mutate({ id, data }, { onSuccess: () => res(), onError: (e) => rej(e) }),
+        );
+      } else {
+        const r = await fetch(`${BASE}/api/keywords`, {
+          method:      "POST",
+          credentials: "include",
+          headers:     { "Content-Type": "application/json" },
+          body:        JSON.stringify({ ...data, clientId: Number(data.clientId), tierLabel: "aeo" }),
+        });
+        if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
       }
-
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
-      toast({ title: "Keyword added successfully" });
-      form.reset();
-      setDialogOpen(false);
+      toast({ title: id ? "Keyword updated" : "Keyword added" });
+      setEditKw(null);
+      setAddOpen(false);
     } catch (err: unknown) {
-      toast({
-        title:       "Failed to add keyword",
-        description: err instanceof Error ? err.message : "Unknown error",
-        variant:     "destructive",
-      });
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
-  const activeCount    = keywords?.filter((k) => k.isActive).length ?? 0;
-  const type1Count     = keywords?.filter((k) => k.keywordType === 1).length ?? 0;
-  const type2Count     = keywords?.filter((k) => k.keywordType === 2).length ?? 0;
+  async function deleteKeyword(id: number) {
+    try {
+      await fetch(`${BASE}/api/keywords/${id}`, { method: "DELETE", credentials: "include" });
+      await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
+      toast({ title: "Keyword deleted" });
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" });
+    }
+  }
 
-  const watchType = form.watch("keywordType");
+  function toggleCollapse(clientId: number) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(clientId) ? next.delete(clientId) : next.add(clientId);
+      return next;
+    });
+  }
+
+  /* ── Filter ── */
+  const searchLower = search.toLowerCase();
+  const filteredKws = (keywords ?? []).filter((k) => {
+    const matchText = k.keywordText.toLowerCase().includes(searchLower);
+    const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
+    const client    = clients?.find((c) => c.id === k.clientId);
+    const matchClient = client ? client.businessName.toLowerCase().includes(searchLower) : true;
+    return (matchText || matchClient) && matchType;
+  });
+
+  /* ── Group by client ── */
+  const grouped = new Map<number, typeof filteredKws>();
+  for (const kw of filteredKws) {
+    if (!grouped.has(kw.clientId)) grouped.set(kw.clientId, []);
+    grouped.get(kw.clientId)!.push(kw);
+  }
+
+  /* ── Stats ── */
+  const totalKws   = keywords?.length ?? 0;
+  const activeKws  = keywords?.filter((k) => k.isActive).length ?? 0;
+  const type1Count = keywords?.filter((k) => k.keywordType === 1).length ?? 0;
+  const type2Count = keywords?.filter((k) => k.keywordType === 2).length ?? 0;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">AEO Keywords</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Prompt search keywords — Type 1 (Geo Specific) and Type 2 (Backlink)
-          </p>
+          <p className="text-muted-foreground text-sm mt-0.5">All prompt keywords grouped per business client</p>
         </div>
         <Button
           className="gap-2 shadow-sm"
           style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
-          onClick={() => setDialogOpen(true)}
-        >
-          <Plus className="w-4 h-4" />
-          Add Keyword
+          onClick={() => setAddOpen(true)}>
+          <Plus className="w-4 h-4" /> Add Keyword
         </Button>
       </div>
 
-      {/* Summary strip */}
+      {/* ── Summary strip ── */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total Keywords", value: keywords?.length ?? 0, color: "text-foreground"  },
-          { label: "Active",          value: activeCount,           color: "text-emerald-400" },
-          { label: "Type 1 (Geo)",   value: type1Count,            color: "text-primary"     },
-          { label: "Type 2 (Link)",  value: type2Count,            color: "text-amber-400"   },
+          { label: "Total Keywords", value: totalKws,   color: "text-foreground"  },
+          { label: "Active",          value: activeKws,  color: "text-emerald-400" },
+          { label: "Type 1 (Geo)",   value: type1Count, color: "text-primary"     },
+          { label: "Type 2 (Link)",  value: type2Count, color: "text-amber-400"   },
         ].map((s) => (
-          <div
-            key={s.label}
-            className="rounded-xl border border-border/50 bg-card/60 px-4 py-3 flex items-center justify-between"
-          >
+          <div key={s.label} className="rounded-xl border border-border/50 bg-card/60 px-4 py-3 flex items-center justify-between">
             <span className="text-xs text-muted-foreground">{s.label}</span>
             <span className={`text-lg font-bold tabular-nums ${s.color}`}>{s.value}</span>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
+      {/* ── Filters ── */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            type="search"
-            placeholder="Search keywords…"
+          <Input type="search" placeholder="Search keywords or business…"
             className="pl-9 bg-card/60 border-border/50 h-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+            value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-muted-foreground" />
-          {[
-            { id: "all", label: "All" },
-            { id: "1",   label: "Type 1 – Geo" },
-            { id: "2",   label: "Type 2 – Backlink" },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTypeFilter(t.id)}
+          {[{ id: "all", label: "All" }, { id: "1", label: "Type 1 – Geo" }, { id: "2", label: "Type 2 – Backlink" }].map((t) => (
+            <button key={t.id} onClick={() => setTypeFilter(t.id)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
                 typeFilter === t.id
                   ? "bg-primary text-primary-foreground border-primary"
                   : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground bg-transparent"
-              }`}
-            >
+              }`}>
               {t.label}
             </button>
           ))}
         </div>
-
         {(search || typeFilter !== "all") && (
-          <button
-            onClick={() => { setSearch(""); setTypeFilter("all"); }}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         )}
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-border/50 bg-card/40 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border/50 hover:bg-transparent">
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold w-8"></TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">Keyword</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">Client</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">Prompt Type</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold text-right">Clicks</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold text-right">30d</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold">Status</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-muted-foreground/70 font-semibold text-center">Active</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <TableRow key={i} className="border-border/30">
-                  {Array.from({ length: 8 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : filtered?.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center">
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <Key className="w-8 h-8 opacity-30" />
-                    <p className="text-sm">No keywords found</p>
-                    <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)} className="mt-1 gap-1.5">
-                      <Plus className="w-3.5 h-3.5" /> Add your first keyword
-                    </Button>
+      {/* ── Per-business sections ── */}
+      {isLoading ? (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+        </div>
+      ) : grouped.size === 0 ? (
+        <div className="flex flex-col items-center justify-center h-48 rounded-xl border border-dashed border-border/40 bg-card/30 text-muted-foreground gap-3">
+          <Key className="w-10 h-10 opacity-15" />
+          <p className="text-sm">No keywords found</p>
+          <Button size="sm" className="gap-1.5 mt-1"
+            style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))" }}
+            onClick={() => setAddOpen(true)}>
+            <Plus className="w-3.5 h-3.5" /> Add first keyword
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {Array.from(grouped.entries()).map(([clientId, kws]) => {
+            const client   = clients?.find((c) => c.id === clientId);
+            const isCollapsed = collapsed.has(clientId);
+            const clientInitials = client?.businessName
+              ? client.businessName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()
+              : "?";
+
+            return (
+              <div key={clientId} className="rounded-xl border border-border/50 overflow-hidden">
+
+                {/* ── Business header ── */}
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-muted/20 hover:bg-muted/30 transition-colors border-b border-border/40"
+                  onClick={() => toggleCollapse(clientId)}>
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+                    {clientInitials}
                   </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered?.map((kw) => {
-                const verify   = VERIFY_MAP[kw.verificationStatus as keyof typeof VERIFY_MAP] ?? VERIFY_MAP.pending;
-                const VerifyIcon = verify.icon;
-                const client   = clients?.find((c) => c.id === kw.clientId);
-                const typeInfo = TYPE_STYLES[kw.keywordType] ?? TYPE_STYLES[1];
-                const TypeIcon = typeInfo.icon;
-                return (
-                  <TableRow key={kw.id} className="border-border/30 hover:bg-muted/20 transition-colors">
-                    <TableCell className="w-8 pl-4">
-                      {kw.isPrimary ? (
-                        <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      ) : (
-                        <span className="w-3.5 h-3.5 block" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-medium text-sm text-foreground">{kw.keywordText}</span>
-                    </TableCell>
-                    <TableCell>
-                      {client ? (
-                        <div>
-                          <p className="text-xs font-medium text-foreground">{client.businessName}</p>
-                          <p className="text-[10px] text-muted-foreground">{client.city}, {client.state}</p>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground font-mono">#{kw.clientId}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] font-semibold gap-1 ${typeInfo.cls}`}
-                      >
-                        <TypeIcon className="w-2.5 h-2.5" />
-                        {typeInfo.label}
-                        <span className="text-[9px] opacity-70">· {typeInfo.desc}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="text-sm font-mono font-semibold text-foreground">{kw.clickCount}</span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="text-sm font-mono text-muted-foreground">{kw.last30DaysClickCount}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`flex items-center gap-1 text-xs font-medium ${verify.cls}`}>
-                        <VerifyIcon className="w-3.5 h-3.5 flex-shrink-0" />
-                        {verify.label}
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-foreground">
+                        {client?.businessName ?? `Business #${clientId}`}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Switch
-                        checked={kw.isActive}
-                        onCheckedChange={(val) => handleToggle(kw.id, val)}
-                        className="data-[state=checked]:bg-emerald-500"
-                      />
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                      <Badge variant="outline" className="text-[9px] text-muted-foreground h-4">
+                        {kws.length} keyword{kws.length !== 1 ? "s" : ""}
+                      </Badge>
+                      <Badge variant="outline" className="text-[9px] text-emerald-400 border-emerald-500/20 bg-emerald-500/10 h-4">
+                        {kws.filter((k) => k.isActive).length} active
+                      </Badge>
+                    </div>
+                    {client?.city && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{client.city}, {client.state}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Link href={`/clients/${clientId}`}
+                      className="text-[11px] text-primary hover:underline flex items-center gap-1 mr-2"
+                      onClick={(e) => e.stopPropagation()}>
+                      <Building2 className="w-3 h-3" /> View client
+                    </Link>
+                    {isCollapsed
+                      ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      : <ChevronUp   className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
 
-      {/* ── Add Keyword Dialog ───────────────────────────────── */}
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(o) => { if (!submitting) { setDialogOpen(o); if (!o) form.reset(); } }}
-      >
-        <DialogContent className="sm:max-w-[480px] border-border/60 bg-card">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-                <Key className="w-4 h-4 text-primary" />
-              </div>
-              <DialogTitle className="text-lg">Add AEO Keyword</DialogTitle>
-            </div>
-            <DialogDescription>
-              All keywords are AEO (prompt-based). Select Type 1 (geo-specific) or Type 2 (backlink).
-            </DialogDescription>
-          </DialogHeader>
+                {/* ── Keyword cards ── */}
+                {!isCollapsed && (
+                  <div className="divide-y divide-border/30 bg-card/30">
+                    {kws.map((kw) => {
+                      const kwr        = kw as Record<string, unknown>;
+                      const isType2    = kw.keywordType === 2;
+                      const isPrimary  = !!kw.isPrimary;
+                      const linkUrl    = kwr.initialRankReportLink as string;
+                      const curLinkUrl = kwr.currentRankReportLink as string;
 
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-2">
-            {/* Keyword text */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Keyword <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g. best dentist near me Detroit"
-                className="bg-muted/30 border-border/60 h-10"
-                {...form.register("keywordText")}
-              />
-              {form.formState.errors.keywordText && (
-                <p className="text-xs text-destructive">{form.formState.errors.keywordText.message}</p>
-              )}
-            </div>
-
-            {/* Client */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Client <span className="text-destructive">*</span>
-              </Label>
-              <Controller
-                name="clientId"
-                control={form.control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="bg-muted/30 border-border/60 h-10">
-                      <SelectValue placeholder="Select a client…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients?.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          <span className="font-medium">{c.businessName}</span>
-                          <span className="text-muted-foreground ml-2 text-xs">{c.city}, {c.state}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {form.formState.errors.clientId && (
-                <p className="text-xs text-destructive">{form.formState.errors.clientId.message}</p>
-              )}
-            </div>
-
-            {/* Prompt Type */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                AEO Prompt Type <span className="text-destructive">*</span>
-              </Label>
-              <Controller
-                name="keywordType"
-                control={form.control}
-                render={({ field }) => (
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { value: "1", label: "Type 1 — Geo Specific",   desc: "60% budget · 100% search rate",  icon: MapPin, accent: "border-primary/50 bg-primary/10 text-primary"    },
-                      { value: "2", label: "Type 2 — Backlink",        desc: "10% budget · 1st keyword only",  icon: Link2,  accent: "border-amber-400/50 bg-amber-500/10 text-amber-400" },
-                    ].map((opt) => {
-                      const Icon     = opt.icon;
-                      const selected = field.value === opt.value;
                       return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => field.onChange(opt.value)}
-                          className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition-all ${
-                            selected
-                              ? opt.accent
-                              : "border-border/50 bg-muted/20 text-muted-foreground hover:border-border/80"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <Icon className="w-3.5 h-3.5" />
-                            <span className="text-xs font-semibold">{opt.label}</span>
+                        <div key={kw.id} className="p-0">
+                          {/* Card header */}
+                          <div className="flex items-start gap-3 px-4 py-3 border-b border-border/20 bg-card/20">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isPrimary && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                                <span className="font-semibold text-sm text-foreground">{kw.keywordText}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <Badge variant="outline" className={isType2
+                                  ? "text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                  : "text-[10px] bg-primary/10 text-primary border-primary/20"}>
+                                  {isType2 ? "Type 2 — Backlink" : "Type 1 — Geo Specific"}
+                                </Badge>
+                                {isPrimary && (
+                                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">1st</Badge>
+                                )}
+                                {(kwr.dateAdded as string) && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {format(new Date(kwr.dateAdded as string), "MMM d, yyyy")}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Active toggle + actions */}
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">{kw.isActive ? "Active" : "Inactive"}</span>
+                                <Switch
+                                  checked={kw.isActive}
+                                  onCheckedChange={(v) => updateKeyword.mutate(
+                                    { id: kw.id, data: { isActive: v } },
+                                    { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
+                                  )}
+                                  className="data-[state=checked]:bg-emerald-500" />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-primary/10 hover:text-primary"
+                                  onClick={() => setEditKw({ ...kwr, id: kw.id })}>
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive text-muted-foreground/40"
+                                  onClick={() => deleteKeyword(kw.id)}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
                           </div>
-                          <span className="text-[10px] opacity-70">{opt.desc}</span>
-                        </button>
+
+                          {/* Card body: search counts + links */}
+                          <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/20">
+
+                            {/* Search Counts */}
+                            <div className="px-4 py-3 space-y-2">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Search Counts</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  { label: "Initial · 30 days",     value: (kwr.initialSearchCount30Days  as number) ?? 0 },
+                                  { label: "Follow-up · 30 days",   value: (kwr.followupSearchCount30Days as number) ?? 0 },
+                                  { label: "Initial · Lifetime",    value: (kwr.initialSearchCountLife    as number) ?? 0 },
+                                  { label: "Follow-up · Lifetime",  value: (kwr.followupSearchCountLife   as number) ?? 0 },
+                                ].map(({ label, value }) => (
+                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/30 px-2.5 py-2">
+                                    <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide leading-none mb-1">{label}</p>
+                                    <p className="text-base font-bold font-mono text-foreground">{value}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Associated Links */}
+                            <div className="px-4 py-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Associated Links</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {(kwr.linkActive as boolean) !== false ? "Active" : "Inactive"}
+                                  </span>
+                                  <Switch
+                                    checked={(kwr.linkActive as boolean) !== false}
+                                    onCheckedChange={(v) => updateKeyword.mutate(
+                                      { id: kw.id, data: { linkActive: v } },
+                                      { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
+                                    )}
+                                    className="data-[state=checked]:bg-emerald-500 scale-75" />
+                                </div>
+                              </div>
+
+                              {/* Link type label */}
+                              {(kwr.linkTypeLabel as string) ? (
+                                <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20">
+                                  {kwr.linkTypeLabel as string}
+                                </Badge>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground/40 italic">No link type set</p>
+                              )}
+
+                              {/* Report links */}
+                              <div className="space-y-1.5">
+                                {[
+                                  { label: "Initial Rank Report",  url: linkUrl },
+                                  { label: "Current Rank Report",  url: curLinkUrl },
+                                ].map(({ label, url }) => (
+                                  <div key={label} className="rounded-lg bg-muted/20 border border-border/30 px-3 py-2">
+                                    <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{label}</p>
+                                    {url ? (
+                                      <a href={url} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5 truncate">
+                                        <Link2 className="w-3 h-3 flex-shrink-0" />
+                                        <span className="truncate">{url}</span>
+                                        <ExternalLink className="w-2.5 h-2.5 flex-shrink-0" />
+                                      </a>
+                                    ) : (
+                                      <p className="text-[11px] text-muted-foreground/30 mt-0.5">Not set</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
                 )}
-              />
-            </div>
-
-            {/* Backlink count (only Type 2) */}
-            {watchType === "2" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Backlink Count
-                  <span className="ml-1 text-[10px] text-amber-400 normal-case font-normal">(1st/primary keyword only)</span>
-                </Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  placeholder="0"
-                  className="bg-muted/30 border-border/60 h-10"
-                  {...form.register("backlinkCount")}
-                />
               </div>
-            )}
+            );
+          })}
+        </div>
+      )}
 
-            {/* Toggles */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Primary</p>
-                  <p className="text-[10px] text-muted-foreground">1st keyword flag</p>
-                </div>
-                <Controller
-                  name="isPrimary"
-                  control={form.control}
-                  render={({ field }) => (
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  )}
-                />
-              </div>
+      {/* ── Add Keyword Dialog ── */}
+      <KeywordDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        title="Add AEO Keyword"
+        saving={saving}
+        clients={clients}
+        onSave={(data) => saveKeyword(null, data)}
+      />
 
-              <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Active</p>
-                  <p className="text-[10px] text-muted-foreground">Include in sessions</p>
-                </div>
-                <Controller
-                  name="isActive"
-                  control={form.control}
-                  render={({ field }) => (
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      className="data-[state=checked]:bg-emerald-500"
-                    />
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 border-border/50"
-                onClick={() => { setDialogOpen(false); form.reset(); }}
-                disabled={submitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1 gap-2"
-                disabled={submitting}
-                style={{
-                  background:  "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
-                  boxShadow:   "0 4px 12px rgba(37,99,235,0.25)",
-                }}
-              >
-                {submitting ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Adding…</>
-                ) : (
-                  <><Plus className="w-4 h-4" /> Add Keyword</>
-                )}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* ── Edit Keyword Dialog ── */}
+      {editKw && (
+        <KeywordDialog
+          open
+          onOpenChange={(o) => { if (!o) setEditKw(null); }}
+          title="Edit Keyword"
+          saving={saving}
+          initial={editKw}
+          clients={clients}
+          onSave={(data) => saveKeyword(editKw.id as number, data)}
+        />
+      )}
     </div>
   );
 }
