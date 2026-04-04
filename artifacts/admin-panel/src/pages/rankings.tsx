@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useGetRankingReports, useGetInitialVsCurrentRankings } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,8 +18,11 @@ import {
   ArrowUp, ArrowDown, Minus, MapPin, TrendingUp, TrendingDown,
   Clock, CheckCircle2, AlertCircle, Search, BarChart3,
   ExternalLink, PencilLine, Plus, Loader2, Link2,
+  Download, FileDown, ChevronDown, Building2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -42,6 +45,137 @@ type CompRow = {
   mapsUrl: string | null;
   status: PerfStatus;
 };
+
+/* ── CSV export ─────────────────────────────────────────── */
+function exportCSV(rows: CompRow[], filename: string) {
+  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = [
+    "Business", "Keyword",
+    "Initial Position", "Initial Date",
+    "Current Position", "Current Date",
+    "Position Change", "Status",
+    "Maps Presence", "Maps URL",
+  ];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) =>
+      [
+        esc(r.clientName),
+        esc(r.keywordText),
+        esc(r.initialPosition != null ? String(r.initialPosition) : ""),
+        esc(r.initialDate ? format(new Date(r.initialDate), "yyyy-MM-dd") : ""),
+        esc(r.currentPosition != null ? String(r.currentPosition) : ""),
+        esc(r.currentDate ? format(new Date(r.currentDate), "yyyy-MM-dd") : ""),
+        esc(r.positionChange != null ? String(r.positionChange) : ""),
+        esc(r.status.charAt(0).toUpperCase() + r.status.slice(1)),
+        esc(r.mapsPresence ?? ""),
+        esc(r.mapsUrl ?? ""),
+      ].join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── PDF export ─────────────────────────────────────────── */
+function exportPDF(rows: CompRow[], title: string, filename: string) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Performance Report", 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text(title, 10, 16);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+
+  /* Group by business */
+  const groups = new Map<number, { name: string; rows: CompRow[] }>();
+  for (const r of rows) {
+    if (!groups.has(r.clientId)) groups.set(r.clientId, { name: r.clientName, rows: [] });
+    groups.get(r.clientId)!.rows.push(r);
+  }
+
+  let y = 28;
+
+  for (const [, grp] of groups) {
+    const perf = grp.rows.filter((r) => r.status === "performing").length;
+    const under = grp.rows.filter((r) => r.status === "underperforming").length;
+    const steady = grp.rows.filter((r) => r.status === "steady").length;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 120, 220);
+    doc.text(grp.name, 10, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(130, 140, 160);
+    doc.text(
+      `${grp.rows.length} keywords  ·  ${perf} performing  ·  ${steady} steady  ·  ${under} underperforming`,
+      10, y + 4,
+    );
+    y += 8;
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: 10, right: 10 },
+      head: [["Keyword", "Before Rank", "Before Date", "Current Rank", "Current Date", "Change", "Status", "Maps"]],
+      body: grp.rows.map((r) => [
+        r.keywordText,
+        r.initialPosition != null ? `#${r.initialPosition}` : "N/A",
+        r.initialDate ? format(new Date(r.initialDate), "MMM d, yyyy") : "—",
+        r.currentPosition != null ? `#${r.currentPosition}` : "N/A",
+        r.currentDate ? format(new Date(r.currentDate), "MMM d, yyyy") : "—",
+        r.positionChange != null
+          ? (r.positionChange > 0 ? `+${r.positionChange}` : String(r.positionChange))
+          : "—",
+        r.status.charAt(0).toUpperCase() + r.status.slice(1),
+        r.mapsUrl ? "Listed" : r.mapsPresence === "yes" ? "Yes" : "—",
+      ]),
+      headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+      bodyStyles: { fontSize: 7.5, textColor: [220, 225, 235] },
+      alternateRowStyles: { fillColor: [22, 30, 50] },
+      styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 5) {
+          const v = String(data.cell.raw ?? "");
+          if (v.startsWith("+")) data.cell.styles.textColor = [52, 211, 153];
+          else if (v.startsWith("-")) data.cell.styles.textColor = [248, 113, 113];
+        }
+        if (data.section === "body" && data.column.index === 6) {
+          const v = String(data.cell.raw ?? "").toLowerCase();
+          if (v === "performing") data.cell.styles.textColor = [52, 211, 153];
+          else if (v === "underperforming") data.cell.styles.textColor = [248, 113, 113];
+          else if (v === "steady") data.cell.styles.textColor = [251, 191, 36];
+        }
+      },
+    });
+
+    y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    if (y > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); y = 15; }
+  }
+
+  /* Footer */
+  const pageCount = (doc as jsPDF & { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 110, 130);
+    doc.text("Signal AEO Platform — Confidential", 10, doc.internal.pageSize.getHeight() - 5);
+    doc.text(`Page ${i} / ${pageCount}`, pageW - 10, doc.internal.pageSize.getHeight() - 5, { align: "right" });
+  }
+
+  doc.save(filename);
+}
 
 /* ── Helpers ────────────────────────────────────────────── */
 function getStatus(change: number | null, cur: number | null, init: number | null): PerfStatus {
@@ -86,7 +220,6 @@ function ChangeCell({ change }: { change: number | null }) {
   );
 }
 
-/* ── Maps cell ──────────────────────────────────────────── */
 function MapsCell({
   mapsPresence, mapsUrl, onEdit,
 }: { mapsPresence: string | null; mapsUrl: string | null; onEdit: () => void }) {
@@ -128,6 +261,15 @@ function MapsCell({
   return <span className="text-muted-foreground/40 text-xs">—</span>;
 }
 
+/* ── Mini stat pill ─────────────────────────────────────── */
+function Pill({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${color}`}>
+      {value} {label}
+    </span>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════
    Main Page
 ════════════════════════════════════════════════════════════ */
@@ -138,10 +280,10 @@ export default function Rankings() {
   const { data: reports,    isLoading: isReportsLoading    } = useGetRankingReports();
   const { data: comparison, isLoading: isComparisonLoading } = useGetInitialVsCurrentRankings();
 
-  const [statusFilter, setStatusFilter] = useState<PerfStatus | "all">("all");
-  const [search, setSearch]             = useState("");
+  const [statusFilter,  setStatusFilter]  = useState<PerfStatus | "all">("all");
+  const [search,        setSearch]        = useState("");
+  const [bizExpanded,   setBizExpanded]   = useState<Set<number>>(new Set());
 
-  /* Maps link edit dialog */
   const [mapsDialog, setMapsDialog] = useState<{
     open: boolean; reportId: number | null; clientName: string; keyword: string; url: string;
   }>({ open: false, reportId: null, clientName: "", keyword: "", url: "" });
@@ -170,6 +312,41 @@ export default function Rankings() {
       || (row.keywordText ?? "").toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
+
+  /* Group by client for "By Business" tab */
+  const byBusiness = new Map<number, { name: string; rows: CompRow[] }>();
+  for (const r of enriched) {
+    if (!byBusiness.has(r.clientId)) byBusiness.set(r.clientId, { name: r.clientName, rows: [] });
+    byBusiness.get(r.clientId)!.rows.push(r);
+  }
+  const bizList = [...byBusiness.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+  /* ── Export helpers ── */
+  const dateStamp = format(new Date(), "yyyy-MM-dd");
+
+  function exportAllCSV() {
+    exportCSV(filtered, `aeo-performance-report-${dateStamp}.csv`);
+  }
+  function exportAllPDF() {
+    exportPDF(
+      filtered,
+      `All businesses · ${filtered.length} keywords · ${format(new Date(), "PPP")}`,
+      `aeo-performance-report-${dateStamp}.pdf`,
+    );
+  }
+  function exportBizCSV(clientId: number, rows: CompRow[]) {
+    const slug = byBusiness.get(clientId)!.name.replace(/\s+/g, "-").toLowerCase();
+    exportCSV(rows, `${slug}-performance-${dateStamp}.csv`);
+  }
+  function exportBizPDF(clientId: number, rows: CompRow[]) {
+    const biz  = byBusiness.get(clientId)!;
+    const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
+    exportPDF(
+      rows,
+      `${biz.name} · ${rows.length} keywords · ${format(new Date(), "PPP")}`,
+      `${slug}-performance-${dateStamp}.pdf`,
+    );
+  }
 
   function openMapsEdit(row: CompRow) {
     setMapsDialog({
@@ -209,11 +386,25 @@ export default function Rankings() {
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Ranking Reports</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          AI answer engine visibility and performance across all clients
-        </p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Performance Reports</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Initial vs current rankings — AI answer engine visibility across all clients
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm"
+            className="gap-1.5 border-border/50 text-muted-foreground hover:text-foreground"
+            onClick={exportAllCSV} disabled={filtered.length === 0}>
+            <Download className="w-3.5 h-3.5" /> CSV
+          </Button>
+          <Button variant="outline" size="sm"
+            className="gap-1.5 border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/50"
+            onClick={exportAllPDF} disabled={filtered.length === 0}>
+            <FileDown className="w-3.5 h-3.5" /> PDF Report
+          </Button>
+        </div>
       </div>
 
       {/* ── AEO Performance Overview ── */}
@@ -274,15 +465,151 @@ export default function Rankings() {
       </div>
 
       {/* ── Tabs ── */}
-      <Tabs defaultValue="comparison" className="w-full">
-        <TabsList className="grid w-full max-w-xs grid-cols-2 bg-card/60">
+      <Tabs defaultValue="by-business" className="w-full">
+        <TabsList className="grid w-full max-w-sm grid-cols-3 bg-card/60">
+          <TabsTrigger value="by-business">By Business</TabsTrigger>
           <TabsTrigger value="comparison">Before / After</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
+        {/* ═══════ BY BUSINESS TAB ═══════ */}
+        <TabsContent value="by-business" className="mt-4 space-y-3">
+          {isComparisonLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            </div>
+          ) : bizList.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground rounded-xl border border-dashed border-border/40 bg-card/20">
+              No performance data yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {bizList.map(([clientId, grp]) => {
+                const isOpen = bizExpanded.has(clientId);
+                const bRows  = grp.rows;
+                const perf   = bRows.filter((r) => r.status === "performing").length;
+                const under  = bRows.filter((r) => r.status === "underperforming").length;
+                const steady = bRows.filter((r) => r.status === "steady").length;
+                const pend   = bRows.filter((r) => r.status === "pending").length;
+                const avgChange = bRows
+                  .filter((r) => r.positionChange != null)
+                  .reduce((acc, r) => acc + (r.positionChange ?? 0), 0);
+                const hasChange = bRows.some((r) => r.positionChange != null);
+
+                return (
+                  <div key={clientId} className="rounded-xl border border-border/50 bg-card/30 overflow-hidden">
+                    {/* Business header row */}
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <button
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                        onClick={() => setBizExpanded((p) => {
+                          const n = new Set(p);
+                          n.has(clientId) ? n.delete(clientId) : n.add(clientId);
+                          return n;
+                        })}
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                          <Building2 className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-foreground truncate">{grp.name}</p>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <span className="text-[10px] text-muted-foreground">{bRows.length} keywords</span>
+                            {perf   > 0 && <Pill value={perf}   label="performing"      color="text-emerald-400 border-emerald-500/25 bg-emerald-500/10" />}
+                            {steady > 0 && <Pill value={steady} label="steady"          color="text-amber-400 border-amber-500/25 bg-amber-500/10" />}
+                            {under  > 0 && <Pill value={under}  label="underperforming" color="text-red-400 border-red-500/25 bg-red-500/10" />}
+                            {pend   > 0 && <Pill value={pend}   label="pending"         color="text-muted-foreground border-border/30 bg-muted/20" />}
+                            {hasChange && (
+                              <span className={`text-[10px] font-semibold ${avgChange > 0 ? "text-emerald-400" : avgChange < 0 ? "text-red-400" : "text-amber-400"}`}>
+                                {avgChange > 0 ? "+" : ""}{avgChange} net positions
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {/* Per-business export buttons */}
+                      <div className="flex items-center gap-1 shrink-0 pl-2">
+                        <button
+                          onClick={() => exportBizCSV(clientId, bRows)}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
+                        >
+                          <Download className="w-3 h-3" /> CSV
+                        </button>
+                        <button
+                          onClick={() => exportBizPDF(clientId, bRows)}
+                          className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
+                        >
+                          <FileDown className="w-3 h-3" /> PDF
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded keyword table */}
+                    {isOpen && (
+                      <div className="border-t border-border/40">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/20 hover:bg-muted/20">
+                              <TableHead className="text-xs">Keyword</TableHead>
+                              <TableHead className="text-xs text-center">Before</TableHead>
+                              <TableHead className="text-xs text-center">Now</TableHead>
+                              <TableHead className="text-xs text-center">Change</TableHead>
+                              <TableHead className="text-xs">Maps</TableHead>
+                              <TableHead className="text-xs text-right">Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {bRows.map((row, i) => (
+                              <TableRow key={`${row.keywordId}-${i}`} className="hover:bg-muted/10">
+                                <TableCell className="text-sm max-w-[200px] truncate" title={row.keywordText}>
+                                  {row.keywordText}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <RankBadge pos={row.initialPosition} />
+                                    {row.initialDate && (
+                                      <span className="text-[9px] text-muted-foreground/60">
+                                        {format(new Date(row.initialDate), "MMM d")}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <RankBadge pos={row.currentPosition} />
+                                    {row.currentDate && (
+                                      <span className="text-[9px] text-muted-foreground/60">
+                                        {format(new Date(row.currentDate), "MMM d")}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <ChangeCell change={row.positionChange ?? null} />
+                                </TableCell>
+                                <TableCell>
+                                  <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <StatusBadge status={row.status} />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
         {/* ═══════ COMPARISON TAB ═══════ */}
         <TabsContent value="comparison" className="mt-4 space-y-3">
-          {/* Search + filters */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -324,7 +651,6 @@ export default function Rankings() {
             <div className="py-12 text-center text-muted-foreground rounded-xl border border-dashed border-border/40 bg-card/20">No results found.</div>
           ) : (
             <>
-              {/* Desktop table */}
               <div className="hidden md:block rounded-xl border border-border/50 overflow-hidden bg-card/30">
                 <Table>
                   <TableHeader>
@@ -344,11 +670,7 @@ export default function Rankings() {
                         <TableCell className="font-medium text-sm">{row.clientName}</TableCell>
                         <TableCell className="text-muted-foreground text-sm max-w-[180px] truncate">{row.keywordText}</TableCell>
                         <TableCell>
-                          <MapsCell
-                            mapsPresence={row.mapsPresence}
-                            mapsUrl={row.mapsUrl}
-                            onEdit={() => openMapsEdit(row)}
-                          />
+                          <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center gap-0.5">
@@ -378,7 +700,6 @@ export default function Rankings() {
                 </Table>
               </div>
 
-              {/* Mobile cards */}
               <div className="md:hidden space-y-2">
                 {filtered.map((row, i) => (
                   <div key={`m-${row.clientId}-${row.keywordId}-${i}`} className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
@@ -400,11 +721,7 @@ export default function Rankings() {
                         <RankBadge pos={row.currentPosition} />
                       </div>
                     </div>
-                    <MapsCell
-                      mapsPresence={row.mapsPresence}
-                      mapsUrl={row.mapsUrl}
-                      onEdit={() => openMapsEdit(row)}
-                    />
+                    <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
                   </div>
                 ))}
               </div>
@@ -463,11 +780,14 @@ export default function Rankings() {
                             <span className="text-muted-foreground/40 text-xs">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate" title={report.reasonRecommended ?? ""}>{report.reasonRecommended ?? "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate" title={report.reasonRecommended ?? ""}>
+                          {report.reasonRecommended ?? "—"}
+                        </TableCell>
                         <TableCell className="text-right">
                           {report.isInitialRanking
                             ? <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/20">Initial</Badge>
-                            : <Badge variant="outline" className="text-[9px] bg-muted/40 text-muted-foreground border-border/30">Check-in</Badge>}
+                            : <Badge variant="outline" className="text-[9px] bg-muted/40 text-muted-foreground border-border/30">Check-in</Badge>
+                          }
                         </TableCell>
                       </TableRow>
                     ))
