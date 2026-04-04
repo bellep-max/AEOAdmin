@@ -36,7 +36,7 @@ function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: 
     "Date Added",
     "Initial Rank Position", "Current Rank Position", "Position Change",
     "Initial Search Count (30 Days)", "Follow-up Search Count (30 Days)",
-    "Initial Search Count (Lifetime)", "Follow-up Search Count (Lifetime)",
+    "Initial Search Count (Life)", "Follow-up Search Count (Life)",
     "Link Type Label", "Link Active",
     "Initial Rank Report Link", "Current Rank Report Link",
   ];
@@ -122,12 +122,35 @@ function exportPDF(
     doc.text(`${kws.length} keyword${kws.length !== 1 ? "s" : ""}`, 10, startY + 4);
     startY += 8;
 
-    const tableRows = kws.map((kw) => {
+    /* ── Shared helpers ── */
+    const footerFn = (data: { pageNumber: number }) => {
+      const pageCount = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+      doc.setFontSize(6.5);
+      doc.setTextColor(150);
+      doc.text(
+        `Signal AEO Admin Panel  ·  Confidential  ·  Page ${data.pageNumber} of ${pageCount}`,
+        pageW / 2, pageH - 5, { align: "center" },
+      );
+    };
+    const commonHead = {
+      fillColor: [17, 24, 39] as [number, number, number],
+      textColor: [180, 200, 230] as [number, number, number],
+      fontSize: 7.5,
+      fontStyle: "bold" as const,
+      cellPadding: 2.5,
+    };
+    const commonBody = {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 30, 50] as [number, number, number],
+    };
+
+    /* ── TABLE 1: Keyword · Ranking · Search counts ── */
+    const mainRows = kws.map((kw) => {
       const type    = kw.keywordType === 2 ? "Type 2 – Backlink" : "Type 1 – Geo Specific";
       const date    = kw.dateAdded ? format(new Date(kw.dateAdded as string), "MMM d, yyyy") : "—";
-      const primary = kw.isPrimary ? "Yes (Primary)" : "No";
+      const primary = kw.isPrimary ? "Yes" : "No";
       const active  = kw.isActive  ? "Active" : "Inactive";
-      const lActive = (kw.linkActive as boolean) !== false ? "Active" : "Inactive";
       const rank    = kwRankMap?.get(kw.id as number);
       const initPos = rank?.initialPosition ?? null;
       const currPos = rank?.currentPosition ?? null;
@@ -145,10 +168,6 @@ function exportPDF(
         String(kw.followupSearchCount30Days ?? 0),
         String(kw.initialSearchCountLife    ?? 0),
         String(kw.followupSearchCountLife   ?? 0),
-        (kw.linkTypeLabel as string) || "—",
-        lActive,
-        (kw.initialRankReportLink  as string) || "—",
-        (kw.currentRankReportLink  as string) || "—",
       ];
     });
 
@@ -157,7 +176,7 @@ function exportPDF(
       head: [[
         "Keyword",
         "Keyword Type",
-        "Primary (1st)",
+        "Primary",
         "Active",
         "Date Added",
         "Initial Rank",
@@ -165,70 +184,83 @@ function exportPDF(
         "Position Change",
         "Initial Search (30 Days)",
         "Follow-up Search (30 Days)",
-        "Initial Search (Lifetime)",
-        "Follow-up Search (Lifetime)",
-        "Link Type Label",
-        "Link Active",
-        "Initial Rank Report Link",
-        "Current Rank Report Link",
+        "Initial Search (Life)",
+        "Follow-up Search (Life)",
       ]],
-      body: tableRows,
+      body: mainRows,
       theme: "striped",
-      headStyles: {
-        fillColor: [17, 24, 39],
-        textColor: [180, 200, 230],
-        fontSize: 6.5,
-        fontStyle: "bold",
-        cellPadding: 2,
-      },
-      bodyStyles: {
-        fontSize: 6.5,
-        cellPadding: 1.8,
-        textColor: [30, 30, 50],
-      },
+      headStyles: commonHead,
+      bodyStyles: commonBody,
       alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0:  { cellWidth: 38 },                        // Keyword
-        1:  { cellWidth: 26 },                        // Keyword Type
-        2:  { cellWidth: 18, halign: "center" },      // Primary
-        3:  { cellWidth: 14, halign: "center" },      // Active
-        4:  { cellWidth: 20, halign: "center" },      // Date Added
-        5:  { cellWidth: 15, halign: "center" },      // Initial Rank
-        6:  { cellWidth: 15, halign: "center" },      // Current Rank
-        7:  { cellWidth: 16, halign: "center" },      // Position Change
-        8:  { cellWidth: 16, halign: "right" },       // Init 30d
-        9:  { cellWidth: 16, halign: "right" },       // F/U 30d
-        10: { cellWidth: 16, halign: "right" },       // Init Life
-        11: { cellWidth: 16, halign: "right" },       // F/U Life
-        12: { cellWidth: 22 },                        // Link Type
-        13: { cellWidth: 14, halign: "center" },      // Link Active
-        14: { cellWidth: "auto", overflow: "ellipsize" }, // Initial report link
-        15: { cellWidth: "auto", overflow: "ellipsize" }, // Current report link
+        0: { cellWidth: 50 },               // Keyword
+        1: { cellWidth: 38 },               // Type
+        2: { cellWidth: 16, halign: "center" }, // Primary
+        3: { cellWidth: 16, halign: "center" }, // Active
+        4: { cellWidth: 24, halign: "center" }, // Date
+        5: { cellWidth: 20, halign: "center" }, // Init Rank
+        6: { cellWidth: 20, halign: "center" }, // Curr Rank
+        7: { cellWidth: 22, halign: "center" }, // Change
+        8: { cellWidth: 22, halign: "right" },  // Init 30d
+        9: { cellWidth: 22, halign: "right" },  // F/U 30d
+        10:{ cellWidth: 18, halign: "right" },  // Init Life
+        11:{ cellWidth: 18, halign: "right" },  // F/U Life
       },
       margin: { left: 10, right: 10 },
       didParseCell: (data) => {
-        /* colour Position Change column */
         if (data.section === "body" && data.column.index === 7) {
           const v = String(data.cell.raw ?? "");
           if (v.startsWith("+")) data.cell.styles.textColor = [22, 163, 74];
           else if (v.startsWith("-")) data.cell.styles.textColor = [220, 38, 38];
         }
       },
-      didDrawPage: (data) => {
-        const pageCount = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
-        doc.setFontSize(7);
-        doc.setTextColor(150);
-        doc.text(
-          `Signal AEO Admin Panel  ·  Confidential  ·  Page ${data.pageNumber} of ${pageCount}`,
-          pageW / 2, pageH - 5, { align: "center" },
-        );
-      },
+      didDrawPage: footerFn,
     });
 
-    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
 
-    /* page break between businesses if not enough room */
-    if (startY > 185 && grouped.size > 1) {
+    /* ── TABLE 2: Links ── */
+    const linkRows = kws.map((kw) => {
+      const lActive = (kw.linkActive as boolean) !== false ? "Active" : "Inactive";
+      return [
+        kw.keywordText as string,
+        (kw.linkTypeLabel as string) || "—",
+        lActive,
+        (kw.initialRankReportLink as string) || "—",
+        (kw.currentRankReportLink as string) || "—",
+      ];
+    });
+
+    /* sub-label for links section */
+    if (startY > pageH - 40) { doc.addPage(); startY = 15; }
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(120, 130, 150);
+    doc.text("Report Links", 10, startY);
+    startY += 4;
+
+    autoTable(doc, {
+      startY,
+      head: [["Keyword", "Link Type", "Link Active", "Initial Rank Report Link", "Current Rank Report Link"]],
+      body: linkRows,
+      theme: "striped",
+      headStyles: { ...commonHead, fillColor: [30, 50, 80] as [number, number, number] },
+      bodyStyles: { ...commonBody, fontSize: 7 },
+      alternateRowStyles: { fillColor: [245, 247, 252] },
+      columnStyles: {
+        0: { cellWidth: 50 },               // Keyword
+        1: { cellWidth: 38 },               // Link Type
+        2: { cellWidth: 20, halign: "center" }, // Link Active
+        3: { cellWidth: "auto", overflow: "linebreak" }, // Init Link
+        4: { cellWidth: "auto", overflow: "linebreak" }, // Curr Link
+      },
+      margin: { left: 10, right: 10 },
+      didDrawPage: footerFn,
+    });
+
+    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
+
+    if (startY > pageH - 40 && grouped.size > 1) {
       doc.addPage();
       startY = 15;
     }
