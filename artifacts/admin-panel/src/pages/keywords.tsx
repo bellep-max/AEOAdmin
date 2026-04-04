@@ -13,10 +13,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import {
   Search, Plus, Key, Loader2, Star, Filter, X, Link2, MapPin,
-  Building2, ExternalLink, Pencil, Trash2, Calendar, ChevronDown, ChevronUp,
-  Download, FileText, ChevronRight,
+  Building2, ExternalLink, Pencil, Trash2, Calendar, ChevronDown,
+  Download, FileText, ChevronRight, FileDown,
 } from "lucide-react";
 import { format } from "date-fns";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -55,6 +57,131 @@ function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: 
   const a    = document.createElement("a");
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ── PDF export helper ── */
+function exportPDF(
+  rows: KwRecord[],
+  clientsMap: Map<number, string>,
+  filename: string,
+  title: string,
+) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+  /* header */
+  const now = format(new Date(), "MMM d, yyyy");
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, 297, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Keyword Report", 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(148, 163, 184);
+  doc.text(title, 10, 16);
+  doc.text(`Generated: ${now}`, 260, 16, { align: "right" });
+
+  /* group rows by business for section headings */
+  const grouped = new Map<string, KwRecord[]>();
+  for (const kw of rows) {
+    const biz = clientsMap.get(kw.clientId as number) ?? `Business #${kw.clientId}`;
+    if (!grouped.has(biz)) grouped.set(biz, []);
+    grouped.get(biz)!.push(kw);
+  }
+
+  let startY = 28;
+
+  grouped.forEach((kws, bizName) => {
+    /* business section label */
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 58, 138);
+    doc.text(`▸  ${bizName}  (${kws.length} keyword${kws.length !== 1 ? "s" : ""})`, 10, startY);
+
+    const tableRows = kws.map((kw) => {
+      const type  = kw.keywordType === 2 ? "T2 – Backlink" : "T1 – Geo";
+      const date  = kw.dateAdded ? format(new Date(kw.dateAdded as string), "MMM d, yyyy") : "—";
+      const prim  = kw.isPrimary ? "★ 1st" : "";
+      const act   = kw.isActive ? "Active" : "Inactive";
+      const lAct  = (kw.linkActive as boolean) !== false ? "Active" : "Inactive";
+      return [
+        kw.keywordText as string,
+        type,
+        prim,
+        act,
+        date,
+        String(kw.initialSearchCount30Days  ?? 0),
+        String(kw.followupSearchCount30Days ?? 0),
+        String(kw.initialSearchCountLife    ?? 0),
+        String(kw.followupSearchCountLife   ?? 0),
+        (kw.linkTypeLabel as string) || "—",
+        lAct,
+        (kw.initialRankReportLink  as string) || "—",
+        (kw.currentRankReportLink  as string) || "—",
+      ];
+    });
+
+    autoTable(doc, {
+      startY: startY + 3,
+      head: [[
+        "Keyword", "Type", "1st", "Active", "Date Added",
+        "Init 30d", "F/U 30d", "Init Life", "F/U Life",
+        "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
+      ]],
+      body: tableRows,
+      theme: "striped",
+      headStyles: {
+        fillColor: [30, 58, 138],
+        textColor: 255,
+        fontSize: 7,
+        fontStyle: "bold",
+        cellPadding: 2,
+      },
+      bodyStyles: {
+        fontSize: 6.5,
+        cellPadding: 1.8,
+        textColor: [30, 30, 50],
+      },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+      columnStyles: {
+        0:  { cellWidth: 42 },
+        1:  { cellWidth: 22, halign: "center" },
+        2:  { cellWidth: 12, halign: "center" },
+        3:  { cellWidth: 14, halign: "center" },
+        4:  { cellWidth: 22, halign: "center" },
+        5:  { cellWidth: 14, halign: "right" },
+        6:  { cellWidth: 14, halign: "right" },
+        7:  { cellWidth: 14, halign: "right" },
+        8:  { cellWidth: 14, halign: "right" },
+        9:  { cellWidth: 26 },
+        10: { cellWidth: 16, halign: "center" },
+        11: { cellWidth: "auto", overflow: "ellipsize" },
+        12: { cellWidth: "auto", overflow: "ellipsize" },
+      },
+      margin: { left: 10, right: 10 },
+      didDrawPage: (data) => {
+        /* footer on every page */
+        const pageCount = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+        doc.setFontSize(7);
+        doc.setTextColor(150);
+        doc.text(
+          `Signal AEO Admin Panel  ·  Page ${data.pageNumber} of ${pageCount}`,
+          148.5, 207, { align: "center" },
+        );
+      },
+    });
+
+    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+    /* page break between businesses if not enough room */
+    if (startY > 185 && grouped.size > 1) {
+      doc.addPage();
+      startY = 15;
+    }
+  });
+
+  doc.save(filename);
 }
 
 /* ──────────────────────────────────────── */
@@ -391,13 +518,27 @@ export default function Keywords() {
   const type1Count = allKws.filter((k: KwRecord) => k.keywordType === 1).length;
   const type2Count = allKws.filter((k: KwRecord) => k.keywordType === 2).length;
 
-  /* ── Export all ── */
-  function exportAll() {
-    exportCSV(filteredKws as KwRecord[], clientsMap, `aeo-keywords-${format(new Date(), "yyyy-MM-dd")}.csv`);
+  /* ── Export helpers ── */
+  const dateStamp = format(new Date(), "yyyy-MM-dd");
+
+  function exportAllCSV() {
+    exportCSV(filteredKws as KwRecord[], clientsMap, `aeo-keywords-${dateStamp}.csv`);
   }
-  function exportBusiness(clientId: number, kws: KwRecord[]) {
+  function exportAllPDF() {
+    exportPDF(
+      filteredKws as KwRecord[], clientsMap,
+      `aeo-keywords-${dateStamp}.pdf`,
+      `All businesses · ${filteredKws.length} keywords`,
+    );
+  }
+  function exportBizCSV(clientId: number, kws: KwRecord[]) {
     const name = (clientsMap.get(clientId) ?? `business-${clientId}`).replace(/\s+/g, "-").toLowerCase();
-    exportCSV(kws, clientsMap, `${name}-keywords-${format(new Date(), "yyyy-MM-dd")}.csv`);
+    exportCSV(kws, clientsMap, `${name}-keywords-${dateStamp}.csv`);
+  }
+  function exportBizPDF(clientId: number, kws: KwRecord[]) {
+    const bizName = clientsMap.get(clientId) ?? `Business #${clientId}`;
+    const slug    = bizName.replace(/\s+/g, "-").toLowerCase();
+    exportPDF(kws, clientsMap, `${slug}-keywords-${dateStamp}.pdf`, `${bizName} · ${kws.length} keywords`);
   }
 
   /* ── Column header ── */
@@ -418,8 +559,12 @@ export default function Keywords() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5 border-border/50 text-muted-foreground hover:text-foreground"
-            onClick={exportAll} disabled={filteredKws.length === 0}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
+            onClick={exportAllCSV} disabled={filteredKws.length === 0}>
+            <Download className="w-3.5 h-3.5" /> CSV
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/50"
+            onClick={exportAllPDF} disabled={filteredKws.length === 0}>
+            <FileDown className="w-3.5 h-3.5" /> PDF
           </Button>
           <Button size="sm" className="gap-2 shadow-sm"
             style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
@@ -549,9 +694,13 @@ export default function Keywords() {
 
                   {/* Right: actions */}
                   <div className="flex items-center gap-1 px-3 flex-shrink-0">
-                    <button onClick={() => exportBusiness(clientId, kws)}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2.5 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all">
-                      <Download className="w-3 h-3" /> Export
+                    <button onClick={() => exportBizCSV(clientId, kws)}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all">
+                      <Download className="w-3 h-3" /> CSV
+                    </button>
+                    <button onClick={() => exportBizPDF(clientId, kws)}
+                      className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all">
+                      <FileDown className="w-3 h-3" /> PDF
                     </button>
                     <Link href={`/clients/${clientId}`}
                       className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary border border-border/40 hover:border-primary/30 rounded-lg px-2.5 py-1.5 bg-muted/10 hover:bg-primary/5 transition-all">
