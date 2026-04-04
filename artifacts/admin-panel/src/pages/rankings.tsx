@@ -128,7 +128,17 @@ function exportPDF(rows: CompRow[], title: string, filename: string) {
     autoTable(doc, {
       startY: y,
       margin: { left: 10, right: 10 },
-      head: [["Keyword", "Before Rank", "Before Date", "Current Rank", "Current Date", "Change", "Status", "Maps"]],
+      head: [[
+        "Keyword",
+        "Initial Rank Position",
+        "Initial Ranking Date",
+        "Current Rank Position",
+        "Current Ranking Date",
+        "Position Change",
+        "Performance Status",
+        "Maps Presence",
+        "Maps URL",
+      ]],
       body: grp.rows.map((r) => [
         r.keywordText,
         r.initialPosition != null ? `#${r.initialPosition}` : "N/A",
@@ -139,12 +149,24 @@ function exportPDF(rows: CompRow[], title: string, filename: string) {
           ? (r.positionChange > 0 ? `+${r.positionChange}` : String(r.positionChange))
           : "—",
         r.status.charAt(0).toUpperCase() + r.status.slice(1),
-        r.mapsUrl ? "Listed" : r.mapsPresence === "yes" ? "Yes" : "—",
+        r.mapsPresence === "yes" ? "Yes" : "—",
+        r.mapsUrl ?? "—",
       ]),
       headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
-      bodyStyles: { fontSize: 7.5, textColor: [220, 225, 235] },
+      bodyStyles: { fontSize: 7, textColor: [220, 225, 235] },
       alternateRowStyles: { fillColor: [22, 30, 50] },
       styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 24, halign: "center" },
+        2: { cellWidth: 24, halign: "center" },
+        3: { cellWidth: 24, halign: "center" },
+        4: { cellWidth: 24, halign: "center" },
+        5: { cellWidth: 20, halign: "center" },
+        6: { cellWidth: 26, halign: "center" },
+        7: { cellWidth: 20, halign: "center" },
+        8: { cellWidth: "auto", overflow: "ellipsize" },
+      },
       didParseCell: (data) => {
         if (data.section === "body" && data.column.index === 5) {
           const v = String(data.cell.raw ?? "");

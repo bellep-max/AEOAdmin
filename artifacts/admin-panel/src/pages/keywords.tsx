@@ -26,29 +26,44 @@ const LINK_TYPES = ["GBP snippet", "Client website blog post", "External article
 
 type KwRecord = Record<string, unknown>;
 
+type RankMap = Map<number, { initialPosition: number | null; currentPosition: number | null; positionChange: number | null }>;
+
 /* ── CSV export helper ── */
-function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: string) {
+function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: string, kwRankMap?: RankMap) {
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const headers = [
-    "Business", "Keyword", "Type", "Primary (1st)", "Active",
+    "Business", "Keyword", "Keyword Type", "Primary (1st)", "Active",
     "Date Added",
-    "Initial Search (30d)", "Follow-up Search (30d)",
-    "Initial Search (Life)", "Follow-up Search (Life)",
-    "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
+    "Initial Rank Position", "Current Rank Position", "Position Change",
+    "Initial Search Count (30 Days)", "Follow-up Search Count (30 Days)",
+    "Initial Search Count (Lifetime)", "Follow-up Search Count (Lifetime)",
+    "Link Type Label", "Link Active",
+    "Initial Rank Report Link", "Current Rank Report Link",
   ];
   const lines = rows.map((kw) => {
-    const type = kw.keywordType === 2 ? "Type 2 – Backlink" : "Type 1 – Geo Specific";
-    const date = kw.dateAdded ? format(new Date(kw.dateAdded as string), "yyyy-MM-dd") : "";
-    const biz  = clientsMap.get(kw.clientId as number) ?? "";
-    const esc  = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const type  = kw.keywordType === 2 ? "Type 2 – Backlink" : "Type 1 – Geo Specific";
+    const date  = kw.dateAdded ? format(new Date(kw.dateAdded as string), "yyyy-MM-dd") : "";
+    const biz   = clientsMap.get(kw.clientId as number) ?? "";
+    const rank  = kwRankMap?.get(kw.id as number);
+    const initPos = rank?.initialPosition ?? null;
+    const currPos = rank?.currentPosition ?? null;
+    const chg     = rank?.positionChange  ?? null;
     return [
       esc(biz), esc(kw.keywordText), esc(type),
       esc(kw.isPrimary ? "Yes" : "No"),
-      esc(kw.isActive ? "Active" : "Inactive"),
+      esc(kw.isActive  ? "Active" : "Inactive"),
       esc(date),
-      kw.initialSearchCount30Days ?? 0, kw.followupSearchCount30Days ?? 0,
-      kw.initialSearchCountLife   ?? 0, kw.followupSearchCountLife   ?? 0,
-      esc(kw.linkTypeLabel ?? ""), esc((kw.linkActive as boolean) !== false ? "Active" : "Inactive"),
-      esc(kw.initialRankReportLink ?? ""), esc(kw.currentRankReportLink ?? ""),
+      esc(initPos != null ? `#${initPos}` : ""),
+      esc(currPos != null ? `#${currPos}` : ""),
+      esc(chg     != null ? (chg > 0 ? `+${chg}` : String(chg)) : ""),
+      kw.initialSearchCount30Days  ?? 0,
+      kw.followupSearchCount30Days ?? 0,
+      kw.initialSearchCountLife    ?? 0,
+      kw.followupSearchCountLife   ?? 0,
+      esc(kw.linkTypeLabel ?? ""),
+      esc((kw.linkActive as boolean) !== false ? "Active" : "Inactive"),
+      esc(kw.initialRankReportLink  ?? ""),
+      esc(kw.currentRankReportLink  ?? ""),
     ].join(",");
   });
   const csv  = [headers.join(","), ...lines].join("\n");
@@ -65,24 +80,26 @@ function exportPDF(
   clientsMap: Map<number, string>,
   filename: string,
   title: string,
+  kwRankMap?: RankMap,
 ) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const doc    = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW  = doc.internal.pageSize.getWidth();
+  const pageH  = doc.internal.pageSize.getHeight();
 
-  /* header */
-  const now = format(new Date(), "MMM d, yyyy");
-  doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, 297, 22, "F");
+  /* ── Cover header ── */
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 24, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12);
+  doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text("Signal AEO — Keyword Report", 10, 10);
+  doc.text("Signal AEO — Keyword Performance Report", 10, 11);
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(148, 163, 184);
-  doc.text(title, 10, 16);
-  doc.text(`Generated: ${now}`, 260, 16, { align: "right" });
+  doc.text(title, 10, 18);
+  doc.text(`Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}`, pageW - 10, 18, { align: "right" });
 
-  /* group rows by business for section headings */
+  /* ── Group by business ── */
   const grouped = new Map<string, KwRecord[]>();
   for (const kw of rows) {
     const biz = clientsMap.get(kw.clientId as number) ?? `Business #${kw.clientId}`;
@@ -90,51 +107,77 @@ function exportPDF(
     grouped.get(biz)!.push(kw);
   }
 
-  let startY = 28;
+  let startY = 30;
 
   grouped.forEach((kws, bizName) => {
-    /* business section label */
-    doc.setFontSize(9);
+    /* ── Business section heading ── */
+    if (startY > pageH - 40) { doc.addPage(); startY = 15; }
+    doc.setFontSize(9.5);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(30, 58, 138);
-    doc.text(`▸  ${bizName}  (${kws.length} keyword${kws.length !== 1 ? "s" : ""})`, 10, startY);
+    doc.setTextColor(30, 100, 220);
+    doc.text(`${bizName}`, 10, startY);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(120, 130, 150);
+    doc.text(`${kws.length} keyword${kws.length !== 1 ? "s" : ""}`, 10, startY + 4);
+    startY += 8;
 
     const tableRows = kws.map((kw) => {
-      const type  = kw.keywordType === 2 ? "T2 – Backlink" : "T1 – Geo";
-      const date  = kw.dateAdded ? format(new Date(kw.dateAdded as string), "MMM d, yyyy") : "—";
-      const prim  = kw.isPrimary ? "★ 1st" : "";
-      const act   = kw.isActive ? "Active" : "Inactive";
-      const lAct  = (kw.linkActive as boolean) !== false ? "Active" : "Inactive";
+      const type    = kw.keywordType === 2 ? "Type 2 – Backlink" : "Type 1 – Geo Specific";
+      const date    = kw.dateAdded ? format(new Date(kw.dateAdded as string), "MMM d, yyyy") : "—";
+      const primary = kw.isPrimary ? "Yes (Primary)" : "No";
+      const active  = kw.isActive  ? "Active" : "Inactive";
+      const lActive = (kw.linkActive as boolean) !== false ? "Active" : "Inactive";
+      const rank    = kwRankMap?.get(kw.id as number);
+      const initPos = rank?.initialPosition ?? null;
+      const currPos = rank?.currentPosition ?? null;
+      const chg     = rank?.positionChange  ?? null;
       return [
         kw.keywordText as string,
         type,
-        prim,
-        act,
+        primary,
+        active,
         date,
+        initPos != null ? `#${initPos}` : "—",
+        currPos != null ? `#${currPos}` : "—",
+        chg     != null ? (chg > 0 ? `+${chg}` : String(chg)) : "—",
         String(kw.initialSearchCount30Days  ?? 0),
         String(kw.followupSearchCount30Days ?? 0),
         String(kw.initialSearchCountLife    ?? 0),
         String(kw.followupSearchCountLife   ?? 0),
         (kw.linkTypeLabel as string) || "—",
-        lAct,
+        lActive,
         (kw.initialRankReportLink  as string) || "—",
         (kw.currentRankReportLink  as string) || "—",
       ];
     });
 
     autoTable(doc, {
-      startY: startY + 3,
+      startY,
       head: [[
-        "Keyword", "Type", "1st", "Active", "Date Added",
-        "Init 30d", "F/U 30d", "Init Life", "F/U Life",
-        "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
+        "Keyword",
+        "Keyword Type",
+        "Primary (1st)",
+        "Active",
+        "Date Added",
+        "Initial Rank",
+        "Current Rank",
+        "Position Change",
+        "Initial Search (30 Days)",
+        "Follow-up Search (30 Days)",
+        "Initial Search (Lifetime)",
+        "Follow-up Search (Lifetime)",
+        "Link Type Label",
+        "Link Active",
+        "Initial Rank Report Link",
+        "Current Rank Report Link",
       ]],
       body: tableRows,
       theme: "striped",
       headStyles: {
-        fillColor: [30, 58, 138],
-        textColor: 255,
-        fontSize: 7,
+        fillColor: [17, 24, 39],
+        textColor: [180, 200, 230],
+        fontSize: 6.5,
         fontStyle: "bold",
         cellPadding: 2,
       },
@@ -143,36 +186,46 @@ function exportPDF(
         cellPadding: 1.8,
         textColor: [30, 30, 50],
       },
-      alternateRowStyles: { fillColor: [241, 245, 249] },
+      alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0:  { cellWidth: 42 },
-        1:  { cellWidth: 22, halign: "center" },
-        2:  { cellWidth: 12, halign: "center" },
-        3:  { cellWidth: 14, halign: "center" },
-        4:  { cellWidth: 22, halign: "center" },
-        5:  { cellWidth: 14, halign: "right" },
-        6:  { cellWidth: 14, halign: "right" },
-        7:  { cellWidth: 14, halign: "right" },
-        8:  { cellWidth: 14, halign: "right" },
-        9:  { cellWidth: 26 },
-        10: { cellWidth: 16, halign: "center" },
-        11: { cellWidth: "auto", overflow: "ellipsize" },
-        12: { cellWidth: "auto", overflow: "ellipsize" },
+        0:  { cellWidth: 38 },                        // Keyword
+        1:  { cellWidth: 26 },                        // Keyword Type
+        2:  { cellWidth: 18, halign: "center" },      // Primary
+        3:  { cellWidth: 14, halign: "center" },      // Active
+        4:  { cellWidth: 20, halign: "center" },      // Date Added
+        5:  { cellWidth: 15, halign: "center" },      // Initial Rank
+        6:  { cellWidth: 15, halign: "center" },      // Current Rank
+        7:  { cellWidth: 16, halign: "center" },      // Position Change
+        8:  { cellWidth: 16, halign: "right" },       // Init 30d
+        9:  { cellWidth: 16, halign: "right" },       // F/U 30d
+        10: { cellWidth: 16, halign: "right" },       // Init Life
+        11: { cellWidth: 16, halign: "right" },       // F/U Life
+        12: { cellWidth: 22 },                        // Link Type
+        13: { cellWidth: 14, halign: "center" },      // Link Active
+        14: { cellWidth: "auto", overflow: "ellipsize" }, // Initial report link
+        15: { cellWidth: "auto", overflow: "ellipsize" }, // Current report link
       },
       margin: { left: 10, right: 10 },
+      didParseCell: (data) => {
+        /* colour Position Change column */
+        if (data.section === "body" && data.column.index === 7) {
+          const v = String(data.cell.raw ?? "");
+          if (v.startsWith("+")) data.cell.styles.textColor = [22, 163, 74];
+          else if (v.startsWith("-")) data.cell.styles.textColor = [220, 38, 38];
+        }
+      },
       didDrawPage: (data) => {
-        /* footer on every page */
         const pageCount = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
         doc.setFontSize(7);
         doc.setTextColor(150);
         doc.text(
-          `Signal AEO Admin Panel  ·  Page ${data.pageNumber} of ${pageCount}`,
-          148.5, 207, { align: "center" },
+          `Signal AEO Admin Panel  ·  Confidential  ·  Page ${data.pageNumber} of ${pageCount}`,
+          pageW / 2, pageH - 5, { align: "center" },
         );
       },
     });
 
-    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    startY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
 
     /* page break between businesses if not enough room */
     if (startY > 185 && grouped.size > 1) {
@@ -545,23 +598,24 @@ export default function Keywords() {
   const dateStamp = format(new Date(), "yyyy-MM-dd");
 
   function exportAllCSV() {
-    exportCSV(filteredKws as KwRecord[], clientsMap, `aeo-keywords-${dateStamp}.csv`);
+    exportCSV(filteredKws as KwRecord[], clientsMap, `aeo-keywords-${dateStamp}.csv`, kwRankMap);
   }
   function exportAllPDF() {
     exportPDF(
       filteredKws as KwRecord[], clientsMap,
       `aeo-keywords-${dateStamp}.pdf`,
       `All businesses · ${filteredKws.length} keywords`,
+      kwRankMap,
     );
   }
   function exportBizCSV(clientId: number, kws: KwRecord[]) {
     const name = (clientsMap.get(clientId) ?? `business-${clientId}`).replace(/\s+/g, "-").toLowerCase();
-    exportCSV(kws, clientsMap, `${name}-keywords-${dateStamp}.csv`);
+    exportCSV(kws, clientsMap, `${name}-keywords-${dateStamp}.csv`, kwRankMap);
   }
   function exportBizPDF(clientId: number, kws: KwRecord[]) {
     const bizName = clientsMap.get(clientId) ?? `Business #${clientId}`;
     const slug    = bizName.replace(/\s+/g, "-").toLowerCase();
-    exportPDF(kws, clientsMap, `${slug}-keywords-${dateStamp}.pdf`, `${bizName} · ${kws.length} keywords`);
+    exportPDF(kws, clientsMap, `${slug}-keywords-${dateStamp}.pdf`, `${bizName} · ${kws.length} keywords`, kwRankMap);
   }
 
   /* ── Column header ── */
