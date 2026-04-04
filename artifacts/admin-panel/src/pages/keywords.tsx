@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useGetKeywords, useUpdateKeyword, useGetClients } from "@workspace/api-client-react";
+import { useGetKeywords, useUpdateKeyword, useGetClients, useGetInitialVsCurrentRankings } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -211,16 +211,22 @@ function KeywordDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (o) setVals(initial ?? blank); }}>
-      <DialogContent className="sm:max-w-[660px] border-border/60 bg-card max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-              <Key className="w-4 h-4 text-primary" />
+      <DialogContent className="w-screen h-screen max-w-full max-h-screen rounded-none border-0 bg-[hsl(222,47%,9%)] flex flex-col p-0 gap-0">
+        {/* ── Full-screen header ── */}
+        <DialogHeader className="shrink-0 border-b border-border/40 bg-[hsl(222,47%,8%)] px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+              <Key className="w-5 h-5 text-primary" />
             </div>
-            <DialogTitle>{title}</DialogTitle>
+            <div>
+              <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Fill in all fields and save when done</p>
+            </div>
           </div>
           <DialogDescription className="sr-only">{title}</DialogDescription>
         </DialogHeader>
+        {/* ── Scrollable body ── */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 max-w-3xl w-full mx-auto">
 
         <div className="space-y-5 mt-2">
           {/* Business / Keyword */}
@@ -355,23 +361,28 @@ function KeywordDialog({
           </div>
         </div>
 
-        <div className="flex gap-3 pt-4">
-          <Button variant="outline" className="flex-1 border-border/50"
-            onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button className="flex-1 gap-2"
-            disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
-            onClick={() => onSave({
-              ...vals,
-              keywordType:               Number(vals.keywordType),
-              isPrimary:                 vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true ? 1 : 0,
-              initialSearchCount30Days:  Number(vals.initialSearchCount30Days)  || 0,
-              followupSearchCount30Days: Number(vals.followupSearchCount30Days) || 0,
-              initialSearchCountLife:    Number(vals.initialSearchCountLife)    || 0,
-              followupSearchCountLife:   Number(vals.followupSearchCountLife)   || 0,
-            })}
-            style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
-            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : isEdit ? "Save Changes" : "Add Keyword"}
-          </Button>
+        </div>{/* end scrollable body */}
+
+        {/* ── Sticky footer ── */}
+        <div className="shrink-0 border-t border-border/40 bg-[hsl(222,47%,8%)] px-6 py-4">
+          <div className="flex gap-3 max-w-3xl mx-auto">
+            <Button variant="outline" className="flex-1 border-border/50"
+              onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button className="flex-1 gap-2"
+              disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
+              onClick={() => onSave({
+                ...vals,
+                keywordType:               Number(vals.keywordType),
+                isPrimary:                 vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true ? 1 : 0,
+                initialSearchCount30Days:  Number(vals.initialSearchCount30Days)  || 0,
+                followupSearchCount30Days: Number(vals.followupSearchCount30Days) || 0,
+                initialSearchCountLife:    Number(vals.initialSearchCountLife)    || 0,
+                followupSearchCountLife:   Number(vals.followupSearchCountLife)   || 0,
+              })}
+              style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : isEdit ? "Save Changes" : "Add Keyword"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -445,6 +456,7 @@ export default function Keywords() {
 
   const { data: keywords, isLoading } = useGetKeywords();
   const { data: clients }             = useGetClients();
+  const { data: rankingData }         = useGetInitialVsCurrentRankings();
   const updateKeyword                 = useUpdateKeyword();
   const { toast }                     = useToast();
   const queryClient                   = useQueryClient();
@@ -453,6 +465,17 @@ export default function Keywords() {
   const clientsMap = new Map<number, string>(
     (clients ?? []).map((c) => [c.id, c.businessName]),
   );
+
+  /* ── Rankings map: keywordId → { initialPosition, currentPosition, positionChange } ── */
+  type RankEntry = { initialPosition: number | null; currentPosition: number | null; positionChange: number | null };
+  const kwRankMap = new Map<number, RankEntry>();
+  for (const r of (rankingData ?? []) as { keywordId: number; initialPosition: number | null; currentPosition: number | null; positionChange: number | null }[]) {
+    kwRankMap.set(r.keywordId, {
+      initialPosition: r.initialPosition ?? null,
+      currentPosition: r.currentPosition ?? null,
+      positionChange:  r.positionChange  ?? null,
+    });
+  }
 
   /* ── Save ── */
   async function saveKeyword(id: number | null, data: KwRecord) {
@@ -721,6 +744,8 @@ export default function Keywords() {
                           <TH className="text-center">1st</TH>
                           <TH className="text-center">Active</TH>
                           <TH className="text-center">Date Added</TH>
+                          <TH className="text-center border-l border-border/20">Init Rank</TH>
+                          <TH className="text-center">Curr Rank</TH>
                           <TH className="text-center border-l border-border/20">Init 30d</TH>
                           <TH className="text-center">F/U 30d</TH>
                           <TH className="text-center border-l border-border/20">Init Life</TH>
@@ -806,6 +831,36 @@ export default function Keywords() {
                                     <span className="text-muted-foreground/20 text-xs">—</span>
                                   )}
                                 </td>
+
+                                {/* Init Rank / Curr Rank — from ranking_reports */}
+                                {(() => {
+                                  const rank = kwRankMap.get(kw.id as number);
+                                  const initPos = rank?.initialPosition ?? null;
+                                  const currPos = rank?.currentPosition ?? null;
+                                  const chg     = rank?.positionChange  ?? null;
+                                  const RankPip = ({ pos }: { pos: number | null }) => {
+                                    if (pos == null) return <span className="text-muted-foreground/25 text-xs">—</span>;
+                                    const cls = pos <= 3 ? "bg-amber-400/90 text-amber-950 font-bold" : pos <= 7 ? "bg-slate-300/90 text-slate-900" : pos <= 10 ? "bg-amber-700/80 text-white" : "bg-muted/40 text-muted-foreground border border-border/40";
+                                    return <span className={`inline-flex items-center justify-center text-[10px] font-semibold rounded px-1.5 py-0.5 ${cls}`}>#{pos}</span>;
+                                  };
+                                  return (
+                                    <>
+                                      <td className="px-3 py-3 text-center align-middle border-l border-border/20">
+                                        <RankPip pos={initPos} />
+                                      </td>
+                                      <td className="px-3 py-3 text-center align-middle">
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          <RankPip pos={currPos} />
+                                          {chg != null && (
+                                            <span className={`text-[9px] font-semibold leading-none ${chg > 0 ? "text-emerald-400" : chg < 0 ? "text-red-400" : "text-amber-400"}`}>
+                                              {chg > 0 ? `+${chg}` : chg === 0 ? "=" : String(chg)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </>
+                                  );
+                                })()}
 
                                 {/* Search counts — 30 day */}
                                 <td className="px-3 py-3 text-center align-middle border-l border-border/20">
