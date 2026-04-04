@@ -14,8 +14,11 @@ export const sessionsTable = pgTable("sessions", {
   proxyId: integer("proxy_id").references(() => proxiesTable.id),
   promptText: text("prompt_text"),
   followupText: text("followup_text"),
+  status: text("status").notNull().default("pending"),
   aiPlatform: text("ai_platform").notNull().default("gemini"),
   screenshotUrl: text("screenshot_url"),
+  proxySessionId: text("proxy_session_id"),
+  proxyUsername:  text("proxy_username"),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 

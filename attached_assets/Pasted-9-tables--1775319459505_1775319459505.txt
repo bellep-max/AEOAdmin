@@ -1,0 +1,42 @@
+9 tables:                                                                             
+                                                                                                     
+  1. clients                                                                                         
+  - id, biz_name, plan, city, state, address, biz_url, gmb_url                                                                    
+  - latitude, longitude, timezone                                                                    
+
+  2. client_keywords                                                                                 
+  - id, client_id (FK), keyword                    
+
+  3. client_backlinks
+  - id, keyword_id (FK), url
+
+  4. proxy_configs
+  - id, client_id (FK)                                                                               
+  - provider (e.g. "decodo")                       
+  - host, port, base_user, password            
+  - country, zip, session_duration                                                                   
+
+  5. devices                                                                                         
+  - id, label, serial, port, use_adb, brand, model, status                                           
+
+  6. sessions                                  
+  - id, client_id (FK), keyword_id (FK), device_id (FK)
+  - prompt, follow_up, status                                                                        
+  - proxy_session_id, proxy_username
+  - created_at                                                                                       
+
+  7. session_platforms                         
+  - id, session_id (FK), platform (Gemini/ChatGPT/Perplexity)
+  - status, steps (jsonb)                                                                            
+  - backlink_clicked (url or null)
+  - created_at                                                                                       
+
+  8. audit_logs                                
+  - id, client_id (FK), keyword_id (FK), device_id (FK)
+  - platform, screenshot_path, response_text                                                         
+  - proxy_username
+  - created_at
+                                                                                       
+  9. device_rotations                          
+  - id, date, device_id (FK), client_id (FK), keyword_id (FK
+  - platform, status, started_at, completed_at

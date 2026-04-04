@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -30,6 +30,10 @@ export const clientsTable = pgTable("clients", {
   nextBillDate:    text("next_bill_date"),
   subscriptionId:  text("subscription_id"),
   lastFourCard:    text("last_four_card"),
+  /* ── Location ── */
+  latitude:  doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  timezone:  text("timezone"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
