@@ -79,7 +79,7 @@ export default function Profile() {
           <div>
             <p className="text-2xl font-bold text-foreground">{user.name}</p>
             <p className="text-base text-muted-foreground">{user.email}</p>
-            <Badge className="mt-2 capitalize bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-100">
+            <Badge className="mt-2 capitalize bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-900/30">
               <ShieldCheck className="w-3 h-3 mr-1" />
               {user.role}
             </Badge>
