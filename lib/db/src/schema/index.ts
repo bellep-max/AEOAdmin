@@ -1,5 +1,6 @@
 export * from "./clients";
 export * from "./keywords";
+export * from "./keyword_links";
 export * from "./client_backlinks";
 export * from "./sessions";
 export * from "./session_platforms";

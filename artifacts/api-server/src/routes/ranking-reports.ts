@@ -172,6 +172,50 @@ router.get("/platform-summary", async (req, res) => {
   }
 });
 
+/* GET /api/ranking-reports/per-keyword-platform
+   Returns per-keyword, per-platform latest ranking position.
+   Shape: [{ keywordId, chatgpt, gemini, perplexity }] */
+router.get("/per-keyword-platform", async (req, res) => {
+  try {
+    const allReports = await db
+      .select({
+        keywordId:       rankingReportsTable.keywordId,
+        platform:        rankingReportsTable.platform,
+        rankingPosition: rankingReportsTable.rankingPosition,
+        createdAt:       rankingReportsTable.createdAt,
+      })
+      .from(rankingReportsTable)
+      .orderBy(asc(rankingReportsTable.createdAt));
+
+    // Group by keywordId + platform, keep only the latest
+    const latest = new Map<string, { keywordId: number; platform: string; rankingPosition: number | null }>();
+    for (const r of allReports) {
+      if (!r.platform) continue;
+      const key = `${r.keywordId}-${r.platform}`;
+      latest.set(key, { keywordId: r.keywordId, platform: r.platform, rankingPosition: r.rankingPosition });
+    }
+
+    // Pivot: keywordId → { chatgpt, gemini, perplexity }
+    const pivot = new Map<number, Record<string, number | null>>();
+    for (const row of latest.values()) {
+      if (!pivot.has(row.keywordId)) pivot.set(row.keywordId, {});
+      pivot.get(row.keywordId)![row.platform] = row.rankingPosition;
+    }
+
+    const result = [...pivot.entries()].map(([keywordId, platforms]) => ({
+      keywordId,
+      chatgpt:    platforms["chatgpt"]    ?? null,
+      gemini:     platforms["gemini"]     ?? null,
+      perplexity: platforms["perplexity"] ?? null,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching per-keyword platform rankings");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/initial-vs-current", async (req, res) => {
   try {
     const clients = await db.select().from(clientsTable);

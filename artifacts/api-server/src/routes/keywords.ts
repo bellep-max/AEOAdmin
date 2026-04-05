@@ -1,10 +1,14 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { keywordsTable } from "@workspace/db/schema";
+import { keywordsTable, keywordLinksTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
 
+/* ────────────────────────────────────────────────────────────
+   GET /api/keywords
+   Returns all AEO keywords, optionally filtered by clientId
+──────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   try {
     const { clientId, tierLabel } = req.query as Record<string, string>;
@@ -24,6 +28,10 @@ router.get("/", async (req, res) => {
   }
 });
 
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords
+   Create a new keyword for a business
+──────────────────────────────────────────────────────────── */
 router.post("/", async (req, res) => {
   try {
     const body = req.body;
@@ -42,6 +50,14 @@ router.post("/", async (req, res) => {
         keywordType: Number(body.keywordType ?? 1),
         backlinkCount: Number(body.backlinkCount ?? 0),
         verificationStatus: body.verificationStatus ?? "pending",
+        initialSearchCount30Days:  Number(body.initialSearchCount30Days  ?? 0),
+        followupSearchCount30Days: Number(body.followupSearchCount30Days ?? 0),
+        initialSearchCountLife:    Number(body.initialSearchCountLife    ?? 0),
+        followupSearchCountLife:   Number(body.followupSearchCountLife   ?? 0),
+        linkTypeLabel:         body.linkTypeLabel         ?? null,
+        linkActive:            body.linkActive !== false,
+        initialRankReportLink: body.initialRankReportLink ?? null,
+        currentRankReportLink: body.currentRankReportLink ?? null,
       })
       .returning();
     res.status(201).json(keyword);
@@ -51,14 +67,104 @@ router.post("/", async (req, res) => {
   }
 });
 
+/* ────────────────────────────────────────────────────────────
+   GET /api/keywords/:id/links
+   Returns all associated links for a keyword
+──────────────────────────────────────────────────────────── */
+router.get("/:id/links", async (req, res) => {
+  try {
+    const keywordId = parseInt(req.params.id);
+    const links = await db
+      .select()
+      .from(keywordLinksTable)
+      .where(eq(keywordLinksTable.keywordId, keywordId))
+      .orderBy(keywordLinksTable.createdAt);
+    res.json(links);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching keyword links");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/:id/links
+   Add a new associated link to a keyword
+──────────────────────────────────────────────────────────── */
+router.post("/:id/links", async (req, res) => {
+  try {
+    const keywordId = parseInt(req.params.id);
+    const body      = req.body;
+    const [link] = await db
+      .insert(keywordLinksTable)
+      .values({
+        keywordId,
+        linkTypeLabel:         body.linkTypeLabel         ?? null,
+        linkActive:            body.linkActive !== false,
+        initialRankReportLink: body.initialRankReportLink ?? null,
+        currentRankReportLink: body.currentRankReportLink ?? null,
+      })
+      .returning();
+    res.status(201).json(link);
+  } catch (err) {
+    req.log.error({ err }, "Error creating keyword link");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   PATCH /api/keywords/:id/links/:linkId
+   Update an associated link
+──────────────────────────────────────────────────────────── */
+router.patch("/:id/links/:linkId", async (req, res) => {
+  try {
+    const linkId = parseInt(req.params.linkId);
+    const body   = req.body as Record<string, unknown>;
+    const allowed: Record<string, unknown> = {};
+    if (body.linkTypeLabel         !== undefined) allowed.linkTypeLabel         = body.linkTypeLabel ?? null;
+    if (body.linkActive            !== undefined) allowed.linkActive            = Boolean(body.linkActive);
+    if (body.initialRankReportLink !== undefined) allowed.initialRankReportLink = body.initialRankReportLink ?? null;
+    if (body.currentRankReportLink !== undefined) allowed.currentRankReportLink = body.currentRankReportLink ?? null;
+    if (Object.keys(allowed).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+    const [link] = await db
+      .update(keywordLinksTable)
+      .set(allowed)
+      .where(eq(keywordLinksTable.id, linkId))
+      .returning();
+    if (!link) return res.status(404).json({ error: "Not found" });
+    res.json(link);
+  } catch (err) {
+    req.log.error({ err }, "Error updating keyword link");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   DELETE /api/keywords/:id/links/:linkId
+   Remove an associated link from a keyword
+──────────────────────────────────────────────────────────── */
+router.delete("/:id/links/:linkId", async (req, res) => {
+  try {
+    const linkId = parseInt(req.params.linkId);
+    await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, linkId));
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Error deleting keyword link");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   PATCH /api/keywords/:id
+   Update keyword fields
+──────────────────────────────────────────────────────────── */
 router.patch("/:id", async (req, res) => {
   try {
     const id   = parseInt(req.params.id);
     const body = req.body as Record<string, unknown>;
 
-    // Only pass safe, typed fields — never passthrough raw body to Drizzle
     const allowed: Record<string, unknown> = {};
-
     if (body.keywordText      !== undefined) allowed.keywordText      = String(body.keywordText).trim();
     if (body.isActive         !== undefined) allowed.isActive         = Boolean(body.isActive);
     if (body.isPrimary        !== undefined) allowed.isPrimary        = Number(body.isPrimary) ? 1 : 0;
@@ -75,7 +181,6 @@ router.patch("/:id", async (req, res) => {
     if (body.initialSearchCountLife    !== undefined) allowed.initialSearchCountLife    = Number(body.initialSearchCountLife);
     if (body.followupSearchCountLife   !== undefined) allowed.followupSearchCountLife   = Number(body.followupSearchCountLife);
 
-    // dateAdded: coerce string → Date for the timestamp column
     if (body.dateAdded !== undefined && body.dateAdded !== null) {
       const d = new Date(body.dateAdded as string);
       if (!isNaN(d.getTime())) allowed.dateAdded = d;
@@ -99,6 +204,10 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
+/* ────────────────────────────────────────────────────────────
+   DELETE /api/keywords/:id
+   Remove a keyword and its linked data
+──────────────────────────────────────────────────────────── */
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
