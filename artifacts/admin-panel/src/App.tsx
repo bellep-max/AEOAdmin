@@ -12,17 +12,8 @@ import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
 import ClientDetail from "@/pages/client-detail";
 import Keywords from "@/pages/keywords";
-import Sessions from "@/pages/sessions";
-import StressTest from "@/pages/stress-test";
-import Devices from "@/pages/devices";
-import Proxies from "@/pages/proxies";
 import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
-import Scaling from "@/pages/scaling";
-import Tasks from "@/pages/tasks";
-import Plans from "@/pages/plans";
-import FarmMetrics from "@/pages/farm-metrics";
-import BusinessMetrics from "@/pages/business-metrics";
 
 const queryClient = new QueryClient();
 
@@ -51,17 +42,8 @@ function ProtectedRoutes() {
         <Route path="/clients" component={Clients} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route path="/keywords" component={Keywords} />
-        <Route path="/sessions" component={Sessions} />
-        <Route path="/sessions/stress-test" component={StressTest} />
-        <Route path="/devices" component={Devices} />
-        <Route path="/proxies" component={Proxies} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
-        <Route path="/scaling" component={Scaling} />
-        <Route path="/tasks" component={Tasks} />
-        <Route path="/plans" component={Plans} />
-        <Route path="/farm-metrics" component={FarmMetrics} />
-        <Route path="/business-metrics" component={BusinessMetrics} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

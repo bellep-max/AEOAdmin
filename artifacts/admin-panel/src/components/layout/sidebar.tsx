@@ -5,8 +5,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Key, Activity, Server, Network, Trophy,
-  TrendingUp, CheckSquare, CreditCard, Zap, BarChart3, LogOut, Radio, Gauge, Building2,
+  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -16,40 +15,21 @@ const navGroups = [
   {
     label: "Overview",
     items: [
-      { name: "Dashboard",      href: "/",                    icon: LayoutDashboard },
+      { name: "Dashboard", href: "/",         icon: LayoutDashboard },
     ],
   },
   {
     label: "Campaigns",
     items: [
-      { name: "Clients",        href: "/clients",             icon: Users },
-      { name: "Keywords",       href: "/keywords",            icon: Key },
-      { name: "Sessions",       href: "/sessions",            icon: Activity },
-      { name: "Stress Test",    href: "/sessions/stress-test",icon: Zap },
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: [
-      { name: "Devices",        href: "/devices",             icon: Server },
-      { name: "Proxies",        href: "/proxies",             icon: Network },
-      { name: "Scaling Plan",   href: "/scaling",             icon: TrendingUp },
+      { name: "Clients",  href: "/clients",   icon: Users },
+      { name: "Keywords", href: "/keywords",  icon: Key },
     ],
   },
   {
     label: "Analytics",
     items: [
-      { name: "Rankings",             href: "/rankings",          icon: Trophy    },
-      { name: "Session Metrics",      href: "/metrics",           icon: BarChart3 },
-      { name: "Device Farm Metrics",  href: "/farm-metrics",      icon: Gauge     },
-      { name: "Business Metrics",     href: "/business-metrics",  icon: Building2 },
-    ],
-  },
-  {
-    label: "Admin",
-    items: [
-      { name: "Tasks",          href: "/tasks",               icon: CheckSquare },
-      { name: "Plans",          href: "/plans",               icon: CreditCard },
+      { name: "Rankings",         href: "/rankings", icon: Trophy    },
+      { name: "Session Metrics",  href: "/metrics",  icon: BarChart3 },
     ],
   },
 ];
