@@ -223,6 +223,170 @@ function exportPDF(rows: CompRow[], title: string, filename: string) {
   doc.save(filename);
 }
 
+/* ── Per-business platform CSV export ──────────────────── */
+type PlatByKw = Map<number, { chatgpt?: PlatformKw; gemini?: PlatformKw; perplexity?: PlatformKw }>;
+
+function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: string) {
+  const esc    = (v: string)              => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const posStr = (v: number | null | undefined) => v != null ? `#${v}` : "";
+  const chgStr = (v: number | null | undefined) => v == null ? "" : v > 0 ? `+${v}` : String(v);
+  const headers = [
+    "Business", "Keyword",
+    "Initial Rank", "Initial Date",
+    "Current Rank", "Current Date",
+    "Position Change", "Status",
+    "ChatGPT Rank", "ChatGPT Δ",
+    "Gemini Rank",  "Gemini Δ",
+    "Perplexity Rank", "Perplexity Δ",
+    "Best Platform", "Maps URL",
+  ];
+  const lines = [
+    headers.join(","),
+    ...bRows.map((r) => {
+      const plat = platByKw.get(r.keywordId) ?? {};
+      const positions: [string, number][] = [
+        ["ChatGPT",    plat.chatgpt?.currentPosition    ?? 9999],
+        ["Gemini",     plat.gemini?.currentPosition     ?? 9999],
+        ["Perplexity", plat.perplexity?.currentPosition ?? 9999],
+      ];
+      const bestPos = Math.min(...positions.map(([, p]) => p));
+      const best = bestPos < 9999 ? (positions.find(([, p]) => p === bestPos)?.[0] ?? "") : "";
+      return [
+        esc(r.clientName), esc(r.keywordText),
+        esc(posStr(r.initialPosition)),
+        esc(r.initialDate ? format(new Date(r.initialDate), "yyyy-MM-dd") : ""),
+        esc(posStr(r.currentPosition)),
+        esc(r.currentDate ? format(new Date(r.currentDate), "yyyy-MM-dd") : ""),
+        esc(chgStr(r.positionChange)),
+        esc(r.status.charAt(0).toUpperCase() + r.status.slice(1)),
+        esc(posStr(plat.chatgpt?.currentPosition)),    esc(chgStr(plat.chatgpt?.positionChange)),
+        esc(posStr(plat.gemini?.currentPosition)),     esc(chgStr(plat.gemini?.positionChange)),
+        esc(posStr(plat.perplexity?.currentPosition)), esc(chgStr(plat.perplexity?.positionChange)),
+        esc(best), esc(r.mapsUrl ?? ""),
+      ].join(",");
+    }),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── Per-business platform PDF export ──────────────────── */
+function exportBizPlatformPDF(bizName: string, bRows: CompRow[], platByKw: PlatByKw, filename: string) {
+  const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Platform Keyword Report", 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text(`${bizName} · ${bRows.length} keywords`, 10, 16);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+
+  const PLAT_COLORS: Record<string, [number, number, number]> = {
+    ChatGPT:    [52, 211, 153],
+    Gemini:     [96, 165, 250],
+    Perplexity: [167, 139, 250],
+  };
+
+  const posStr = (v: number | null | undefined) => v != null ? `#${v}` : "—";
+  const chgStr = (v: number | null | undefined) => v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "=" : String(v);
+
+  autoTable(doc, {
+    startY: 28,
+    margin: { left: 8, right: 8 },
+    head: [[
+      "Keyword",
+      "Init Rank", "Cur Rank", "Δ", "Status",
+      "ChatGPT", "ChatGPT Δ",
+      "Gemini",  "Gemini Δ",
+      "Perplexity", "Perplexity Δ",
+      "Best",
+    ]],
+    body: bRows.map((r) => {
+      const plat = platByKw.get(r.keywordId) ?? {};
+      const positions: [string, number][] = [
+        ["ChatGPT",    plat.chatgpt?.currentPosition    ?? 9999],
+        ["Gemini",     plat.gemini?.currentPosition     ?? 9999],
+        ["Perplexity", plat.perplexity?.currentPosition ?? 9999],
+      ];
+      const bestPos = Math.min(...positions.map(([, p]) => p));
+      const best = bestPos < 9999 ? (positions.find(([, p]) => p === bestPos)?.[0] ?? "—") : "—";
+      return [
+        r.keywordText,
+        posStr(r.initialPosition),
+        posStr(r.currentPosition),
+        chgStr(r.positionChange),
+        r.status.charAt(0).toUpperCase() + r.status.slice(1),
+        posStr(plat.chatgpt?.currentPosition),    chgStr(plat.chatgpt?.positionChange),
+        posStr(plat.gemini?.currentPosition),     chgStr(plat.gemini?.positionChange),
+        posStr(plat.perplexity?.currentPosition), chgStr(plat.perplexity?.positionChange),
+        best,
+      ];
+    }),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+    bodyStyles: { fontSize: 7, textColor: [220, 225, 235] },
+    alternateRowStyles: { fillColor: [22, 30, 50] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0:  { cellWidth: 38 },
+      1:  { cellWidth: 16, halign: "center" },
+      2:  { cellWidth: 16, halign: "center" },
+      3:  { cellWidth: 12, halign: "center" },
+      4:  { cellWidth: 22, halign: "center" },
+      5:  { cellWidth: 18, halign: "center" },
+      6:  { cellWidth: 14, halign: "center" },
+      7:  { cellWidth: 18, halign: "center" },
+      8:  { cellWidth: 14, halign: "center" },
+      9:  { cellWidth: 20, halign: "center" },
+      10: { cellWidth: 14, halign: "center" },
+      11: { cellWidth: "auto", halign: "center" },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body") return;
+      /* Change columns — green/red */
+      if ([3, 6, 8, 10].includes(d.column.index)) {
+        const v = String(d.cell.raw ?? "");
+        if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
+        else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
+      }
+      /* Status column */
+      if (d.column.index === 4) {
+        const v = String(d.cell.raw ?? "").toLowerCase();
+        if (v === "performing")      d.cell.styles.textColor = [52, 211, 153];
+        else if (v === "underperforming") d.cell.styles.textColor = [248, 113, 113];
+        else if (v === "steady")     d.cell.styles.textColor = [251, 191, 36];
+      }
+      /* Best platform column */
+      if (d.column.index === 11) {
+        const v = String(d.cell.raw ?? "");
+        const col = PLAT_COLORS[v];
+        if (col) d.cell.styles.textColor = col;
+      }
+    },
+  });
+
+  /* Footer */
+  const pageCount = (doc as jsPDF & { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 110, 130);
+    doc.text("Signal AEO Platform — Confidential", 8, pageH - 5);
+    doc.text(`Page ${i} / ${pageCount}`, pageW - 8, pageH - 5, { align: "right" });
+  }
+  doc.save(filename);
+}
+
 /* ── Platform CSV export ────────────────────────────────── */
 function exportPlatformCSV(crossRows: CrossRow[], filename: string) {
   const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -574,6 +738,15 @@ export default function Rankings() {
   }
   const bizList = [...byBusiness.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
 
+  /* Platform lookup by keyword id */
+  const platByKw: PlatByKw = new Map();
+  for (const p of platformData ?? []) {
+    for (const kw of p.keywords) {
+      if (!platByKw.has(kw.keywordId)) platByKw.set(kw.keywordId, {});
+      platByKw.get(kw.keywordId)![p.platform] = kw;
+    }
+  }
+
   /* ── Export helpers ── */
   const dateStamp = format(new Date(), "yyyy-MM-dd");
 
@@ -588,17 +761,14 @@ export default function Rankings() {
     );
   }
   function exportBizCSV(clientId: number, rows: CompRow[]) {
-    const slug = byBusiness.get(clientId)!.name.replace(/\s+/g, "-").toLowerCase();
-    exportCSV(rows, `${slug}-performance-${dateStamp}.csv`);
+    const biz  = byBusiness.get(clientId)!;
+    const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
+    exportBizPlatformCSV(rows, platByKw, `${slug}-platform-rankings-${dateStamp}.csv`);
   }
   function exportBizPDF(clientId: number, rows: CompRow[]) {
     const biz  = byBusiness.get(clientId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
-    exportPDF(
-      rows,
-      `${biz.name} · ${rows.length} keywords · ${format(new Date(), "PPP")}`,
-      `${slug}-performance-${dateStamp}.pdf`,
-    );
+    exportBizPlatformPDF(biz.name, rows, platByKw, `${slug}-platform-rankings-${dateStamp}.pdf`);
   }
 
   function openMapsEdit(row: CompRow) {
@@ -1152,7 +1322,7 @@ export default function Rankings() {
 
                     {/* Expanded keyword table */}
                     {isOpen && (
-                      <div className="border-t border-border/40">
+                      <div className="border-t border-border/40 overflow-x-auto">
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/20 hover:bg-muted/20">
@@ -1160,47 +1330,69 @@ export default function Rankings() {
                               <TableHead className="text-xs text-center">Before</TableHead>
                               <TableHead className="text-xs text-center">Now</TableHead>
                               <TableHead className="text-xs text-center">Change</TableHead>
+                              <TableHead className="text-xs text-center text-emerald-400/80">ChatGPT</TableHead>
+                              <TableHead className="text-xs text-center text-blue-400/80">Gemini</TableHead>
+                              <TableHead className="text-xs text-center text-violet-400/80">Perplexity</TableHead>
                               <TableHead className="text-xs">Maps</TableHead>
                               <TableHead className="text-xs text-right">Status</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {bRows.map((row, i) => (
-                              <TableRow key={`${row.keywordId}-${i}`} className="hover:bg-muted/10">
-                                <TableCell className="text-sm max-w-[200px] truncate" title={row.keywordText}>
-                                  {row.keywordText}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex flex-col items-center gap-0.5">
-                                    <RankBadge pos={row.initialPosition} />
-                                    {row.initialDate && (
-                                      <span className="text-[9px] text-muted-foreground/60">
-                                        {format(new Date(row.initialDate), "MMM d")}
-                                      </span>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex flex-col items-center gap-0.5">
-                                    <RankBadge pos={row.currentPosition} />
-                                    {row.currentDate && (
-                                      <span className="text-[9px] text-muted-foreground/60">
-                                        {format(new Date(row.currentDate), "MMM d")}
-                                      </span>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <ChangeCell change={row.positionChange ?? null} />
-                                </TableCell>
-                                <TableCell>
-                                  <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <StatusBadge status={row.status} />
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {bRows.map((row, i) => {
+                              const plat = platByKw.get(row.keywordId) ?? {};
+                              return (
+                                <TableRow key={`${row.keywordId}-${i}`} className="hover:bg-muted/10">
+                                  <TableCell className="text-sm max-w-[180px] truncate" title={row.keywordText}>
+                                    {row.keywordText}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <RankBadge pos={row.initialPosition} />
+                                      {row.initialDate && (
+                                        <span className="text-[9px] text-muted-foreground/60">
+                                          {format(new Date(row.initialDate), "MMM d")}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <RankBadge pos={row.currentPosition} />
+                                      {row.currentDate && (
+                                        <span className="text-[9px] text-muted-foreground/60">
+                                          {format(new Date(row.currentDate), "MMM d")}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <ChangeCell change={row.positionChange ?? null} />
+                                  </TableCell>
+                                  {/* Platform rank cells */}
+                                  {(["chatgpt", "gemini", "perplexity"] as const).map((plt) => {
+                                    const pk = plat[plt];
+                                    return (
+                                      <TableCell key={plt} className="text-center">
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          <RankBadge pos={pk?.currentPosition} />
+                                          {pk?.positionChange != null && pk.positionChange !== 0 && (
+                                            <span className={`text-[9px] font-bold ${pk.positionChange > 0 ? "text-emerald-400" : "text-destructive"}`}>
+                                              {pk.positionChange > 0 ? `+${pk.positionChange}` : pk.positionChange}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    );
+                                  })}
+                                  <TableCell>
+                                    <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <StatusBadge status={row.status} />
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </div>
