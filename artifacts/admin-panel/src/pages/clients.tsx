@@ -7,7 +7,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Plus, ExternalLink, MoreHorizontal } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -391,15 +390,14 @@ export default function Clients() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
-                </TableRow>
-              ))
+              <TableRow>
+                <TableCell colSpan={5} className="h-52">
+                  <div className="flex flex-col items-center justify-center gap-4 py-8">
+                    <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+                    <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Loading businesses…</p>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : filteredClients?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">

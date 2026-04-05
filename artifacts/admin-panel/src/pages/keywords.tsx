@@ -897,8 +897,9 @@ export default function Keywords() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-52 w-full rounded-xl" />)}
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-base text-muted-foreground font-medium">Loading keywords…</p>
         </div>
       ) : grouped.size === 0 ? (
         <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 gap-3">
