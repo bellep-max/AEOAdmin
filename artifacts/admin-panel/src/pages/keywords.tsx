@@ -28,20 +28,19 @@ const LINK_TYPES = ["GBP snippet", "Client website blog post", "External article
 type KwRecord = Record<string, unknown>;
 
 // Helper function to get keyword type label
-function getKeywordTypeLabel(type: number | string, short = false, hasLinks = false): string {
+function getKeywordTypeLabel(type: number | string, short = false): string {
   const t = Number(type);
-  if (hasLinks) return short ? "Backlinks" : "Text with Backlinks";
   if (short) {
     switch (t) {
-      case 3: return "Text";
-      case 4: return "Backlinks";
-      default: return "Text";
+      case 3: return "Keyword";
+      case 4: return "w/ Backlinks";
+      default: return "Keyword";
     }
   }
   switch (t) {
-    case 3: return "Keyword text";
-    case 4: return "Text with Backlinks";
-    default: return "Keyword text";
+    case 3: return "Keywords";
+    case 4: return "Keywords with Backlinks";
+    default: return "Keywords";
   }
 }
 
@@ -335,8 +334,8 @@ function KeywordDialog({
                 <SelectValue placeholder="Select keyword type…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="3">Keyword text</SelectItem>
-                <SelectItem value="4">Text with Backlinks</SelectItem>
+                <SelectItem value="3">Keywords</SelectItem>
+                <SelectItem value="4">Keywords with Backlinks</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -538,8 +537,6 @@ function KeywordCard({
   }
 
   const isType4    = Number(kw.keywordType) === 4;
-  const hasLinks   = (links?.length ?? 0) > 0;
-  const showBadge  = isType4 || hasLinks;
   const isPrimary  = !!kw.isPrimary;
   const isActive   = kw.isActive as boolean;
 
@@ -554,10 +551,10 @@ function KeywordCard({
             <p className="font-bold text-lg text-black dark:text-white leading-snug break-words">{kw.keywordText as string}</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className={`text-sm h-6 px-2.5 ${
-                showBadge ? "bg-emerald-100 text-emerald-700 border-emerald-300" :
-                "bg-violet-100 text-violet-700 border-violet-300"
+                isType4 ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                        : "bg-violet-100 text-violet-700 border-violet-300"
               }`}>
-                {getKeywordTypeLabel(kw.keywordType as number, true, hasLinks)}
+                {getKeywordTypeLabel(kw.keywordType as number, true)}
               </Badge>
               {isPrimary && (
                 <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 text-amber-700 border-amber-300">1st</Badge>
@@ -718,7 +715,6 @@ function KeywordCard({
 export default function Keywords() {
   const [search,      setSearch]      = useState("");
   const [typeFilter,  setTypeFilter]  = useState<string>("all");
-  const [linkFilter,  setLinkFilter]  = useState<string>("all");
   const [expanded,    setExpanded]    = useState<Set<number>>(new Set());
   const [addOpen,     setAddOpen]     = useState(false);
   const [editKw,      setEditKw]      = useState<KwRecord | null>(null);
@@ -788,9 +784,7 @@ export default function Keywords() {
     const client      = clients?.find((c) => c.id === k.clientId);
     const matchClient = client ? (client.businessName ?? "").toLowerCase().includes(searchLower) : true;
     const matchType   = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    const hasLink     = !!k.initialRankReportLink;
-    const matchLink   = linkFilter === "all" || (linkFilter === "with" && hasLink) || (linkFilter === "without" && !hasLink);
-    return (matchText || matchClient) && matchType && matchLink;
+    return (matchText || matchClient) && matchType;
   });
 
   /* Group by client */
@@ -877,37 +871,21 @@ export default function Keywords() {
           <Filter className="w-5 h-5 text-slate-700" />
           {[
             { id: "all", label: "All" },
-            { id: "3", label: "Keyword text" },
-            { id: "4", label: "Keywords with links" }
+            { id: "3",   label: "Keywords" },
+            { id: "4",   label: "Keywords with Backlinks" },
           ].map((t) => (
             <button key={t.id} onClick={() => setTypeFilter(t.id)}
               className={`px-4 py-2.5 rounded-full text-base font-bold border-2 transition-all ${
                 typeFilter === t.id
-                  ? "bg-blue-600 text-white border-blue-600"
+                  ? (t.id === "4" ? "bg-emerald-600 text-white border-emerald-600" : "bg-blue-600 text-white border-blue-600")
                   : "border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900 bg-white"
               }`}>
               {t.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          {[
-            { id: "all", label: "All Backlinks" },
-            { id: "with", label: "Has Backlinks" },
-            { id: "without", label: "No Backlinks" }
-          ].map((t) => (
-            <button key={t.id} onClick={() => setLinkFilter(t.id)}
-              className={`px-4 py-2.5 rounded-full text-base font-bold border-2 transition-all ${
-                linkFilter === t.id
-                  ? "bg-violet-600 text-white border-violet-600"
-                  : "border-slate-300 text-slate-700 hover:border-slate-400 bg-white"
-              }`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {(search || typeFilter !== "all" || linkFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setTypeFilter("all"); setLinkFilter("all"); }}
+        {(search || typeFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
             className="flex items-center gap-1.5 text-base text-slate-700 hover:text-slate-900 font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
