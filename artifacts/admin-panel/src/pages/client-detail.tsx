@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2,
+  ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -46,15 +47,16 @@ export default function ClientDetail() {
   const queryClient = useQueryClient();
   const { toast }   = useToast();
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [saving,   setSaving]   = useState(false);
+  const [editBizOpen, setEditBizOpen] = useState(false);
+  const [editAccOpen, setEditAccOpen] = useState(false);
+  const [saving,      setSaving]      = useState(false);
 
   const { data: client, isLoading } = useGetClient(clientId, {
     query: { enabled: !!clientId, queryKey: ["getClient", clientId] },
   });
 
-  /* ── PATCH helper ── */
-  async function patchClient(body: Record<string, string>) {
+  /* ── PATCH helper — accepts a close callback so both dialogs can share it ── */
+  async function patchClient(body: Record<string, string>, onSuccess: () => void) {
     setSaving(true);
     try {
       const res = await fetch(`${BASE}/api/clients/${clientId}`, {
@@ -67,7 +69,7 @@ export default function ClientDetail() {
       await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });
       await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({ title: "Saved" });
-      setEditOpen(false);
+      onSuccess();
     } catch (err: unknown) {
       toast({ title: "Save failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally {
@@ -77,10 +79,13 @@ export default function ClientDetail() {
 
   /* ── Loading / not found ── */
   if (isLoading) return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6">
       <Skeleton className="h-8 w-48" />
       <Skeleton className="h-20 w-full rounded-xl" />
-      <Skeleton className="h-80 w-full rounded-xl" />
+      <div className="grid md:grid-cols-2 gap-6">
+        <Skeleton className="h-80 rounded-xl" />
+        <Skeleton className="h-80 rounded-xl" />
+      </div>
     </div>
   );
 
@@ -100,7 +105,7 @@ export default function ClientDetail() {
     : "?";
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
 
       {/* ── Breadcrumb ── */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -133,93 +138,152 @@ export default function ClientDetail() {
                 {client.planName}
               </Badge>
             )}
+            {(c.accountType as string) && (
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
+                {c.accountType as string}
+              </Badge>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Business Details card ── */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-primary" />
-            Business Details
-          </CardTitle>
-          <Button
-            variant="ghost" size="sm"
-            className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="w-3 h-3" /> Edit
-          </Button>
-        </CardHeader>
+      {/* ── Two-column cards ── */}
+      <div className="grid md:grid-cols-2 gap-6">
 
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-5">
+        {/* ── Business Details ── */}
+        <Card className="border-border/50">
+          <CardHeader className="pb-4 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-primary" />
+              Business Details
+            </CardTitle>
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setEditBizOpen(true)}
+            >
+              <Pencil className="w-3 h-3" /> Edit
+            </Button>
+          </CardHeader>
 
-            <Field label="Business Name"              value={client.businessName} />
-            <Field label="Plan"                       value={client.planName} />
-            <Field label="Search Address"             value={client.searchAddress} />
-            <Field label="GMB Address"                value={client.publishedAddress} />
-            <Field
-              label="GMB Link"
-              value={client.gmbUrl}
-              href={client.gmbUrl ?? undefined}
-            />
-            <Field
-              label="Website Published on GMB"
-              value={c.websitePublishedOnGmb as string}
-              href={(c.websitePublishedOnGmb as string) ?? undefined}
-            />
-            <Field
-              label="Website Linked to on GMB (if different)"
-              value={c.websiteLinkedOnGmb as string}
-              href={(c.websiteLinkedOnGmb as string) ?? undefined}
-            />
-            <Field label="Account User"               value={c.accountUser as string} />
-            <Field label="Start Date"                 value={c.startDate as string} />
-            <Field label="Next Bill Date"             value={c.nextBillDate as string} />
-            <Field label="Subscription ID"            value={c.subscriptionId as string} />
-
-            {/* Last 4 — special display with card icon */}
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                Last 4 of Billing Credit Card
-              </p>
-              {(c.lastFourCard as string) ? (
-                <p className="text-sm text-foreground flex items-center gap-1.5">
-                  <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
-                  •••• {c.lastFourCard as string}
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+              <Field label="Business Name"                    value={client.businessName} />
+              <Field label="Plan"                             value={client.planName} />
+              <Field label="Search Address"                   value={client.searchAddress} />
+              <Field label="GMB Address"                      value={client.publishedAddress} />
+              <Field label="GMB Link"                         value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
+              <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
+              <Field label="Website Linked to on GMB (if different)" value={c.websiteLinkedOnGmb as string} href={(c.websiteLinkedOnGmb as string) ?? undefined} />
+              <Field label="Account User"                     value={c.accountUser as string} />
+              <Field label="Start Date"                       value={c.startDate as string} />
+              <Field label="Next Bill Date"                   value={c.nextBillDate as string} />
+              <Field label="Subscription ID"                  value={c.subscriptionId as string} />
+              {/* Last 4 with card icon */}
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Last 4 of Billing Credit Card
                 </p>
-              ) : (
-                <p className="text-sm text-muted-foreground/40">—</p>
-              )}
+                {(c.lastFourCard as string) ? (
+                  <p className="text-sm text-foreground flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
+                    •••• {c.lastFourCard as string}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/40">—</p>
+                )}
+              </div>
             </div>
+          </CardContent>
+        </Card>
 
-          </div>
-        </CardContent>
-      </Card>
+        {/* ── Account Details ── */}
+        <Card className="border-border/50">
+          <CardHeader className="pb-4 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-primary" />
+              Account Details
+            </CardTitle>
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setEditAccOpen(true)}
+            >
+              <Pencil className="w-3 h-3" /> Edit
+            </Button>
+          </CardHeader>
 
-      {/* ═══════════════════════════════════════════════
-          EDIT BUSINESS DETAILS DIALOG
-      ═══════════════════════════════════════════════ */}
-      <EditDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+              <Field label="Account Type"              value={c.accountType as string} />
+              <Field label="Account User Name"         value={c.accountUserName as string} />
+              <Field label="Account Email"             value={c.accountEmail as string} />
+              <Field label="Contact / Billing Email"   value={c.billingEmail as string} />
+              <Field label="Plan"                      value={client.planName} />
+              <Field label="Subscription ID"           value={c.subscriptionId as string} />
+              <Field label="Business Name"             value={client.businessName} />
+              <Field label="Search Address"            value={client.searchAddress} />
+              <Field label="Start Date"                value={c.startDate as string} />
+              <Field label="Next Bill Date"            value={c.nextBillDate as string} />
+              {/* Last 4 with card icon */}
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Last 4 of Billing Credit Card
+                </p>
+                {(c.lastFourCard as string) ? (
+                  <p className="text-sm text-foreground flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
+                    •••• {c.lastFourCard as string}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/40">—</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ═══ EDIT BUSINESS DETAILS DIALOG ═══ */}
+      <EditBizDialog
+        open={editBizOpen}
+        onOpenChange={setEditBizOpen}
         saving={saving}
-        onSave={patchClient}
+        onSave={(vals) => patchClient(vals, () => setEditBizOpen(false))}
         values={{
-          businessName:         client.businessName        ?? "",
-          planName:             client.planName            ?? "",
-          searchAddress:        client.searchAddress       ?? "",
-          publishedAddress:     client.publishedAddress    ?? "",
-          gmbUrl:               client.gmbUrl              ?? "",
-          websitePublishedOnGmb: (c.websitePublishedOnGmb as string) ?? "",
-          websiteLinkedOnGmb:   (c.websiteLinkedOnGmb  as string) ?? "",
-          accountUser:          (c.accountUser          as string) ?? "",
-          startDate:            (c.startDate            as string) ?? "",
-          nextBillDate:         (c.nextBillDate         as string) ?? "",
-          subscriptionId:       (c.subscriptionId       as string) ?? "",
-          lastFourCard:         (c.lastFourCard         as string) ?? "",
+          businessName:          client.businessName                    ?? "",
+          planName:              client.planName                        ?? "",
+          searchAddress:         client.searchAddress                   ?? "",
+          publishedAddress:      client.publishedAddress                ?? "",
+          gmbUrl:                client.gmbUrl                          ?? "",
+          websitePublishedOnGmb: (c.websitePublishedOnGmb as string)   ?? "",
+          websiteLinkedOnGmb:    (c.websiteLinkedOnGmb    as string)   ?? "",
+          accountUser:           (c.accountUser           as string)   ?? "",
+          startDate:             (c.startDate             as string)   ?? "",
+          nextBillDate:          (c.nextBillDate          as string)   ?? "",
+          subscriptionId:        (c.subscriptionId        as string)   ?? "",
+          lastFourCard:          (c.lastFourCard          as string)   ?? "",
+        }}
+      />
+
+      {/* ═══ EDIT ACCOUNT DETAILS DIALOG ═══ */}
+      <EditAccDialog
+        open={editAccOpen}
+        onOpenChange={setEditAccOpen}
+        saving={saving}
+        onSave={(vals) => patchClient(vals, () => setEditAccOpen(false))}
+        values={{
+          accountType:     (c.accountType     as string) ?? "",
+          accountUserName: (c.accountUserName as string) ?? "",
+          accountEmail:    (c.accountEmail    as string) ?? "",
+          billingEmail:    (c.billingEmail    as string) ?? "",
+          planName:        client.planName               ?? "",
+          subscriptionId:  (c.subscriptionId  as string) ?? "",
+          businessName:    client.businessName           ?? "",
+          searchAddress:   client.searchAddress          ?? "",
+          lastFourCard:    (c.lastFourCard    as string) ?? "",
+          nextBillDate:    (c.nextBillDate    as string) ?? "",
+          startDate:       (c.startDate       as string) ?? "",
         }}
       />
     </div>
@@ -227,90 +291,37 @@ export default function ClientDetail() {
 }
 
 /* ─────────────────────────────────────────────────────────── */
-/* Edit Dialog                                                 */
+/* Shared full-screen dialog shell                             */
 /* ─────────────────────────────────────────────────────────── */
-
-const FIELDS: Array<{
-  key:         string;
-  label:       string;
-  placeholder?: string;
-  maxLength?:  number;
-}> = [
-  { key: "businessName",          label: "Business Name" },
-  { key: "planName",              label: "Plan" },
-  { key: "searchAddress",         label: "Search Address" },
-  { key: "publishedAddress",      label: "GMB Address" },
-  { key: "gmbUrl",                label: "GMB Link",                              placeholder: "https://maps.google.com/…" },
-  { key: "websitePublishedOnGmb", label: "Website Published on GMB",             placeholder: "https://…" },
-  { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…" },
-  { key: "accountUser",           label: "Account User" },
-  { key: "startDate",             label: "Start Date",                            placeholder: "YYYY-MM-DD" },
-  { key: "nextBillDate",          label: "Next Bill Date",                        placeholder: "YYYY-MM-DD" },
-  { key: "subscriptionId",        label: "Subscription ID" },
-  { key: "lastFourCard",          label: "Last 4 of Billing Credit Card",         placeholder: "e.g. 4242", maxLength: 4 },
-];
-
-function EditDialog({
-  open, onOpenChange, saving, onSave, values: initValues,
+function FullScreenDialog({
+  open, onOpenChange, title, icon: Icon, saving, onSave, children,
 }: {
-  open:          boolean;
-  onOpenChange:  (v: boolean) => void;
-  saving:        boolean;
-  onSave:        (vals: Record<string, string>) => void;
-  values:        Record<string, string>;
+  open:         boolean;
+  onOpenChange: (v: boolean) => void;
+  title:        string;
+  icon:         React.ElementType;
+  saving:       boolean;
+  onSave:       () => void;
+  children:     React.ReactNode;
 }) {
-  const [vals, setVals] = useState<Record<string, string>>(initValues);
-
-  /* Re-sync form when the dialog opens (captures latest server data) */
-  function handleOpenChange(v: boolean) {
-    if (v) setVals(initValues);
-    onOpenChange(v);
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 border-border/60 bg-card overflow-y-auto flex flex-col">
-        <DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-card overflow-y-auto flex flex-col">
+        <DialogHeader className="px-8 pt-8 pb-0">
           <div className="flex items-center gap-3 mb-1">
             <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-              <Building2 className="w-4 h-4 text-primary" />
+              <Icon className="w-4 h-4 text-primary" />
             </div>
-            <DialogTitle>Edit Business Details</DialogTitle>
+            <DialogTitle className="text-xl">{title}</DialogTitle>
           </div>
-          <DialogDescription className="sr-only">Edit business details</DialogDescription>
+          <DialogDescription className="sr-only">{title}</DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 flex flex-col items-center justify-center px-8 py-6">
-          <div className="w-full max-w-3xl">
-            <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-              {FIELDS.map((f) => (
-                <div
-                  key={f.key}
-                  className={`space-y-2 ${
-                    f.key === "gmbUrl" ||
-                    f.key === "websitePublishedOnGmb" ||
-                    f.key === "websiteLinkedOnGmb" ||
-                    f.key === "searchAddress" ||
-                    f.key === "publishedAddress"
-                      ? "col-span-2"
-                      : ""
-                  }`}
-                >
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {f.label}
-                  </Label>
-                  <Input
-                    className="bg-muted/30 border-border/60 h-11 text-sm"
-                    placeholder={f.placeholder ?? ""}
-                    maxLength={f.maxLength}
-                    value={vals[f.key] ?? ""}
-                    onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-            </div>
+          <div className="w-full max-w-3xl space-y-6">
+            {children}
 
-            <div className="flex gap-4 pt-10">
+            <div className="flex gap-4 pt-6">
               <Button
                 variant="outline" size="lg" className="flex-1 border-border/50 h-12"
                 onClick={() => onOpenChange(false)}
@@ -321,7 +332,7 @@ function EditDialog({
               <Button
                 size="lg" className="flex-1 gap-2 h-12"
                 disabled={saving}
-                onClick={() => onSave(vals)}
+                onClick={onSave}
                 style={{
                   background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
                   boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
@@ -337,5 +348,136 @@ function EditDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Edit Business Details                                        */
+/* ─────────────────────────────────────────────────────────── */
+const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean }> = [
+  { key: "businessName",          label: "Business Name" },
+  { key: "planName",              label: "Plan" },
+  { key: "searchAddress",         label: "Search Address",                           wide: true },
+  { key: "publishedAddress",      label: "GMB Address",                              wide: true },
+  { key: "gmbUrl",                label: "GMB Link",                  placeholder: "https://maps.google.com/…", wide: true },
+  { key: "websitePublishedOnGmb", label: "Website Published on GMB",  placeholder: "https://…", wide: true },
+  { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…", wide: true },
+  { key: "accountUser",           label: "Account User" },
+  { key: "startDate",             label: "Start Date",                placeholder: "YYYY-MM-DD" },
+  { key: "nextBillDate",          label: "Next Bill Date",            placeholder: "YYYY-MM-DD" },
+  { key: "subscriptionId",        label: "Subscription ID" },
+  { key: "lastFourCard",          label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
+];
+
+function EditBizDialog({
+  open, onOpenChange, saving, onSave, values: initValues,
+}: {
+  open:         boolean;
+  onOpenChange: (v: boolean) => void;
+  saving:       boolean;
+  onSave:       (vals: Record<string, string>) => void;
+  values:       Record<string, string>;
+}) {
+  const [vals, setVals] = useState<Record<string, string>>(initValues);
+
+  function handleOpenChange(v: boolean) {
+    if (v) setVals(initValues);
+    onOpenChange(v);
+  }
+
+  return (
+    <FullScreenDialog
+      open={open} onOpenChange={handleOpenChange}
+      title="Edit Business Details" icon={Building2}
+      saving={saving} onSave={() => onSave(vals)}
+    >
+      <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+        {BIZ_FIELDS.map((f) => (
+          <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{f.label}</Label>
+            <Input
+              className="bg-muted/30 border-border/60 h-11 text-sm"
+              placeholder={f.placeholder ?? ""}
+              maxLength={f.maxLength}
+              value={vals[f.key] ?? ""}
+              onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
+            />
+          </div>
+        ))}
+      </div>
+    </FullScreenDialog>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Edit Account Details                                         */
+/* ─────────────────────────────────────────────────────────── */
+const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; dropdown?: string[] }> = [
+  { key: "accountType",     label: "Account Type",             dropdown: ["Agency", "Retail"] },
+  { key: "accountUserName", label: "Account User Name" },
+  { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true },
+  { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true },
+  { key: "planName",        label: "Plan" },
+  { key: "subscriptionId",  label: "Subscription ID" },
+  { key: "businessName",    label: "Business Name" },
+  { key: "searchAddress",   label: "Search Address",           wide: true },
+  { key: "lastFourCard",    label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
+  { key: "nextBillDate",    label: "Next Bill Date",           placeholder: "YYYY-MM-DD" },
+  { key: "startDate",       label: "Start Date",               placeholder: "YYYY-MM-DD" },
+];
+
+function EditAccDialog({
+  open, onOpenChange, saving, onSave, values: initValues,
+}: {
+  open:         boolean;
+  onOpenChange: (v: boolean) => void;
+  saving:       boolean;
+  onSave:       (vals: Record<string, string>) => void;
+  values:       Record<string, string>;
+}) {
+  const [vals, setVals] = useState<Record<string, string>>(initValues);
+
+  function handleOpenChange(v: boolean) {
+    if (v) setVals(initValues);
+    onOpenChange(v);
+  }
+
+  return (
+    <FullScreenDialog
+      open={open} onOpenChange={handleOpenChange}
+      title="Edit Account Details" icon={Briefcase}
+      saving={saving} onSave={() => onSave(vals)}
+    >
+      <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+        {ACC_FIELDS.map((f) => (
+          <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{f.label}</Label>
+            {f.dropdown ? (
+              <Select
+                value={vals[f.key] ?? ""}
+                onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
+              >
+                <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {f.dropdown.map((o) => (
+                    <SelectItem key={o} value={o}>{o}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                className="bg-muted/30 border-border/60 h-11 text-sm"
+                placeholder={f.placeholder ?? ""}
+                maxLength={f.maxLength}
+                value={vals[f.key] ?? ""}
+                onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </FullScreenDialog>
   );
 }
