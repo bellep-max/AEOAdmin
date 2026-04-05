@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Loader2, Radio, Wifi } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 
 export default function Login() {
   const { login } = useAuth();
@@ -69,9 +69,9 @@ export default function Login() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-xl"
+            <div className="w-14 h-14 rounded-2xl bg-[#0b1a2e] flex items-center justify-center shadow-xl border border-white/10"
               style={{ boxShadow: "0 0 30px rgba(37,99,235,0.4), 0 4px 16px rgba(0,0,0,0.4)" }}>
-              <Radio className="w-7 h-7 text-white" />
+              <img src="/signal-aeo-logo.svg" alt="Signal AEO" className="w-8 h-7" />
             </div>
             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[hsl(222,47%,8%)]">
               <span className="absolute inset-0 rounded-full bg-emerald-400 dot-ping" />
@@ -151,7 +151,7 @@ export default function Login() {
 
           <div className="mt-6 pt-5 border-t border-border/40">
             <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
-              <Wifi className="w-3.5 h-3.5" />
+              <img src="/signal-aeo-logo.svg" alt="" className="w-3.5 h-3" />
               <span>
                 Default: <span className="font-mono text-muted-foreground">admin@signalaeo.com</span>
                 {" / "}
