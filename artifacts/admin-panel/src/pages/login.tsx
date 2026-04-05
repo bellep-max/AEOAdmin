@@ -148,17 +148,6 @@ export default function Login() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 pt-5 border-t border-border/40">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
-              <img src="/signal-aeo-logo.svg" alt="" className="w-3.5 h-3" />
-              <span>
-                Default: <span className="font-mono text-muted-foreground">admin@signalaeo.com</span>
-                {" / "}
-                <span className="font-mono text-muted-foreground">Admin123!</span>
-              </span>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-xs text-muted-foreground/50 mt-6">
