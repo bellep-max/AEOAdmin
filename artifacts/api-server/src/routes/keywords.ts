@@ -40,6 +40,7 @@ router.post("/", async (req, res) => {
       .values({
         clientId: Number(body.clientId),
         keywordText: body.keywordText.trim(),
+        keywordType: body.keywordType ? Number(body.keywordType) : 3,
         verificationStatus: body.verificationStatus ?? null,
         initialSearchCount30Days:  body.initialSearchCount30Days  ?? null,
         followupSearchCount30Days: body.followupSearchCount30Days ?? null,
@@ -159,6 +160,7 @@ router.patch("/:id", async (req, res) => {
 
     const allowed: Record<string, unknown> = {};
     if (body.keywordText      !== undefined) allowed.keywordText      = String(body.keywordText).trim();
+    if (body.keywordType      !== undefined) allowed.keywordType      = Number(body.keywordType);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
     if (body.linkActive       !== undefined) allowed.linkActive       = Boolean(body.linkActive);

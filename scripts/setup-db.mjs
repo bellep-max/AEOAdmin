@@ -63,7 +63,7 @@ async function createTables() {
       id SERIAL PRIMARY KEY,
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
       keyword_text VARCHAR(512) NOT NULL,
-      keyword_type VARCHAR(100) DEFAULT 'Type 1 - Geo Specific',
+      keyword_type INTEGER DEFAULT 3,
       is_primary BOOLEAN DEFAULT false,
       is_active BOOLEAN DEFAULT true,
       date_added DATE DEFAULT CURRENT_DATE,
@@ -81,6 +81,7 @@ async function createTables() {
     CREATE TABLE IF NOT EXISTS keyword_links (
       id SERIAL PRIMARY KEY,
       keyword_id INTEGER NOT NULL REFERENCES keywords(id) ON DELETE CASCADE,
+      link_url TEXT,
       link_type_label VARCHAR(100),
       link_active BOOLEAN DEFAULT true,
       initial_rank_report_link VARCHAR(512),
