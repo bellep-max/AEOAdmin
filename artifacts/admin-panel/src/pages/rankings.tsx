@@ -46,6 +46,13 @@ type PlatformSummary = {
   keywords: PlatformKw[];
 };
 
+type CrossRow = {
+  keywordText: string; clientName: string;
+  chatgpt:    PlatformKw | undefined;
+  gemini:     PlatformKw | undefined;
+  perplexity: PlatformKw | undefined;
+};
+
 type CompRow = {
   clientId: number;
   clientName: string;
@@ -211,6 +218,208 @@ function exportPDF(rows: CompRow[], title: string, filename: string) {
     doc.setTextColor(100, 110, 130);
     doc.text("Signal AEO Platform — Confidential", 10, doc.internal.pageSize.getHeight() - 5);
     doc.text(`Page ${i} / ${pageCount}`, pageW - 10, doc.internal.pageSize.getHeight() - 5, { align: "right" });
+  }
+
+  doc.save(filename);
+}
+
+/* ── Platform CSV export ────────────────────────────────── */
+function exportPlatformCSV(crossRows: CrossRow[], filename: string) {
+  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const chg = (v: number | null | undefined) =>
+    v == null ? "" : v > 0 ? `+${v}` : String(v);
+  const pos = (v: number | null | undefined) =>
+    v == null ? "" : `#${v}`;
+
+  const headers = [
+    "Keyword", "Business",
+    "ChatGPT Rank", "ChatGPT Change",
+    "Gemini Rank",  "Gemini Change",
+    "Perplexity Rank", "Perplexity Change",
+    "Best Platform",
+  ];
+
+  const lines = [
+    headers.join(","),
+    ...crossRows.map((r) => {
+      const positions: [string, number][] = [
+        ["ChatGPT",    r.chatgpt?.currentPosition    ?? 9999],
+        ["Gemini",     r.gemini?.currentPosition     ?? 9999],
+        ["Perplexity", r.perplexity?.currentPosition ?? 9999],
+      ];
+      const bestPos = Math.min(...positions.map(([, p]) => p));
+      const best = bestPos < 9999 ? positions.find(([, p]) => p === bestPos)?.[0] ?? "" : "";
+      return [
+        esc(r.keywordText),
+        esc(r.clientName),
+        esc(pos(r.chatgpt?.currentPosition)),
+        esc(chg(r.chatgpt?.positionChange)),
+        esc(pos(r.gemini?.currentPosition)),
+        esc(chg(r.gemini?.positionChange)),
+        esc(pos(r.perplexity?.currentPosition)),
+        esc(chg(r.perplexity?.positionChange)),
+        esc(best),
+      ].join(",");
+    }),
+  ];
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── Platform PDF export ────────────────────────────────── */
+function exportPlatformPDF(data: PlatformSummary[], crossRows: CrossRow[], filename: string) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  /* Cover header */
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Platform Ranking Report", 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text("ChatGPT · Gemini · Perplexity", 10, 16);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+
+  /* ── Platform summary table ── */
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 130, 200);
+  doc.text("Platform Performance Summary", 10, 30);
+
+  const PLAT_COLORS: Record<string, [number, number, number]> = {
+    chatgpt:    [52, 211, 153],
+    gemini:     [96, 165, 250],
+    perplexity: [167, 139, 250],
+  };
+  const LABELS: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity" };
+
+  autoTable(doc, {
+    startY: 34,
+    margin: { left: 10, right: 10 },
+    head: [["Platform", "Keywords Tracked", "With Data", "Avg Rank", "Top 10", "Improving", "Steady", "Declining", "Best Keyword"]],
+    body: data.map((p) => [
+      LABELS[p.platform] ?? p.platform,
+      p.totalKeywords,
+      p.withData,
+      p.avgCurrentRank != null ? `#${p.avgCurrentRank}` : "—",
+      p.topTenCount,
+      p.improving,
+      p.steady,
+      p.declining,
+      p.bestKeyword ? `${p.bestKeyword.text} (#${p.bestKeyword.position ?? "?"})` : "—",
+    ]),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 8, fontStyle: "bold" },
+    bodyStyles: { fontSize: 8, textColor: [220, 225, 235] },
+    alternateRowStyles: { fillColor: [22, 30, 50] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 28, fontStyle: "bold" },
+      3: { halign: "center" },
+      4: { halign: "center" },
+      5: { halign: "center" },
+      6: { halign: "center" },
+      7: { halign: "center" },
+      8: { cellWidth: "auto" },
+    },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index === 0) {
+        const plat = data[d.row.index]?.platform;
+        const col = plat ? PLAT_COLORS[plat] : null;
+        if (col) d.cell.styles.textColor = col;
+      }
+    },
+  });
+
+  /* ── Cross-platform keyword table ── */
+  const afterSummary = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  let y = afterSummary;
+  if (y > pageH - 30) { doc.addPage(); y = 15; }
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 130, 200);
+  doc.text("Keyword Rankings by Platform", 10, y);
+  y += 4;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 10, right: 10 },
+    head: [["Keyword", "Business", "ChatGPT Rank", "ChatGPT Δ", "Gemini Rank", "Gemini Δ", "Perplexity Rank", "Perplexity Δ", "Best Platform"]],
+    body: crossRows.map((r) => {
+      const positions: [string, number][] = [
+        ["ChatGPT",    r.chatgpt?.currentPosition    ?? 9999],
+        ["Gemini",     r.gemini?.currentPosition     ?? 9999],
+        ["Perplexity", r.perplexity?.currentPosition ?? 9999],
+      ];
+      const bestPos = Math.min(...positions.map(([, p]) => p));
+      const best = bestPos < 9999 ? positions.find(([, p]) => p === bestPos)?.[0] ?? "—" : "—";
+      const fmt = (pos: number | null | undefined, chg: number | null | undefined) =>
+        pos != null ? `#${pos}` : "—";
+      const fmtChg = (v: number | null | undefined) =>
+        v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "=" : String(v);
+      return [
+        r.keywordText,
+        r.clientName,
+        fmt(r.chatgpt?.currentPosition, r.chatgpt?.positionChange),
+        fmtChg(r.chatgpt?.positionChange),
+        fmt(r.gemini?.currentPosition, r.gemini?.positionChange),
+        fmtChg(r.gemini?.positionChange),
+        fmt(r.perplexity?.currentPosition, r.perplexity?.positionChange),
+        fmtChg(r.perplexity?.positionChange),
+        best,
+      ];
+    }),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+    bodyStyles: { fontSize: 7, textColor: [220, 225, 235] },
+    alternateRowStyles: { fillColor: [22, 30, 50] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 22, halign: "center" },
+      3: { cellWidth: 16, halign: "center" },
+      4: { cellWidth: 22, halign: "center" },
+      5: { cellWidth: 16, halign: "center" },
+      6: { cellWidth: 26, halign: "center" },
+      7: { cellWidth: 16, halign: "center" },
+      8: { cellWidth: "auto", halign: "center" },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body") return;
+      /* ChatGPT change col */
+      if (d.column.index === 3 || d.column.index === 5 || d.column.index === 7) {
+        const v = String(d.cell.raw ?? "");
+        if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
+        else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
+      }
+      /* Best Platform col */
+      if (d.column.index === 8) {
+        const v = String(d.cell.raw ?? "").toLowerCase();
+        if (v === "chatgpt") d.cell.styles.textColor = PLAT_COLORS.chatgpt;
+        else if (v === "gemini") d.cell.styles.textColor = PLAT_COLORS.gemini;
+        else if (v === "perplexity") d.cell.styles.textColor = PLAT_COLORS.perplexity;
+      }
+    },
+  });
+
+  /* Footer */
+  const pageCount = (doc as jsPDF & { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 110, 130);
+    doc.text("Signal AEO Platform — Confidential", 10, pageH - 5);
+    doc.text(`Page ${i} / ${pageCount}`, pageW - 10, pageH - 5, { align: "right" });
   }
 
   doc.save(filename);
@@ -675,8 +884,41 @@ export default function Rankings() {
               return bestA - bestB;
             });
 
+            const dateStamp = format(new Date(), "yyyy-MM-dd");
+
             return (
               <>
+                {/* ── Export bar ── */}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    {crossRows.length} keywords tracked across 3 platforms
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1.5 text-xs border-border/50 hover:bg-muted/40"
+                      onClick={() =>
+                        exportPlatformCSV(crossRows, `signal-aeo-platform-rankings-${dateStamp}.csv`)
+                      }
+                    >
+                      <Download className="w-3 h-3" />
+                      CSV
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1.5 text-xs border-border/50 hover:bg-muted/40"
+                      onClick={() =>
+                        exportPlatformPDF(platformData, crossRows, `signal-aeo-platform-rankings-${dateStamp}.pdf`)
+                      }
+                    >
+                      <FileDown className="w-3 h-3" />
+                      PDF
+                    </Button>
+                  </div>
+                </div>
+
                 {/* ── Platform summary cards ── */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {platformData.map((p) => {
