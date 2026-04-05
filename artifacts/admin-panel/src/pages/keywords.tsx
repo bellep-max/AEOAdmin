@@ -537,6 +537,8 @@ function KeywordCard({
   }
 
   const isType4    = Number(kw.keywordType) === 4;
+  const hasLinks   = (links?.length ?? 0) > 0;
+  const showAsBacklinks = isType4 || hasLinks;
   const isPrimary  = !!kw.isPrimary;
   const isActive   = kw.isActive as boolean;
 
@@ -551,10 +553,10 @@ function KeywordCard({
             <p className="font-bold text-lg text-black dark:text-white leading-snug break-words">{kw.keywordText as string}</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className={`text-sm h-6 px-2.5 ${
-                isType4 ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-                        : "bg-violet-100 text-violet-700 border-violet-300"
+                showAsBacklinks ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                : "bg-violet-100 text-violet-700 border-violet-300"
               }`}>
-                {getKeywordTypeLabel(kw.keywordType as number, true)}
+                {showAsBacklinks ? "w/ Backlinks" : "Keyword"}
               </Badge>
               {isPrimary && (
                 <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 text-amber-700 border-amber-300">1st</Badge>
