@@ -1,19 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  useGetDashboardSummary, 
-  useGetSessionActivity, 
-  useGetPlatformBreakdown, 
+import {
+  useGetDashboardSummary,
+  useGetSessionActivity,
+  useGetPlatformBreakdown,
   useGetNetworkHealth,
-  useGetClients
+  useGetClients,
 } from "@workspace/api-client-react";
-import { 
+import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
-import { 
-  Activity, Users, Smartphone, HeartPulse, TrendingUp, ArrowUpRight,
-  ArrowRight, Wifi, WifiOff, Clock
+import {
+  Activity, Users, HeartPulse, ArrowUpRight, ArrowRight, Clock,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -24,8 +23,13 @@ const platformColors: Record<string, string> = {
   "perplexity": "hsl(43,96%,58%)",
 };
 
-// Custom tooltip for recharts
-function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ color: string; name: string; value: number }>; label?: string }) {
+function ChartTooltip({
+  active, payload, label,
+}: {
+  active?: boolean;
+  payload?: Array<{ color: string; name: string; value: number }>;
+  label?: string;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-border/60 bg-card/95 backdrop-blur-md px-3 py-2.5 shadow-xl text-xs">
@@ -42,19 +46,17 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 }
 
 export default function Dashboard() {
-  const { data: summary, isLoading: isSummaryLoading } = useGetDashboardSummary();
-  const { data: activity, isLoading: isActivityLoading } = useGetSessionActivity();
-  const { data: platformBreakdown, isLoading: isPlatformLoading } = useGetPlatformBreakdown();
-  const { data: health, isLoading: isHealthLoading } = useGetNetworkHealth();
-  const { data: clients, isLoading: isClientsLoading } = useGetClients();
+  const { data: summary,           isLoading: isSummaryLoading  } = useGetDashboardSummary();
+  const { data: activity,          isLoading: isActivityLoading  } = useGetSessionActivity();
+  const { data: platformBreakdown, isLoading: isPlatformLoading  } = useGetPlatformBreakdown();
+  const { data: health,            isLoading: isHealthLoading    } = useGetNetworkHealth();
+  const { data: clients,           isLoading: isClientsLoading   } = useGetClients();
 
   const topClients = clients
     ?.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5) || [];
 
-  const totalDevices = (health?.devicesOnline ?? 0) + (health?.devicesInUse ?? 0) + (health?.devicesOffline ?? 0);
-
-  const now = new Date();
+  const now     = new Date();
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
@@ -72,8 +74,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stat cards — 3 columns (Device card removed) */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Total Clients"
           value={summary?.totalClients}
@@ -94,24 +96,12 @@ export default function Dashboard() {
           iconColor="text-emerald-400"
           iconBg="bg-emerald-500/10"
           barClass="gradient-bar-green"
-          href="/sessions"
-        />
-        <StatCard
-          title="Available Devices"
-          value={summary?.availableDevices}
-          loading={isSummaryLoading}
-          subtext={`out of ${summary?.totalDevices ?? 0} total`}
-          icon={Smartphone}
-          iconColor="text-amber-400"
-          iconBg="bg-amber-500/10"
-          barClass="gradient-bar-amber"
-          href="/devices"
         />
         <StatCard
           title="Network Health"
           value={health?.score ? `${health.score}%` : undefined}
           loading={isHealthLoading}
-          subtext={`${health?.devicesOnline ?? 0} devices online`}
+          subtext={`${health?.activeProxies ?? 0} proxies active`}
           icon={HeartPulse}
           iconColor={health?.score && health.score > 90 ? "text-emerald-400" : "text-amber-400"}
           iconBg={health?.score && health.score > 90 ? "bg-emerald-500/10" : "bg-amber-500/10"}
@@ -211,7 +201,7 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-1.5 w-full">
                   {platformBreakdown.map((entry) => {
                     const total = platformBreakdown.reduce((s, e) => s + e.count, 0);
-                    const pct = total > 0 ? Math.round((entry.count / total) * 100) : 0;
+                    const pct   = total > 0 ? Math.round((entry.count / total) * 100) : 0;
                     const color = platformColors[entry.platform.toLowerCase()] ?? "hsl(215,20%,45%)";
                     return (
                       <div key={entry.platform} className="flex items-center gap-2 text-xs">
@@ -231,23 +221,22 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Bottom row */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Recent Clients */}
-        <Card className="border-border/50 card-hover">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Recent Clients</CardTitle>
-              <Link href="/clients">
-                <Badge variant="outline" className="text-xs text-primary border-primary/30 hover:bg-primary/10 cursor-pointer gap-1 transition-colors">
-                  View all <ArrowRight className="w-3 h-3" />
-                </Badge>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
+      {/* Recent Clients — full width */}
+      <Card className="border-border/50 card-hover">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Recent Clients</CardTitle>
+            <Link href="/clients">
+              <Badge variant="outline" className="text-xs text-primary border-primary/30 hover:bg-primary/10 cursor-pointer gap-1 transition-colors">
+                View all <ArrowRight className="w-3 h-3" />
+              </Badge>
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {isClientsLoading ? (
-              Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)
+              Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)
             ) : topClients.length > 0 ? (
               topClients.map((client) => {
                 const initials = client.businessName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -278,104 +267,34 @@ export default function Dashboard() {
                 );
               })
             ) : (
-              <EmptyState message="No clients yet" />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Device Farm */}
-        <Card className="border-border/50 card-hover">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Device Farm</CardTitle>
-              <Link href="/devices">
-                <Badge variant="outline" className="text-xs text-primary border-primary/30 hover:bg-primary/10 cursor-pointer gap-1 transition-colors">
-                  Manage <ArrowRight className="w-3 h-3" />
-                </Badge>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isHealthLoading ? (
-              <div className="space-y-5">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
-              </div>
-            ) : (
-              <div className="space-y-5">
-                <DeviceBar
-                  label="Available"
-                  count={health?.devicesOnline ?? 0}
-                  total={totalDevices}
-                  color="bg-emerald-500"
-                  textColor="text-emerald-400"
-                  icon={<Wifi className="w-3.5 h-3.5" />}
-                />
-                <DeviceBar
-                  label="In Use"
-                  count={health?.devicesInUse ?? 0}
-                  total={totalDevices}
-                  color="bg-primary"
-                  textColor="text-primary"
-                  icon={<Activity className="w-3.5 h-3.5" />}
-                />
-                <DeviceBar
-                  label="Offline"
-                  count={health?.devicesOffline ?? 0}
-                  total={totalDevices}
-                  color="bg-destructive"
-                  textColor="text-destructive"
-                  icon={<WifiOff className="w-3.5 h-3.5" />}
-                />
-
-                {/* Health score */}
-                <div className="mt-2 pt-4 border-t border-border/40">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                      <TrendingUp className="w-3.5 h-3.5" />
-                      Overall Health Score
-                    </span>
-                    <span className={`text-sm font-bold tabular-nums ${
-                      (health?.score ?? 0) > 90 ? "text-emerald-400" : "text-amber-400"
-                    }`}>
-                      {health?.score ?? 0}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${
-                        (health?.score ?? 0) > 90 ? "gradient-bar-green" : "gradient-bar-amber"
-                      }`}
-                      style={{ width: `${health?.score ?? 0}%` }}
-                    />
-                  </div>
-                </div>
+              <div className="col-span-3">
+                <EmptyState message="No clients yet" />
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-/* ── Sub-components ───────────────────────────────────────────── */
+/* ── Sub-components ─────────────────────────────────────────────────────── */
 
 function StatCard({
   title, value, loading, subtext, icon: Icon, iconColor, iconBg, barClass, href,
 }: {
-  title: string;
-  value?: number | string;
-  loading: boolean;
-  subtext?: string;
-  icon: React.ElementType;
-  iconColor: string;
-  iconBg: string;
-  barClass: string;
-  href?: string;
+  title:      string;
+  value?:     number | string;
+  loading:    boolean;
+  subtext?:   string;
+  icon:       React.ElementType;
+  iconColor:  string;
+  iconBg:     string;
+  barClass:   string;
+  href?:      string;
 }) {
   const inner = (
     <Card className="border-border/50 card-hover relative overflow-hidden cursor-default group">
-      {/* Top accent bar */}
       <div className={`absolute top-0 left-0 right-0 h-0.5 ${barClass}`} />
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
@@ -400,39 +319,6 @@ function StatCard({
   );
 
   return href ? <Link href={href}>{inner}</Link> : inner;
-}
-
-function DeviceBar({
-  label, count, total, color, textColor, icon,
-}: {
-  label: string;
-  count: number;
-  total: number;
-  color: string;
-  textColor: string;
-  icon: React.ReactNode;
-}) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className={`flex items-center gap-1.5 text-xs font-medium ${textColor}`}>
-          {icon}
-          {label}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{pct}%</span>
-          <span className={`text-sm font-bold tabular-nums ${textColor}`}>{count}</span>
-        </div>
-      </div>
-      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ${color}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
 }
 
 function EmptyState({ message }: { message: string }) {
