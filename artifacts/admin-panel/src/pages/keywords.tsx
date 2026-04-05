@@ -748,13 +748,14 @@ export default function Keywords() {
         });
         if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
         const newKw = await r.json();
-        // If type 4 with link data, also save the link
-        if (Number(kwData.keywordType) === 4 && (linkUrl || linkTypeLabel || initialRankReportLink)) {
-          await fetch(`${BASE}/api/keywords/${newKw.id}/links`, {
+        // If type 4, always create a link row so it shows in Associated Links
+        if (Number(kwData.keywordType) === 4) {
+          const lr = await fetch(`${BASE}/api/keywords/${newKw.id}/links`, {
             method: "POST", credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink }),
+            body: JSON.stringify({ linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, linkActive, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null }),
           });
+          if (!lr.ok) throw new Error((await lr.json()).error ?? "Failed to save link");
         }
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
