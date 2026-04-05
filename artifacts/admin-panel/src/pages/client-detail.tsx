@@ -269,7 +269,7 @@ function EditDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[640px] border-border/60 bg-card max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 border-border/60 bg-card overflow-y-auto flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
             <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
@@ -280,57 +280,60 @@ function EditDialog({
           <DialogDescription className="sr-only">Edit business details</DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4 mt-2">
-          {FIELDS.map((f) => (
-            <div
-              key={f.key}
-              /* URL fields and long labels span the full width */
-              className={`space-y-1.5 ${
-                f.key === "gmbUrl" ||
-                f.key === "websitePublishedOnGmb" ||
-                f.key === "websiteLinkedOnGmb" ||
-                f.key === "searchAddress" ||
-                f.key === "publishedAddress"
-                  ? "col-span-2"
-                  : ""
-              }`}
-            >
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {f.label}
-              </Label>
-              <Input
-                className="bg-muted/30 border-border/60 h-9 text-sm"
-                placeholder={f.placeholder ?? ""}
-                maxLength={f.maxLength}
-                value={vals[f.key] ?? ""}
-                onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
-              />
+        <div className="flex-1 flex flex-col items-center justify-center px-8 py-6">
+          <div className="w-full max-w-3xl">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+              {FIELDS.map((f) => (
+                <div
+                  key={f.key}
+                  className={`space-y-2 ${
+                    f.key === "gmbUrl" ||
+                    f.key === "websitePublishedOnGmb" ||
+                    f.key === "websiteLinkedOnGmb" ||
+                    f.key === "searchAddress" ||
+                    f.key === "publishedAddress"
+                      ? "col-span-2"
+                      : ""
+                  }`}
+                >
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {f.label}
+                  </Label>
+                  <Input
+                    className="bg-muted/30 border-border/60 h-11 text-sm"
+                    placeholder={f.placeholder ?? ""}
+                    maxLength={f.maxLength}
+                    value={vals[f.key] ?? ""}
+                    onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="flex gap-3 pt-4">
-          <Button
-            variant="outline" className="flex-1 border-border/50"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 gap-2"
-            disabled={saving}
-            onClick={() => onSave(vals)}
-            style={{
-              background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
-              boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
-            }}
-          >
-            {saving
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-              : "Save Changes"
-            }
-          </Button>
+            <div className="flex gap-4 pt-10">
+              <Button
+                variant="outline" size="lg" className="flex-1 border-border/50 h-12"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="lg" className="flex-1 gap-2 h-12"
+                disabled={saving}
+                onClick={() => onSave(vals)}
+                style={{
+                  background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
+                  boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
+                }}
+              >
+                {saving
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                  : "Save Changes"
+                }
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
