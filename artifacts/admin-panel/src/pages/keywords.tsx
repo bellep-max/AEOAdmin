@@ -28,18 +28,19 @@ const LINK_TYPES = ["GBP snippet", "Client website blog post", "External article
 type KwRecord = Record<string, unknown>;
 
 // Helper function to get keyword type label
-function getKeywordTypeLabel(type: number | string, short = false): string {
+function getKeywordTypeLabel(type: number | string, short = false, hasLinks = false): string {
   const t = Number(type);
+  if (hasLinks) return short ? "Backlinks" : "Text with Backlinks";
   if (short) {
     switch (t) {
       case 3: return "Text";
-      case 4: return "w/Links";
+      case 4: return "Backlinks";
       default: return "Text";
     }
   }
   switch (t) {
     case 3: return "Keyword text";
-    case 4: return "Keywords with links";
+    case 4: return "Text with Backlinks";
     default: return "Keyword text";
   }
 }
@@ -273,7 +274,8 @@ function KeywordDialog({
     clientId: "", keywordText: "", keywordType: "3", isPrimary: "0", isActive: true,
     initialSearchCount30Days: 0, followupSearchCount30Days: 0,
     initialSearchCountLife: 0,  followupSearchCountLife: 0,
-    linkTypeLabel: "", linkActive: true,
+    linkUrl: "", linkTypeLabel: "", linkActive: true,
+    initialRankReportLink: "", currentRankReportLink: "",
   };
   const [vals, setVals] = useState<KwRecord>(blank);
   function set(k: string, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
@@ -334,36 +336,71 @@ function KeywordDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="3">Keyword text</SelectItem>
-                <SelectItem value="4">Keywords with links</SelectItem>
+                <SelectItem value="4">Text with Backlinks</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {/* Type 4 specific fields */}
+          {/* Type 4 — full link form */}
           {String(vals.keywordType) === "4" && (
-            <div className="grid grid-cols-3 gap-3 items-end pt-3 pb-3 px-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="col-span-2 space-y-1.5">
-                <Label className="text-sm uppercase tracking-widest text-black font-bold">Link Type Label</Label>
-                <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
-                  <SelectTrigger className="bg-white border-slate-300 h-11 text-base text-black">
-                    <SelectValue placeholder="Select link type…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GBP snippet">GBP snippet</SelectItem>
-                    <SelectItem value="Client website blog post">Client website blog post</SelectItem>
-                    <SelectItem value="External article">External article</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-3 pt-3 pb-4 px-4 bg-emerald-50 rounded-xl border border-emerald-200">
+              <div className="flex items-center gap-2 mb-1">
+                <Link2 className="w-4 h-4 text-emerald-600" />
+                <p className="text-sm font-bold uppercase tracking-widest text-emerald-700">Backlink Details</p>
               </div>
-              <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-4 h-11">
-              <p className="text-base flex-1 text-black font-bold\">Link Active</p>
-                <Switch
-                  checked={vals.linkActive !== false}
-                  onCheckedChange={(v) => set("linkActive", v)}
-                  className="data-[state=checked]:bg-emerald-500 scale-75"
+
+              {/* Link URL */}
+              <div className="space-y-1.5">
+                <Label className="text-sm uppercase tracking-widest text-black font-bold">Link URL</Label>
+                <Input
+                  className="bg-white border-slate-300 h-11 text-base text-black font-mono"
+                  placeholder="https://…"
+                  value={(vals.linkUrl as string) || ""}
+                  onChange={(e) => set("linkUrl", e.target.value)}
                 />
               </div>
+
+              {/* Link Type + Active */}
+              <div className="grid grid-cols-3 gap-3 items-end">
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-sm uppercase tracking-widest text-black font-bold">Link Type Label</Label>
+                  <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
+                    <SelectTrigger className="bg-white border-slate-300 h-11 text-base text-black">
+                      <SelectValue placeholder="Select link type…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GBP snippet">GBP snippet</SelectItem>
+                      <SelectItem value="Client website blog post">Client website blog post</SelectItem>
+                      <SelectItem value="External article">External article</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-4 h-11">
+                  <p className="text-base flex-1 text-black font-bold">Active</p>
+                  <Switch
+                    checked={vals.linkActive !== false}
+                    onCheckedChange={(v) => set("linkActive", v)}
+                    className="data-[state=checked]:bg-emerald-500 scale-75"
+                  />
+                </div>
+              </div>
+
+              {/* Rank Report Links */}
+              {[
+                { k: "initialRankReportLink", label: "Initial Rank Report Link" },
+                { k: "currentRankReportLink", label: "Current Rank Report Link" },
+              ].map(({ k, label }) => (
+                <div key={k} className="space-y-1.5">
+                  <Label className="text-sm uppercase tracking-widest text-black font-bold">{label}</Label>
+                  <Input
+                    className="bg-white border-slate-300 h-11 text-base text-black font-mono"
+                    placeholder="https://…"
+                    value={(vals[k] as string) || ""}
+                    onChange={(e) => set(k, e.target.value)}
+                  />
+                </div>
+              ))}
             </div>
           )}
 
@@ -500,10 +537,11 @@ function KeywordCard({
     } catch { toast({ title: "Delete failed", variant: "destructive" }); }
   }
 
-  const isType3   = Number(kw.keywordType) === 3;
-  const isType4   = Number(kw.keywordType) === 4;
-  const isPrimary = !!kw.isPrimary;
-  const isActive  = kw.isActive as boolean;
+  const isType4    = Number(kw.keywordType) === 4;
+  const hasLinks   = (links?.length ?? 0) > 0;
+  const showBadge  = isType4 || hasLinks;
+  const isPrimary  = !!kw.isPrimary;
+  const isActive   = kw.isActive as boolean;
 
   return (
     <div className={`rounded-xl border-2 transition-all ${isActive ? "border-slate-200 bg-white shadow-sm" : "border-slate-200 bg-slate-100 shadow-sm"}`}>
@@ -516,11 +554,10 @@ function KeywordCard({
             <p className="font-bold text-lg text-black dark:text-white leading-snug break-words">{kw.keywordText as string}</p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className={`text-sm h-6 px-2.5 ${
-                isType3 ? "bg-violet-100 text-violet-700 border-violet-300" :
-                isType4 ? "bg-emerald-100 text-emerald-700 border-emerald-300" :
+                showBadge ? "bg-emerald-100 text-emerald-700 border-emerald-300" :
                 "bg-violet-100 text-violet-700 border-violet-300"
               }`}>
-                {getKeywordTypeLabel(kw.keywordType as number, true)}
+                {getKeywordTypeLabel(kw.keywordType as number, true, hasLinks)}
               </Badge>
               {isPrimary && (
                 <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 text-amber-700 border-amber-300">1st</Badge>
@@ -703,12 +740,22 @@ export default function Keywords() {
           updateKeyword.mutate({ id, data }, { onSuccess: () => res(), onError: (e) => rej(e) }),
         );
       } else {
+        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
         const r = await fetch(`${BASE}/api/keywords`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...data, clientId: Number(data.clientId) }),
+          body: JSON.stringify({ ...kwData, clientId: Number(kwData.clientId) }),
         });
         if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
+        const newKw = await r.json();
+        // If type 4 with link data, also save the link
+        if (Number(kwData.keywordType) === 4 && (linkUrl || linkTypeLabel || initialRankReportLink)) {
+          await fetch(`${BASE}/api/keywords/${newKw.id}/links`, {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink }),
+          });
+        }
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
       toast({ title: id ? "Keyword updated" : "Keyword added" });
