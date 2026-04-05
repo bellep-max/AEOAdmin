@@ -97,6 +97,10 @@ router.post("/:id/links", async (req, res) => {
         currentRankReportLink: body.currentRankReportLink ?? null,
       })
       .returning();
+    // Ensure keyword is marked as type 4 (Keywords with Backlinks)
+    await db.update(keywordsTable)
+      .set({ keywordType: 4 })
+      .where(eq(keywordsTable.id, keywordId));
     res.status(201).json(link);
   } catch (err) {
     req.log.error({ err }, "Error creating keyword link");
@@ -140,8 +144,17 @@ router.patch("/:id/links/:linkId", async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 router.delete("/:id/links/:linkId", async (req, res) => {
   try {
-    const linkId = parseInt(req.params.linkId);
+    const keywordId = parseInt(req.params.id);
+    const linkId    = parseInt(req.params.linkId);
     await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, linkId));
+    // If no links remain, revert keyword to type 3 (Keywords)
+    const remaining = await db.select().from(keywordLinksTable)
+      .where(eq(keywordLinksTable.keywordId, keywordId));
+    if (remaining.length === 0) {
+      await db.update(keywordsTable)
+        .set({ keywordType: 3 })
+        .where(eq(keywordsTable.id, keywordId));
+    }
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error deleting keyword link");
