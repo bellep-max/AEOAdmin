@@ -194,10 +194,10 @@ function LinkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px] border-slate-300 bg-white">
+      <DialogContent className="sm:max-w-[520px] border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
               <Link2 className="w-4 h-4 text-violet-600" />
             </div>
             <DialogTitle className="text-lg font-bold text-black dark:text-white">{initial?.id ? "Edit Link" : "Add Associated Link"}</DialogTitle>
@@ -208,9 +208,9 @@ function LinkDialog({
         <div className="space-y-4 mt-2">
           <div className="grid grid-cols-3 gap-3 items-end">
             <div className="col-span-2 space-y-1.5">
-              <Label className="text-sm uppercase tracking-widest text-black font-bold">Link Type Label</Label>
+              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link Type Label</Label>
               <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
-                <SelectTrigger className="bg-slate-50 border-slate-300 h-11 text-base text-black">
+                <SelectTrigger className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white">
                   <SelectValue placeholder="Select type…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -218,8 +218,8 @@ function LinkDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-lg px-3 h-11">
-              <p className="text-base flex-1 text-black font-bold">Active</p>
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 h-11">
+              <p className="text-base flex-1 text-black dark:text-white font-bold">Active</p>
               <Switch
                 checked={vals.linkActive !== false}
                 onCheckedChange={(v) => set("linkActive", v)}
@@ -234,9 +234,9 @@ function LinkDialog({
             { k: "currentRankReportLink" as keyof KeywordLink, label: "Current Rank Report Link" },
           ].map(({ k, label }) => (
             <div key={k} className="space-y-1.5">
-              <Label className="text-sm uppercase tracking-widest text-black font-bold">{label}</Label>
+              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">{label}</Label>
               <Input
-                className="bg-slate-50 border-slate-300 h-11 text-base font-mono text-black"
+                className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
                 placeholder="https://…"
                 value={(vals[k] as string) || ""}
                 onChange={(e) => set(k, e.target.value)}
@@ -246,7 +246,7 @@ function LinkDialog({
         </div>
 
         <div className="flex gap-3 pt-4">
-          <Button variant="outline" className="flex-1 border-slate-300 text-black hover:bg-slate-100 text-base font-bold h-11" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button variant="outline" className="flex-1 border-slate-300 dark:border-slate-600 text-black dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 text-base font-bold h-11" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
             <Button className="flex-1 gap-2 text-base font-bold h-11" disabled={saving} onClick={() => onSave(vals)}
             style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))" }}>
             {saving ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</> : (initial?.id ? "Save Changes" : "Add Link")}
@@ -284,8 +284,8 @@ function KeywordDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-screen h-screen max-w-full max-h-screen rounded-none border-0 bg-white flex flex-col p-0 gap-0">
-        <DialogHeader className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+      <DialogContent className="w-screen h-screen max-w-full max-h-screen rounded-none border-0 bg-white dark:bg-slate-900 flex flex-col p-0 gap-0">
+        <DialogHeader className="shrink-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
               <Key className="w-5 h-5 text-blue-600" />
@@ -328,9 +328,9 @@ function KeywordDialog({
 
           {/* Keyword type */}
           <div className="space-y-1.5">
-            <Label className="text-sm uppercase tracking-widest text-black font-bold">Keyword Types <span className="text-red-600">*</span></Label>
+            <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Keyword Types <span className="text-red-600">*</span></Label>
             <Select value={String(vals.keywordType)} onValueChange={(v) => set("keywordType", v)}>
-              <SelectTrigger className="bg-slate-50 border-slate-300 h-11 text-base text-black">
+              <SelectTrigger className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white">
                 <SelectValue placeholder="Select keyword type…" />
               </SelectTrigger>
               <SelectContent>
@@ -342,17 +342,17 @@ function KeywordDialog({
 
           {/* Type 4 — full link form */}
           {String(vals.keywordType) === "4" && (
-            <div className="space-y-3 pt-3 pb-4 px-4 bg-emerald-50 rounded-xl border border-emerald-200">
+            <div className="space-y-3 pt-3 pb-4 px-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
               <div className="flex items-center gap-2 mb-1">
                 <Link2 className="w-4 h-4 text-emerald-600" />
-                <p className="text-sm font-bold uppercase tracking-widest text-emerald-700">Backlink Details</p>
+                <p className="text-sm font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Backlink Details</p>
               </div>
 
               {/* Link URL */}
               <div className="space-y-1.5">
-                <Label className="text-sm uppercase tracking-widest text-black font-bold">Link URL</Label>
+                <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link URL</Label>
                 <Input
-                  className="bg-white border-slate-300 h-11 text-base text-black font-mono"
+                  className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white font-mono"
                   placeholder="https://…"
                   value={(vals.linkUrl as string) || ""}
                   onChange={(e) => set("linkUrl", e.target.value)}
@@ -362,9 +362,9 @@ function KeywordDialog({
               {/* Link Type + Active */}
               <div className="grid grid-cols-3 gap-3 items-end">
                 <div className="col-span-2 space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black font-bold">Link Type Label</Label>
+                  <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link Type Label</Label>
                   <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
-                    <SelectTrigger className="bg-white border-slate-300 h-11 text-base text-black">
+                    <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white">
                       <SelectValue placeholder="Select link type…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -375,8 +375,8 @@ function KeywordDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-4 h-11">
-                  <p className="text-base flex-1 text-black font-bold">Active</p>
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 h-11">
+                  <p className="text-base flex-1 text-black dark:text-white font-bold">Active</p>
                   <Switch
                     checked={vals.linkActive !== false}
                     onCheckedChange={(v) => set("linkActive", v)}
@@ -391,9 +391,9 @@ function KeywordDialog({
                 { k: "currentRankReportLink", label: "Current Rank Report Link" },
               ].map(({ k, label }) => (
                 <div key={k} className="space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black font-bold">{label}</Label>
+                  <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">{label}</Label>
                   <Input
-                    className="bg-white border-slate-300 h-11 text-base text-black font-mono"
+                    className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white font-mono"
                     placeholder="https://…"
                     value={(vals[k] as string) || ""}
                     onChange={(e) => set(k, e.target.value)}
@@ -413,8 +413,8 @@ function KeywordDialog({
                 checked: vals.isActive !== false,
                 onChange: (v: boolean) => set("isActive", v), cls: "data-[state=checked]:bg-emerald-500" },
             ].map((row) => (
-              <div key={row.k} className="flex items-center gap-3 bg-slate-100 border border-slate-300 rounded-lg p-4">
-                <div className="flex-1"><p className="text-base font-bold text-black">{row.label}</p><p className="text-sm text-slate-600">{row.sub}</p></div>
+              <div key={row.k} className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4">
+                <div className="flex-1"><p className="text-base font-bold text-black dark:text-white">{row.label}</p><p className="text-sm text-slate-600 dark:text-slate-400">{row.sub}</p></div>
                 <Switch checked={row.checked} onCheckedChange={row.onChange} className={row.cls} />
               </div>
             ))}
@@ -422,7 +422,7 @@ function KeywordDialog({
 
           {/* Search counts */}
           <div>
-            <p className="text-sm uppercase tracking-widest text-black font-bold mb-3">Search Counts</p>
+            <p className="text-sm uppercase tracking-widest text-black dark:text-white font-bold mb-3">Search Counts</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               {[
                 { k: "initialSearchCount30Days",  label: "Initial Search Count",      sub: "30 days" },
@@ -431,11 +431,11 @@ function KeywordDialog({
                 { k: "followupSearchCountLife",   label: "Follow-up Search Count",    sub: "Lifetime" },
               ].map(({ k, label, sub }) => (
                 <div key={k} className="space-y-1.5">
-                  <Label className="text-sm text-black font-medium flex items-baseline gap-1.5">
-                    {label} <span className="text-xs text-slate-700 uppercase tracking-widest">{sub}</span>
+                  <Label className="text-sm text-black dark:text-white font-medium flex items-baseline gap-1.5">
+                    {label} <span className="text-xs text-slate-700 dark:text-slate-400 uppercase tracking-widest">{sub}</span>
                   </Label>
                   <Input type="number" min={0}
-                    className="bg-slate-50 border-slate-300 h-11 text-base font-mono text-black"
+                    className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
                     value={vals[k] as number}
                     onChange={(e) => set(k, parseInt(e.target.value) || 0)} />
                 </div>
@@ -444,9 +444,9 @@ function KeywordDialog({
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-5">
+        <div className="shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5">
           <div className="flex gap-3 max-w-3xl mx-auto">
-            <Button variant="outline" className="flex-1 border-slate-300 text-black hover:bg-slate-100 text-base font-bold h-12" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button variant="outline" className="flex-1 border-slate-300 dark:border-slate-600 text-black dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 text-base font-bold h-12" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
             <Button className="flex-1 gap-2 text-base font-bold h-12"
               disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
               onClick={() => onSave({
@@ -543,7 +543,7 @@ function KeywordCard({
   const isActive   = kw.isActive as boolean;
 
   return (
-    <div className={`rounded-xl border-2 transition-all ${isActive ? "border-slate-200 bg-white shadow-sm" : "border-slate-200 bg-slate-100 shadow-sm"}`}>
+    <div className={`rounded-xl border-2 transition-all ${isActive ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm" : "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-sm"}` }>
 
       {/* ── Top row: keyword + type + meta ── */}
       <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
@@ -559,7 +559,7 @@ function KeywordCard({
                 {showAsBacklinks ? "w/ Backlinks" : "Keyword"}
               </Badge>
               {isPrimary && (
-                <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 text-amber-700 border-amber-300">1st</Badge>
+                <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/50">1st</Badge>
               )}
               {kw.dateAdded && (
                 <span className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
@@ -573,7 +573,7 @@ function KeywordCard({
 
         {/* Active toggle + actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex items-center gap-2 border border-slate-300 rounded-lg px-3.5 py-2">
+          <div className="flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg px-3.5 py-2">
             <Switch
               checked={isActive}
               onCheckedChange={onToggleActive}
@@ -602,10 +602,10 @@ function KeywordCard({
           { label: "Initial Search Count",  sub: "Lifetime", value: kw.initialSearchCountLife    ?? 0 },
           { label: "Follow-up Search Count", sub: "Lifetime", value: kw.followupSearchCountLife  ?? 0 },
         ].map(({ label, sub, value }) => (
-          <div key={`${label}-${sub}`} className="rounded-lg px-3.5 py-3 border border-slate-300">
-            <p className="text-xs uppercase tracking-widest text-slate-700 leading-tight">{label}</p>
-            <p className="text-xs text-slate-600 mb-1.5">{sub}</p>
-            <p className="text-2xl font-bold tabular-nums text-black leading-none\">{(value as number).toLocaleString()}</p>
+          <div key={`${label}-${sub}`} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
+            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight">{label}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-500 mb-1.5">{sub}</p>
+            <p className="text-2xl font-bold tabular-nums text-black dark:text-white leading-none\">{(value as number).toLocaleString()}</p>
           </div>
         ))}
       </div>
@@ -633,22 +633,22 @@ function KeywordCard({
             <Skeleton className="h-[72px] rounded-lg w-full" />
           </div>
         ) : links?.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-3">
-            <Link2 className="w-4 h-4 text-slate-600" />
-            <p className="text-sm text-slate-600 italic">No links yet — click Add Link</p>
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-3">
+            <Link2 className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+            <p className="text-sm text-slate-600 dark:text-slate-400 italic">No links yet — click Add Link</p>
           </div>
         ) : (
           <div className="space-y-2">
             {links?.map((link) => (
-              <div key={link.id} className="rounded-lg border border-slate-300 bg-white overflow-hidden">
+              <div key={link.id} className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 overflow-hidden">
                 {/* Link header: type + active */}
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 bg-white">
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-violet-600 flex-shrink-0" />
                     {link.linkTypeLabel ? (
-                      <span className="text-base font-bold text-black">{link.linkTypeLabel}</span>
+                      <span className="text-base font-bold text-black dark:text-white">{link.linkTypeLabel}</span>
                     ) : (
-                      <span className="text-base text-slate-600 italic">No type set</span>
+                      <span className="text-base text-slate-600 dark:text-slate-400 italic">No type set</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -657,10 +657,10 @@ function KeywordCard({
                       onCheckedChange={(v) => updateLink(link.id, { linkActive: v })}
                       className="data-[state=checked]:bg-emerald-500 scale-[0.65]"
                     />
-                    <span className={`text-sm font-bold ${link.linkActive ? "text-emerald-600" : "text-slate-600"}`}>
+                    <span className={`text-sm font-bold ${link.linkActive ? "text-emerald-600" : "text-slate-600 dark:text-slate-400"}`}>
                       {link.linkActive ? "Active" : "Inactive"}
                     </span>
-                    <div className="w-px h-4 bg-slate-300 mx-1" />
+                    <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1" />
                     <button onClick={() => setEditLink(link)}
                       className="w-5 h-5 flex items-center justify-center rounded hover:bg-blue-100 hover:text-blue-600 text-slate-600 transition-colors">
                       <Pencil className="w-3 h-3" />
@@ -673,14 +673,14 @@ function KeywordCard({
                 </div>
 
                 {/* Link report URLs */}
-                <div className="grid grid-cols-3 divide-x divide-slate-200">
+                <div className="grid grid-cols-3 divide-x divide-slate-200 dark:divide-slate-700">
                   {[
                     { label: "Link URL",                    url: link.linkUrl },
                     { label: "Initial Rank Report Link",  url: link.initialRankReportLink },
                     { label: "Current Rank Report Link", url: link.currentRankReportLink },
                   ].map(({ label, url }) => (
                     <div key={label} className="px-3 py-2.5">
-                      <p className="text-xs uppercase tracking-widest text-slate-700 mb-2">{label}</p>
+                      <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
                       {url ? (
                         <a href={url} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1 text-sm text-blue-600 hover:underline max-w-full font-medium">
@@ -689,7 +689,7 @@ function KeywordCard({
                           <ExternalLink className="w-3 h-3 flex-shrink-0" />
                         </a>
                       ) : (
-                        <span className="text-sm text-slate-600 italic">Not set</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-400 italic">Not set</span>
                       )}
                     </div>
                   ))}
@@ -817,16 +817,16 @@ export default function Keywords() {
   };
 
   return (
-    <div className="space-y-6 bg-white min-h-screen p-8">
+    <div className="space-y-6 bg-white dark:bg-slate-950 min-h-screen p-8">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-black">AEO Keywords</h1>
-          <p className="text-slate-700 text-lg mt-0.5">Manage keywords and associated links per business</p>
+          <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">AEO Keywords</h1>
+          <p className="text-slate-700 dark:text-slate-300 text-lg mt-0.5">Manage keywords and associated links per business</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 border-slate-300 text-slate-700 hover:text-black hover:bg-slate-100"
+          <Button variant="outline" size="sm" className="gap-1.5 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
             onClick={exportAllCSV} disabled={filteredKws.length === 0}>
             <Download className="w-3.5 h-3.5" /> CSV
           </Button>
@@ -845,16 +845,16 @@ export default function Keywords() {
       {/* Summary strip */}
       <div className="grid grid-cols-5 gap-3">
         {[
-          { label: "Total Keywords", value: total,    dot: "",              color: "text-slate-900" },
+          { label: "Total Keywords", value: total,    dot: "",              color: "text-slate-900 dark:text-white" },
           { label: "Active",          value: active,   dot: "bg-emerald-400", color: "text-emerald-600" },
           { label: "Keyword text",    value: type3,    dot: "bg-violet-400", color: "text-violet-600" },
           { label: "Keywords w/Links", value: type4,   dot: "bg-emerald-500", color: "text-emerald-600" },
           { label: "With Backlinks",  value: withLink, dot: "bg-indigo-400", color: "text-indigo-600" },
         ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center justify-between shadow-sm">
+          <div key={s.label} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-4 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
               {s.dot && <span className={`w-2 h-2 rounded-full ${s.dot}`} />}
-              <span className="text-base font-bold text-slate-700">{s.label}</span>
+              <span className="text-base font-bold text-slate-700 dark:text-slate-300">{s.label}</span>
             </div>
             <span className={`text-4xl font-bold tabular-nums ${s.color}`}>{s.value}</span>
           </div>
@@ -866,11 +866,11 @@ export default function Keywords() {
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-3.5 h-5 w-5 text-slate-600 pointer-events-none" />
           <Input type="search" placeholder="Search business or keyword…"
-            className="pl-11 bg-white border-slate-300 h-12 text-lg text-slate-900 placeholder:text-slate-700"
+            className="pl-11 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-700 dark:placeholder:text-slate-500"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-slate-700" />
+          <Filter className="w-5 h-5 text-slate-700 dark:text-slate-300" />
           {[
             { id: "all", label: "All" },
             { id: "3",   label: "Keywords" },
@@ -880,7 +880,7 @@ export default function Keywords() {
               className={`px-4 py-2.5 rounded-full text-base font-bold border-2 transition-all ${
                 typeFilter === t.id
                   ? (t.id === "4" ? "bg-emerald-600 text-white border-emerald-600" : "bg-blue-600 text-white border-blue-600")
-                  : "border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900 bg-white"
+                  : "border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-slate-400 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-900"
               }`}>
               {t.label}
             </button>
@@ -888,11 +888,11 @@ export default function Keywords() {
         </div>
         {(search || typeFilter !== "all") && (
           <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
-            className="flex items-center gap-1.5 text-base text-slate-700 hover:text-slate-900 font-bold">
+            className="flex items-center gap-1.5 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
         )}
-        <span className="ml-auto text-base text-slate-800 font-bold">{filteredKws.length} keyword{filteredKws.length !== 1 ? "s" : ""}</span>
+        <span className="ml-auto text-base text-slate-800 dark:text-slate-200 font-bold">{filteredKws.length} keyword{filteredKws.length !== 1 ? "s" : ""}</span>
       </div>
 
       {/* Content */}
@@ -901,7 +901,7 @@ export default function Keywords() {
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-52 w-full rounded-xl" />)}
         </div>
       ) : grouped.size === 0 ? (
-        <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 bg-white text-slate-800 gap-3">
+        <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 gap-3">
           <Key className="w-12 h-12 opacity-100" />
           <p className="text-xl font-semibold">No keywords found</p>
           <Button size="lg" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-lg px-6 py-4 font-bold"
@@ -918,34 +918,34 @@ export default function Keywords() {
             const activeCount = kws.filter((k) => k.isActive).length;
 
             return (
-              <div key={clientId} className="rounded-xl border-2 border-slate-200 overflow-hidden bg-white shadow-md">
+              <div key={clientId} className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-md">
 
                 {/* Business header */}
-                <div className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 border-b border-blue-300" : "bg-white hover:bg-slate-50"}`}>
+                <div className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 dark:bg-slate-800 border-b border-blue-300 dark:border-blue-700" : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                   <button
                     onClick={() => setExpanded((p) => { const n = new Set(p); n.has(clientId) ? n.delete(clientId) : n.add(clientId); return n; })}
-                    className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 transition-colors ${isOpen ? "text-blue-600 font-bold" : "text-slate-700 hover:text-black"}`}>
+                    className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 dark:border-slate-700 transition-colors ${isOpen ? "text-blue-600 font-bold" : "text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white"}`}>
                     <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${isOpen ? "bg-blue-100 text-blue-600" : "bg-blue-50 text-blue-600"}`}>
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-base truncate text-black">{client?.businessName ?? `Business #${clientId}`}</p>
-                        {(client as Record<string, unknown>)?.city && <span className="text-base text-slate-600 hidden sm:inline">{(client as Record<string, unknown>).city as string}</span>}
+                        <p className="font-bold text-base truncate text-black dark:text-white">{client?.businessName ?? `Business #${clientId}`}</p>
+                        {(client as Record<string, unknown>)?.city && <span className="text-base text-slate-600 dark:text-slate-400 hidden sm:inline">{(client as Record<string, unknown>).city as string}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-base text-slate-600">{kws.length} keyword{kws.length !== 1 ? "s" : ""}</span>
-                        <span className="text-slate-400">·</span>
+                        <span className="text-base text-slate-600 dark:text-slate-400">{kws.length} keyword{kws.length !== 1 ? "s" : ""}</span>
+                        <span className="text-slate-400 dark:text-slate-600">·</span>
                         <span className="text-base text-emerald-600 font-bold">{activeCount} active</span>
                       </div>
                     </div>
-                    <ChevronDown className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? "rotate-180 text-blue-600" : "text-slate-600"}`} />
+                    <ChevronDown className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? "rotate-180 text-blue-600" : "text-slate-600 dark:text-slate-400"}`} />
                   </button>
 
                   {/* Export + profile buttons */}
                   <div className="flex items-center gap-2 px-4">
                     <button onClick={() => exportBizCSV(clientId, kws)}
-                      className="flex items-center gap-2 text-base text-slate-700 hover:text-slate-900 font-bold border-2 border-slate-300 hover:border-slate-400 rounded-lg px-4 py-2 hover:bg-slate-50 transition-all">
+                      className="flex items-center gap-2 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold border-2 border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 rounded-lg px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
                       <Download className="w-5 h-5" /> CSV
                     </button>
                     <button onClick={() => exportBizPDF(clientId, kws)}
@@ -961,7 +961,7 @@ export default function Keywords() {
 
                 {/* Keywords list */}
                 {isOpen && (
-                  <div className="p-4 space-y-4 bg-white border-t-2 border-slate-200">
+                  <div className="p-4 space-y-4 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700">
                     {kws.map((kw) => (
                       <KeywordCard
                         key={kw.id as number}
