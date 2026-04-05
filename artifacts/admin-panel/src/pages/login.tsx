@@ -32,25 +32,25 @@ export default function Login() {
     <div className="login-bg min-h-screen flex items-center justify-center overflow-hidden relative">
       {/* Animated background orbs */}
       <div
-        className="login-orb absolute top-1/4 left-1/4 w-80 h-80 rounded-full pointer-events-none"
+        className="login-orb absolute top-1/4 left-1/6 w-[500px] h-[500px] rounded-full pointer-events-none"
         style={{
-          background: "radial-gradient(circle, rgba(37,99,235,0.18) 0%, transparent 70%)",
-          filter: "blur(40px)",
+          background: "radial-gradient(circle, rgba(14,116,214,0.35) 0%, transparent 65%)",
+          filter: "blur(60px)",
         }}
       />
       <div
-        className="login-orb absolute bottom-1/3 right-1/4 w-64 h-64 rounded-full pointer-events-none"
+        className="login-orb absolute bottom-1/4 right-1/6 w-[400px] h-[400px] rounded-full pointer-events-none"
         style={{
-          background: "radial-gradient(circle, rgba(16,185,129,0.12) 0%, transparent 70%)",
-          filter: "blur(35px)",
+          background: "radial-gradient(circle, rgba(16,185,129,0.25) 0%, transparent 65%)",
+          filter: "blur(55px)",
           animationDelay: "-4s",
         }}
       />
       <div
-        className="login-orb absolute top-1/2 right-1/3 w-48 h-48 rounded-full pointer-events-none"
+        className="login-orb absolute top-1/3 right-1/3 w-72 h-72 rounded-full pointer-events-none"
         style={{
-          background: "radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%)",
-          filter: "blur(30px)",
+          background: "radial-gradient(circle, rgba(56,189,248,0.12) 0%, transparent 65%)",
+          filter: "blur(40px)",
           animationDelay: "-8s",
         }}
       />

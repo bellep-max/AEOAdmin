@@ -232,9 +232,11 @@
 
 /* ── Login page background ───────────────────────────────────── */
 .login-bg {
-  background: radial-gradient(ellipse 80% 60% at 20% 40%, rgba(37,99,235,0.12) 0%, transparent 60%),
-              radial-gradient(ellipse 60% 50% at 80% 70%, rgba(16,185,129,0.08) 0%, transparent 55%),
-              hsl(222, 47%, 8%);
+  background:
+    radial-gradient(ellipse 55% 45% at 12% 38%, rgba(14,116,214,0.45) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 40% at 88% 72%, rgba(16,185,129,0.30) 0%, transparent 60%),
+    radial-gradient(ellipse 35% 30% at 55% 15%, rgba(6,78,149,0.20) 0%, transparent 55%),
+    hsl(218, 60%, 5%);
 }
 .login-card-glow {
   animation: glow-pulse 4s ease-in-out infinite;
