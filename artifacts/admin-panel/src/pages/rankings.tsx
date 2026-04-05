@@ -487,12 +487,129 @@ export default function Rankings() {
       </div>
 
       {/* ── Tabs ── */}
-      <Tabs defaultValue="by-business" className="w-full">
-        <TabsList className="grid w-full max-w-sm grid-cols-3 bg-card/60">
+      <Tabs defaultValue="overall" className="w-full">
+        <TabsList className="grid w-full max-w-lg grid-cols-4 bg-card/60">
+          <TabsTrigger value="overall">Overall</TabsTrigger>
           <TabsTrigger value="by-business">By Business</TabsTrigger>
           <TabsTrigger value="comparison">Before / After</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
+
+        {/* ═══════ OVERALL TAB ═══════ */}
+        <TabsContent value="overall" className="mt-4 space-y-5">
+          {isComparisonLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            </div>
+          ) : (() => {
+            /* Position-band buckets */
+            const withRank = enriched.filter((r) => r.currentPosition != null);
+            const noRank   = enriched.filter((r) => r.currentPosition == null);
+            const top3     = withRank.filter((r) => (r.currentPosition ?? 99) <= 3);
+            const top5     = withRank.filter((r) => (r.currentPosition ?? 99) > 3  && (r.currentPosition ?? 99) <= 5);
+            const top10    = withRank.filter((r) => (r.currentPosition ?? 99) > 5  && (r.currentPosition ?? 99) <= 10);
+            const rank11to20 = withRank.filter((r) => (r.currentPosition ?? 99) > 10 && (r.currentPosition ?? 99) <= 20);
+            const rank21plus = withRank.filter((r) => (r.currentPosition ?? 99) > 20);
+
+            /* Sort all keywords by current position (best first, nulls last) */
+            const sorted = [...enriched].sort((a, b) => {
+              if (a.currentPosition == null && b.currentPosition == null) return 0;
+              if (a.currentPosition == null) return 1;
+              if (b.currentPosition == null) return -1;
+              return a.currentPosition - b.currentPosition;
+            });
+
+            const bands = [
+              { label: "Top 3",   count: top3.length,       icon: "🥇", color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25" },
+              { label: "4–5",     count: top5.length,       icon: "🥈", color: "text-slate-300",   bg: "bg-slate-400/10",   border: "border-slate-400/25" },
+              { label: "6–10",    count: top10.length,      icon: "🥉", color: "text-amber-700",   bg: "bg-amber-700/10",   border: "border-amber-700/25" },
+              { label: "11–20",   count: rank11to20.length, icon: "📊", color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/25"  },
+              { label: "21+",     count: rank21plus.length, icon: "📉", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/25" },
+              { label: "No Data", count: noRank.length,     icon: "—",  color: "text-muted-foreground", bg: "bg-muted/20", border: "border-border/30"    },
+            ];
+
+            return (
+              <>
+                {/* Position band cards */}
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                  {bands.map((b) => (
+                    <div key={b.label} className={`rounded-xl border ${b.border} ${b.bg} px-3 py-3 text-center`}>
+                      <div className="text-lg mb-0.5">{b.icon}</div>
+                      <p className={`text-2xl font-bold ${b.color}`}>{b.count}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{b.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Leaderboard table */}
+                {sorted.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground rounded-xl border border-dashed border-border/40 bg-card/20">
+                    No ranking data yet.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border/50 overflow-hidden bg-card/30">
+                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/10">
+                      <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        All Keywords — Ranked by Current Position
+                      </span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">{sorted.length} keywords</span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/20 hover:bg-muted/20">
+                          <TableHead className="text-xs w-10 text-center">#</TableHead>
+                          <TableHead className="text-xs">Keyword</TableHead>
+                          <TableHead className="text-xs">Business</TableHead>
+                          <TableHead className="text-xs text-center">Current Rank</TableHead>
+                          <TableHead className="text-xs text-center">Initial Rank</TableHead>
+                          <TableHead className="text-xs text-center">Change</TableHead>
+                          <TableHead className="text-xs">Maps</TableHead>
+                          <TableHead className="text-xs text-right">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sorted.map((row, i) => (
+                          <TableRow key={`overall-${row.keywordId}-${i}`} className="hover:bg-muted/10">
+                            <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
+                            <TableCell className="text-sm font-medium max-w-[200px] truncate" title={row.keywordText}>
+                              {row.keywordText}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={row.clientName}>
+                              {row.clientName}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex flex-col items-center gap-0.5">
+                                <RankBadge pos={row.currentPosition} />
+                                {row.currentDate && (
+                                  <span className="text-[9px] text-muted-foreground/60">
+                                    {format(new Date(row.currentDate), "MMM d")}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <RankBadge pos={row.initialPosition} />
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <ChangeCell change={row.positionChange ?? null} />
+                            </TableCell>
+                            <TableCell>
+                              <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <StatusBadge status={row.status} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </TabsContent>
 
         {/* ═══════ BY BUSINESS TAB ═══════ */}
         <TabsContent value="by-business" className="mt-4 space-y-3">
