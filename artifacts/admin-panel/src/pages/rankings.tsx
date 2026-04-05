@@ -495,18 +495,15 @@ function MapsCell({
       </div>
     );
   }
-  if (mapsPresence === "yes") {
-    return (
-      <button
-        onClick={onEdit}
-        className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors text-xs border border-dashed border-border/40 hover:border-primary/40 rounded px-1.5 py-0.5"
-        title="Add Maps link"
-      >
-        <Plus className="w-2.5 h-2.5" /> Add link
-      </button>
-    );
-  }
-  return <span className="text-muted-foreground/40 text-xs">—</span>;
+  return (
+    <button
+      onClick={onEdit}
+      className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors text-xs border border-dashed border-border/40 hover:border-primary/40 rounded px-1.5 py-0.5"
+      title="Add Maps link"
+    >
+      <Plus className="w-2.5 h-2.5" />{mapsPresence === "yes" ? "Add link" : "Add"}
+    </button>
+  );
 }
 
 /* ── Mini stat pill ─────────────────────────────────────── */
@@ -788,7 +785,25 @@ export default function Rankings() {
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         All Keywords — Ranked by Current Position
                       </span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">{sorted.length} keywords</span>
+                      <span className="text-[10px] text-muted-foreground">{sorted.length} keywords</span>
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 gap-1 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                          onClick={() => exportCSV(sorted, `aeo-overall-rankings-${dateStamp}.csv`)}
+                        >
+                          <Download className="w-3 h-3" />CSV
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 gap-1 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                          onClick={() => exportPDF(sorted, `All Keywords · ${sorted.length} keywords · ${format(new Date(), "PPP")}`, `aeo-overall-rankings-${dateStamp}.pdf`)}
+                        >
+                          <FileDown className="w-3 h-3" />PDF
+                        </Button>
+                      </div>
                     </div>
                     <Table>
                       <TableHeader>
