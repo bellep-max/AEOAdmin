@@ -65,5 +65,36 @@ router.get("/me", (req, res) => {
   });
 });
 
+router.post("/change-password", async (req, res) => {
+  try {
+    const session = req.session as Record<string, unknown>;
+    if (!session.userId) return res.status(401).json({ error: "Not authenticated" });
+
+    const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "currentPassword and newPassword are required" });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters" });
+    }
+
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, Number(session.userId)));
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (user.passwordHash !== hashPassword(currentPassword)) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    await db.update(usersTable)
+      .set({ passwordHash: hashPassword(newPassword) })
+      .where(eq(usersTable.id, user.id));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Change password error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export { hashPassword };
 export default router;

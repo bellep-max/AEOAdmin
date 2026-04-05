@@ -12,10 +12,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Bell, Sun, Moon, User, ChevronLeft } from "lucide-react";
+import { LogOut, Bell, Sun, Moon, User, ChevronLeft, UserCircle } from "lucide-react";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
+  "/profile": "My Profile",
   "/clients": "Clients",
   "/keywords": "Keywords",
   "/sessions": "Sessions",
@@ -105,6 +106,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       <p className="text-sm text-muted-foreground">{user.email}</p>
                     </div>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate("/profile")}>
+                    <UserCircle className="w-4 h-4 mr-2" />
+                    View Profile
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={toggleTheme}>
                     {theme === "light" ? (

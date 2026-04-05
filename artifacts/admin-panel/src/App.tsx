@@ -15,6 +15,7 @@ import ClientDetail from "@/pages/client-detail";
 import Keywords from "@/pages/keywords";
 import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
+import Profile from "@/pages/profile";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ function ProtectedRoutes() {
         <Route path="/keywords" component={Keywords} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
+        <Route path="/profile" component={Profile} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
