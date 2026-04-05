@@ -15,6 +15,8 @@ export const sessionsTable = pgTable("sessions", {
   promptText: text("prompt_text"),
   followupText: text("followup_text"),
   status: text("status").notNull().default("pending"),
+  type: text("type").notNull().default("aeo"), // aeo or audit
+  errorClass: text("error_class"),
   aiPlatform: text("ai_platform").notNull().default("gemini"),
   screenshotUrl: text("screenshot_url"),
   proxySessionId: text("proxy_session_id"),

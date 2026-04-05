@@ -7,6 +7,9 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// API clients expect JSON payloads on success; disable conditional 304 responses.
+app.set("etag", false);
+
 app.use(
   pinoHttp({
     logger,

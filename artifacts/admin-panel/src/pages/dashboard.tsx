@@ -32,7 +32,7 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-border/60 bg-card/95 backdrop-blur-md px-3 py-2.5 shadow-xl text-xs">
+    <div className="rounded-xl border border-border/60 bg-card/95 backdrop-blur-md px-3 py-2.5 shadow-xl text-sm">
       <p className="font-medium text-muted-foreground mb-1.5">{label}</p>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
@@ -68,7 +68,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Network Overview</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Monitor AEO campaigns and infrastructure health</p>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2">
+        <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2">
           <Clock className="w-3.5 h-3.5" />
           <span>{timeStr} · {dateStr}</span>
         </div>
@@ -170,7 +170,7 @@ export default function Dashboard() {
         <Card className="border-border/50 card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">AI Platforms</CardTitle>
-            <CardDescription className="text-xs mt-0.5">Session distribution</CardDescription>
+            <CardDescription className="text-sm mt-0.5">Session distribution</CardDescription>
           </CardHeader>
           <CardContent className="h-64 flex flex-col items-center justify-center gap-4 pt-2">
             {isPlatformLoading ? (
@@ -254,7 +254,7 @@ export default function Dashboard() {
                       <p className="text-xs text-muted-foreground">{client.city}, {client.state}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${
+                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
                         client.status === "active"
                           ? "bg-emerald-500/15 text-emerald-400"
                           : "bg-muted text-muted-foreground"

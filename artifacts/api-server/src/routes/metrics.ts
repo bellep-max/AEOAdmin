@@ -40,7 +40,7 @@ const router = Router();
  *   totalSessionsRun   — sessions row count
  *   followupRate       — % of sessions that have a followupText
  *   activeClients      — clients with status = "active"
- *   aeoKeywordsActive  — keywords with tierLabel = "aeo"
+ *   aeoKeywordsActive  — total keyword count
  *
  * Prompt type breakdown:
  *   Type 1 (60%) — Geo Specific, primary targeting, 100% search rate
@@ -133,11 +133,10 @@ router.get("/session-breakdown", async (req, res) => {
       .from(clientsTable)
       .where(eq(clientsTable.status, "active"));
 
-    // Count only AEO-tier keywords (tierLabel = "aeo") — SEO keywords excluded
+    // Count all keywords
     const [aeoKeywords] = await db
       .select({ count: count() })
-      .from(keywordsTable)
-      .where(eq(keywordsTable.tierLabel, "aeo"));
+      .from(keywordsTable);
 
     res.json({
       ...breakdown,
@@ -195,7 +194,6 @@ router.get("/business", async (req, res) => {
     const kwRows = await db
       .select({ clientId: keywordsTable.clientId, cnt: sql<number>`COUNT(*)` })
       .from(keywordsTable)
-      .where(eq(keywordsTable.tierLabel, "aeo"))
       .groupBy(keywordsTable.clientId);
 
     // Device detail rows — used to render "which devices ran for this client"
@@ -336,7 +334,7 @@ router.get("/performance", async (req, res) => {
 
     // ── Volume searches accuracy ─────────────────────────────────────────
     // Target: every AEO keyword is searched once per day → × 30 per month
-    const [kwRow]    = await db.select({ count: count() }).from(keywordsTable).where(eq(keywordsTable.tierLabel, "aeo"));
+    const [kwRow]    = await db.select({ count: count() }).from(keywordsTable);
     const activeKws  = Number(kwRow.count);
     const monthlyTarget  = activeKws * 30;
     // Cap at 100 — going over target is still a pass, not an error

@@ -46,25 +46,43 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const body = req.body;
+    
     const [client] = await db
       .insert(clientsTable)
       .values({
+        // Business Information
         businessName: body.businessName,
-        gmbUrl: body.gmbUrl ?? null,
-        websiteUrl: body.websiteUrl ?? null,
-        publishedAddress: body.publishedAddress ?? null,
         searchAddress: body.searchAddress ?? null,
-        city: body.city ?? null,
-        state: body.state ?? null,
+        gmbAddress: body.gmbAddress ?? null,
+        gmbUrl: body.gmbLink ?? null,
+        websitePublishedOnGmb: body.websitePublishedOnGMB ?? null,
+        websiteLinkedOnGmb: body.websiteLinkedOnGMB ?? null,
+        
+        // Subscription Information
+        planName: body.plan ?? null,
+        accountType: body.accountType ?? null,
+        startDate: body.startDate ?? null,
+        nextBillDate: body.nextBillDate ?? null,
+        subscriptionId: body.subscriptionId ?? null,
+        
+        // Account Information
+        accountUser: body.accountUser ?? null,
+        accountUserName: body.accountUserName ?? null,
+        accountEmail: body.accountEmail ?? null,
+        billingEmail: body.billingEmail ?? null,
+        lastFourCard: body.cardLast4 ?? null,
+        
+        // Default values
         status: body.status ?? "active",
-        planName: body.planName ?? null,
-        addressType: body.addressType ?? 1,
-        placeId: body.placeId ?? null,
-        locationRef: body.locationRef ?? null,
-        contactEmail: body.contactEmail ?? null,
+        contactEmail: body.billingEmail ?? null,
+        addressType: 1,
       })
       .returning();
-    res.status(201).json(client);
+
+    res.status(201).json({
+      client,
+      message: "Business created successfully",
+    });
   } catch (err) {
     req.log.error({ err }, "Error creating client");
     res.status(500).json({ error: "Internal server error" });
@@ -90,13 +108,43 @@ router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const body = req.body;
+    const keywords = body.keywords ?? []; // Optional: array of keywords to add
+    
+    // Remove keywords from body so it doesn't try to update the client with it
+    const clientUpdateData = { ...body };
+    delete clientUpdateData.keywords;
+    
     const [client] = await db
       .update(clientsTable)
-      .set(body)
+      .set(clientUpdateData)
       .where(eq(clientsTable.id, id))
       .returning();
+    
     if (!client) return res.status(404).json({ error: "Not found" });
-    res.json(client);
+
+    // If keywords are provided, add them for this client
+    let addedKeywords: any[] = [];
+    if (keywords.length > 0) {
+      addedKeywords = await db
+        .insert(keywordsTable)
+        .values(
+          keywords.map((kw: any) => ({
+            clientId: client.id,
+            keywordText: kw.keywordText || kw,
+            linkTypeLabel: kw.linkTypeLabel ?? null,
+            linkActive: kw.linkActive !== false,
+            initialRankReportLink: kw.initialRankReportLink ?? null,
+            currentRankReportLink: kw.currentRankReportLink ?? null,
+          }))
+        )
+        .returning();
+    }
+
+    res.json({
+      client,
+      addedKeywords,
+      addedKeywordCount: addedKeywords.length,
+    });
   } catch (err) {
     req.log.error({ err }, "Error updating client");
     res.status(500).json({ error: "Internal server error" });
@@ -173,7 +221,7 @@ router.get("/:id/aeo-summary", async (req, res) => {
     const keywords = await db
       .select()
       .from(keywordsTable)
-      .where(and(eq(keywordsTable.clientId, id), eq(keywordsTable.tierLabel, "aeo")));
+      .where(eq(keywordsTable.clientId, id));
 
     const keywordIds = keywords.map((k) => k.id);
 

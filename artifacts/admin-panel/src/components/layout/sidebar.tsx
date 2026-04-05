@@ -3,12 +3,21 @@ import {
   SidebarMenuButton, SidebarRail, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarFooter,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio,
+  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio, Sun, Moon,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 
 const navGroups = [
@@ -28,8 +37,8 @@ const navGroups = [
   {
     label: "Analytics",
     items: [
-      { name: "Rankings",         href: "/rankings", icon: Trophy    },
-      { name: "Session Metrics",  href: "/metrics",  icon: BarChart3 },
+      { name: "Rankings", href: "/rankings", icon: Trophy    },
+      { name: "Metrics",  href: "/metrics",  icon: BarChart3 },
     ],
   },
 ];
@@ -38,6 +47,7 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const isActive = (href: string) =>
     href === "/" ? location === "/" : location.startsWith(href);
@@ -57,8 +67,8 @@ export function AppSidebar() {
             <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-sidebar ${healthColor}`} />
           </div>
           <div className="group-data-[collapsible=icon]:hidden leading-tight">
-            <p className="text-sm font-bold text-foreground tracking-tight">Signal AEO</p>
-            <p className="text-[10px] text-muted-foreground">Operations</p>
+            <p className="text-base font-bold text-black dark:text-white tracking-tight">Signal AEO</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Operations</p>
           </div>
         </div>
       </SidebarHeader>
@@ -67,7 +77,7 @@ export function AppSidebar() {
       <SidebarContent className="py-2">
         {navGroups.map((group) => (
           <SidebarGroup key={group.label} className="py-0">
-            <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5 group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel className="text-sm uppercase tracking-widest text-black dark:text-white font-bold px-3 py-1.5 group-data-[collapsible=icon]:hidden">
               {group.label}
             </SidebarGroupLabel>
             <SidebarGroupContent>
@@ -88,7 +98,7 @@ export function AppSidebar() {
                       >
                         <Link href={item.href} className="flex items-center gap-2.5 px-2 py-2">
                           <item.icon className={`w-4 h-4 flex-shrink-0 ${active ? "text-primary" : ""}`} />
-                          <span className="text-sm group-data-[collapsible=icon]:hidden">{item.name}</span>
+                          <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">{item.name}</span>
                           {active && (
                             <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary group-data-[collapsible=icon]:hidden" />
                           )}
@@ -108,8 +118,8 @@ export function AppSidebar() {
         {/* Health indicator */}
         <div className="mb-2 group-data-[collapsible=icon]:hidden">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">System</span>
-            <span className={`text-[10px] font-bold ${healthScore > 90 ? "text-emerald-400" : "text-amber-400"}`}>
+            <span className="text-sm font-bold text-black dark:text-white uppercase tracking-wider">System</span>
+            <span className={`text-sm font-bold ${healthScore > 90 ? "text-emerald-400" : "text-amber-400"}`}>
               {healthScore}%
             </span>
           </div>
@@ -123,26 +133,53 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {/* User row */}
+        {/* User Profile Dropdown */}
         {user && (
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-              <p className="text-xs font-medium text-foreground truncate">{user.name}</p>
-              <p className="text-[10px] text-muted-foreground truncate">{user.role}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-              onClick={logout}
-              title="Sign out"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full h-auto p-0 hover:bg-sidebar-accent justify-start rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-2 w-full p-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
+                    <p className="text-base font-bold text-black dark:text-white truncate">{user.name}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{user.role}</p>
+                  </div>
+                </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="w-56 mb-2">
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-base font-bold text-black dark:text-white">{user.name}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{user.email}</p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={toggleTheme}>
+                {theme === "light" ? (
+                  <>
+                    <Moon className="w-4 h-4 mr-2" />
+                    Dark mode
+                  </>
+                ) : (
+                  <>
+                    <Sun className="w-4 h-4 mr-2" />
+                    Light mode
+                  </>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </SidebarFooter>
 

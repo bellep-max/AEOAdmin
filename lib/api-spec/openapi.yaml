@@ -862,8 +862,70 @@ components:
     CreateClientBody:
       type: object
       properties:
+        # Business Information
         businessName:
           type: string
+        searchAddress:
+          type: string
+          nullable: true
+        gmbAddress:
+          type: string
+          nullable: true
+        gmbLink:
+          type: string
+          nullable: true
+        websitePublishedOnGMB:
+          type: string
+          nullable: true
+        websiteLinkedOnGMB:
+          type: string
+          nullable: true
+        
+        # Subscription Information
+        plan:
+          type: string
+          nullable: true
+        accountType:
+          type: string
+          enum: [agency, retail]
+          nullable: true
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        nextBillDate:
+          type: string
+          format: date
+          nullable: true
+        subscriptionId:
+          type: string
+          nullable: true
+        
+        # Account Information
+        accountUser:
+          type: string
+          nullable: true
+        accountUserName:
+          type: string
+          nullable: true
+        accountEmail:
+          type: string
+          format: email
+          nullable: true
+        billingEmail:
+          type: string
+          format: email
+          nullable: true
+        cardLast4:
+          type: string
+          maxLength: 4
+          nullable: true
+        
+        # Legacy/Optional fields
+        status:
+          type: string
+          enum: [active, inactive]
+          default: active
         gmbUrl:
           type: string
           nullable: true
@@ -873,19 +935,12 @@ components:
         publishedAddress:
           type: string
           nullable: true
-        searchAddress:
-          type: string
-          nullable: true
         city:
           type: string
           nullable: true
         state:
           type: string
           nullable: true
-        status:
-          type: string
-          enum: [active, inactive]
-          default: active
         planName:
           type: string
           nullable: true
@@ -906,8 +961,69 @@ components:
     UpdateClientBody:
       type: object
       properties:
+        # Business Information
         businessName:
           type: string
+        searchAddress:
+          type: string
+          nullable: true
+        gmbAddress:
+          type: string
+          nullable: true
+        gmbLink:
+          type: string
+          nullable: true
+        websitePublishedOnGMB:
+          type: string
+          nullable: true
+        websiteLinkedOnGMB:
+          type: string
+          nullable: true
+        
+        # Subscription Information
+        plan:
+          type: string
+          nullable: true
+        accountType:
+          type: string
+          enum: [agency, retail]
+          nullable: true
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        nextBillDate:
+          type: string
+          format: date
+          nullable: true
+        subscriptionId:
+          type: string
+          nullable: true
+        
+        # Account Information
+        accountUser:
+          type: string
+          nullable: true
+        accountUserName:
+          type: string
+          nullable: true
+        accountEmail:
+          type: string
+          format: email
+          nullable: true
+        billingEmail:
+          type: string
+          format: email
+          nullable: true
+        cardLast4:
+          type: string
+          maxLength: 4
+          nullable: true
+        
+        # Legacy/Optional fields
+        status:
+          type: string
+          enum: [active, inactive]
         gmbUrl:
           type: string
           nullable: true
@@ -923,9 +1039,6 @@ components:
         state:
           type: string
           nullable: true
-        status:
-          type: string
-          enum: [active, inactive]
         planName:
           type: string
           nullable: true

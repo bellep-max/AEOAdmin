@@ -92,7 +92,7 @@ router.get("/platform-summary", async (req, res) => {
     const PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
     const [clients, keywords, platformRows] = await Promise.all([
       db.select().from(clientsTable),
-      db.select().from(keywordsTable).where(eq(keywordsTable.tierLabel, "aeo")),
+      db.select().from(keywordsTable),
       db
         .select({
           clientId: rankingReportsTable.clientId,
@@ -221,8 +221,7 @@ router.get("/initial-vs-current", async (req, res) => {
     const clients = await db.select().from(clientsTable);
     const keywords = await db
       .select()
-      .from(keywordsTable)
-      .where(eq(keywordsTable.tierLabel, "aeo"));
+      .from(keywordsTable);
     const allReports = await db
       .select({
         id: rankingReportsTable.id,

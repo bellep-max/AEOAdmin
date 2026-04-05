@@ -4,6 +4,7 @@ export * from "./keyword_links";
 export * from "./client_backlinks";
 export * from "./sessions";
 export * from "./session_platforms";
+export * from "./service_tiers";
 export * from "./devices";
 export * from "./proxies";
 export * from "./plans";

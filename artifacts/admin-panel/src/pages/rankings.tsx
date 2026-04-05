@@ -606,7 +606,7 @@ function StatusBadge({ status }: { status: PerfStatus }) {
   } satisfies Record<PerfStatus, { label: string; cls: string; icon: React.ElementType }>;
   const { label, cls, icon: Icon } = map[status];
   return (
-    <Badge variant="outline" className={`gap-1 text-[10px] font-semibold ${cls}`}>
+    <Badge variant="outline" className={`gap-1 text-xs font-semibold ${cls}`}>
       <Icon className="w-2.5 h-2.5" />{label}
     </Badge>
   );
@@ -673,7 +673,7 @@ function MapsCell({
 /* ── Mini stat pill ─────────────────────────────────────── */
 function Pill({ value, label, color }: { value: number; label: string; color: string }) {
   return (
-    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${color}`}>
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${color}`}>
       {value} {label}
     </span>
   );
@@ -811,8 +811,8 @@ export default function Rankings() {
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Performance Reports</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
+          <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Performance Reports</h1>
+          <p className="text-lg text-slate-700 dark:text-slate-300 mt-0.5">
             Initial vs current rankings — AI answer engine visibility across all clients
           </p>
         </div>
@@ -834,7 +834,7 @@ export default function Rankings() {
       <div className="rounded-xl border border-border/50 bg-card/40 p-4">
         <div className="flex items-center gap-2 mb-4">
           <BarChart3 className="w-4 h-4 text-primary" />
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AEO Performance Overview</p>
+          <p className="text-base uppercase tracking-widest text-black dark:text-white font-bold">AEO Performance Overview</p>
           {!isComparisonLoading && total > 0 && (
             <span className="ml-auto text-xs text-muted-foreground">
               <span className="font-bold text-emerald-400">{successRate}%</span> success rate
@@ -864,8 +864,8 @@ export default function Rankings() {
                   <s.icon className={`w-4 h-4 ${s.color}`} />
                 </div>
                 <div>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                  <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                  <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-sm text-black dark:text-white font-semibold">{s.label}</p>
                 </div>
               </button>
             ))
@@ -873,7 +873,7 @@ export default function Rankings() {
         </div>
         {!isComparisonLoading && total > 0 && (
           <div className="mt-4">
-            <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
               <span>AEO Effectiveness</span>
               <span>{counts.performing}/{total} keywords improving</span>
             </div>
@@ -904,15 +904,6 @@ export default function Rankings() {
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
             </div>
           ) : (() => {
-            /* Position-band buckets */
-            const withRank = enriched.filter((r) => r.currentPosition != null);
-            const noRank   = enriched.filter((r) => r.currentPosition == null);
-            const top3     = withRank.filter((r) => (r.currentPosition ?? 99) <= 3);
-            const top5     = withRank.filter((r) => (r.currentPosition ?? 99) > 3  && (r.currentPosition ?? 99) <= 5);
-            const top10    = withRank.filter((r) => (r.currentPosition ?? 99) > 5  && (r.currentPosition ?? 99) <= 10);
-            const rank11to20 = withRank.filter((r) => (r.currentPosition ?? 99) > 10 && (r.currentPosition ?? 99) <= 20);
-            const rank21plus = withRank.filter((r) => (r.currentPosition ?? 99) > 20);
-
             /* Sort all keywords by current position (best first, nulls last) */
             const sorted = [...enriched].sort((a, b) => {
               if (a.currentPosition == null && b.currentPosition == null) return 0;
@@ -921,28 +912,8 @@ export default function Rankings() {
               return a.currentPosition - b.currentPosition;
             });
 
-            const bands = [
-              { label: "Top 3",   count: top3.length,       icon: "🥇", color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25" },
-              { label: "4–5",     count: top5.length,       icon: "🥈", color: "text-slate-300",   bg: "bg-slate-400/10",   border: "border-slate-400/25" },
-              { label: "6–10",    count: top10.length,      icon: "🥉", color: "text-amber-700",   bg: "bg-amber-700/10",   border: "border-amber-700/25" },
-              { label: "11–20",   count: rank11to20.length, icon: "📊", color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/25"  },
-              { label: "21+",     count: rank21plus.length, icon: "📉", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/25" },
-              { label: "No Data", count: noRank.length,     icon: "—",  color: "text-muted-foreground", bg: "bg-muted/20", border: "border-border/30"    },
-            ];
-
             return (
               <>
-                {/* Position band cards */}
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                  {bands.map((b) => (
-                    <div key={b.label} className={`rounded-xl border ${b.border} ${b.bg} px-3 py-3 text-center`}>
-                      <div className="text-lg mb-0.5">{b.icon}</div>
-                      <p className={`text-2xl font-bold ${b.color}`}>{b.count}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{b.label}</p>
-                    </div>
-                  ))}
-                </div>
-
                 {/* Leaderboard table */}
                 {sorted.length === 0 ? (
                   <div className="py-12 text-center text-muted-foreground rounded-xl border border-dashed border-border/40 bg-card/20">
@@ -955,12 +926,12 @@ export default function Rankings() {
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         All Keywords — Ranked by Current Position
                       </span>
-                      <span className="text-[10px] text-muted-foreground">{sorted.length} keywords</span>
+                      <span className="text-xs text-muted-foreground">{sorted.length} keywords</span>
                       <div className="ml-auto flex items-center gap-1.5">
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 gap-1 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                          className="h-6 gap-1 text-xs px-2 text-muted-foreground hover:text-foreground"
                           onClick={() => exportCSV(sorted, `aeo-overall-rankings-${dateStamp}.csv`)}
                         >
                           <Download className="w-3 h-3" />CSV
@@ -968,7 +939,7 @@ export default function Rankings() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 gap-1 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                          className="h-6 gap-1 text-xs px-2 text-muted-foreground hover:text-foreground"
                           onClick={() => exportPDF(sorted, `All Keywords · ${sorted.length} keywords · ${format(new Date(), "PPP")}`, `aeo-overall-rankings-${dateStamp}.pdf`)}
                         >
                           <FileDown className="w-3 h-3" />PDF
@@ -992,7 +963,7 @@ export default function Rankings() {
                         {sorted.map((row, i) => (
                           <TableRow key={`overall-${row.keywordId}-${i}`} className="hover:bg-muted/10">
                             <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
-                            <TableCell className="text-sm font-medium max-w-[200px] truncate" title={row.keywordText}>
+                            <TableCell className="text-base font-bold max-w-[200px] truncate text-black" title={row.keywordText}>
                               {row.keywordText}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={row.clientName}>
@@ -1002,7 +973,7 @@ export default function Rankings() {
                               <div className="flex flex-col items-center gap-0.5">
                                 <RankBadge pos={row.currentPosition} />
                                 {row.currentDate && (
-                                  <span className="text-[9px] text-muted-foreground/60">
+                                  <span className="text-[10px] text-muted-foreground/60">
                                     {format(new Date(row.currentDate), "MMM d")}
                                   </span>
                                 )}
@@ -1113,8 +1084,8 @@ export default function Rankings() {
                         {/* Header */}
                         <div className="flex items-center gap-2">
                           <span className={`w-2.5 h-2.5 rounded-full ${m.dot} shrink-0`} />
-                          <span className={`font-bold text-base ${m.color}`}>{m.label}</span>
-                          <span className="ml-auto text-[10px] text-muted-foreground bg-muted/30 border border-border/30 rounded px-1.5 py-0.5">
+                          <span className={`font-bold text-lg ${m.color}`}>{m.label}</span>
+                          <span className="ml-auto text-sm text-black dark:text-white bg-muted/30 border border-border/30 rounded px-1.5 py-0.5">
                             {p.withData}/{p.totalKeywords} keywords
                           </span>
                         </div>
@@ -1122,26 +1093,26 @@ export default function Rankings() {
                         {/* Key metrics */}
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg bg-background/40 border border-border/30 p-2 text-center">
-                            <p className={`text-xl font-bold ${m.color}`}>
+                            <p className={`text-2xl font-bold ${m.color}`}>
                               {p.avgCurrentRank != null ? `#${p.avgCurrentRank}` : "—"}
                             </p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">Avg Current Rank</p>
+                            <p className="text-sm text-black dark:text-white mt-0.5">Avg Current Rank</p>
                           </div>
                           <div className="rounded-lg bg-background/40 border border-border/30 p-2 text-center">
-                            <p className="text-xl font-bold text-emerald-400">{p.topTenCount}</p>
-                            <p className="text-[9px] text-muted-foreground mt-0.5">In Top 10</p>
+                            <p className="text-2xl font-bold text-emerald-400">{p.topTenCount}</p>
+                            <p className="text-sm text-black dark:text-white mt-0.5">In Top 10</p>
                           </div>
                         </div>
 
                         {/* Status pills */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+                          <span className="flex items-center gap-1 text-sm font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
                             <ArrowUp className="w-2.5 h-2.5" />{p.improving} improving
                           </span>
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5">
+                          <span className="flex items-center gap-1 text-sm font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5">
                             <Minus className="w-2.5 h-2.5" />{p.steady} steady
                           </span>
-                          <span className="flex items-center gap-1 text-[10px] font-semibold text-destructive bg-destructive/10 border border-destructive/20 rounded-full px-2 py-0.5">
+                          <span className="flex items-center gap-1 text-sm font-bold text-destructive bg-destructive/10 border border-destructive/20 rounded-full px-2 py-0.5">
                             <ArrowDown className="w-2.5 h-2.5" />{p.declining} declining
                           </span>
                         </div>
@@ -1149,12 +1120,12 @@ export default function Rankings() {
                         {/* Best keyword */}
                         {p.bestKeyword && (
                           <div className="rounded-lg bg-background/40 border border-border/30 px-2.5 py-2">
-                            <p className="text-[9px] text-muted-foreground mb-0.5">Best Keyword</p>
-                            <p className="text-xs font-medium truncate" title={p.bestKeyword.text}>{p.bestKeyword.text}</p>
+                            <p className="text-xs font-bold text-slate-600 mb-0.5">Best Keyword</p>
+                            <p className="text-base font-bold text-black truncate" title={p.bestKeyword.text}>{p.bestKeyword.text}</p>
                             <div className="flex items-center gap-2 mt-0.5">
                               <RankBadge pos={p.bestKeyword.position} />
                               {p.bestKeyword.change != null && p.bestKeyword.change !== 0 && (
-                                <span className={`text-[10px] font-bold ${p.bestKeyword.change > 0 ? "text-emerald-400" : "text-destructive"}`}>
+                                <span className={`text-xs font-bold ${p.bestKeyword.change > 0 ? "text-emerald-400" : "text-destructive"}`}>
                                   {p.bestKeyword.change > 0 ? `+${p.bestKeyword.change}` : p.bestKeyword.change}
                                 </span>
                               )}
@@ -1170,20 +1141,20 @@ export default function Rankings() {
                 <div className="rounded-xl border border-border/50 overflow-hidden bg-card/30">
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/10">
                     <BarChart3 className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span className="text-base font-bold text-black dark:text-white uppercase tracking-wide">
                       Keyword Rankings — Across All Platforms
                     </span>
-                    <span className="ml-auto text-[10px] text-muted-foreground">{crossRows.length} keywords</span>
+                    <span className="ml-auto text-sm text-black dark:text-white">{crossRows.length} keywords</span>
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
-                        <TableHead className="text-xs">Keyword</TableHead>
-                        <TableHead className="text-xs text-muted-foreground/60">Business</TableHead>
-                        <TableHead className="text-xs text-center text-emerald-400">ChatGPT</TableHead>
-                        <TableHead className="text-xs text-center text-blue-400">Gemini</TableHead>
-                        <TableHead className="text-xs text-center text-violet-400">Perplexity</TableHead>
-                        <TableHead className="text-xs text-center">Best</TableHead>
+                        <TableHead className="text-sm font-bold">Keyword</TableHead>
+                        <TableHead className="text-sm font-bold text-slate-600">Business</TableHead>
+                        <TableHead className="text-sm font-bold text-center text-emerald-400">ChatGPT</TableHead>
+                        <TableHead className="text-sm font-bold text-center text-blue-400">Gemini</TableHead>
+                        <TableHead className="text-sm font-bold text-center text-violet-400">Perplexity</TableHead>
+                        <TableHead className="text-sm font-bold text-center">Best</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1205,7 +1176,7 @@ export default function Rankings() {
 
                         return (
                           <TableRow key={`cross-${row.keywordText}-${i}`} className="hover:bg-muted/10">
-                            <TableCell className="text-sm font-medium max-w-[180px] truncate" title={row.keywordText}>
+                            <TableCell className="text-base font-bold max-w-[180px] truncate text-black" title={row.keywordText}>
                               {row.keywordText}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate" title={row.clientName}>
@@ -1220,7 +1191,7 @@ export default function Rankings() {
                                   <div className="flex flex-col items-center gap-0.5">
                                     <RankBadge pos={pos} />
                                     {chg != null && (
-                                      <span className={`text-[9px] font-bold ${chg > 0 ? "text-emerald-400" : chg < 0 ? "text-destructive" : "text-amber-400"}`}>
+                                      <span className={`text-[10px] font-bold ${chg > 0 ? "text-emerald-400" : chg < 0 ? "text-destructive" : "text-amber-400"}`}>
                                         {chg > 0 ? `+${chg}` : chg === 0 ? "=" : chg}
                                       </span>
                                     )}
@@ -1230,7 +1201,7 @@ export default function Rankings() {
                             })}
                             <TableCell className="text-center">
                               {bestPlatform && bestMeta ? (
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${bestMeta.border} ${bestMeta.bg} ${bestMeta.color}`}>
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bestMeta.border} ${bestMeta.bg} ${bestMeta.color}`}>
                                   {bestPlatform}
                                 </span>
                               ) : <span className="text-muted-foreground/40 text-xs">—</span>}
@@ -1286,15 +1257,15 @@ export default function Rankings() {
                           <Building2 className="w-4 h-4 text-primary" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm text-foreground truncate">{grp.name}</p>
+                          <p className="font-bold text-base text-black truncate">{grp.name}</p>
                           <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                            <span className="text-[10px] text-muted-foreground">{bRows.length} keywords</span>
+                            <span className="text-xs text-muted-foreground">{bRows.length} keywords</span>
                             {perf   > 0 && <Pill value={perf}   label="performing"      color="text-emerald-400 border-emerald-500/25 bg-emerald-500/10" />}
                             {steady > 0 && <Pill value={steady} label="steady"          color="text-amber-400 border-amber-500/25 bg-amber-500/10" />}
                             {under  > 0 && <Pill value={under}  label="underperforming" color="text-red-400 border-red-500/25 bg-red-500/10" />}
                             {pend   > 0 && <Pill value={pend}   label="pending"         color="text-muted-foreground border-border/30 bg-muted/20" />}
                             {hasChange && (
-                              <span className={`text-[10px] font-semibold ${avgChange > 0 ? "text-emerald-400" : avgChange < 0 ? "text-red-400" : "text-amber-400"}`}>
+                              <span className={`text-xs font-semibold ${avgChange > 0 ? "text-emerald-400" : avgChange < 0 ? "text-red-400" : "text-amber-400"}`}>
                                 {avgChange > 0 ? "+" : ""}{avgChange} net positions
                               </span>
                             )}
@@ -1349,7 +1320,7 @@ export default function Rankings() {
                                     <div className="flex flex-col items-center gap-0.5">
                                       <RankBadge pos={row.initialPosition} />
                                       {row.initialDate && (
-                                        <span className="text-[9px] text-muted-foreground/60">
+                                        <span className="text-[10px] text-muted-foreground/60">
                                           {format(new Date(row.initialDate), "MMM d")}
                                         </span>
                                       )}
@@ -1359,7 +1330,7 @@ export default function Rankings() {
                                     <div className="flex flex-col items-center gap-0.5">
                                       <RankBadge pos={row.currentPosition} />
                                       {row.currentDate && (
-                                        <span className="text-[9px] text-muted-foreground/60">
+                                        <span className="text-[10px] text-muted-foreground/60">
                                           {format(new Date(row.currentDate), "MMM d")}
                                         </span>
                                       )}
@@ -1376,7 +1347,7 @@ export default function Rankings() {
                                         <div className="flex flex-col items-center gap-0.5">
                                           <RankBadge pos={pk?.currentPosition} />
                                           {pk?.positionChange != null && pk.positionChange !== 0 && (
-                                            <span className={`text-[9px] font-bold ${pk.positionChange > 0 ? "text-emerald-400" : "text-destructive"}`}>
+                                            <span className={`text-[10px] font-bold ${pk.positionChange > 0 ? "text-emerald-400" : "text-destructive"}`}>
                                               {pk.positionChange > 0 ? `+${pk.positionChange}` : pk.positionChange}
                                             </span>
                                           )}
@@ -1463,7 +1434,7 @@ export default function Rankings() {
                   <TableBody>
                     {filtered.map((row, i) => (
                       <TableRow key={`${row.clientId}-${row.keywordId}-${i}`} className="hover:bg-muted/20">
-                        <TableCell className="font-medium text-sm">{row.clientName}</TableCell>
+                        <TableCell className="font-bold text-base text-black">{row.clientName}</TableCell>
                         <TableCell className="text-muted-foreground text-sm max-w-[180px] truncate">{row.keywordText}</TableCell>
                         <TableCell>
                           <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
@@ -1472,7 +1443,7 @@ export default function Rankings() {
                           <div className="flex flex-col items-center gap-0.5">
                             <RankBadge pos={row.initialPosition} />
                             {row.initialDate && (
-                              <span className="text-[9px] text-muted-foreground/60">{format(new Date(row.initialDate), "MMM d")}</span>
+                              <span className="text-[10px] text-muted-foreground/60">{format(new Date(row.initialDate), "MMM d")}</span>
                             )}
                           </div>
                         </TableCell>
@@ -1480,7 +1451,7 @@ export default function Rankings() {
                           <div className="flex flex-col items-center gap-0.5">
                             <RankBadge pos={row.currentPosition} />
                             {row.currentDate && (
-                              <span className="text-[9px] text-muted-foreground/60">{format(new Date(row.currentDate), "MMM d")}</span>
+                              <span className="text-[10px] text-muted-foreground/60">{format(new Date(row.currentDate), "MMM d")}</span>
                             )}
                           </div>
                         </TableCell>
@@ -1501,19 +1472,19 @@ export default function Rankings() {
                   <div key={`m-${row.clientId}-${row.keywordId}-${i}`} className="rounded-xl border border-border/50 bg-card/40 p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="font-semibold text-sm text-foreground">{row.clientName}</p>
+                        <p className="font-bold text-base text-black">{row.clientName}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{row.keywordText}</p>
                       </div>
                       <StatusBadge status={row.status} />
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex-1 rounded-lg bg-muted/20 p-2 text-center border border-border/30">
-                        <p className="text-[9px] text-muted-foreground mb-1">Before</p>
+                        <p className="text-[10px] text-muted-foreground mb-1">Before</p>
                         <RankBadge pos={row.initialPosition} />
                       </div>
                       <div className="shrink-0"><ChangeCell change={row.positionChange ?? null} /></div>
                       <div className="flex-1 rounded-lg bg-muted/20 p-2 text-center border border-border/30">
-                        <p className="text-[9px] text-muted-foreground mb-1">Now</p>
+                        <p className="text-[10px] text-muted-foreground mb-1">Now</p>
                         <RankBadge pos={row.currentPosition} />
                       </div>
                     </div>
@@ -1553,9 +1524,9 @@ export default function Rankings() {
                       <TableRow key={report.id} className="hover:bg-muted/20">
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           <div>{format(new Date(report.createdAt), "MMM d, yyyy")}</div>
-                          <div className="text-[9px] opacity-60">{formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}</div>
+                          <div className="text-[10px] opacity-60">{formatDistanceToNow(new Date(report.createdAt), { addSuffix: true })}</div>
                         </TableCell>
-                        <TableCell className="font-medium text-sm">{report.clientName || `Client #${report.clientId}`}</TableCell>
+                        <TableCell className="font-bold text-base text-black">{report.clientName || `Client #${report.clientId}`}</TableCell>
                         <TableCell className="text-muted-foreground text-sm max-w-[160px] truncate">{report.keywordText || `Keyword #${report.keywordId}`}</TableCell>
                         <TableCell className="text-center"><RankBadge pos={report.rankingPosition} /></TableCell>
                         <TableCell>
@@ -1581,8 +1552,8 @@ export default function Rankings() {
                         </TableCell>
                         <TableCell className="text-right">
                           {report.isInitialRanking
-                            ? <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/20">Initial</Badge>
-                            : <Badge variant="outline" className="text-[9px] bg-muted/40 text-muted-foreground border-border/30">Check-in</Badge>
+                            ? <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">Initial</Badge>
+                            : <Badge variant="outline" className="text-[10px] bg-muted/40 text-muted-foreground border-border/30">Check-in</Badge>
                           }
                         </TableCell>
                       </TableRow>
@@ -1615,7 +1586,7 @@ export default function Rankings() {
 
           <div className="space-y-4 mt-1">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">
                 Google Maps URL
               </Label>
               <div className="relative">

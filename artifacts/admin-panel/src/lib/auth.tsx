@@ -27,6 +27,16 @@ async function apiFetch(path: string, options?: RequestInit) {
   return res;
 }
 
+async function parseJSON(res: Response) {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,7 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     apiFetch("/api/auth/me")
       .then(async (res) => {
-        if (res.ok) setUser(await res.json());
+        if (res.ok) {
+          const data = await parseJSON(res);
+          if (data) setUser(data);
+        }
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
@@ -46,11 +59,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error ?? "Login failed");
+      try {
+        const err = await parseJSON(res);
+        throw new Error(err?.error ?? `Login failed (${res.status})`);
+      } catch (e) {
+        if (e instanceof Error) throw e;
+        throw new Error(`Login failed with status ${res.status}`);
+      }
     }
-    const userData = await res.json();
-    setUser(userData);
+    try {
+      const userData = await parseJSON(res);
+      if (!userData) throw new Error("No user data in response");
+      setUser(userData);
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : "Invalid server response");
+    }
   }
 
   async function logout() {

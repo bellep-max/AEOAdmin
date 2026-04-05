@@ -21,7 +21,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
       {value ? (
         href ? (
           <a
@@ -139,7 +139,7 @@ export default function ClientDetail() {
               </Badge>
             )}
             {(c.accountType as string) && (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
+              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs">
                 {c.accountType as string}
               </Badge>
             )}
@@ -181,7 +181,7 @@ export default function ClientDetail() {
               <Field label="Subscription ID"                  value={c.subscriptionId as string} />
               {/* Last 4 with card icon */}
               <div className="space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
                   Last 4 of Billing Credit Card
                 </p>
                 {(c.lastFourCard as string) ? (
@@ -227,7 +227,7 @@ export default function ClientDetail() {
               <Field label="Next Bill Date"            value={c.nextBillDate as string} />
               {/* Last 4 with card icon */}
               <div className="space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
                   Last 4 of Billing Credit Card
                 </p>
                 {(c.lastFourCard as string) ? (

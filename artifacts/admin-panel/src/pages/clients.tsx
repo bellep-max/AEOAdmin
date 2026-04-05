@@ -22,15 +22,28 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const clientFormSchema = z.object({
+const businessFormSchema = z.object({
+  // Business Information
   businessName: z.string().min(2, "Business name is required"),
-  gmbUrl: z.string().url().optional().or(z.literal('')),
-  websiteUrl: z.string().url().optional().or(z.literal('')),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  status: z.enum(['active', 'inactive']),
-  planName: z.string().optional(),
-  contactEmail: z.string().email().optional().or(z.literal('')),
+  searchAddress: z.string().optional(),
+  gmbAddress: z.string().optional(),
+  gmbLink: z.string().url().optional().or(z.literal('')),
+  websitePublishedOnGMB: z.string().optional(),
+  websiteLinkedOnGMB: z.string().optional(),
+  
+  // Subscription Information
+  plan: z.string().optional(),
+  accountType: z.enum(['agency', 'retail']).optional(),
+  startDate: z.string().optional(),
+  nextBillDate: z.string().optional(),
+  subscriptionId: z.string().optional(),
+  
+  // Account Information
+  accountUser: z.string().optional(),
+  accountUserName: z.string().optional(),
+  accountEmail: z.string().email().optional().or(z.literal('')),
+  billingEmail: z.string().email().optional().or(z.literal('')),
+  cardLast4: z.string().optional(),
 });
 
 export default function Clients() {
@@ -40,30 +53,38 @@ export default function Clients() {
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
 
-  const form = useForm<z.infer<typeof clientFormSchema>>({
-    resolver: zodResolver(clientFormSchema),
+  const form = useForm<z.infer<typeof businessFormSchema>>({
+    resolver: zodResolver(businessFormSchema),
     defaultValues: {
       businessName: "",
-      gmbUrl: "",
-      websiteUrl: "",
-      city: "",
-      state: "",
-      status: "active",
-      planName: "",
-      contactEmail: "",
+      searchAddress: "",
+      gmbAddress: "",
+      gmbLink: "",
+      websitePublishedOnGMB: "",
+      websiteLinkedOnGMB: "",
+      plan: "",
+      accountType: undefined,
+      startDate: "",
+      nextBillDate: "",
+      subscriptionId: "",
+      accountUser: "",
+      accountUserName: "",
+      accountEmail: "",
+      billingEmail: "",
+      cardLast4: "",
     },
   });
 
-  const onSubmit = (values: z.infer<typeof clientFormSchema>) => {
+  const onSubmit = (values: z.infer<typeof businessFormSchema>) => {
     createClient.mutate({ data: values }, {
       onSuccess: () => {
-        toast({ title: "Client added successfully" });
+        toast({ title: "Business added successfully" });
         setIsAddOpen(false);
         form.reset();
         refetch();
       },
       onError: () => {
-        toast({ title: "Failed to add client", variant: "destructive" });
+        toast({ title: "Failed to add business", variant: "destructive" });
       }
     });
   };
@@ -75,118 +96,267 @@ export default function Clients() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col gap-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white">Clients</h1>
-          <p className="text-muted-foreground">Manage AEO campaigns for local businesses.</p>
+          <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Business</h1>
+          <p className="text-lg text-slate-700 dark:text-slate-300">Business List</p>
         </div>
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
               <Plus className="w-4 h-4 mr-2" />
-              Add Client
+              Add Business
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[1200px] bg-white max-h-[90vh]">
             <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
+              <DialogTitle className="text-lg font-bold text-black">Add New Business</DialogTitle>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
-                <FormField
-                  control={form.control}
-                  name="businessName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Business Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Acme Plumbers" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Austin" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State</FormLabel>
-                        <FormControl>
-                          <Input placeholder="TX" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="gmbUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Google Maps URL</FormLabel>
-                      <FormControl>
-                        <Input placeholder="https://maps.google.com/..." {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="status"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Status</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-4 max-h-[70vh] overflow-y-auto pr-4">
+                {/* Business Information Section */}
+                <div>
+                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Business Information</h3>
+                  <div className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="businessName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Business Name *</FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
+                            <Input placeholder="Acme Plumbers" className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="planName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Plan Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Pro AEO" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="searchAddress"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Search Address</FormLabel>
+                          <FormControl>
+                            <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="gmbAddress"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">GMB Address</FormLabel>
+                          <FormControl>
+                            <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="gmbLink"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">GMB Link</FormLabel>
+                          <FormControl>
+                            <Input placeholder="https://maps.google.com/..." className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="websitePublishedOnGMB"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Website Published on GMB</FormLabel>
+                          <FormControl>
+                            <Input placeholder="https://example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="websiteLinkedOnGMB"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Website Linked on GMB (if different)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="https://example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
-                <div className="pt-4 flex justify-end">
-                  <Button type="submit" disabled={createClient.isPending}>
-                    {createClient.isPending ? "Creating..." : "Create Client"}
+
+                {/* Subscription Information Section */}
+                <div>
+                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Subscription Information</h3>
+                  <div className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="plan"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Plan</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Pro AEO" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="accountType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-11 text-base text-black bg-slate-50">
+                                <SelectValue placeholder="Select account type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="agency">Agency</SelectItem>
+                              <SelectItem value="retail">Retail</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="startDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Start Date</FormLabel>
+                            <FormControl>
+                              <Input type="date" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="nextBillDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Next Bill Date</FormLabel>
+                            <FormControl>
+                              <Input type="date" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="subscriptionId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Subscription ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="SUB-12345" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {/* Account Information Section */}
+                <div>
+                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Account Information</h3>
+                  <div className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="accountUser"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account User</FormLabel>
+                          <FormControl>
+                            <Input placeholder="john.doe" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="accountUserName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account User Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="John Doe" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="accountEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="john@example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="billingEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Contact / Billing Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="billing@example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="cardLast4"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Last 4 of Billing Credit Card</FormLabel>
+                          <FormControl>
+                            <Input placeholder="4242" maxLength="4" className="h-11 text-base text-black bg-slate-50" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end sticky bottom-0 bg-white">
+                  <Button type="submit" disabled={createClient.isPending} className="h-12 text-base font-bold">
+                    {createClient.isPending ? "Creating..." : "Create Business"}
                   </Button>
                 </div>
               </form>
@@ -197,26 +367,26 @@ export default function Clients() {
 
       <div className="flex items-center w-full max-w-sm">
         <div className="relative w-full">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-600 dark:text-slate-400" />
           <Input
             type="search"
-            placeholder="Search clients..."
-            className="pl-9 bg-card"
+            placeholder="Search businesses..."
+            className="pl-9 bg-white text-base text-black h-11 placeholder:text-slate-700"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="border rounded-md bg-card/50">
+      <div className="border rounded-md bg-white dark:bg-slate-950">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Business Name</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Plan</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+            <TableRow className="bg-slate-50 dark:bg-slate-900">
+              <TableHead className="text-base font-bold text-black dark:text-white">Business Name</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Location</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Status</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Plan</TableHead>
+              <TableHead className="text-right text-base font-bold text-black dark:text-white">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -232,38 +402,38 @@ export default function Clients() {
               ))
             ) : filteredClients?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                  No clients found.
+                <TableCell colSpan={5} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
+                  No businesses found.
                 </TableCell>
               </TableRow>
             ) : (
               filteredClients?.map((client) => (
-                <TableRow key={client.id} className="hover:bg-muted/50 cursor-pointer relative group">
-                  <TableCell className="font-medium">
+                <TableRow key={client.id} className="hover:bg-slate-50 cursor-pointer relative group border-b border-slate-200">
+                  <TableCell className="font-bold text-base text-black">
                     <Link href={`/clients/${client.id}`} className="absolute inset-0 z-0" />
                     <span className="relative z-10">{client.businessName}</span>
                   </TableCell>
-                  <TableCell className="relative z-10">
-                    {client.city ? `${client.city}, ${client.state}` : <span className="text-muted-foreground">-</span>}
+                  <TableCell className="relative z-10 text-base text-black">
+                    {client.city ? `${client.city}, ${client.state}` : <span className="text-slate-600">-</span>}
                   </TableCell>
                   <TableCell className="relative z-10">
-                    <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-muted text-muted-foreground'}>
+                    <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 text-slate-700 text-sm font-bold'}>
                       {client.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="relative z-10 text-muted-foreground">
+                  <TableCell className="relative z-10 text-black text-base">
                     {client.planName || '-'}
                   </TableCell>
                   <TableCell className="text-right relative z-20">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
+                        <Button variant="ghost" className="h-8 w-8 p-0 text-slate-600 dark:text-slate-400">
                           <span className="sr-only">Open menu</span>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                      <DropdownMenuContent align="end" className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-black dark:text-white">
+                        <DropdownMenuLabel className="text-black dark:text-white font-bold">Actions</DropdownMenuLabel>
                         <Link href={`/clients/${client.id}`}>
                           <DropdownMenuItem className="cursor-pointer">
                             View Details

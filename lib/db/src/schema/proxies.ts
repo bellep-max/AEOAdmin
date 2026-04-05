@@ -17,7 +17,6 @@ export const proxiesTable = pgTable("proxies", {
   zip:      text("zip"),
   sessionDuration: integer("session_duration"),
   deviceId: integer("device_id"),
-  sessionCount: integer("session_count").notNull().default(0),
   lastUsed: timestamp("last_used"),
 });
 

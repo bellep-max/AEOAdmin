@@ -11,7 +11,7 @@ export const devicesTable = pgTable("devices", {
   useAdb: boolean("use_adb").notNull().default(true),
   brand:  text("brand"),
   model:  text("model").notNull(),
-  status: text("status").notNull().default("available"),
+  status: text("status").notNull().default("Available"), // Available, Busy, Away
   retiredToday: boolean("retired_today").notNull().default(false),
   lastUsedAt: timestamp("last_used_at"),
 });

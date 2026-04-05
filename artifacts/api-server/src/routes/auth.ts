@@ -7,7 +7,7 @@ import crypto from "crypto";
 const router = Router();
 
 function hashPassword(password: string): string {
-  const salt = process.env.SESSION_SECRET ?? "signal-aeo-salt";
+  const salt = process.env.SESSION_SECRET ?? "signal-aeo-dev-secret";
   return crypto.createHmac("sha256", salt).update(password).digest("hex");
 }
 

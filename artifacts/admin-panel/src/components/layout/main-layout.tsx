@@ -1,9 +1,18 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./sidebar";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { LogOut, Bell } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LogOut, Bell, Sun, Moon, User } from "lucide-react";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
@@ -14,7 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/devices": "Devices",
   "/proxies": "Proxies",
   "/rankings": "Rankings",
-  "/metrics": "Session Metrics",
+  "/metrics": "Metrics",
   "/farm-metrics": "Device Farm Metrics",
   "/business-metrics": "Business Metrics",
   "/scaling": "Scaling Plan",
@@ -24,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [location] = useLocation();
 
   // Find the best matching title
@@ -47,24 +57,62 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground relative">
                 <Bell className="w-4 h-4" />
               </Button>
-              <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-border/50">
-                <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="hidden md:block leading-tight text-right">
-                  <p className="text-xs font-medium text-foreground">{user.name}</p>
-                  <p className="text-[10px] text-muted-foreground capitalize">{user.role}</p>
-                </div>
-              </div>
+
+              {/* Theme Toggle */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={logout}
-                title="Sign out"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={toggleTheme}
+                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
               >
-                <LogOut className="w-4 h-4" />
+                {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
               </Button>
+
+              {/* User Profile Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="h-8 gap-2 pl-2 pr-2 border-l border-border/50 rounded-none hover:bg-accent"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="hidden md:block leading-tight text-left">
+                      <p className="text-sm font-medium text-foreground">{user.name}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium">{user.name}</p>
+                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={toggleTheme}>
+                    {theme === "light" ? (
+                      <>
+                        <Moon className="w-4 h-4 mr-2" />
+                        Dark mode
+                      </>
+                    ) : (
+                      <>
+                        <Sun className="w-4 h-4 mr-2" />
+                        Light mode
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
         </header>
