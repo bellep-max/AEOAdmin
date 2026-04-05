@@ -637,8 +637,9 @@ function KeywordCard({
                 </div>
 
                 {/* Link report URLs */}
-                <div className="grid grid-cols-2 divide-x divide-slate-200">
+                <div className="grid grid-cols-3 divide-x divide-slate-200">
                   {[
+                    { label: "Link URL",                    url: link.linkUrl },
                     { label: "Initial Rank Report Link",  url: link.initialRankReportLink },
                     { label: "Current Rank Report Link", url: link.currentRankReportLink },
                   ].map(({ label, url }) => (
