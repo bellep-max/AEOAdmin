@@ -408,20 +408,20 @@ export default function Clients() {
               </TableRow>
             ) : (
               filteredClients?.map((client) => (
-                <TableRow key={client.id} className="hover:bg-slate-50 cursor-pointer relative group border-b border-slate-200">
-                  <TableCell className="font-bold text-base text-black">
+                <TableRow key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer relative group border-b border-slate-200 dark:border-slate-800">
+                  <TableCell className="font-bold text-base text-black dark:text-slate-100">
                     <Link href={`/clients/${client.id}`} className="absolute inset-0 z-0" />
                     <span className="relative z-10">{client.businessName}</span>
                   </TableCell>
-                  <TableCell className="relative z-10 text-base text-black">
-                    {client.city ? `${client.city}, ${client.state}` : <span className="text-slate-600">-</span>}
+                  <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
+                    {client.city ? `${client.city}, ${client.state}` : <span className="text-slate-600 dark:text-slate-400">-</span>}
                   </TableCell>
                   <TableCell className="relative z-10">
-                    <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 text-slate-700 text-sm font-bold'}>
+                    <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold'}>
                       {client.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="relative z-10 text-black text-base">
+                  <TableCell className="relative z-10 text-black dark:text-slate-100 text-base">
                     {client.planName || '-'}
                   </TableCell>
                   <TableCell className="text-right relative z-20">
