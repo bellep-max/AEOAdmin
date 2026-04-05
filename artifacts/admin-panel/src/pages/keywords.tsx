@@ -16,7 +16,7 @@ import { Link }      from "wouter";
 import {
   Search, Plus, Key, Loader2, Star, Filter, X,
   Building2, ExternalLink, Pencil, Trash2, Calendar,
-  Download, ChevronDown, FileDown, Link2, MapPin, FileText,
+  Download, ChevronDown, FileDown, Link2, FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 import jsPDF       from "jspdf";
@@ -306,24 +306,17 @@ function KeywordDialog({
           </div>
 
           {/* Keyword type */}
-          <div>
-            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-2 block">Keyword Type <span className="text-destructive">*</span></Label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { value: "1", label: "Type 1 — Geo Specific",  desc: "60% budget · 100% search rate",  icon: MapPin, sel: "border-primary/50 bg-primary/10 text-primary" },
-                { value: "2", label: "Type 2 — Backlink",       desc: "10% budget · 1st keyword only",  icon: Link2,  sel: "border-amber-400/50 bg-amber-500/10 text-amber-400" },
-              ].map((opt) => {
-                const Icon  = opt.icon;
-                const isSelected = String(vals.keywordType) === opt.value;
-                return (
-                  <button key={opt.value} type="button" onClick={() => set("keywordType", opt.value)}
-                    className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition-all ${isSelected ? opt.sel : "border-border/50 bg-muted/20 text-muted-foreground hover:border-border/80"}`}>
-                    <div className="flex items-center gap-1.5"><Icon className="w-3.5 h-3.5" /><span className="text-xs font-semibold">{opt.label}</span></div>
-                    <span className="text-[10px] opacity-70">{opt.desc}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground/60">Keyword Types <span className="text-destructive">*</span></Label>
+            <Select value={String(vals.keywordType)} onValueChange={(v) => set("keywordType", v)}>
+              <SelectTrigger className="bg-muted/30 border-border/60 h-9 text-sm">
+                <SelectValue placeholder="Select keyword type…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Type 1 — Geo Specific</SelectItem>
+                <SelectItem value="2">Type 2 — Backlink</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Primary + Active */}
