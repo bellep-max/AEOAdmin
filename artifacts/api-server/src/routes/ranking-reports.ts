@@ -85,6 +85,93 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
+/* GET /api/ranking-reports/platform-summary
+   Returns per-platform initial-vs-current comparison rows */
+router.get("/platform-summary", async (req, res) => {
+  try {
+    const PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
+    const [clients, keywords, platformRows] = await Promise.all([
+      db.select().from(clientsTable),
+      db.select().from(keywordsTable).where(eq(keywordsTable.tierLabel, "aeo")),
+      db
+        .select({
+          clientId: rankingReportsTable.clientId,
+          keywordId: rankingReportsTable.keywordId,
+          rankingPosition: rankingReportsTable.rankingPosition,
+          isInitialRanking: rankingReportsTable.isInitialRanking,
+          platform: rankingReportsTable.platform,
+          createdAt: rankingReportsTable.createdAt,
+        })
+        .from(rankingReportsTable)
+        .orderBy(asc(rankingReportsTable.createdAt)),
+    ]);
+
+    const clientMap  = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
+
+    // Build summary per platform
+    const summary = PLATFORMS.map((platform) => {
+      const rows = platformRows.filter((r) => r.platform === platform);
+
+      // Group by clientId-keywordId
+      const grouped = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const key = `${r.clientId}-${r.keywordId}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(r);
+      }
+
+      const comparisons = [...grouped.entries()].map(([, grpRows]) => {
+        const initial = grpRows.find((r) => r.isInitialRanking) ?? grpRows[0];
+        const current = grpRows[grpRows.length - 1];
+        const client  = clientMap.get(initial.clientId);
+        const keyword = keywordMap.get(initial.keywordId);
+        const change  =
+          initial?.rankingPosition != null && current?.rankingPosition != null
+            ? initial.rankingPosition - current.rankingPosition
+            : null;
+        return {
+          clientId:        initial.clientId,
+          clientName:      client?.businessName ?? `Client #${initial.clientId}`,
+          keywordId:       initial.keywordId,
+          keywordText:     keyword?.keywordText ?? `Keyword #${initial.keywordId}`,
+          initialPosition: initial?.rankingPosition ?? null,
+          currentPosition: current?.rankingPosition ?? null,
+          positionChange:  change,
+        };
+      });
+
+      const withData   = comparisons.filter((c) => c.currentPosition != null);
+      const improving  = comparisons.filter((c) => (c.positionChange ?? 0) > 0);
+      const declining  = comparisons.filter((c) => (c.positionChange ?? 0) < 0);
+      const steady     = comparisons.filter((c) => c.positionChange === 0);
+      const avgPos     = withData.length > 0
+        ? Math.round(withData.reduce((s, c) => s + (c.currentPosition ?? 0), 0) / withData.length)
+        : null;
+      const topTen     = withData.filter((c) => (c.currentPosition ?? 99) <= 10);
+      const bestKw     = withData.sort((a, b) => (a.currentPosition ?? 99) - (b.currentPosition ?? 99))[0] ?? null;
+
+      return {
+        platform,
+        totalKeywords:  comparisons.length,
+        withData:       withData.length,
+        improving:      improving.length,
+        steady:         steady.length,
+        declining:      declining.length,
+        avgCurrentRank: avgPos,
+        topTenCount:    topTen.length,
+        bestKeyword:    bestKw ? { text: bestKw.keywordText, position: bestKw.currentPosition, change: bestKw.positionChange } : null,
+        keywords:       comparisons,
+      };
+    });
+
+    res.json(summary);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching platform summary");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/initial-vs-current", async (req, res) => {
   try {
     const clients = await db.select().from(clientsTable);

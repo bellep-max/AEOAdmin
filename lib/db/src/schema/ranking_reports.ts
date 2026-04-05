@@ -13,6 +13,7 @@ export const rankingReportsTable = pgTable("ranking_reports", {
   mapsPresence: text("maps_presence"),
   mapsUrl: text("maps_url"),
   isInitialRanking: boolean("is_initial_ranking").default(false),
+  platform: text("platform"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

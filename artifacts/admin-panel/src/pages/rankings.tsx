@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useGetRankingReports, useGetInitialVsCurrentRankings } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -28,6 +28,23 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Types ──────────────────────────────────────────────── */
 type PerfStatus = "performing" | "steady" | "underperforming" | "pending";
+
+type PlatformKw = {
+  clientId: number; clientName: string;
+  keywordId: number; keywordText: string;
+  initialPosition: number | null;
+  currentPosition: number | null;
+  positionChange:  number | null;
+};
+type PlatformSummary = {
+  platform: "chatgpt" | "gemini" | "perplexity";
+  totalKeywords: number; withData: number;
+  improving: number; steady: number; declining: number;
+  avgCurrentRank: number | null;
+  topTenCount: number;
+  bestKeyword: { text: string; position: number | null; change: number | null } | null;
+  keywords: PlatformKw[];
+};
 
 type CompRow = {
   clientId: number;
@@ -301,6 +318,14 @@ export default function Rankings() {
 
   const { data: reports,    isLoading: isReportsLoading    } = useGetRankingReports();
   const { data: comparison, isLoading: isComparisonLoading } = useGetInitialVsCurrentRankings();
+  const { data: platformData, isLoading: isPlatformLoading } = useQuery<PlatformSummary[]>({
+    queryKey: ["/api/ranking-reports/platform-summary"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/ranking-reports/platform-summary`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch platform summary");
+      return res.json();
+    },
+  });
 
   const [statusFilter,  setStatusFilter]  = useState<PerfStatus | "all">("all");
   const [search,        setSearch]        = useState("");
@@ -488,8 +513,9 @@ export default function Rankings() {
 
       {/* ── Tabs ── */}
       <Tabs defaultValue="overall" className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-4 bg-card/60">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5 bg-card/60">
           <TabsTrigger value="overall">Overall</TabsTrigger>
+          <TabsTrigger value="by-platform">By Platform</TabsTrigger>
           <TabsTrigger value="by-business">By Business</TabsTrigger>
           <TabsTrigger value="comparison">Before / After</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
@@ -606,6 +632,188 @@ export default function Rankings() {
                     </Table>
                   </div>
                 )}
+              </>
+            );
+          })()}
+        </TabsContent>
+
+        {/* ═══════ BY PLATFORM TAB ═══════ */}
+        <TabsContent value="by-platform" className="mt-4 space-y-6">
+          {isPlatformLoading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+            </div>
+          ) : !platformData || platformData.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground rounded-xl border border-dashed border-border/40 bg-card/20">
+              No platform-specific data yet.
+            </div>
+          ) : (() => {
+            const META: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
+              chatgpt:    { label: "ChatGPT",    color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", dot: "bg-emerald-400" },
+              gemini:     { label: "Gemini",     color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/30",    dot: "bg-blue-400"    },
+              perplexity: { label: "Perplexity", color: "text-violet-400",  bg: "bg-violet-500/10",  border: "border-violet-500/30",  dot: "bg-violet-400"  },
+            };
+
+            /* ── Build per-keyword cross-platform table ── */
+            const kwMap = new Map<number, {
+              keywordText: string; clientName: string;
+              chatgpt: PlatformKw | undefined;
+              gemini:  PlatformKw | undefined;
+              perplexity: PlatformKw | undefined;
+            }>();
+            for (const p of platformData) {
+              for (const kw of p.keywords) {
+                if (!kwMap.has(kw.keywordId)) {
+                  kwMap.set(kw.keywordId, { keywordText: kw.keywordText, clientName: kw.clientName, chatgpt: undefined, gemini: undefined, perplexity: undefined });
+                }
+                kwMap.get(kw.keywordId)![p.platform] = kw;
+              }
+            }
+            const crossRows = [...kwMap.values()].sort((a, b) => {
+              const bestA = Math.min(a.chatgpt?.currentPosition ?? 99, a.gemini?.currentPosition ?? 99, a.perplexity?.currentPosition ?? 99);
+              const bestB = Math.min(b.chatgpt?.currentPosition ?? 99, b.gemini?.currentPosition ?? 99, b.perplexity?.currentPosition ?? 99);
+              return bestA - bestB;
+            });
+
+            return (
+              <>
+                {/* ── Platform summary cards ── */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {platformData.map((p) => {
+                    const m = META[p.platform];
+                    return (
+                      <div key={p.platform} className={`rounded-xl border ${m.border} ${m.bg} p-4 space-y-3`}>
+                        {/* Header */}
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${m.dot} shrink-0`} />
+                          <span className={`font-bold text-base ${m.color}`}>{m.label}</span>
+                          <span className="ml-auto text-[10px] text-muted-foreground bg-muted/30 border border-border/30 rounded px-1.5 py-0.5">
+                            {p.withData}/{p.totalKeywords} keywords
+                          </span>
+                        </div>
+
+                        {/* Key metrics */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-background/40 border border-border/30 p-2 text-center">
+                            <p className={`text-xl font-bold ${m.color}`}>
+                              {p.avgCurrentRank != null ? `#${p.avgCurrentRank}` : "—"}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">Avg Current Rank</p>
+                          </div>
+                          <div className="rounded-lg bg-background/40 border border-border/30 p-2 text-center">
+                            <p className="text-xl font-bold text-emerald-400">{p.topTenCount}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">In Top 10</p>
+                          </div>
+                        </div>
+
+                        {/* Status pills */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">
+                            <ArrowUp className="w-2.5 h-2.5" />{p.improving} improving
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2 py-0.5">
+                            <Minus className="w-2.5 h-2.5" />{p.steady} steady
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-destructive bg-destructive/10 border border-destructive/20 rounded-full px-2 py-0.5">
+                            <ArrowDown className="w-2.5 h-2.5" />{p.declining} declining
+                          </span>
+                        </div>
+
+                        {/* Best keyword */}
+                        {p.bestKeyword && (
+                          <div className="rounded-lg bg-background/40 border border-border/30 px-2.5 py-2">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Best Keyword</p>
+                            <p className="text-xs font-medium truncate" title={p.bestKeyword.text}>{p.bestKeyword.text}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <RankBadge pos={p.bestKeyword.position} />
+                              {p.bestKeyword.change != null && p.bestKeyword.change !== 0 && (
+                                <span className={`text-[10px] font-bold ${p.bestKeyword.change > 0 ? "text-emerald-400" : "text-destructive"}`}>
+                                  {p.bestKeyword.change > 0 ? `+${p.bestKeyword.change}` : p.bestKeyword.change}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Cross-platform keyword comparison table ── */}
+                <div className="rounded-xl border border-border/50 overflow-hidden bg-card/30">
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/10">
+                    <BarChart3 className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Keyword Rankings — Across All Platforms
+                    </span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">{crossRows.length} keywords</span>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableHead className="text-xs">Keyword</TableHead>
+                        <TableHead className="text-xs text-muted-foreground/60">Business</TableHead>
+                        <TableHead className="text-xs text-center text-emerald-400">ChatGPT</TableHead>
+                        <TableHead className="text-xs text-center text-blue-400">Gemini</TableHead>
+                        <TableHead className="text-xs text-center text-violet-400">Perplexity</TableHead>
+                        <TableHead className="text-xs text-center">Best</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {crossRows.map((row, i) => {
+                        const positions = [
+                          row.chatgpt?.currentPosition,
+                          row.gemini?.currentPosition,
+                          row.perplexity?.currentPosition,
+                        ].filter((p): p is number => p != null);
+                        const bestPos = positions.length > 0 ? Math.min(...positions) : null;
+                        const bestPlatform = bestPos != null
+                          ? bestPos === row.chatgpt?.currentPosition ? "ChatGPT"
+                          : bestPos === row.gemini?.currentPosition ? "Gemini"
+                          : "Perplexity"
+                          : null;
+                        const bestMeta = bestPlatform
+                          ? META[bestPlatform.toLowerCase() as keyof typeof META]
+                          : null;
+
+                        return (
+                          <TableRow key={`cross-${row.keywordText}-${i}`} className="hover:bg-muted/10">
+                            <TableCell className="text-sm font-medium max-w-[180px] truncate" title={row.keywordText}>
+                              {row.keywordText}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate" title={row.clientName}>
+                              {row.clientName}
+                            </TableCell>
+                            {(["chatgpt", "gemini", "perplexity"] as const).map((plat) => {
+                              const kw  = row[plat];
+                              const pos = kw?.currentPosition ?? null;
+                              const chg = kw?.positionChange ?? null;
+                              return (
+                                <TableCell key={plat} className="text-center">
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <RankBadge pos={pos} />
+                                    {chg != null && (
+                                      <span className={`text-[9px] font-bold ${chg > 0 ? "text-emerald-400" : chg < 0 ? "text-destructive" : "text-amber-400"}`}>
+                                        {chg > 0 ? `+${chg}` : chg === 0 ? "=" : chg}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="text-center">
+                              {bestPlatform && bestMeta ? (
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${bestMeta.border} ${bestMeta.bg} ${bestMeta.color}`}>
+                                  {bestPlatform}
+                                </span>
+                              ) : <span className="text-muted-foreground/40 text-xs">—</span>}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </>
             );
           })()}
