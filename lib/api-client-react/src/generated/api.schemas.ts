@@ -286,6 +286,33 @@ export interface UpdateKeywordBody {
   tierLabel?: UpdateKeywordBodyTierLabel;
 }
 
+export interface KeywordLink {
+  id: number;
+  keywordId: number;
+  linkUrl?: string | null;
+  linkTypeLabel?: string | null;
+  linkActive: boolean;
+  initialRankReportLink?: string | null;
+  currentRankReportLink?: string | null;
+  createdAt: string;
+}
+
+export interface CreateKeywordLinkBody {
+  linkUrl?: string | null;
+  linkTypeLabel?: string | null;
+  linkActive?: boolean;
+  initialRankReportLink?: string | null;
+  currentRankReportLink?: string | null;
+}
+
+export interface UpdateKeywordLinkBody {
+  linkUrl?: string | null;
+  linkTypeLabel?: string | null;
+  linkActive?: boolean;
+  initialRankReportLink?: string | null;
+  currentRankReportLink?: string | null;
+}
+
 export type SessionAiPlatform =
   (typeof SessionAiPlatform)[keyof typeof SessionAiPlatform];
 

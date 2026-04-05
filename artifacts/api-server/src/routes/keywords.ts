@@ -89,6 +89,7 @@ router.post("/:id/links", async (req, res) => {
       .insert(keywordLinksTable)
       .values({
         keywordId,
+        linkUrl:               body.linkUrl               ?? null,
         linkTypeLabel:         body.linkTypeLabel         ?? null,
         linkActive:            body.linkActive !== false,
         initialRankReportLink: body.initialRankReportLink ?? null,
@@ -111,6 +112,7 @@ router.patch("/:id/links/:linkId", async (req, res) => {
     const linkId = parseInt(req.params.linkId);
     const body   = req.body as Record<string, unknown>;
     const allowed: Record<string, unknown> = {};
+    if (body.linkUrl                !== undefined) allowed.linkUrl                = body.linkUrl ?? null;
     if (body.linkTypeLabel         !== undefined) allowed.linkTypeLabel         = body.linkTypeLabel ?? null;
     if (body.linkActive            !== undefined) allowed.linkActive            = Boolean(body.linkActive);
     if (body.initialRankReportLink !== undefined) allowed.initialRankReportLink = body.initialRankReportLink ?? null;

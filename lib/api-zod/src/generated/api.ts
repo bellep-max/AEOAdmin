@@ -354,6 +354,77 @@ export const DeleteKeywordParams = zod.object({
 });
 
 /**
+ * @summary Get associated links for a keyword
+ */
+export const GetKeywordLinksParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetKeywordLinksResponseItem = zod.object({
+  id: zod.number(),
+  keywordId: zod.number(),
+  linkUrl: zod.string().nullish(),
+  linkTypeLabel: zod.string().nullish(),
+  linkActive: zod.boolean(),
+  initialRankReportLink: zod.string().nullish(),
+  currentRankReportLink: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const GetKeywordLinksResponse = zod.array(GetKeywordLinksResponseItem);
+
+/**
+ * @summary Add an associated link to a keyword
+ */
+export const CreateKeywordLinkParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const createKeywordLinkBodyLinkActiveDefault = true;
+
+export const CreateKeywordLinkBody = zod.object({
+  linkUrl: zod.string().nullish(),
+  linkTypeLabel: zod.string().nullish(),
+  linkActive: zod.boolean().default(createKeywordLinkBodyLinkActiveDefault),
+  initialRankReportLink: zod.string().nullish(),
+  currentRankReportLink: zod.string().nullish(),
+});
+
+/**
+ * @summary Update associated link
+ */
+export const UpdateKeywordLinkParams = zod.object({
+  id: zod.coerce.number(),
+  linkId: zod.coerce.number(),
+});
+
+export const UpdateKeywordLinkBody = zod.object({
+  linkUrl: zod.string().nullish(),
+  linkTypeLabel: zod.string().nullish(),
+  linkActive: zod.boolean().optional(),
+  initialRankReportLink: zod.string().nullish(),
+  currentRankReportLink: zod.string().nullish(),
+});
+
+export const UpdateKeywordLinkResponse = zod.object({
+  id: zod.number(),
+  keywordId: zod.number(),
+  linkUrl: zod.string().nullish(),
+  linkTypeLabel: zod.string().nullish(),
+  linkActive: zod.boolean(),
+  initialRankReportLink: zod.string().nullish(),
+  currentRankReportLink: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Remove associated link
+ */
+export const DeleteKeywordLinkParams = zod.object({
+  id: zod.coerce.number(),
+  linkId: zod.coerce.number(),
+});
+
+/**
  * @summary List AEO sessions
  */
 export const getSessionsQueryLimitDefault = 50;

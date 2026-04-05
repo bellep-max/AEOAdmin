@@ -46,6 +46,7 @@ function getKeywordTypeLabel(type: number | string, short = false): string {
 
 interface KeywordLink {
   id: number; keywordId: number;
+  linkUrl: string | null;
   linkTypeLabel: string | null;
   linkActive: boolean;
   initialRankReportLink: string | null;
@@ -185,7 +186,7 @@ function LinkDialog({
   saving: boolean; initial?: Partial<KeywordLink>;
   onSave: (data: Partial<KeywordLink>) => void;
 }) {
-  const blank = { linkTypeLabel: "", linkActive: true, initialRankReportLink: "", currentRankReportLink: "" };
+  const blank = { linkUrl: "", linkTypeLabel: "", linkActive: true, initialRankReportLink: "", currentRankReportLink: "" };
   const [vals, setVals] = useState<Partial<KeywordLink>>(blank);
   function set(k: keyof KeywordLink, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
 
@@ -228,6 +229,7 @@ function LinkDialog({
           </div>
 
           {[
+            { k: "linkUrl" as keyof KeywordLink, label: "Link URL" },
             { k: "initialRankReportLink" as keyof KeywordLink, label: "Initial Rank Report Link" },
             { k: "currentRankReportLink" as keyof KeywordLink, label: "Current Rank Report Link" },
           ].map(({ k, label }) => (

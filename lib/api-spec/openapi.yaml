@@ -314,6 +314,98 @@ paths:
         "204":
           description: Deleted
 
+  /keywords/{id}/links:
+    get:
+      operationId: getKeywordLinks
+      tags: [keywords]
+      summary: Get associated links for a keyword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of keyword links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KeywordLink"
+    post:
+      operationId: createKeywordLink
+      tags: [keywords]
+      summary: Add an associated link to a keyword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKeywordLinkBody"
+      responses:
+        "201":
+          description: Link created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeywordLink"
+
+  /keywords/{id}/links/{linkId}:
+    patch:
+      operationId: updateKeywordLink
+      tags: [keywords]
+      summary: Update associated link
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: linkId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKeywordLinkBody"
+      responses:
+        "200":
+          description: Updated link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeywordLink"
+    delete:
+      operationId: deleteKeywordLink
+      tags: [keywords]
+      summary: Remove associated link
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: linkId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   /sessions:
     get:
       operationId: getSessions
@@ -1200,6 +1292,69 @@ components:
         tierLabel:
           type: string
           enum: [aeo, seo, both]
+
+    KeywordLink:
+      type: object
+      properties:
+        id:
+          type: integer
+        keywordId:
+          type: integer
+        linkUrl:
+          type: string
+          nullable: true
+        linkTypeLabel:
+          type: string
+          nullable: true
+        linkActive:
+          type: boolean
+        initialRankReportLink:
+          type: string
+          nullable: true
+        currentRankReportLink:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, keywordId, linkActive, createdAt]
+
+    CreateKeywordLinkBody:
+      type: object
+      properties:
+        linkUrl:
+          type: string
+          nullable: true
+        linkTypeLabel:
+          type: string
+          nullable: true
+        linkActive:
+          type: boolean
+          default: true
+        initialRankReportLink:
+          type: string
+          nullable: true
+        currentRankReportLink:
+          type: string
+          nullable: true
+
+    UpdateKeywordLinkBody:
+      type: object
+      properties:
+        linkUrl:
+          type: string
+          nullable: true
+        linkTypeLabel:
+          type: string
+          nullable: true
+        linkActive:
+          type: boolean
+        initialRankReportLink:
+          type: string
+          nullable: true
+        currentRankReportLink:
+          type: string
+          nullable: true
 
     Session:
       type: object
