@@ -53,7 +53,6 @@ router.post("/", async (req, res) => {
         // Business Information
         businessName: body.businessName,
         searchAddress: body.searchAddress ?? null,
-        gmbAddress: body.gmbAddress ?? null,
         gmbUrl: body.gmbLink ?? null,
         websitePublishedOnGmb: body.websitePublishedOnGMB ?? null,
         websiteLinkedOnGmb: body.websiteLinkedOnGMB ?? null,
@@ -240,7 +239,7 @@ router.get("/:id/aeo-summary", async (req, res) => {
       };
     }
 
-    const totalClicks = keywords.reduce((sum, k) => sum + k.clickCount, 0);
+    const totalClicks = 0;
     const allReportPositions = Object.values(rankingData)
       .map((r) => r.current?.rankingPosition)
       .filter((p): p is number => p != null);
@@ -261,7 +260,7 @@ router.get("/:id/aeo-summary", async (req, res) => {
       initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
       initialRankingPosition: rankingData[k.id]?.initial?.rankingPosition ?? null,
       currentRankingPosition: rankingData[k.id]?.current?.rankingPosition ?? null,
-      clicksDelivered: k.clickCount,
+      clicksDelivered: 0,
       verificationStatus: k.verificationStatus,
     }));
 

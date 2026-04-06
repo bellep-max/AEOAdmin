@@ -28,10 +28,10 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    (req.session as Record<string, unknown>).userId = user.id;
-    (req.session as Record<string, unknown>).userEmail = user.email;
-    (req.session as Record<string, unknown>).userName = user.name;
-    (req.session as Record<string, unknown>).userRole = user.role;
+    (req.session as unknown as Record<string, unknown>).userId = user.id;
+    (req.session as unknown as Record<string, unknown>).userEmail = user.email;
+    (req.session as unknown as Record<string, unknown>).userName = user.name;
+    (req.session as unknown as Record<string, unknown>).userRole = user.role;
 
     res.json({
       id: user.id,
@@ -53,7 +53,7 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/me", (req, res) => {
-  const session = req.session as Record<string, unknown>;
+  const session = req.session as unknown as Record<string, unknown>;
   if (!session.userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -67,7 +67,7 @@ router.get("/me", (req, res) => {
 
 router.post("/change-password", async (req, res) => {
   try {
-    const session = req.session as Record<string, unknown>;
+    const session = req.session as unknown as Record<string, unknown>;
     if (!session.userId) return res.status(401).json({ error: "Not authenticated" });
 
     const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };

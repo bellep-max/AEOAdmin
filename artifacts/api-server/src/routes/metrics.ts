@@ -205,7 +205,7 @@ router.get("/business", async (req, res) => {
         deviceId:         sessionsTable.deviceId,
       })
       .from(sessionsTable)
-      .leftJoin(sql`devices ON devices.id = ${sessionsTable.deviceId}`)
+      .leftJoin(sql`devices ON devices.id = ${sessionsTable.deviceId}`, sql`true`)
       .where(isNotNull(sessionsTable.deviceId))
       .groupBy(sessionsTable.clientId, sessionsTable.deviceId);
 
@@ -267,7 +267,7 @@ router.get("/business", async (req, res) => {
 
       return {
         client: {
-          id: client.id, name: client.name, status: client.status,
+          id: client.id, name: client.businessName, status: client.status,
           plan: (client as any).plan ?? null,
         },
         sessionTotal:   total,

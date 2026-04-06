@@ -561,7 +561,7 @@ function KeywordCard({
               {isPrimary && (
                 <Badge variant="outline" className="text-sm h-6 px-2.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/50">1st</Badge>
               )}
-              {kw.dateAdded && (
+              {!!(kw.dateAdded) && (
                 <span className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
                   <Calendar className="w-4 h-4" />
                   {format(new Date(kw.dateAdded as string), "MMM d, yyyy")}
@@ -781,7 +781,7 @@ export default function Keywords() {
 
   /* Filter */
   const searchLower  = search.toLowerCase();
-  const filteredKws  = (keywords ?? [] as KwRecord[]).filter((k: KwRecord) => {
+  const filteredKws  = ((keywords ?? []) as unknown as KwRecord[]).filter((k: KwRecord) => {
     const matchText   = (k.keywordText as string).toLowerCase().includes(searchLower);
     const client      = clients?.find((c) => c.id === k.clientId);
     const matchClient = client ? (client.businessName ?? "").toLowerCase().includes(searchLower) : true;
@@ -932,7 +932,7 @@ export default function Keywords() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-bold text-base truncate text-black dark:text-white">{client?.businessName ?? `Business #${clientId}`}</p>
-                        {(client as Record<string, unknown>)?.city && <span className="text-base text-slate-600 dark:text-slate-400 hidden sm:inline">{(client as Record<string, unknown>).city as string}</span>}
+                        {!!(client as unknown as Record<string, unknown>)?.city && <span className="text-base text-slate-600 dark:text-slate-400 hidden sm:inline">{(client as unknown as Record<string, unknown>).city as string}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{kws.length} keyword{kws.length !== 1 ? "s" : ""}</span>

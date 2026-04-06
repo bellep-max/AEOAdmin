@@ -344,7 +344,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Last 4 of Billing Credit Card</FormLabel>
                           <FormControl>
-                            <Input placeholder="4242" maxLength="4" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="4242" maxLength={4} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

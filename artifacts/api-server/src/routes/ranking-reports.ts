@@ -74,7 +74,8 @@ router.patch("/:id", async (req, res) => {
 
     const [report] = await db
       .update(rankingReportsTable)
-      .set(updates as Parameters<typeof db.update>[0])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
       .where(eq(rankingReportsTable.id, id))
       .returning();
     if (!report) return res.status(404).json({ error: "Not found" });

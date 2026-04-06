@@ -99,7 +99,7 @@ export default function ClientDetail() {
     </div>
   );
 
-  const c        = client as Record<string, unknown>;
+  const c        = client as unknown as Record<string, unknown>;
   const initials = client.businessName
     ? client.businessName.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()
     : "?";

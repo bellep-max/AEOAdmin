@@ -36,7 +36,7 @@ router.get("/", async (req, res) => {
         username:     proxiesTable.username,
         password:     proxiesTable.password,
         deviceId:     proxiesTable.deviceId,
-        sessionCount: proxiesTable.sessionCount,
+        sessionCount: sql<number>`0`,
         lastUsed:     proxiesTable.lastUsed,
         // Device info joined from devicesTable (null when unassigned)
         deviceIdentifier: devicesTable.deviceIdentifier,
@@ -133,7 +133,8 @@ router.patch("/:id", async (req, res) => {
 
     const [proxy] = await db
       .update(proxiesTable)
-      .set(updates as Parameters<typeof db.update>[0])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
       .where(eq(proxiesTable.id, id))
       .returning();
 
