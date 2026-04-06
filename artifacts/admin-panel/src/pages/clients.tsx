@@ -412,7 +412,11 @@ export default function Clients() {
                     <span className="relative z-10">{client.businessName}</span>
                   </TableCell>
                   <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
-                    {client.city ? `${client.city}, ${client.state}` : <span className="text-slate-600 dark:text-slate-400">-</span>}
+                    {client.city
+                      ? `${client.city}${client.state ? `, ${client.state}` : ''}`
+                      : client.searchAddress
+                        ? <span>{client.searchAddress}</span>
+                        : <span className="text-slate-600 dark:text-slate-400">-</span>}
                   </TableCell>
                   <TableCell className="relative z-10">
                     <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold'}>
