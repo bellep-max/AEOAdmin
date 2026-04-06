@@ -3,12 +3,8 @@
   "outputDirectory": "artifacts/admin-panel/dist/public",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
-  "build": {
-    "env": {
-      "VITE_API_URL": "https://isobel-bendable-unpurely.ngrok-free.dev"
-    }
-  },
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://isobel-bendable-unpurely.ngrok-free.dev/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
