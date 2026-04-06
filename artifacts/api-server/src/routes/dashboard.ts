@@ -127,37 +127,47 @@ router.get("/session-activity", async (req, res) => {
   try {
     const days = 14;
     const result = [];
-    for (let i = days - 1; i >= 0; i--) {
+    const dateRange = Array.from({ length: days }, (_, i) => {
       const date = new Date();
-      date.setDate(date.getDate() - i);
+      date.setDate(date.getDate() - (days - 1 - i));
       date.setHours(0, 0, 0, 0);
+      return date;
+    });
+
+    for (const date of dateRange) {
       const nextDate = new Date(date);
       nextDate.setDate(nextDate.getDate() + 1);
-
-      const [total] = await db
-        .select({ count: count() })
-        .from(sessionsTable)
-        .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`));
-
-      const [gemini] = await db
-        .select({ count: count() })
-        .from(sessionsTable)
-        .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "gemini")));
-      const [chatgpt] = await db
-        .select({ count: count() })
-        .from(sessionsTable)
-        .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "chatgpt")));
-      const [perplexity] = await db
-        .select({ count: count() })
-        .from(sessionsTable)
-        .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "perplexity")));
-
+      let sessions = 0, geminiCount = 0, chatgptCount = 0, perplexityCount = 0;
+      try {
+        const [total] = await db
+          .select({ count: count() })
+          .from(sessionsTable)
+          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`));
+        const [gemini] = await db
+          .select({ count: count() })
+          .from(sessionsTable)
+          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "gemini")));
+        const [chatgpt] = await db
+          .select({ count: count() })
+          .from(sessionsTable)
+          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "chatgpt")));
+        const [perplexity] = await db
+          .select({ count: count() })
+          .from(sessionsTable)
+          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "perplexity")));
+        sessions = Number(total.count);
+        geminiCount = Number(gemini.count);
+        chatgptCount = Number(chatgpt.count);
+        perplexityCount = Number(perplexity.count);
+      } catch (dayErr) {
+        req.log.warn({ dayErr }, "Failed to fetch session counts for date (schema mismatch)");
+      }
       result.push({
         date: date.toISOString().split("T")[0],
-        sessions: Number(total.count),
-        gemini: Number(gemini.count),
-        chatgpt: Number(chatgpt.count),
-        perplexity: Number(perplexity.count),
+        sessions,
+        gemini: geminiCount,
+        chatgpt: chatgptCount,
+        perplexity: perplexityCount,
       });
     }
     res.json(result);
@@ -210,10 +220,15 @@ router.get("/network-health", async (req, res) => {
 
     const score = total > 0 ? Math.min(100, Math.round((online / total) * 100 * 0.6 + 40)) : 60;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const [sessionsToday] = await db.select({ count: count() }).from(sessionsTable).where(gte(sessionsTable.timestamp, today));
-    const sessionsPerHour = Number(sessionsToday.count) / Math.max(1, new Date().getHours() || 1);
+    let sessionsPerHour = 0;
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const [sessionsToday] = await db.select({ count: count() }).from(sessionsTable).where(gte(sessionsTable.timestamp, today));
+      sessionsPerHour = Number(sessionsToday.count) / Math.max(1, new Date().getHours() || 1);
+    } catch (sessErr) {
+      req.log.warn({ sessErr }, "Failed to fetch sessions for network-health (schema mismatch)");
+    }
 
     res.json({
       score,
