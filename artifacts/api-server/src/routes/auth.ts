@@ -33,11 +33,17 @@ router.post("/login", async (req, res) => {
     (req.session as unknown as Record<string, unknown>).userName = user.name;
     (req.session as unknown as Record<string, unknown>).userRole = user.role;
 
-    res.json({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        req.log.error({ saveErr }, "Session save error");
+        return res.status(500).json({ error: "Internal server error" });
+      }
+      res.json({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
     });
   } catch (err) {
     req.log.error({ err }, "Login error");
