@@ -29,7 +29,18 @@ app.use(
     },
   }),
 );
-app.use(cors({ origin: true, credentials: true }));
+const ALLOWED_ORIGINS = [
+  /\.vercel\.app$/,
+  /\.ngrok-free\.dev$/,
+  /^http:\/\/localhost(:\d+)?$/,
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.some((p) => p.test(origin))) return cb(null, true);
+    cb(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,8 +50,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     },
   }),
