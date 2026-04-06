@@ -337,6 +337,13 @@ export async function customFetch<T = unknown>(
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
 
+  // Skip the ngrok browser-warning interstitial when calling a ngrok tunnel
+  // directly from the browser (cross-origin requests in local dev / production).
+  const resolvedUrl = resolveUrl(input);
+  if (resolvedUrl.includes(".ngrok")) {
+    headers.set("ngrok-skip-browser-warning", "true");
+  }
+
   if (
     typeof init.body === "string" &&
     !headers.has("content-type") &&
