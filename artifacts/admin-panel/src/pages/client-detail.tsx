@@ -15,7 +15,12 @@ import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
 } from "lucide-react";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+function rawFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+  return fetch(BASE + path, { ...init, headers });
+}
 
 /* ─── Read-only field ────────────────────────────────────────────────────── */
 function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
@@ -59,7 +64,7 @@ export default function ClientDetail() {
   async function patchClient(body: Record<string, string>, onSuccess: () => void) {
     setSaving(true);
     try {
-      const res = await fetch(`${BASE}/api/clients/${clientId}`, {
+      const res = await rawFetch(`/api/clients/${clientId}`, {
         method:      "PATCH",
         credentials: "include",
         headers:     { "Content-Type": "application/json" },

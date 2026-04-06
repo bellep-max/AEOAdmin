@@ -22,7 +22,12 @@ import { format } from "date-fns";
 import jsPDF       from "jspdf";
 import autoTable   from "jspdf-autotable";
 
-const BASE       = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BASE       = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+function rawFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+  return fetch(BASE + path, { ...init, headers });
+}
 const LINK_TYPES = ["GBP snippet", "Client website blog post", "External article"];
 
 type KwRecord = Record<string, unknown>;
@@ -489,7 +494,7 @@ function KeywordCard({
   const fetchLinks = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/keywords/${kw.id}/links`, { credentials: "include" });
+      const r = await rawFetch(`/api/keywords/${kw.id}/links`, { credentials: "include" });
       setLinks(await r.json());
     } catch { setLinks([]); }
     finally { setLoading(false); }
@@ -500,7 +505,7 @@ function KeywordCard({
   async function addLink(data: Partial<KeywordLink>) {
     setSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/keywords/${kw.id}/links`, {
+      const r = await rawFetch(`/api/keywords/${kw.id}/links`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -516,7 +521,7 @@ function KeywordCard({
   async function updateLink(id: number, data: Partial<KeywordLink>) {
     setSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/keywords/${kw.id}/links/${id}`, {
+      const r = await rawFetch(`/api/keywords/${kw.id}/links/${id}`, {
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -531,7 +536,7 @@ function KeywordCard({
 
   async function deleteLink(id: number) {
     try {
-      await fetch(`${BASE}/api/keywords/${kw.id}/links/${id}`, { method: "DELETE", credentials: "include" });
+      await rawFetch(`/api/keywords/${kw.id}/links/${id}`, { method: "DELETE", credentials: "include" });
       toast({ title: "Link deleted" }); fetchLinks();
     } catch { toast({ title: "Delete failed", variant: "destructive" }); }
   }
@@ -739,7 +744,7 @@ export default function Keywords() {
         );
       } else {
         const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
-        const r = await fetch(`${BASE}/api/keywords`, {
+        const r = await rawFetch(`/api/keywords`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...kwData, clientId: Number(kwData.clientId) }),
@@ -748,7 +753,7 @@ export default function Keywords() {
         const newKw = await r.json();
         // If type 4, always create a link row so it shows in Associated Links
         if (Number(kwData.keywordType) === 4) {
-          const lr = await fetch(`${BASE}/api/keywords/${newKw.id}/links`, {
+          const lr = await rawFetch(`/api/keywords/${newKw.id}/links`, {
             method: "POST", credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, linkActive, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null }),
@@ -766,7 +771,7 @@ export default function Keywords() {
 
   async function deleteKeyword(id: number) {
     try {
-      await fetch(`${BASE}/api/keywords/${id}`, { method: "DELETE", credentials: "include" });
+      await rawFetch(`/api/keywords/${id}`, { method: "DELETE", credentials: "include" });
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
       toast({ title: "Keyword deleted" });
     } catch { toast({ title: "Delete failed", variant: "destructive" }); }
