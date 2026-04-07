@@ -17,6 +17,7 @@ import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
+import Packages from "@/pages/packages";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ function ProtectedRoutes() {
         <Route path="/keywords" component={Keywords} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
+        <Route path="/packages" component={Packages} />
         <Route path="/profile" component={Profile} />
         <Route component={NotFound} />
       </Switch>
