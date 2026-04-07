@@ -266,11 +266,12 @@ function LinkDialog({
    KEYWORD DIALOG — add / edit keyword
 ═══════════════════════════════════════════════════════════ */
 function KeywordDialog({
-  open, onOpenChange, title, saving, initial, clients, onSave,
+  open, onOpenChange, title, saving, initial, clients, onSave, defaultClientId,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   title: string; saving: boolean;
   initial?: KwRecord;
+  defaultClientId?: number;
   clients?: { id: number; businessName: string; city?: string | null }[];
   onSave: (data: KwRecord) => void;
 }) {
@@ -285,7 +286,7 @@ function KeywordDialog({
   function set(k: string, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
   const isEdit = !!initial;
 
-  useEffect(() => { if (open) setVals(initial ?? blank); }, [open]);
+  useEffect(() => { if (open) setVals(initial ?? (defaultClientId ? { ...blank, clientId: String(defaultClientId) } : blank)); }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -390,21 +391,6 @@ function KeywordDialog({
                 </div>
               </div>
 
-              {/* Rank Report Links */}
-              {[
-                { k: "initialRankReportLink", label: "Initial Rank Report Link" },
-                { k: "currentRankReportLink", label: "Current Rank Report Link" },
-              ].map(({ k, label }) => (
-                <div key={k} className="space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">{label}</Label>
-                  <Input
-                    className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white font-mono"
-                    placeholder="https://…"
-                    value={(vals[k] as string) || ""}
-                    onChange={(e) => set(k, e.target.value)}
-                  />
-                </div>
-              ))}
             </div>
           )}
 
@@ -432,8 +418,6 @@ function KeywordDialog({
               {[
                 { k: "initialSearchCount30Days",  label: "Initial Search Count",      sub: "30 days" },
                 { k: "followupSearchCount30Days", label: "Follow-up Search Count",    sub: "30 days" },
-                { k: "initialSearchCountLife",    label: "Initial Search Count",      sub: "Lifetime" },
-                { k: "followupSearchCountLife",   label: "Follow-up Search Count",    sub: "Lifetime" },
               ].map(({ k, label, sub }) => (
                 <div key={k} className="space-y-1.5">
                   <Label className="text-sm text-black dark:text-white font-medium flex items-baseline gap-1.5">
@@ -600,12 +584,10 @@ function KeywordCard({
       </div>
 
       {/* ── Search counts ── */}
-      <div className="px-4 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-200 pt-3">
+      <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
         {[
           { label: "Initial Search Count", sub: "30 days",  value: kw.initialSearchCount30Days  ?? 0 },
           { label: "Follow-up Search Count", sub: "30 days", value: kw.followupSearchCount30Days ?? 0 },
-          { label: "Initial Search Count",  sub: "Lifetime", value: kw.initialSearchCountLife    ?? 0 },
-          { label: "Follow-up Search Count", sub: "Lifetime", value: kw.followupSearchCountLife  ?? 0 },
         ].map(({ label, sub, value }) => (
           <div key={`${label}-${sub}`} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
             <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight">{label}</p>
@@ -677,12 +659,12 @@ function KeywordCard({
                   </div>
                 </div>
 
-                {/* Link report URLs */}
-                <div className="grid grid-cols-3 divide-x divide-slate-200 dark:divide-slate-700">
+                {/* Link URLs */}
+                <div className="divide-y divide-slate-200 dark:divide-slate-700">
                   {[
-                    { label: "Link URL",                    url: link.linkUrl },
+                    { label: "Link URL",                  url: link.linkUrl },
                     { label: "Initial Rank Report Link",  url: link.initialRankReportLink },
-                    { label: "Current Rank Report Link", url: link.currentRankReportLink },
+                    { label: "Current Rank Report Link",  url: link.currentRankReportLink },
                   ].map(({ label, url }) => (
                     <div key={label} className="px-3 py-2.5">
                       <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
@@ -720,12 +702,20 @@ function KeywordCard({
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
 export default function Keywords() {
-  const [search,      setSearch]      = useState("");
-  const [typeFilter,  setTypeFilter]  = useState<string>("all");
-  const [expanded,    setExpanded]    = useState<Set<number>>(new Set());
-  const [addOpen,     setAddOpen]     = useState(false);
-  const [editKw,      setEditKw]      = useState<KwRecord | null>(null);
-  const [saving,      setSaving]      = useState(false);
+  const [search,         setSearch]         = useState("");
+  const [typeFilter,     setTypeFilter]     = useState<string>("all");
+  const [businessFilter, setBusinessFilter] = useState<string>("all");
+  const [bizTypeFilters, setBizTypeFilters] = useState<Map<number, string>>(new Map());
+  const [expanded,       setExpanded]       = useState<Set<number>>(new Set());
+  const [addOpen,        setAddOpen]        = useState(false);
+  const [editKw,         setEditKw]         = useState<KwRecord | null>(null);
+  const [addForClient,   setAddForClient]   = useState<number | null>(null);
+  const [saving,         setSaving]         = useState(false);
+
+  function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }
+  function setBizTypeFilter(cid: number, v: string) {
+    setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
+  }
 
   const { data: keywords, isLoading } = useGetKeywords();
   const { data: clients }             = useGetClients();
@@ -763,7 +753,7 @@ export default function Keywords() {
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
       toast({ title: id ? "Keyword updated" : "Keyword added" });
-      setEditKw(null); setAddOpen(false);
+      setEditKw(null); setAddOpen(false); setAddForClient(null);
     } catch (err) {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally { setSaving(false); }
@@ -891,8 +881,26 @@ export default function Keywords() {
             </button>
           ))}
         </div>
-        {(search || typeFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
+        {/* Business filter */}
+        <Select value={businessFilter} onValueChange={setBusinessFilter}>
+          <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-base text-slate-900 dark:text-slate-100">
+            <SelectValue placeholder="All businesses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All businesses</SelectItem>
+            {Array.from(grouped.entries()).map(([cid]) => {
+              const c = clients?.find((x) => x.id === cid);
+              return (
+                <SelectItem key={cid} value={String(cid)}>
+                  {c?.businessName ?? `Business #${cid}`}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+
+        {(search || typeFilter !== "all" || businessFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); setBusinessFilter("all"); }}
             className="flex items-center gap-1.5 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
@@ -917,11 +925,15 @@ export default function Keywords() {
         </div>
       ) : (
         <div className="space-y-4">
-          {Array.from(grouped.entries()).map(([clientId, kws]) => {
-            const client   = clients?.find((c) => c.id === clientId);
-            const isOpen   = expanded.has(clientId);
-            const initials = (client?.businessName ?? "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
+          {Array.from(grouped.entries())
+            .filter(([cid]) => businessFilter === "all" || String(cid) === businessFilter)
+            .map(([clientId, kws]) => {
+            const client      = clients?.find((c) => c.id === clientId);
+            const isOpen      = expanded.has(clientId);
+            const initials    = (client?.businessName ?? "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
             const activeCount = kws.filter((k) => k.isActive).length;
+            const bizFilter   = getBizTypeFilter(clientId);
+            const displayedKws = bizFilter === "all" ? kws : kws.filter((k) => String(k.keywordType) === bizFilter);
 
             return (
               <div key={clientId} className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-md">
@@ -940,7 +952,7 @@ export default function Keywords() {
                         {!!(client as unknown as Record<string, unknown>)?.city && <span className="text-base text-slate-600 dark:text-slate-400 hidden sm:inline">{(client as unknown as Record<string, unknown>).city as string}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-base text-slate-600 dark:text-slate-400">{kws.length} keyword{kws.length !== 1 ? "s" : ""}</span>
+                        <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
                         <span className="text-slate-400 dark:text-slate-600">·</span>
                         <span className="text-base text-emerald-600 font-bold">{activeCount} active</span>
                       </div>
@@ -958,6 +970,10 @@ export default function Keywords() {
                       className="flex items-center gap-2 text-base text-red-600 hover:text-red-700 font-bold border-2 border-red-300 hover:border-red-400 rounded-lg px-4 py-2 hover:bg-red-50 transition-all">
                       <FileDown className="w-5 h-5" /> PDF
                     </button>
+                    <button onClick={(e) => { e.stopPropagation(); setAddForClient(clientId); }}
+                      className="flex items-center gap-2 text-base text-emerald-600 hover:text-emerald-700 font-bold border-2 border-emerald-300 hover:border-emerald-400 rounded-lg px-4 py-2 hover:bg-emerald-50 transition-all">
+                      <Plus className="w-5 h-5" /> Add Keyword
+                    </button>
                     <Link href={`/clients/${clientId}`}
                       className="flex items-center gap-2 text-base text-blue-600 hover:text-blue-700 font-bold border-2 border-blue-300 hover:border-blue-400 rounded-lg px-4 py-2 hover:bg-blue-50 transition-all">
                       <Building2 className="w-5 h-5" /> Profile
@@ -967,8 +983,32 @@ export default function Keywords() {
 
                 {/* Keywords list */}
                 {isOpen && (
-                  <div className="p-4 space-y-4 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700">
-                    {kws.map((kw) => (
+                  <div className="bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700">
+                    {/* Per-business type filter */}
+                    <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                      <Filter className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "3",   label: "Keywords" },
+                        { id: "4",   label: "w/ Backlinks" },
+                      ].map((t) => (
+                        <button key={t.id} onClick={() => setBizTypeFilter(clientId, t.id)}
+                          className={`px-3 py-1.5 rounded-full text-sm font-bold border-2 transition-all ${
+                            bizFilter === t.id
+                              ? (t.id === "4" ? "bg-emerald-600 text-white border-emerald-600" : "bg-blue-600 text-white border-blue-600")
+                              : "border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-400 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-900"
+                          }`}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="p-4 space-y-4">
+                    {displayedKws.length === 0 ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-3">
+                        <Key className="w-4 h-4 text-slate-500" />
+                        <p className="text-sm text-slate-500 italic">No keywords match this filter</p>
+                      </div>
+                    ) : displayedKws.map((kw) => (
                       <KeywordCard
                         key={kw.id as number}
                         kw={kw}
@@ -977,6 +1017,7 @@ export default function Keywords() {
                         onToggleActive={(v) => toggleActive(kw, v)}
                       />
                     ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1000,6 +1041,17 @@ export default function Keywords() {
           title="Edit Keyword" saving={saving}
           initial={editKw}
           onSave={(data) => saveKeyword(editKw.id as number, data)}
+        />
+      )}
+
+      {/* Add keyword for specific business */}
+      {addForClient !== null && (
+        <KeywordDialog
+          open onOpenChange={(o) => { if (!o) setAddForClient(null); }}
+          title="Add Keyword" saving={saving}
+          clients={clients}
+          defaultClientId={addForClient}
+          onSave={(data) => saveKeyword(null, data)}
         />
       )}
     </div>

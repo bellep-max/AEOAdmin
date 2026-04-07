@@ -471,9 +471,9 @@ export default function Plans() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <ClipboardList className="w-6 h-6 text-primary" />
-            AEO Plans
+            Campaigns
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">All client AEO plans across campaigns</p>
+          <p className="text-sm text-muted-foreground mt-0.5">All client AEO campaigns across clients</p>
         </div>
         <Button onClick={openAdd} className="gap-1.5">
           <Plus className="w-4 h-4" /> Add Plan
@@ -643,13 +643,13 @@ export default function Plans() {
                 <ClipboardList className="w-4 h-4 text-primary" />
               </div>
               <DialogTitle className="text-xl">
-                {editingPlan ? "Edit AEO Plan" : "Add AEO Plan"}
+                {editingPlan ? "Edit Campaign" : "Add Campaign"}
               </DialogTitle>
             </div>
             <DialogDescription className="text-sm text-muted-foreground">
               {editingPlan
-                ? `Editing plan for ${editingPlan.clientBusinessName ?? `Client #${editingPlan.clientId}`}`
-                : "Create a new AEO plan for a client campaign."}
+                ? `Editing campaign for ${editingPlan.clientBusinessName ?? `Client #${editingPlan.clientId}`}`
+                : "Create a new AEO campaign for a client."}
             </DialogDescription>
           </DialogHeader>
 

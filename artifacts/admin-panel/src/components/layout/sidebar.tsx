@@ -28,11 +28,11 @@ const navGroups = [
     ],
   },
   {
-    label: "Campaigns",
+    label: "Infrastructure",
     items: [
-      { name: "Clients",  href: "/clients",   icon: Users },
-      { name: "Plans",    href: "/plans",     icon: ClipboardList },
-      { name: "Keywords", href: "/keywords",  icon: Key },
+      { name: "Clients",   href: "/clients",   icon: Users },
+      { name: "Campaigns", href: "/plans",     icon: ClipboardList },
+      { name: "Keywords",  href: "/keywords",  icon: Key },
     ],
   },
   {
