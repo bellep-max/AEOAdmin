@@ -93,7 +93,7 @@ export default function Packages() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {PACKAGES.length} packages available · Assign a package to a client via the Campaigns page
+        {PLAN_META.length} packages available · Assign a package to a client via the Campaigns page
       </p>
     </div>
   );
