@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   clientsTable,
   keywordsTable,
+  keywordLinksTable,
   sessionsTable,
   rankingReportsTable,
 } from "@workspace/db/schema";
@@ -124,17 +125,28 @@ router.patch("/:id", async (req, res) => {
 
     if (!client) return res.status(404).json({ error: "Not found" });
 
-    // Cascade status change to all keywords for this client
-    if (body.status === "inactive") {
+    // Cascade status change to all keywords + their links for this client
+    if (body.status === "inactive" || body.status === "active") {
+      const isActive = body.status === "active";
+
+      // 1. Update all keywords for this client
       await db
         .update(keywordsTable)
-        .set({ isActive: false })
+        .set({ isActive })
         .where(eq(keywordsTable.clientId, id));
-    } else if (body.status === "active") {
-      await db
-        .update(keywordsTable)
-        .set({ isActive: true })
+
+      // 2. Update all keyword_links rows that belong to this client's keywords
+      const clientKwIds = await db
+        .select({ id: keywordsTable.id })
+        .from(keywordsTable)
         .where(eq(keywordsTable.clientId, id));
+
+      if (clientKwIds.length > 0) {
+        await db
+          .update(keywordLinksTable)
+          .set({ linkActive: isActive })
+          .where(inArray(keywordLinksTable.keywordId, clientKwIds.map((k) => k.id)));
+      }
     }
 
     // If keywords are provided, add them for this client

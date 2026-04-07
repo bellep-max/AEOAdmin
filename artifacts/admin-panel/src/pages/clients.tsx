@@ -116,6 +116,8 @@ export default function Clients() {
     } finally {
       setTogglingId(null);
       refetch();
+      // Invalidate keywords cache so the Keywords page reflects the change immediately
+      queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
     }
   }
 
