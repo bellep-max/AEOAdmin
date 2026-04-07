@@ -19,7 +19,10 @@ router.get("/", async (req, res) => {
       conditions.push(eq(clientsTable.status, status));
     }
     const clients = await db
-      .select()
+      .select({
+        ...clientsTable,
+        keywordCount: sql<number>`(select count(*) from keywords where keywords.client_id = ${clientsTable.id})::int`,
+      })
       .from(clientsTable)
       .where(
         conditions.length > 0

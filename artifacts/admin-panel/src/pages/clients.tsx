@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Search, Plus, ExternalLink, MoreHorizontal } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -59,6 +64,8 @@ export default function Clients() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
   function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -67,8 +74,21 @@ export default function Clients() {
     return fetch(BASE + path, { ...init, headers });
   }
 
-  async function toggleStatus(clientId: number, currentStatus: string) {
+  async function toggleStatus(clientId: number, currentStatus: string, businessName: string) {
+    // When deactivating: show confirmation dialog first
+    if (currentStatus === "active") {
+      const client = clients?.find((c) => c.id === clientId);
+      const keywordCount = (client as any)?.keywordCount ?? 0;
+      setConfirmDeactivate({ id: clientId, name: businessName, keywordCount });
+      return;
+    }
+    // Re-activating — do it directly
+    await doToggle(clientId, currentStatus);
+  }
+
+  async function doToggle(clientId: number, currentStatus: string) {
     const newStatus = currentStatus === "active" ? "inactive" : "active";
+    setTogglingId(clientId);
     // Optimistic update
     queryClient.setQueryData(
       ["/api/clients"],
@@ -81,8 +101,10 @@ export default function Clients() {
       });
       if (!res.ok) throw new Error("Failed");
       toast({
-        title: `Client set to ${newStatus}`,
-        description: newStatus === "inactive" ? "All keywords have been deactivated." : "All keywords have been reactivated.",
+        title: `${newStatus === "inactive" ? "Deactivated" : "Reactivated"} successfully`,
+        description: newStatus === "inactive"
+          ? "All keywords for this client have been deactivated."
+          : "All keywords for this client have been reactivated.",
       });
     } catch {
       // Revert
@@ -92,6 +114,7 @@ export default function Clients() {
       );
       toast({ title: "Failed to update status", variant: "destructive" });
     } finally {
+      setTogglingId(null);
       refetch();
     }
   }
@@ -564,8 +587,9 @@ export default function Clients() {
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={client.status === "active"}
-                        onCheckedChange={() => toggleStatus(client.id, client.status)}
+                        onCheckedChange={() => toggleStatus(client.id, client.status, client.businessName)}
                         className="data-[state=checked]:bg-emerald-500"
+                        disabled={togglingId === client.id}
                       />
                       <span className={`text-xs font-semibold ${
                         client.status === "active"
@@ -618,6 +642,36 @@ export default function Clients() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Deactivate confirmation dialog */}
+      <AlertDialog open={!!confirmDeactivate} onOpenChange={(open) => { if (!open) setConfirmDeactivate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate "{confirmDeactivate?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deactivate <strong>{confirmDeactivate?.name}</strong> (ID&nbsp;{confirmDeactivate?.id}).
+              {confirmDeactivate?.keywordCount != null && confirmDeactivate.keywordCount > 0
+                ? ` All ${confirmDeactivate.keywordCount} keyword${confirmDeactivate.keywordCount !== 1 ? "s" : ""} for this client will also be deactivated.`
+                : " No keywords are linked to this client."}
+              {" "}Please confirm this is the correct business.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeactivate(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeactivate) {
+                  doToggle(confirmDeactivate.id, "active");
+                  setConfirmDeactivate(null);
+                }
+              }}
+            >
+              Yes, deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
