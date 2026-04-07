@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardList, Plus, Pencil, Trash2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -18,14 +19,6 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers });
 }
 
-const PRESET_PLAN_TYPES = [
-  "The AEO Suite",
-  "Agency Solutions",
-  "Performance Tiers",
-  "Growth Bundles",
-  "Optimization Tracks",
-  "Success Roadmaps",
-];
 const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 interface AeoPlan {
@@ -84,6 +77,7 @@ function PlanForm({
   onChange: (v: PlanFormData) => void;
   clientBusinessName: string;
 }) {
+  const allPlanNames = useAllPlanNames();
   const [customSchemaImplementor, setCustomSchemaImplementor] = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
 
   function set(key: keyof PlanFormData, val: unknown) {
@@ -110,14 +104,14 @@ function PlanForm({
         <div className="space-y-2">
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type of Plan</Label>
           <Select
-            value={PRESET_PLAN_TYPES.includes(values.planType) ? values.planType : ""}
+            value={allPlanNames.includes(values.planType) ? values.planType : ""}
             onValueChange={(v) => set("planType", v)}
           >
             <SelectTrigger className="h-10 bg-muted/30 border-border/60">
               <SelectValue placeholder="Select plan type" />
             </SelectTrigger>
             <SelectContent>
-              {PRESET_PLAN_TYPES.map((t) => (
+              {allPlanNames.map((t) => (
                 <SelectItem key={t} value={t}>{t}</SelectItem>
               ))}
             </SelectContent>

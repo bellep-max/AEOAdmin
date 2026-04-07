@@ -16,6 +16,7 @@ import dashboardRouter from "./dashboard";
 import scalingRouter from "./scaling";
 import farmMetricsRouter from "./farm-metrics";
 import auditLogsRouter from "./audit-logs";
+import packagesRouter from "./packages";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use("/dashboard", dashboardRouter);
 router.use("/scaling", scalingRouter);
 router.use("/farm-metrics", farmMetricsRouter);
 router.use("/audit-logs", auditLogsRouter);
+router.use("/packages", packagesRouter);
 
 export default router;

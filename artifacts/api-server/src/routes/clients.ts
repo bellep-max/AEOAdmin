@@ -79,6 +79,8 @@ router.post("/", async (req, res) => {
         status: body.status ?? "active",
         contactEmail: body.billingEmail ?? null,
         addressType: 1,
+        createdBy: body.createdBy ?? null,
+        notes:     body.notes     ?? null,
       })
       .returning();
 

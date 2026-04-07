@@ -25,7 +25,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { getPlanMeta, PLAN_NAMES } from "@/lib/plan-meta";
+import { getPlanMeta } from "@/lib/plan-meta";
+import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -67,6 +68,7 @@ export default function Clients() {
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [confirmReactivate, setConfirmReactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const allPlanNames = useAllPlanNames();
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
   function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -295,14 +297,7 @@ export default function Clients() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {[
-                                "The AEO Suite",
-                                "Agency Solutions",
-                                "Performance Tiers",
-                                "Growth Bundles",
-                                "Optimization Tracks",
-                                "Success Roadmaps",
-                              ].map((p) => (
+                              {allPlanNames.map((p) => (
                                 <SelectItem key={p} value={p}>{p}</SelectItem>
                               ))}
                             </SelectContent>
@@ -512,7 +507,7 @@ export default function Clients() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Plans</SelectItem>
-            {PLAN_NAMES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            {allPlanNames.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
           </SelectContent>
         </Select>
         {/* Clear filters */}

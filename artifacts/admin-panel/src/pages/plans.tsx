@@ -11,7 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getPlanMeta, PLAN_NAMES } from "@/lib/plan-meta";
+import { getPlanMeta } from "@/lib/plan-meta";
+import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import {
   ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink,
 } from "lucide-react";
@@ -23,7 +24,6 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers });
 }
 
-const PRESET_PLAN_TYPES = PLAN_NAMES;
 const SCHEMA_IMPLEMENTORS   = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -97,7 +97,8 @@ function PlanForm({
   onClientChange: (id: number) => void;
   hideClientSelector?: boolean;
 }) {
-  const [customPlanType, setCustomPlanType]               = useState(!PRESET_PLAN_TYPES.includes(values.planType) && values.planType !== "");
+  const allPlanNames = useAllPlanNames();
+  const [customPlanType, setCustomPlanType]               = useState(!allPlanNames.includes(values.planType) && values.planType !== "");
   const [customSchemaImplementor, setCustomSchemaImpl]    = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
 
   function set(key: keyof PlanFormData, val: unknown) {
@@ -152,7 +153,7 @@ function PlanForm({
           {!customPlanType ? (
             <div className="flex gap-2">
               <Select
-                value={PRESET_PLAN_TYPES.includes(values.planType) ? values.planType : ""}
+                value={allPlanNames.includes(values.planType) ? values.planType : ""}
                 onValueChange={(v) => {
                   if (v === "__custom__") { setCustomPlanType(true); set("planType", ""); }
                   else set("planType", v);
@@ -162,10 +163,10 @@ function PlanForm({
                   <SelectValue placeholder="Select plan type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PRESET_PLAN_TYPES.map((t) => (
+                  {allPlanNames.map((t) => (
                     <SelectItem key={t} value={t}>{t}</SelectItem>
                   ))}
-                  <SelectItem value="__custom__">Custom…</SelectItem>
+                  <SelectItem value="__custom__">Custom...</SelectItem>
                 </SelectContent>
               </Select>
             </div>

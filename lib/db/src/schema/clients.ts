@@ -34,6 +34,9 @@ export const clientsTable = pgTable("clients", {
   latitude:  doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
   timezone:  text("timezone"),
+  /* ── Audit ── */
+  createdBy: text("created_by"),
+  notes:     text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
