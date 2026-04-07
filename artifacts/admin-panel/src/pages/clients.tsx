@@ -97,6 +97,7 @@ export default function Clients() {
     try {
       const res = await rawFetch(`/api/clients/${clientId}`, {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed");

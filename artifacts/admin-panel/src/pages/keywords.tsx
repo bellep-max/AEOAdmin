@@ -991,7 +991,13 @@ export default function Keywords() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
                         <span className="text-slate-400 dark:text-slate-600">·</span>
-                        <span className="text-base text-emerald-600 font-bold">{activeCount} active</span>
+                        {client?.status === "inactive" ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Client inactive</span>
+                        ) : activeCount === 0 ? (
+                          <span className="text-base text-slate-500 font-bold">0 active</span>
+                        ) : (
+                          <span className="text-base text-emerald-600 font-bold">{activeCount} active</span>
+                        )}
                       </div>
                     </div>
                     <ChevronDown className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? "rotate-180 text-blue-600" : "text-slate-600 dark:text-slate-400"}`} />
