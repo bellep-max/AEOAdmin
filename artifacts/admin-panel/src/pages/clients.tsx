@@ -412,11 +412,14 @@ export default function Clients() {
                     <span className="relative z-10">{client.businessName}</span>
                   </TableCell>
                   <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
-                    {client.city
-                      ? `${client.city}${client.state ? `, ${client.state}` : ''}`
-                      : client.searchAddress
-                        ? <span>{client.searchAddress}</span>
-                        : <span className="text-slate-600 dark:text-slate-400">-</span>}
+                    <div className="space-y-0.5">
+                      {client.searchAddress
+                        ? <p className="text-sm text-black dark:text-slate-100"><span className="text-xs font-bold uppercase tracking-wide text-slate-500 mr-1">Search:</span>{client.searchAddress}</p>
+                        : <p className="text-sm text-slate-400 italic">No search address</p>}
+                      {(client as unknown as Record<string,unknown>).publishedAddress
+                        ? <p className="text-sm text-black dark:text-slate-100"><span className="text-xs font-bold uppercase tracking-wide text-slate-500 mr-1">GMB:</span>{(client as unknown as Record<string,unknown>).publishedAddress as string}</p>
+                        : <p className="text-sm text-slate-400 italic">No GMB address</p>}
+                    </div>
                   </TableCell>
                   <TableCell className="relative z-10">
                     <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold'}>

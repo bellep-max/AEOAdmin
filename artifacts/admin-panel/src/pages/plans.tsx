@@ -53,6 +53,8 @@ interface AeoPlan {
 interface Client {
   id: number;
   businessName: string | null;
+  searchAddress?: string | null;
+  publishedAddress?: string | null;
 }
 
 type PlanFormData = Omit<AeoPlan, "id" | "clientId" | "clientBusinessName">;
@@ -120,7 +122,11 @@ function PlanForm({
               <SelectContent>
                 {clients.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
-                    {c.businessName ?? `Client #${c.id}`}
+                    <div className="flex flex-col gap-0">
+                      <span className="font-bold">{c.businessName ?? `Client #${c.id}`}</span>
+                      {c.searchAddress && <span className="text-xs text-muted-foreground">Search: {c.searchAddress}</span>}
+                      {c.publishedAddress && <span className="text-xs text-muted-foreground">GMB: {c.publishedAddress}</span>}
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

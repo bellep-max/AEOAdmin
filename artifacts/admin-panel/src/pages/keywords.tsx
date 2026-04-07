@@ -266,7 +266,7 @@ function KeywordDialog({
   title: string; saving: boolean;
   initial?: KwRecord;
   defaultClientId?: number;
-  clients?: { id: number; businessName: string; city?: string | null }[];
+  clients?: { id: number; businessName: string; city?: string | null; searchAddress?: string | null; publishedAddress?: string | null }[];
   onSave: (data: KwRecord) => void;
 }) {
   const blank: KwRecord = {
@@ -310,8 +310,11 @@ function KeywordDialog({
                   <SelectContent>
                     {clients?.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="font-bold text-base">{c.businessName}</span>
-                        {c.city && <span className="ml-2 text-slate-600 text-base">{c.city}</span>}
+                        <div className="flex flex-col gap-0">
+                          <span className="font-bold text-base">{c.businessName}</span>
+                          {c.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
+                          {c.publishedAddress && <span className="text-xs text-slate-500">GMB: {c.publishedAddress}</span>}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -909,7 +912,11 @@ export default function Keywords() {
               const c = clients?.find((x) => x.id === cid);
               return (
                 <SelectItem key={cid} value={String(cid)}>
-                  {c?.businessName ?? `Business #${cid}`}
+                  <div className="flex flex-col gap-0">
+                    <span className="font-bold">{c?.businessName ?? `Business #${cid}`}</span>
+                    {c?.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
+                    {c?.publishedAddress && <span className="text-xs text-slate-500">GMB: {c.publishedAddress}</span>}
+                  </div>
                 </SelectItem>
               );
             })}
@@ -964,9 +971,10 @@ export default function Keywords() {
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-base truncate text-black dark:text-white">{client?.businessName ?? `Business #${clientId}`}</p>
-                        {!!(client as unknown as Record<string, unknown>)?.city && <span className="text-base text-slate-600 dark:text-slate-400 hidden sm:inline">{(client as unknown as Record<string, unknown>).city as string}</span>}
+                      <div className="flex flex-col gap-0.5">
+                        <p className="font-bold text-base text-black dark:text-white">{client?.businessName ?? `Business #${clientId}`}</p>
+                        {client?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search:</span> {client.searchAddress}</span>}
+                        {client?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB:</span> {client.publishedAddress}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
