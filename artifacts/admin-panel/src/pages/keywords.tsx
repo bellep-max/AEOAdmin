@@ -526,7 +526,7 @@ function KeywordCard({
   const hasLinks   = (links?.length ?? 0) > 0;
   const showAsBacklinks = isType4 || hasLinks;
   const isPrimary  = !!kw.isPrimary;
-  const isActive   = kw.isActive as boolean;
+  const isActive   = kw.isActive !== false;  // treat undefined (old rows) as true
 
   return (
     <div className={`rounded-xl border-2 transition-all ${isActive ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm" : "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-sm"}` }>
@@ -927,7 +927,7 @@ export default function Keywords() {
             const client      = clients?.find((c) => c.id === clientId);
             const isOpen      = expanded.has(clientId);
             const initials    = (client?.businessName ?? "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
-            const activeCount = kws.filter((k) => k.isActive).length;
+            const activeCount = kws.filter((k) => k.isActive !== false).length;
             const bizFilter   = getBizTypeFilter(clientId);
             const displayedKws = bizFilter === "all" ? kws : kws.filter((k) => String(k.keywordType) === bizFilter);
 
