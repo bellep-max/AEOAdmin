@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ChevronDown, ChevronUp, ExternalLink,
+  ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink,
 } from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -310,7 +310,6 @@ export default function Plans() {
   const [clients, setClients]       = useState<Client[]>([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState("");
-  const [expandedRows, setExpanded] = useState<Set<number>>(new Set());
 
   /* dialog state */
   const [dialogOpen, setDialogOpen]           = useState(false);
@@ -461,14 +460,6 @@ export default function Plans() {
       || (p.targetCityRadius ?? "").toLowerCase().includes(q);
   });
 
-  function toggleRow(id: number) {
-    setExpanded((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  }
-
   /* ── Render ─────────────────────────────────────────────── */
   return (
     <div className="space-y-6">
@@ -502,7 +493,6 @@ export default function Plans() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="w-8" />
               <TableHead>Client</TableHead>
               <TableHead>Plan Type</TableHead>
               <TableHead>Service Category</TableHead>
@@ -518,40 +508,23 @@ export default function Plans() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 9 }).map((__, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                   {plans.length === 0 ? "No AEO plans yet. Click Add Plan to create one." : "No plans match your search."}
                 </TableCell>
               </TableRow>
             ) : (
               filtered.map((plan) => {
-                const expanded = expandedRows.has(plan.id);
-                const questions = ([1,2,3,4,5,6,7,8,9,10] as const)
-                  .map((n) => ({ n, q: plan[`sampleQuestion${n}` as keyof AeoPlan] as string | null }))
-                  .filter((x) => x.q);
-
                 return (
-                  <>
-                    <TableRow key={plan.id} className="group hover:bg-muted/30">
-                      {/* expand toggle */}
-                      <TableCell className="px-2">
-                        <Button
-                          variant="ghost" size="sm"
-                          className="h-6 w-6 p-0 text-muted-foreground opacity-0 group-hover:opacity-100"
-                          onClick={() => toggleRow(plan.id)}
-                        >
-                          {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        </Button>
-                      </TableCell>
-
-                      {/* Client name → link to client detail */}
-                      <TableCell className="font-medium">
+                  <TableRow key={plan.id} className="group hover:bg-muted/30">
+                    {/* Client name → link to client detail */}
+                    <TableCell className="font-medium">
                         {(() => {
                           const c = clients.find((x) => x.id === plan.clientId);
                           return (
@@ -563,8 +536,8 @@ export default function Plans() {
                                 {plan.clientBusinessName ?? `Client #${plan.clientId}`}
                                 <ExternalLink className="w-3 h-3 opacity-50" />
                               </Link>
-                              {c?.searchAddress && <span className="text-xs text-muted-foreground"><span className="font-bold">Search:</span> {c.searchAddress}</span>}
-                              {c?.publishedAddress && <span className="text-xs text-muted-foreground"><span className="font-bold">GMB:</span> {c.publishedAddress}</span>}
+                              {c?.searchAddress && <span className="text-xs text-muted-foreground">{c.searchAddress}</span>}
+                              {c?.publishedAddress && <span className="text-xs text-muted-foreground">{c.publishedAddress}</span>}
                             </div>
                           );
                         })()}
@@ -610,30 +583,6 @@ export default function Plans() {
                         </div>
                       </TableCell>
                     </TableRow>
-
-                    {/* Expanded row: sample questions */}
-                    {expanded && (
-                      <TableRow key={`${plan.id}-expanded`} className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={10} className="px-8 py-4">
-                          {questions.length > 0 ? (
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Sample Questions</p>
-                              <ol className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 list-none">
-                                {questions.map(({ n, q }) => (
-                                  <li key={n} className="flex items-start gap-2 text-sm">
-                                    <span className="text-xs text-muted-foreground mt-0.5 w-5 flex-shrink-0">{n}.</span>
-                                    <span className="text-foreground">{q}</span>
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground italic">No sample questions for this plan.</p>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </>
                 );
               })
             )}
