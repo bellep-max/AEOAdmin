@@ -72,6 +72,10 @@ router.post("/", async (req, res) => {
         followupText: body.followupText ?? null,
         aiPlatform: body.aiPlatform,
         screenshotUrl: body.screenshotUrl ?? null,
+        type: body.type ?? "aeo",
+        status: body.status ?? "pending",
+        proxySessionId: body.proxySessionId ?? null,
+        proxyUsername: body.proxyUsername ?? null,
       })
       .returning();
     res.status(201).json(session);

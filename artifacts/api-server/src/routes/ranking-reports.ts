@@ -52,6 +52,7 @@ router.post("/", async (req, res) => {
         mapsPresence: body.mapsPresence ?? null,
         mapsUrl: body.mapsUrl ?? null,
         isInitialRanking: body.isInitialRanking ?? false,
+        platform: body.platform ?? null,
       })
       .returning();
     res.status(201).json(report);
