@@ -559,16 +559,35 @@ function KeywordCard({
 
         {/* Active toggle + actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg px-3.5 py-2">
-            <Switch
-              checked={isActive}
-              onCheckedChange={onToggleActive}
-              className="data-[state=checked]:bg-emerald-500"
-            />
-            <span className={`text-sm font-bold ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-700 dark:text-slate-300"}`}>
-              {isActive ? "Active" : "Inactive"}
-            </span>
-          </div>
+          {showAsBacklinks ? (
+            /* Button pair for keywords with backlinks */
+            <div className="flex items-center gap-1 border border-slate-300 dark:border-slate-600 rounded-lg p-1">
+              <button
+                onClick={() => !isActive && onToggleActive(true)}
+                className={`px-3 py-1.5 rounded text-sm font-bold transition-all ${isActive ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700"}`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => isActive && onToggleActive(false)}
+                className={`px-3 py-1.5 rounded text-sm font-bold transition-all ${!isActive ? "bg-slate-500 text-white shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700"}`}
+              >
+                Inactive
+              </button>
+            </div>
+          ) : (
+            /* Switch toggle for keywords without backlinks */
+            <div className="flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg px-3.5 py-2">
+              <Switch
+                checked={isActive}
+                onCheckedChange={onToggleActive}
+                className="data-[state=checked]:bg-emerald-500"
+              />
+              <span className={`text-sm font-bold ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-700 dark:text-slate-300"}`}>
+                {isActive ? "Active" : "Inactive"}
+              </span>
+            </div>
+          )}
           <button onClick={onEdit}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors">
             <Pencil className="w-4 h-4" />
@@ -766,9 +785,20 @@ export default function Keywords() {
   }
 
   function toggleActive(kw: KwRecord, v: boolean) {
+    // Optimistic update — update cache immediately so the UI doesn't snap back
+    queryClient.setQueryData<KwRecord[]>(
+      ["/api/keywords"],
+      (old) => old ? old.map((k) => k.id === kw.id ? { ...k, isActive: v } : k) : old,
+    );
     updateKeyword.mutate(
       { id: kw.id as number, data: { isActive: v } },
-      { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/keywords"] }) },
+      {
+        onError: () => {
+          // Revert on failure
+          queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
+          toast({ title: "Failed to update active status", variant: "destructive" });
+        },
+      },
     );
   }
 
@@ -793,7 +823,7 @@ export default function Keywords() {
   /* Stats */
   const all      = keywords ?? [] as KwRecord[];
   const total    = all.length;
-  const active   = all.filter((k: KwRecord) => k.isActive).length;
+  const active   = all.filter((k: KwRecord) => k.isActive !== false).length;
   const type3    = all.filter((k: KwRecord) => Number(k.keywordType) === 3).length;
   const type4    = all.filter((k: KwRecord) => Number(k.keywordType) === 4).length;
 
