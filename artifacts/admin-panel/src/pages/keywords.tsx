@@ -273,6 +273,7 @@ function KeywordDialog({
     clientId: "", keywordText: "", keywordType: "3", isPrimary: "0", isActive: true,
     initialSearchCount30Days: 0, followupSearchCount30Days: 0,
     initialSearchCountLife: 0,  followupSearchCountLife: 0,
+    initialRankReportCount: 0,  currentRankReportCount: 0,
     linkUrl: "", linkTypeLabel: "", linkActive: true,
     initialRankReportLink: "", currentRankReportLink: "",
   };
@@ -410,13 +411,13 @@ function KeywordDialog({
             <p className="text-sm uppercase tracking-widest text-black dark:text-white font-bold mb-3">Search Counts</p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               {[
-                { k: "initialSearchCount30Days",  label: "Initial Search Count",      sub: "30 days" },
-                { k: "followupSearchCount30Days", label: "Follow-up Search Count",    sub: "30 days" },
-              ].map(({ k, label, sub }) => (
+                { k: "initialSearchCount30Days",  label: "Initial Search Count" },
+                { k: "followupSearchCount30Days", label: "Follow-up Search Count" },
+                { k: "initialRankReportCount",    label: "Initial Rank Report" },
+                { k: "currentRankReportCount",    label: "Current Rank Report" },
+              ].map(({ k, label }) => (
                 <div key={k} className="space-y-1.5">
-                  <Label className="text-sm text-black dark:text-white font-medium flex items-baseline gap-1.5">
-                    {label} <span className="text-xs text-slate-700 dark:text-slate-400 uppercase tracking-widest">{sub}</span>
-                  </Label>
+                  <Label className="text-sm text-black dark:text-white font-medium">{label}</Label>
                   <Input type="number" min={0}
                     className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
                     value={vals[k] as number}
@@ -440,6 +441,8 @@ function KeywordDialog({
                 followupSearchCount30Days: Number(vals.followupSearchCount30Days) || 0,
                 initialSearchCountLife:    Number(vals.initialSearchCountLife)    || 0,
                 followupSearchCountLife:   Number(vals.followupSearchCountLife)   || 0,
+                initialRankReportCount:    Number(vals.initialRankReportCount)    || 0,
+                currentRankReportCount:    Number(vals.currentRankReportCount)    || 0,
               })}
               style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
               {saving ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</> : isEdit ? "Save Changes" : "Add Keyword"}
@@ -580,35 +583,14 @@ function KeywordCard({
       {/* ── Search counts ── */}
       <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
         {[
-          { label: "Initial Search Count", sub: "30 days",  value: kw.initialSearchCount30Days  ?? 0 },
-          { label: "Follow-up Search Count", sub: "30 days", value: kw.followupSearchCount30Days ?? 0 },
-        ].map(({ label, sub, value }) => (
-          <div key={`${label}-${sub}`} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
-            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight">{label}</p>
-            <p className="text-xs text-slate-600 dark:text-slate-500 mb-1.5">{sub}</p>
-            <p className="text-2xl font-bold tabular-nums text-black dark:text-white leading-none\">{(value as number).toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Rank Report Links (read-only) ── */}
-      <div className="px-4 pb-3 border-t border-slate-200 pt-3 grid grid-cols-2 gap-2">
-        {[
-          { label: "Initial Rank Report", url: kw.initialRankReportLink as string | null },
-          { label: "Current Rank Report", url: kw.currentRankReportLink as string | null },
-        ].map(({ label, url }) => (
+          { label: "Initial Search Count",   value: kw.initialSearchCount30Days  ?? 0 },
+          { label: "Follow-up Search Count", value: kw.followupSearchCount30Days ?? 0 },
+          { label: "Initial Rank Report",    value: kw.initialRankReportCount    ?? 0 },
+          { label: "Current Rank Report",    value: kw.currentRankReportCount    ?? 0 },
+        ].map(({ label, value }) => (
           <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
-            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
-            {url ? (
-              <a href={url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium">
-                <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="truncate">{url}</span>
-                <ExternalLink className="w-3 h-3 flex-shrink-0" />
-              </a>
-            ) : (
-              <span className="text-sm text-slate-500 dark:text-slate-400 italic">Not set</span>
-            )}
+            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight mb-1.5">{label}</p>
+            <p className="text-2xl font-bold tabular-nums text-black dark:text-white leading-none">{(value as number).toLocaleString()}</p>
           </div>
         ))}
       </div>
@@ -814,7 +796,6 @@ export default function Keywords() {
   const active   = all.filter((k: KwRecord) => k.isActive).length;
   const type3    = all.filter((k: KwRecord) => Number(k.keywordType) === 3).length;
   const type4    = all.filter((k: KwRecord) => Number(k.keywordType) === 4).length;
-  const withLink = all.filter((k: KwRecord) => !!k.initialRankReportLink).length;
 
   /* Exports */
   const stamp        = format(new Date(), "yyyy-MM-dd");
@@ -854,13 +835,12 @@ export default function Keywords() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total Keywords", value: total,    dot: "",              color: "text-slate-900 dark:text-white" },
-          { label: "Active",          value: active,   dot: "bg-emerald-400", color: "text-emerald-600" },
-          { label: "Keyword text",    value: type3,    dot: "bg-violet-400", color: "text-violet-600" },
-          { label: "Keywords w/Links", value: type4,   dot: "bg-emerald-500", color: "text-emerald-600" },
-          { label: "With Backlinks",  value: withLink, dot: "bg-indigo-400", color: "text-indigo-600" },
+          { label: "Total Keywords",          value: total,  dot: "",              color: "text-slate-900 dark:text-white" },
+          { label: "Active",                   value: active, dot: "bg-emerald-400", color: "text-emerald-600" },
+          { label: "Keywords",                 value: type3,  dot: "bg-violet-400",  color: "text-violet-600" },
+          { label: "Keywords with Backlinks",  value: type4,  dot: "bg-emerald-500", color: "text-emerald-600" },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-4 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
