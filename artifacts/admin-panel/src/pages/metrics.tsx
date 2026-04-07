@@ -8,7 +8,12 @@ import {
   Cpu, Wifi, RefreshCcw, ShieldCheck, BarChart2, Search, TrendingUp, TrendingDown,
 } from "lucide-react";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+function rawFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+  return fetch(BASE + path, { ...init, headers });
+}
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface MetricCell {
@@ -57,7 +62,7 @@ export default function Metrics() {
 
   const { data, isLoading } = useQuery<BusinessData>({
     queryKey: ["business-metrics"],
-    queryFn: () => fetch(`${BASE}/api/metrics/business`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => rawFetch(`/api/metrics/business`, { credentials: "include" }).then((r) => r.json()),
   });
 
   const filtered = (data?.metrics ?? []).filter((m) =>

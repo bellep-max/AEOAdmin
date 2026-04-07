@@ -24,7 +24,12 @@ import { format, formatDistanceToNow } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+function rawFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+  return fetch(BASE + path, { ...init, headers });
+}
 
 /* ── Types ──────────────────────────────────────────────── */
 type PerfStatus = "performing" | "steady" | "underperforming" | "pending";
@@ -691,7 +696,7 @@ export default function Rankings() {
   const { data: platformData, isLoading: isPlatformLoading } = useQuery<PlatformSummary[]>({
     queryKey: ["/api/ranking-reports/platform-summary"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/ranking-reports/platform-summary`, { credentials: "include" });
+      const res = await rawFetch(`/api/ranking-reports/platform-summary`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch platform summary");
       return res.json();
     },
@@ -785,7 +790,7 @@ export default function Rankings() {
     if (!mapsDialog.reportId) return;
     setSavingMaps(true);
     try {
-      const res = await fetch(`${BASE}/api/ranking-reports/${mapsDialog.reportId}`, {
+      const res = await rawFetch(`/api/ranking-reports/${mapsDialog.reportId}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

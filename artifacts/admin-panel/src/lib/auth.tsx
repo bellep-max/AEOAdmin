@@ -16,13 +16,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(options?.headers as Record<string, string> ?? {}) };
+  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+  const res = await fetch(BASE + path, {
     credentials: "include",
     ...options,
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    headers,
   });
   return res;
 }
