@@ -66,6 +66,7 @@ export interface Client {
   state?: string | null;
   status: ClientStatus;
   planName?: string | null;
+  accountType?: string | null;
   addressType?: number | null;
   placeId?: string | null;
   locationRef?: string | null;

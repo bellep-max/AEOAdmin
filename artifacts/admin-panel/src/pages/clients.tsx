@@ -18,7 +18,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { getPlanMeta } from "@/lib/plan-meta";
+import { getPlanMeta, PLAN_NAMES } from "@/lib/plan-meta";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -48,6 +48,10 @@ const businessFormSchema = z.object({
 
 export default function Clients() {
   const [search, setSearch] = useState("");
+  const [filterLocation, setFilterLocation] = useState("");
+  const [filterAccountType, setFilterAccountType] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterPlan, setFilterPlan] = useState("all");
   const { data: clients, isLoading, refetch } = useGetClients();
   const createClient = useCreateClient();
   const { toast } = useToast();
@@ -89,10 +93,16 @@ export default function Clients() {
     });
   };
 
-  const filteredClients = clients?.filter(c => 
-    c.businessName.toLowerCase().includes(search.toLowerCase()) || 
-    (c.city && c.city.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredClients = clients?.filter((c) => {
+    const nameMatch = !search || c.businessName.toLowerCase().includes(search.toLowerCase());
+    const locMatch = !filterLocation ||
+      (c.searchAddress ?? "").toLowerCase().includes(filterLocation.toLowerCase()) ||
+      (c.city ?? "").toLowerCase().includes(filterLocation.toLowerCase());
+    const typeMatch = filterAccountType === "all" || (c.accountType ?? "").toLowerCase() === filterAccountType;
+    const statusMatch = filterStatus === "all" || c.status === filterStatus;
+    const planMatch = filterPlan === "all" || c.planName === filterPlan;
+    return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
+  });
 
   return (
     <div className="space-y-6">
@@ -381,17 +391,73 @@ export default function Clients() {
         </Dialog>
       </div>
 
-      <div className="flex items-center w-full max-w-sm">
-        <div className="relative w-full">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-600 dark:text-slate-400" />
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Business Name */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
           <Input
             type="search"
-            placeholder="Search businesses..."
-            className="pl-9 bg-white text-base text-black h-11 placeholder:text-slate-700"
+            placeholder="Business name…"
+            className="pl-9 h-10 w-52 bg-white text-sm text-black placeholder:text-slate-500"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {/* Location */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            type="search"
+            placeholder="Location…"
+            className="pl-9 h-10 w-44 bg-white text-sm text-black placeholder:text-slate-500"
+            value={filterLocation}
+            onChange={(e) => setFilterLocation(e.target.value)}
+          />
+        </div>
+        {/* Account Type */}
+        <Select value={filterAccountType} onValueChange={setFilterAccountType}>
+          <SelectTrigger className="h-10 w-40 bg-white text-sm text-black">
+            <SelectValue placeholder="Account Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="retail">Retail</SelectItem>
+            <SelectItem value="agency">Agency</SelectItem>
+          </SelectContent>
+        </Select>
+        {/* Status */}
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="h-10 w-36 bg-white text-sm text-black">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+        {/* Plan */}
+        <Select value={filterPlan} onValueChange={setFilterPlan}>
+          <SelectTrigger className="h-10 w-52 bg-white text-sm text-black">
+            <SelectValue placeholder="Plan" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Plans</SelectItem>
+            {PLAN_NAMES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {/* Clear filters */}
+        {(search || filterLocation || filterAccountType !== "all" || filterStatus !== "all" || filterPlan !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 text-sm text-slate-500 hover:text-slate-900"
+            onClick={() => { setSearch(""); setFilterLocation(""); setFilterAccountType("all"); setFilterStatus("all"); setFilterPlan("all"); }}
+          >
+            Clear filters
+          </Button>
+        )}
       </div>
 
       <div className="border rounded-md bg-white dark:bg-slate-950">
@@ -400,6 +466,7 @@ export default function Clients() {
             <TableRow className="bg-slate-50 dark:bg-slate-900">
               <TableHead className="text-base font-bold text-black dark:text-white">Business Name</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Location</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Account Type</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Status</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Plan</TableHead>
               <TableHead className="text-right text-base font-bold text-black dark:text-white">Actions</TableHead>
@@ -408,7 +475,7 @@ export default function Clients() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-52">
+                <TableCell colSpan={6} className="h-52">
                   <div className="flex flex-col items-center justify-center gap-4 py-8">
                     <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                     <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Loading businesses…</p>
@@ -417,7 +484,7 @@ export default function Clients() {
               </TableRow>
             ) : filteredClients?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
+                <TableCell colSpan={6} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
                   No businesses found.
                 </TableCell>
               </TableRow>
@@ -437,6 +504,22 @@ export default function Clients() {
                         ? <p className="text-sm text-black dark:text-slate-100"><span className="text-xs font-bold uppercase tracking-wide text-slate-500 mr-1">GMB:</span>{(client as unknown as Record<string,unknown>).publishedAddress as string}</p>
                         : <p className="text-sm text-slate-400 italic">No GMB address</p>}
                     </div>
+                  </TableCell>
+                  <TableCell className="relative z-10">
+                    {(() => {
+                      const acct = (client.accountType ?? "").toLowerCase();
+                      if (acct === "agency") return (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                          Agency
+                        </span>
+                      );
+                      if (acct === "retail") return (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700">
+                          Retail
+                        </span>
+                      );
+                      return <span className="text-muted-foreground text-sm">—</span>;
+                    })()}
                   </TableCell>
                   <TableCell className="relative z-10">
                     <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold'}>

@@ -934,6 +934,9 @@ components:
         planName:
           type: string
           nullable: true
+        accountType:
+          type: string
+          nullable: true
         addressType:
           type: integer
           nullable: true
