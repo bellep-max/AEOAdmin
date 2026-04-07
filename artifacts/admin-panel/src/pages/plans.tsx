@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { getPlanMeta, PLAN_NAMES } from "@/lib/plan-meta";
 import {
   ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink,
 } from "lucide-react";
@@ -22,14 +23,7 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers });
 }
 
-const PRESET_PLAN_TYPES = [
-  "The AEO Suite",
-  "Agency Solutions",
-  "Performance Tiers",
-  "Growth Bundles",
-  "Optimization Tracks",
-  "Success Roadmaps",
-];
+const PRESET_PLAN_TYPES = PLAN_NAMES;
 const SCHEMA_IMPLEMENTORS   = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -502,6 +496,7 @@ export default function Plans() {
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead>Client</TableHead>
               <TableHead>Plan Type</TableHead>
+              <TableHead>Tier</TableHead>
               <TableHead>Service Category</TableHead>
               <TableHead>Target City / Radius</TableHead>
               <TableHead>Answer Presence</TableHead>
@@ -515,14 +510,14 @@ export default function Plans() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((__, j) => (
+                  {Array.from({ length: 10 }).map((__, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
                   {plans.length === 0 ? "No AEO plans yet. Click Add Plan to create one." : "No plans match your search."}
                 </TableCell>
               </TableRow>
@@ -551,9 +546,24 @@ export default function Plans() {
                       </TableCell>
 
                       <TableCell>
-                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 font-semibold whitespace-nowrap">
-                          {plan.planType}
-                        </Badge>
+                        {(() => {
+                          const meta = getPlanMeta(plan.planType);
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                              {plan.planType}
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const meta = getPlanMeta(plan.planType);
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                              {meta.tier}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                       <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>

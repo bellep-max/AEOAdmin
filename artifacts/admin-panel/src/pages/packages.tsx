@@ -3,57 +3,16 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Box } from "lucide-react";
+import { PLAN_META } from "@/lib/plan-meta";
 
-const PACKAGES = [
-  {
-    name: "The AEO Suite",
-    description: "The complete answer-engine optimization bundle — covers all AEO channels end-to-end.",
-    target: "Enterprise clients",
-    features: ["Full AEO audit", "Multi-channel deployment", "Priority support", "Monthly reporting"],
-    tier: "Enterprise",
-    color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  },
-  {
-    name: "Agency Solutions",
-    description: "Designed for agencies managing multiple client accounts under a single dashboard.",
-    target: "Marketing agencies",
-    features: ["Multi-client management", "White-label reports", "Bulk keyword tracking", "Team access"],
-    tier: "Agency",
-    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  },
-  {
-    name: "Performance Tiers",
-    description: "Tiered approach scaled to traffic and performance targets, growing with results.",
-    target: "Growth-stage businesses",
-    features: ["Baseline benchmarking", "Tier advancement plan", "Performance dashboards", "Quarterly reviews"],
-    tier: "Scalable",
-    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  },
-  {
-    name: "Growth Bundles",
-    description: "Pre-packaged growth strategies bundled for faster deployment and measurable ROI.",
-    target: "SMBs scaling up",
-    features: ["Strategy templates", "Content bundles", "Local SEO boost", "Citation building"],
-    tier: "Growth",
-    color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-  },
-  {
-    name: "Optimization Tracks",
-    description: "Structured optimization workflows with defined checkpoints and measurable outcomes.",
-    target: "Established businesses",
-    features: ["Workflow automation", "On-page optimization", "Technical audits", "Link health tracking"],
-    tier: "Professional",
-    color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-  },
-  {
-    name: "Success Roadmaps",
-    description: "Milestone-based roadmaps guiding businesses to long-term AEO dominance.",
-    target: "New market entrants",
-    features: ["90-day roadmap", "Goal milestone tracking", "Onboarding support", "Monthly check-ins"],
-    tier: "Starter",
-    color: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300",
-  },
-];
+const PACKAGE_DETAILS: Record<string, { description: string; target: string; features: string[] }> = {
+  "The AEO Suite":       { description: "The complete answer-engine optimization bundle — covers all AEO channels end-to-end.", target: "Enterprise clients",       features: ["Full AEO audit", "Multi-channel deployment", "Priority support", "Monthly reporting"] },
+  "Agency Solutions":    { description: "Designed for agencies managing multiple client accounts under a single dashboard.",    target: "Marketing agencies",        features: ["Multi-client management", "White-label reports", "Bulk keyword tracking", "Team access"] },
+  "Performance Tiers":   { description: "Tiered approach scaled to traffic and performance targets, growing with results.",     target: "Growth-stage businesses",   features: ["Baseline benchmarking", "Tier advancement plan", "Performance dashboards", "Quarterly reviews"] },
+  "Growth Bundles":      { description: "Pre-packaged growth strategies bundled for faster deployment and measurable ROI.",     target: "SMBs scaling up",           features: ["Strategy templates", "Content bundles", "Local SEO boost", "Citation building"] },
+  "Optimization Tracks": { description: "Structured optimization workflows with defined checkpoints and measurable outcomes.",  target: "Established businesses",    features: ["Workflow automation", "On-page optimization", "Technical audits", "Link health tracking"] },
+  "Success Roadmaps":    { description: "Milestone-based roadmaps guiding businesses to long-term AEO dominance.",             target: "New market entrants",       features: ["90-day roadmap", "Goal milestone tracking", "Onboarding support", "Monthly check-ins"] },
+};
 
 export default function Packages() {
   return (
@@ -82,30 +41,34 @@ export default function Packages() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {PACKAGES.map((pkg, index) => (
+            {PLAN_META.map((pkg, index) => {
+              const details = PACKAGE_DETAILS[pkg.name] ?? { description: "", target: "", features: [] };
+              return (
               <TableRow
                 key={pkg.name}
                 className={index % 2 === 0 ? "bg-background" : "bg-muted/20"}
               >
-                {/* Name */}
-                <TableCell className="font-semibold text-foreground align-top py-4">
-                  {pkg.name}
+                {/* Name — coloured pill */}
+                <TableCell className="align-top py-4">
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${pkg.badgeClass} whitespace-nowrap`}>
+                    {pkg.name}
+                  </span>
                 </TableCell>
 
                 {/* Description */}
                 <TableCell className="text-sm text-muted-foreground align-top py-4 max-w-[280px]">
-                  {pkg.description}
+                  {details.description}
                 </TableCell>
 
                 {/* Best For */}
                 <TableCell className="align-top py-4">
-                  <span className="text-sm font-medium text-foreground">{pkg.target}</span>
+                  <span className="text-sm font-medium text-foreground">{details.target}</span>
                 </TableCell>
 
                 {/* Key Features */}
                 <TableCell className="align-top py-4">
                   <div className="flex flex-wrap gap-1">
-                    {pkg.features.map((f) => (
+                    {details.features.map((f) => (
                       <Badge
                         key={f}
                         variant="outline"
@@ -117,14 +80,14 @@ export default function Packages() {
                   </div>
                 </TableCell>
 
-                {/* Tier */}
+                {/* Tier — same colour as name */}
                 <TableCell className="text-right align-top py-4">
-                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${pkg.color}`}>
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${pkg.tierClass}`}>
                     {pkg.tier}
                   </span>
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
           </TableBody>
         </Table>
       </div>

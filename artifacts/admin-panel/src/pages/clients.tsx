@@ -18,6 +18,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { getPlanMeta } from "@/lib/plan-meta";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -442,8 +443,18 @@ export default function Clients() {
                       {client.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="relative z-10 text-black dark:text-slate-100 text-base">
-                    {client.planName || '-'}
+                  <TableCell className="relative z-10">
+                    {client.planName
+                      ? (() => {
+                          const meta = getPlanMeta(client.planName);
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                              {client.planName}
+                            </span>
+                          );
+                        })()
+                      : <span className="text-muted-foreground text-sm">—</span>
+                    }
                   </TableCell>
                   <TableCell className="text-right relative z-20">
                     <DropdownMenu>
