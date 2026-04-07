@@ -95,6 +95,25 @@ export default function Clients() {
 
   return (
     <div className="space-y-6">
+      {/* Package Options */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5 shadow-sm">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">Package Options</h2>
+        <div className="flex flex-wrap gap-2">
+          {[
+            "The AEO Suite",
+            "Agency Solutions",
+            "Performance Tiers",
+            "Growth Bundles",
+            "Optimization Tracks",
+            "Success Roadmaps",
+          ].map((pkg) => (
+            <span key={pkg} className="inline-flex items-center px-3.5 py-1.5 rounded-full text-sm font-bold border-2 border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+              {pkg}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-col gap-6">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Business</h1>
@@ -209,9 +228,25 @@ export default function Clients() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Plan</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Pro AEO" className="h-11 text-base text-black bg-slate-50" {...field} />
-                          </FormControl>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-11 text-base text-black bg-slate-50">
+                                <SelectValue placeholder="Select a plan" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {[
+                                "The AEO Suite",
+                                "Agency Solutions",
+                                "Performance Tiers",
+                                "Growth Bundles",
+                                "Optimization Tracks",
+                                "Success Roadmaps",
+                              ].map((p) => (
+                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}

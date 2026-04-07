@@ -22,7 +22,14 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers });
 }
 
-const PRESET_PLAN_TYPES     = ["Starter", "Growth", "Pro"];
+const PRESET_PLAN_TYPES = [
+  "The AEO Suite",
+  "Agency Solutions",
+  "Performance Tiers",
+  "Growth Bundles",
+  "Optimization Tracks",
+  "Success Roadmaps",
+];
 const SCHEMA_IMPLEMENTORS   = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 /* ── Types ─────────────────────────────────────────────────── */
