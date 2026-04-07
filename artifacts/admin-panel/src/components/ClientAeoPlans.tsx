@@ -18,7 +18,14 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers });
 }
 
-const PRESET_PLAN_TYPES = ["Starter", "Growth", "Pro", "Custom"];
+const PRESET_PLAN_TYPES = [
+  "The AEO Suite",
+  "Agency Solutions",
+  "Performance Tiers",
+  "Growth Bundles",
+  "Optimization Tracks",
+  "Success Roadmaps",
+];
 const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 interface AeoPlan {
@@ -77,7 +84,6 @@ function PlanForm({
   onChange: (v: PlanFormData) => void;
   clientBusinessName: string;
 }) {
-  const [customPlanType, setCustomPlanType] = useState(!PRESET_PLAN_TYPES.slice(0, 3).includes(values.planType) && values.planType !== "");
   const [customSchemaImplementor, setCustomSchemaImplementor] = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
 
   function set(key: keyof PlanFormData, val: unknown) {
@@ -103,39 +109,19 @@ function PlanForm({
         {/* Plan Type */}
         <div className="space-y-2">
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type of Plan</Label>
-          {!customPlanType ? (
-            <div className="flex gap-2">
-              <Select
-                value={PRESET_PLAN_TYPES.slice(0, 3).includes(values.planType) ? values.planType : ""}
-                onValueChange={(v) => {
-                  if (v === "Custom") { setCustomPlanType(true); set("planType", ""); }
-                  else set("planType", v);
-                }}
-              >
-                <SelectTrigger className="h-10 bg-muted/30 border-border/60">
-                  <SelectValue placeholder="Select plan type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Starter">Starter</SelectItem>
-                  <SelectItem value="Growth">Growth</SelectItem>
-                  <SelectItem value="Pro">Pro</SelectItem>
-                  <SelectItem value="Custom">Custom…</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <Input
-                className="h-10 bg-muted/30 border-border/60"
-                placeholder="Enter custom plan type"
-                value={values.planType}
-                onChange={(e) => set("planType", e.target.value)}
-              />
-              <Button variant="ghost" size="sm" className="text-xs px-2 text-muted-foreground" onClick={() => { setCustomPlanType(false); set("planType", ""); }}>
-                ← Presets
-              </Button>
-            </div>
-          )}
+          <Select
+            value={PRESET_PLAN_TYPES.includes(values.planType) ? values.planType : ""}
+            onValueChange={(v) => set("planType", v)}
+          >
+            <SelectTrigger className="h-10 bg-muted/30 border-border/60">
+              <SelectValue placeholder="Select plan type" />
+            </SelectTrigger>
+            <SelectContent>
+              {PRESET_PLAN_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Service Category */}
