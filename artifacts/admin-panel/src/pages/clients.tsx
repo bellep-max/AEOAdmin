@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useGetClients, useCreateClient } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Search, Plus, ExternalLink, MoreHorizontal } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -54,8 +56,45 @@ export default function Clients() {
   const [filterPlan, setFilterPlan] = useState("all");
   const { data: clients, isLoading, refetch } = useGetClients();
   const createClient = useCreateClient();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
+
+  const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+  function rawFetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}), "Content-Type": "application/json" };
+    if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
+    return fetch(BASE + path, { ...init, headers });
+  }
+
+  async function toggleStatus(clientId: number, currentStatus: string) {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    // Optimistic update
+    queryClient.setQueryData(
+      ["/api/clients"],
+      (old: any) => old?.map((c: any) => c.id === clientId ? { ...c, status: newStatus } : c)
+    );
+    try {
+      const res = await rawFetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({
+        title: `Client set to ${newStatus}`,
+        description: newStatus === "inactive" ? "All keywords have been deactivated." : "All keywords have been reactivated.",
+      });
+    } catch {
+      // Revert
+      queryClient.setQueryData(
+        ["/api/clients"],
+        (old: any) => old?.map((c: any) => c.id === clientId ? { ...c, status: currentStatus } : c)
+      );
+      toast({ title: "Failed to update status", variant: "destructive" });
+    } finally {
+      refetch();
+    }
+  }
 
   const form = useForm<z.infer<typeof businessFormSchema>>({
     resolver: zodResolver(businessFormSchema),
@@ -521,10 +560,21 @@ export default function Clients() {
                       return <span className="text-muted-foreground text-sm">—</span>;
                     })()}
                   </TableCell>
-                  <TableCell className="relative z-10">
-                    <Badge variant="outline" className={client.status === 'active' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-sm font-bold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-bold'}>
-                      {client.status}
-                    </Badge>
+                  <TableCell className="relative z-10" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={client.status === "active"}
+                        onCheckedChange={() => toggleStatus(client.id, client.status)}
+                        className="data-[state=checked]:bg-emerald-500"
+                      />
+                      <span className={`text-xs font-semibold ${
+                        client.status === "active"
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}>
+                        {client.status === "active" ? "Active" : "Inactive"}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="relative z-10">
                     {client.planName

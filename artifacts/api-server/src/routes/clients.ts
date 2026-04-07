@@ -108,18 +108,31 @@ router.patch("/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     const body = req.body;
     const keywords = body.keywords ?? []; // Optional: array of keywords to add
-    
+
     // Remove keywords from body so it doesn't try to update the client with it
     const clientUpdateData = { ...body };
     delete clientUpdateData.keywords;
-    
+
     const [client] = await db
       .update(clientsTable)
       .set(clientUpdateData)
       .where(eq(clientsTable.id, id))
       .returning();
-    
+
     if (!client) return res.status(404).json({ error: "Not found" });
+
+    // Cascade status change to all keywords for this client
+    if (body.status === "inactive") {
+      await db
+        .update(keywordsTable)
+        .set({ isActive: false })
+        .where(eq(keywordsTable.clientId, id));
+    } else if (body.status === "active") {
+      await db
+        .update(keywordsTable)
+        .set({ isActive: true })
+        .where(eq(keywordsTable.clientId, id));
+    }
 
     // If keywords are provided, add them for this client
     let addedKeywords: any[] = [];
