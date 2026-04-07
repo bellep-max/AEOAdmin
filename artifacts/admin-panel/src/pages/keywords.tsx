@@ -656,15 +656,6 @@ function KeywordCard({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Switch
-                      checked={link.linkActive}
-                      onCheckedChange={(v) => updateLink(link.id, { linkActive: v })}
-                      className="data-[state=checked]:bg-emerald-500 scale-[0.65]"
-                    />
-                    <span className={`text-sm font-bold ${link.linkActive ? "text-emerald-600" : "text-slate-600 dark:text-slate-400"}`}>
-                      {link.linkActive ? "Active" : "Inactive"}
-                    </span>
-                    <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1" />
                     <button onClick={() => setEditLink(link)}
                       className="w-5 h-5 flex items-center justify-center rounded hover:bg-blue-100 hover:text-blue-600 text-slate-600 transition-colors">
                       <Pencil className="w-3 h-3" />
