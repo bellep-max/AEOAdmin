@@ -8,6 +8,8 @@ export const keywordsTable = pgTable("keywords", {
   clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
   keywordText: varchar("keyword_text", { length: 512 }).notNull(),
   keywordType: integer("keyword_type").default(3),
+  isActive:   boolean("is_active").notNull().default(true),
+  isPrimary:  integer("is_primary").notNull().default(0),
   verificationStatus: varchar("verification_status", { length: 50 }),
   dateAdded: date("date_added"),
   initialSearchCount30Days: integer("initial_search_count_30_days"),

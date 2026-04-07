@@ -41,11 +41,15 @@ router.post("/", async (req, res) => {
         clientId: Number(body.clientId),
         keywordText: body.keywordText.trim(),
         keywordType: body.keywordType ? Number(body.keywordType) : 3,
+        isActive:   body.isActive !== false,
+        isPrimary:  body.isPrimary ? Number(body.isPrimary) : 0,
         verificationStatus: body.verificationStatus ?? null,
         initialSearchCount30Days:  body.initialSearchCount30Days  ?? null,
         followupSearchCount30Days: body.followupSearchCount30Days ?? null,
         initialSearchCountLife:    body.initialSearchCountLife    ?? null,
         followupSearchCountLife:   body.followupSearchCountLife   ?? null,
+        initialRankReportCount:    body.initialRankReportCount    ?? null,
+        currentRankReportCount:    body.currentRankReportCount    ?? null,
         linkTypeLabel:         body.linkTypeLabel         ?? null,
         linkActive:            body.linkActive !== false,
         initialRankReportLink: body.initialRankReportLink ?? null,
@@ -174,6 +178,8 @@ router.patch("/:id", async (req, res) => {
     const allowed: Record<string, unknown> = {};
     if (body.keywordText      !== undefined) allowed.keywordText      = String(body.keywordText).trim();
     if (body.keywordType      !== undefined) allowed.keywordType      = Number(body.keywordType);
+    if (body.isActive         !== undefined) allowed.isActive         = Boolean(body.isActive);
+    if (body.isPrimary        !== undefined) allowed.isPrimary        = Number(body.isPrimary);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
     if (body.linkActive       !== undefined) allowed.linkActive       = Boolean(body.linkActive);
@@ -183,6 +189,8 @@ router.patch("/:id", async (req, res) => {
     if (body.followupSearchCount30Days !== undefined) allowed.followupSearchCount30Days = body.followupSearchCount30Days === null ? null : Number(body.followupSearchCount30Days);
     if (body.initialSearchCountLife    !== undefined) allowed.initialSearchCountLife    = body.initialSearchCountLife === null ? null : Number(body.initialSearchCountLife);
     if (body.followupSearchCountLife   !== undefined) allowed.followupSearchCountLife   = body.followupSearchCountLife === null ? null : Number(body.followupSearchCountLife);
+    if (body.initialRankReportCount    !== undefined) allowed.initialRankReportCount    = body.initialRankReportCount === null ? null : Number(body.initialRankReportCount);
+    if (body.currentRankReportCount    !== undefined) allowed.currentRankReportCount    = body.currentRankReportCount === null ? null : Number(body.currentRankReportCount);
 
     if (body.dateAdded !== undefined && body.dateAdded !== null) {
       const d = new Date(body.dateAdded as string);
