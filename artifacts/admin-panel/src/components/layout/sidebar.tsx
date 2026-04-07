@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio, Sun, Moon,
+  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio, Sun, Moon, ClipboardList,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -31,6 +31,7 @@ const navGroups = [
     label: "Campaigns",
     items: [
       { name: "Clients",  href: "/clients",   icon: Users },
+      { name: "Plans",    href: "/plans",     icon: ClipboardList },
       { name: "Keywords", href: "/keywords",  icon: Key },
     ],
   },

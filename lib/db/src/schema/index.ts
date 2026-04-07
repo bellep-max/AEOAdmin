@@ -1,4 +1,5 @@
 export * from "./clients";
+export * from "./client_aeo_plans";
 export * from "./keywords";
 export * from "./keyword_links";
 export * from "./client_backlinks";

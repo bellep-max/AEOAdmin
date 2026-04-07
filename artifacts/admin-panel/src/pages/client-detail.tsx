@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
 } from "lucide-react";
+import ClientAeoPlans from "@/components/ClientAeoPlans";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -248,6 +249,9 @@ export default function ClientDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ═══ AEO PLANS ═══ */}
+      <ClientAeoPlans clientId={clientId} clientBusinessName={client.businessName ?? ""} />
 
       {/* ═══ EDIT BUSINESS DETAILS DIALOG ═══ */}
       <EditBizDialog

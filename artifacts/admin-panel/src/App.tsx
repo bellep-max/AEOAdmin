@@ -13,6 +13,7 @@ import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
 import ClientDetail from "@/pages/client-detail";
 import Keywords from "@/pages/keywords";
+import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
@@ -43,6 +44,7 @@ function ProtectedRoutes() {
         <Route path="/" component={Dashboard} />
         <Route path="/clients" component={Clients} />
         <Route path="/clients/:id" component={ClientDetail} />
+        <Route path="/plans" component={Plans} />
         <Route path="/keywords" component={Keywords} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
