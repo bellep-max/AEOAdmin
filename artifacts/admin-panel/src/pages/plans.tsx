@@ -552,13 +552,22 @@ export default function Plans() {
 
                       {/* Client name → link to client detail */}
                       <TableCell className="font-medium">
-                        <Link
-                          href={`/clients/${plan.clientId}`}
-                          className="text-primary hover:underline flex items-center gap-1"
-                        >
-                          {plan.clientBusinessName ?? `Client #${plan.clientId}`}
-                          <ExternalLink className="w-3 h-3 opacity-50" />
-                        </Link>
+                        {(() => {
+                          const c = clients.find((x) => x.id === plan.clientId);
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <Link
+                                href={`/clients/${plan.clientId}`}
+                                className="text-primary hover:underline flex items-center gap-1"
+                              >
+                                {plan.clientBusinessName ?? `Client #${plan.clientId}`}
+                                <ExternalLink className="w-3 h-3 opacity-50" />
+                              </Link>
+                              {c?.searchAddress && <span className="text-xs text-muted-foreground"><span className="font-bold">Search:</span> {c.searchAddress}</span>}
+                              {c?.publishedAddress && <span className="text-xs text-muted-foreground"><span className="font-bold">GMB:</span> {c.publishedAddress}</span>}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
 
                       <TableCell>
