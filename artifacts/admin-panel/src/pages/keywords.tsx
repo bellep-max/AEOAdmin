@@ -591,6 +591,28 @@ function KeywordCard({
         ))}
       </div>
 
+      {/* ── Rank Report Links (read-only) ── */}
+      <div className="px-4 pb-3 border-t border-slate-200 pt-3 grid grid-cols-2 gap-2">
+        {[
+          { label: "Initial Rank Report", url: kw.initialRankReportLink as string | null },
+          { label: "Current Rank Report", url: kw.currentRankReportLink as string | null },
+        ].map(({ label, url }) => (
+          <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
+            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
+            {url ? (
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline font-medium">
+                <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{url}</span>
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              </a>
+            ) : (
+              <span className="text-sm text-slate-500 dark:text-slate-400 italic">Not set</span>
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* ── Associated Links ── */}
       <div className="border-t border-slate-200 px-4 pt-3 pb-4">
         <div className="flex items-center justify-between mb-2.5">
