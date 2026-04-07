@@ -603,6 +603,15 @@ function KeywordCard({
       </div>
 
       {/* ── Search counts ── */}
+      {!isActive ? (
+        <div className="px-4 pb-3 border-t border-slate-200 pt-3">
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 py-4">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200 dark:bg-slate-700 px-4 py-1.5 text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+              Inactive
+            </span>
+          </div>
+        </div>
+      ) : (
       <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
         {[
           { label: "Initial Search Count",   value: kw.initialSearchCount30Days  ?? 0 },
@@ -616,6 +625,7 @@ function KeywordCard({
           </div>
         ))}
       </div>
+      )}
 
       {/* ── Associated Links ── */}
       <div className="border-t border-slate-200 px-4 pt-3 pb-4">
