@@ -628,6 +628,7 @@ function KeywordCard({
       )}
 
       {/* ── Associated Links ── */}
+      {isActive && (
       <div className="border-t border-slate-200 px-4 pt-3 pb-4">
         <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
@@ -707,6 +708,7 @@ function KeywordCard({
           </div>
         )}
       </div>
+      )}
 
       {/* Add / Edit link dialogs */}
       <LinkDialog open={addOpen} onOpenChange={setAddOpen} saving={saving} onSave={addLink} />
