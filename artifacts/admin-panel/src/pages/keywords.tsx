@@ -233,21 +233,15 @@ function LinkDialog({
             </div>
           </div>
 
-          {[
-            { k: "linkUrl" as keyof KeywordLink, label: "Link URL" },
-            { k: "initialRankReportLink" as keyof KeywordLink, label: "Initial Rank Report Link" },
-            { k: "currentRankReportLink" as keyof KeywordLink, label: "Current Rank Report Link" },
-          ].map(({ k, label }) => (
-            <div key={k} className="space-y-1.5">
-              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">{label}</Label>
-              <Input
-                className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
-                placeholder="https://…"
-                value={(vals[k] as string) || ""}
-                onChange={(e) => set(k, e.target.value)}
-              />
-            </div>
-          ))}
+          <div className="space-y-1.5">
+            <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link URL</Label>
+            <Input
+              className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
+              placeholder="https://…"
+              value={(vals.linkUrl as string) || ""}
+              onChange={(e) => set("linkUrl", e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="flex gap-3 pt-4">
