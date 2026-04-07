@@ -65,6 +65,7 @@ export default function Clients() {
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
+  const [confirmReactivate, setConfirmReactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -82,8 +83,10 @@ export default function Clients() {
       setConfirmDeactivate({ id: clientId, name: businessName, keywordCount });
       return;
     }
-    // Re-activating — do it directly
-    await doToggle(clientId, currentStatus);
+    // Re-activating — show confirmation first
+    const client = clients?.find((c) => c.id === clientId);
+    const keywordCount = (client as any)?.keywordCount ?? 0;
+    setConfirmReactivate({ id: clientId, name: businessName, keywordCount });
   }
 
   async function doToggle(clientId: number, currentStatus: string) {
@@ -645,6 +648,36 @@ export default function Clients() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Reactivate confirmation dialog */}
+      <AlertDialog open={!!confirmReactivate} onOpenChange={(open) => { if (!open) setConfirmReactivate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reactivate "{confirmReactivate?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reactivate <strong>{confirmReactivate?.name}</strong> (ID&nbsp;{confirmReactivate?.id}).
+              {confirmReactivate?.keywordCount != null && confirmReactivate.keywordCount > 0
+                ? ` All ${confirmReactivate.keywordCount} keyword${confirmReactivate.keywordCount !== 1 ? "s" : ""} for this client will also be reactivated.`
+                : " No keywords are linked to this client."}
+              {" "}Please confirm this is the correct business.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmReactivate(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={() => {
+                if (confirmReactivate) {
+                  doToggle(confirmReactivate.id, "inactive");
+                  setConfirmReactivate(null);
+                }
+              }}
+            >
+              Yes, reactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Deactivate confirmation dialog */}
       <AlertDialog open={!!confirmDeactivate} onOpenChange={(open) => { if (!open) setConfirmDeactivate(null); }}>
