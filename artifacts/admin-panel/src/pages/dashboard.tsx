@@ -12,7 +12,8 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
 import {
-  Activity, Users, HeartPulse, ArrowUpRight, ArrowRight, Clock,
+  Activity, HeartPulse, ArrowUpRight, ArrowRight, Clock,
+  UserCheck, UserX, UserPlus,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -56,6 +57,11 @@ export default function Dashboard() {
     ?.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5) || [];
 
+  const oneWeekAgo     = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const activeCount    = clients?.filter((c) => c.status === "active").length ?? 0;
+  const inactiveCount  = clients?.filter((c) => c.status === "inactive").length ?? 0;
+  const newThisWeek    = clients?.filter((c) => new Date(c.createdAt) >= oneWeekAgo).length ?? 0;
+
   const now     = new Date();
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
@@ -74,14 +80,36 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stat cards — 3 columns (Device card removed) */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Stat cards — 5 columns */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
-          title="Total Clients"
-          value={summary?.totalClients}
-          loading={isSummaryLoading}
-          subtext={`${summary?.activeClients ?? 0} active`}
-          icon={Users}
+          title="Active Clients"
+          value={activeCount}
+          loading={isClientsLoading}
+          subtext="Currently active"
+          icon={UserCheck}
+          iconColor="text-emerald-400"
+          iconBg="bg-emerald-500/10"
+          barClass="gradient-bar-green"
+          href="/clients"
+        />
+        <StatCard
+          title="Inactive Clients"
+          value={inactiveCount}
+          loading={isClientsLoading}
+          subtext="Currently inactive"
+          icon={UserX}
+          iconColor="text-slate-400"
+          iconBg="bg-slate-500/10"
+          barClass="gradient-bar-blue"
+          href="/clients"
+        />
+        <StatCard
+          title="New This Week"
+          value={newThisWeek}
+          loading={isClientsLoading}
+          subtext="Added in last 7 days"
+          icon={UserPlus}
           iconColor="text-primary"
           iconBg="bg-primary/10"
           barClass="gradient-bar-blue"
