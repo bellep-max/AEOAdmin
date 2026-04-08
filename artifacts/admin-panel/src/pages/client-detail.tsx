@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetClient } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
+  ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
 } from "lucide-react";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 
@@ -53,9 +54,33 @@ export default function ClientDetail() {
   const queryClient = useQueryClient();
   const { toast }   = useToast();
 
-  const [editBizOpen, setEditBizOpen] = useState(false);
-  const [editAccOpen, setEditAccOpen] = useState(false);
-  const [saving,      setSaving]      = useState(false);
+  const [editBizOpen,  setEditBizOpen]  = useState(false);
+  const [editAccOpen,  setEditAccOpen]  = useState(false);
+  const [notesOpen,    setNotesOpen]    = useState(false);
+  const [notesDraft,   setNotesDraft]   = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [notesSaving,  setNotesSaving]  = useState(false);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+
+  async function saveNotes() {
+    setNotesSaving(true);
+    try {
+      const res = await rawFetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notesDraft.trim() || null }),
+      });
+      if (!res.ok) throw new Error();
+      await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });
+      toast({ title: "Notes saved" });
+      setNotesOpen(false);
+    } catch {
+      toast({ title: "Failed to save notes", variant: "destructive" });
+    } finally {
+      setNotesSaving(false);
+    }
+  }
 
   const { data: client, isLoading } = useGetClient(clientId, {
     query: { enabled: !!clientId, queryKey: ["getClient", clientId] },
@@ -245,13 +270,57 @@ export default function ClientDetail() {
                   <p className="text-sm text-muted-foreground/40">—</p>
                 )}
               </div>
+              <Field label="Created By" value={c.createdBy as string} />
+              {/* Notes — inline edit */}
+              <div className="space-y-1 col-span-full">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Notes</p>
+                <button
+                  onClick={() => { setNotesDraft((c.notes as string) ?? ""); setNotesOpen(true); }}
+                  className="flex items-start gap-2 text-left w-full group"
+                >
+                  <StickyNote className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${(c.notes as string) ? "text-amber-500" : "text-muted-foreground/30 group-hover:text-primary"}`} />
+                  <span className={`text-sm ${(c.notes as string) ? "text-foreground" : "text-muted-foreground/40 italic group-hover:text-primary"}`}>
+                    {(c.notes as string) ? (c.notes as string) : "Add notes…"}
+                  </span>
+                </button>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* ═══ AEO PLANS ═══ */}
+      {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       <ClientAeoPlans clientId={clientId} clientBusinessName={client.businessName ?? ""} />
+
+      {/* ═══ NOTES DIALOG ═══ */}
+      <Dialog open={notesOpen} onOpenChange={(o) => { if (!o && !notesSaving) setNotesOpen(false); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                <StickyNote className="w-4 h-4 text-amber-600" />
+              </div>
+              <DialogTitle className="text-base font-bold">Notes — {client.businessName}</DialogTitle>
+            </div>
+            <DialogDescription>Add any important notes about this client.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            ref={notesRef}
+            className="min-h-[140px] text-sm resize-none mt-2"
+            placeholder="Type notes here…"
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            autoFocus
+          />
+          <div className="flex gap-2 mt-1">
+            <Button variant="outline" className="flex-1" onClick={() => setNotesOpen(false)} disabled={notesSaving}>Cancel</Button>
+            <Button className="flex-1 gap-1.5" onClick={saveNotes} disabled={notesSaving}>
+              <CheckCircle2 className="w-4 h-4" />
+              {notesSaving ? "Saving…" : "Save Notes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ═══ EDIT BUSINESS DETAILS DIALOG ═══ */}
       <EditBizDialog
@@ -293,6 +362,7 @@ export default function ClientDetail() {
           lastFourCard:    (c.lastFourCard    as string) ?? "",
           nextBillDate:    (c.nextBillDate    as string) ?? "",
           startDate:       (c.startDate       as string) ?? "",
+          createdBy:       (c.createdBy       as string) ?? "",
         }}
       />
     </div>
@@ -433,6 +503,7 @@ const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxL
   { key: "lastFourCard",    label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
   { key: "nextBillDate",    label: "Next Bill Date",           placeholder: "YYYY-MM-DD" },
   { key: "startDate",       label: "Start Date",               placeholder: "YYYY-MM-DD" },
+  { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle" },
 ];
 
 function EditAccDialog({
