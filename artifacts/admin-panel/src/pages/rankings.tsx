@@ -1011,23 +1011,6 @@ export default function Rankings() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Period selector */}
-          <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-card/60 p-0.5">
-            <CalendarDays className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-            {(["weekly", "monthly", "quarterly"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all capitalize ${
-                  period === p
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                }`}
-              >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
           <Button variant="outline" size="sm"
             className="gap-1.5 border-border/50 text-muted-foreground hover:text-foreground"
             onClick={exportAllCSV} disabled={filtered.length === 0}>
@@ -1038,6 +1021,39 @@ export default function Rankings() {
             onClick={exportAllPDF} disabled={filtered.length === 0}>
             <FileDown className="w-3.5 h-3.5" /> PDF Report
           </Button>
+        </div>
+      </div>
+
+      {/* ── Period Selector ── prominent, always visible */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <CalendarDays className="w-5 h-5 text-primary" />
+            <span className="font-bold text-base text-black dark:text-white">Reporting Period</span>
+          </div>
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
+            {([
+              { value: "weekly",    label: "Weekly",    sub: "Last 7 days"   },
+              { value: "monthly",   label: "Monthly",   sub: "Last 30 days"  },
+              { value: "quarterly", label: "Quarterly", sub: "Last 90 days"  },
+            ] as const).map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className={`flex flex-col items-center px-5 py-2.5 rounded-lg border-2 font-bold text-sm transition-all ${
+                  period === p.value
+                    ? "bg-primary text-primary-foreground border-primary shadow-md scale-105"
+                    : "bg-card border-border/50 text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-card/80"
+                }`}
+              >
+                <span className="text-base leading-tight">{p.label}</span>
+                <span className={`text-[10px] font-normal mt-0.5 ${period === p.value ? "text-primary-foreground/80" : "text-muted-foreground/70"}`}>{p.sub}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-muted-foreground shrink-0">
+            <span className="font-semibold text-primary">{periodFiltered.length}</span> keywords in range
+          </div>
         </div>
       </div>
 
@@ -1430,6 +1446,29 @@ export default function Rankings() {
 
         {/* ═══════ BY BUSINESS TAB ═══════ */}
         <TabsContent value="by-business" className="mt-4 space-y-3">
+          {/* Period context banner */}
+          <div className="flex items-center justify-between flex-wrap gap-3 rounded-lg border border-border/40 bg-card/40 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-black dark:text-white">
+                {periodLabel[period]}
+              </span>
+              <span className="text-xs text-muted-foreground">·</span>
+              <span className="text-xs text-muted-foreground">{bizList.length} businesses · {periodFiltered.length} keywords</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline"
+                className="h-7 gap-1.5 text-xs border-border/50"
+                onClick={exportAllCSV} disabled={periodFiltered.length === 0}>
+                <Download className="w-3 h-3" /> Download All CSV
+              </Button>
+              <Button size="sm" variant="outline"
+                className="h-7 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                onClick={exportAllPDF} disabled={periodFiltered.length === 0}>
+                <FileDown className="w-3 h-3" /> Download All PDF
+              </Button>
+            </div>
+          </div>
           {isComparisonLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
@@ -1490,12 +1529,14 @@ export default function Rankings() {
                         <button
                           onClick={() => exportBizCSV(clientId, bRows)}
                           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
+                          title={`Download ${grp.name} CSV (${periodLabel[period]})`}
                         >
                           <Download className="w-3 h-3" /> CSV
                         </button>
                         <button
                           onClick={() => exportBizPDF(clientId, bRows)}
                           className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
+                          title={`Download ${grp.name} PDF (${periodLabel[period]})`}
                         >
                           <FileDown className="w-3 h-3" /> PDF
                         </button>
