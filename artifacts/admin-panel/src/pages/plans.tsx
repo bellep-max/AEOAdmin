@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import {
-  ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink,
+  ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink, ArrowRight,
 } from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -584,6 +584,15 @@ export default function Plans() {
                       {/* Actions */}
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Link href={`/clients/${plan.clientId}`}>
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-primary"
+                              title="View client details"
+                            >
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </Link>
                           <Button
                             variant="ghost" size="sm"
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
