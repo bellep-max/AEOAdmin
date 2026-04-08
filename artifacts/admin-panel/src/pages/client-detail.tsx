@@ -11,10 +11,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
+  Mail, User, CalendarDays,
 } from "lucide-react";
+import { format } from "date-fns";
+import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -291,6 +295,155 @@ export default function ClientDetail() {
 
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       <ClientAeoPlans clientId={clientId} clientBusinessName={client.businessName ?? ""} />
+
+      {/* ═══ ORGANISATION DETAILS ═══ */}
+      <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        {/* Section header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60 bg-muted/30">
+          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Building2 className="w-4 h-4 text-primary" />
+          </div>
+          <h2 className="text-sm font-semibold tracking-tight">Organisation Details</h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40">
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Business Name</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">User Type</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Account Email</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Account Name</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Contact Email</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Plan</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Subscription ID</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Payment Type</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Date Created</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Created By</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-wider whitespace-nowrap">Notes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow className="hover:bg-primary/5 transition-colors">
+                {/* Business Name */}
+                <TableCell className="align-top py-3 min-w-[160px]">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${client.status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                    <span className="font-semibold text-sm">{client.businessName}</span>
+                  </div>
+                </TableCell>
+
+                {/* User Type */}
+                <TableCell className="align-top py-3 whitespace-nowrap">
+                  {(c.accountType as string) ? (
+                    <Badge variant="outline" className="capitalize text-xs font-semibold">
+                      {c.accountType as string}
+                    </Badge>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Account Email */}
+                <TableCell className="align-top py-3 min-w-[160px]">
+                  {(c.accountEmail as string) ? (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="truncate max-w-[160px]" title={c.accountEmail as string}>{c.accountEmail as string}</span>
+                    </div>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Account Username */}
+                <TableCell className="align-top py-3 whitespace-nowrap">
+                  {(c.accountUserName as string) ? (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <User className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="font-medium">{c.accountUserName as string}</span>
+                    </div>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Contact Email */}
+                <TableCell className="align-top py-3 min-w-[160px]">
+                  {(client.contactEmail ?? (c.billingEmail as string)) ? (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="truncate max-w-[160px]" title={client.contactEmail ?? (c.billingEmail as string) ?? ""}>
+                        {client.contactEmail ?? (c.billingEmail as string)}
+                      </span>
+                    </div>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Plan */}
+                <TableCell className="align-top py-3">
+                  {client.planName ? (() => {
+                    const plan = getPlanMeta(client.planName!);
+                    return (
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${plan.badgeClass} whitespace-nowrap`}>
+                        {client.planName}
+                      </span>
+                    );
+                  })() : <span className="text-xs text-slate-400 italic">No plan</span>}
+                </TableCell>
+
+                {/* Subscription ID */}
+                <TableCell className="align-top py-3">
+                  {(c.subscriptionId as string) ? (
+                    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                      {c.subscriptionId as string}
+                    </code>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Payment Type */}
+                <TableCell className="align-top py-3 whitespace-nowrap">
+                  {(c.lastFourCard as string) ? (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                      <span>•••• {c.lastFourCard as string}</span>
+                    </div>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Date Created */}
+                <TableCell className="align-top py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
+                    {format(new Date(client.createdAt), "MMM d, yyyy")}
+                  </div>
+                </TableCell>
+
+                {/* Created By */}
+                <TableCell className="align-top py-3 whitespace-nowrap">
+                  {(c.createdBy as string) ? (
+                    <div className="flex items-center gap-1.5 text-sm">
+                      <User className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="font-medium">{c.createdBy as string}</span>
+                    </div>
+                  ) : <span className="text-xs text-slate-400 italic">—</span>}
+                </TableCell>
+
+                {/* Notes */}
+                <TableCell className="align-top py-3 min-w-[200px]">
+                  <button
+                    onClick={() => { setNotesDraft((c.notes as string) ?? ""); setNotesOpen(true); }}
+                    className={`group flex items-start gap-1.5 text-left max-w-[220px] ${
+                      (c.notes as string) ? "text-foreground" : "text-slate-400 italic"
+                    } hover:text-primary transition-colors`}
+                  >
+                    <StickyNote className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${
+                      (c.notes as string) ? "text-amber-500" : "text-slate-300 group-hover:text-primary"
+                    }`} />
+                    <span className="text-xs line-clamp-2">
+                      {(c.notes as string) ? (c.notes as string) : "Add note…"}
+                    </span>
+                  </button>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {/* ═══ NOTES DIALOG ═══ */}
       <Dialog open={notesOpen} onOpenChange={(o) => { if (!o && !notesSaving) setNotesOpen(false); }}>

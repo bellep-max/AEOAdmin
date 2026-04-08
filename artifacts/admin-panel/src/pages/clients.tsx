@@ -555,8 +555,9 @@ export default function Clients() {
               filteredClients?.map((client) => (
                 <TableRow key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer relative group border-b border-slate-200 dark:border-slate-800">
                   <TableCell className="font-bold text-base text-black dark:text-slate-100">
-                    <Link href={`/clients/${client.id}`} className="absolute inset-0 z-0" />
-                    <span className="relative z-10">{client.businessName}</span>
+                    <Link href={`/clients/${client.id}`} className="relative z-10 hover:underline text-primary">
+                      {client.businessName}
+                    </Link>
                   </TableCell>
                   <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
                     <div className="space-y-0.5">

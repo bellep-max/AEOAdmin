@@ -984,7 +984,13 @@ export default function Keywords() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-col gap-0.5">
-                        <p className="font-bold text-base text-black dark:text-white">{client?.businessName ?? `Business #${clientId}`}</p>
+                        <Link
+                          href={`/clients/${clientId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-bold text-base text-primary hover:underline w-fit"
+                        >
+                          {client?.businessName ?? `Business #${clientId}`}
+                        </Link>
                         {client?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search:</span> {client.searchAddress}</span>}
                         {client?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB:</span> {client.publishedAddress}</span>}
                       </div>

@@ -381,8 +381,6 @@ export default function ClientAeoPlans({
                     <TableHead>Service Category</TableHead>
                     <TableHead>Target City / Radius</TableHead>
                     <TableHead>Answer Presence</TableHead>
-                    <TableHead>3-Mo Target</TableHead>
-                    <TableHead>Monthly Budget</TableHead>
                     <TableHead>Schema By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
                   </TableRow>
@@ -405,16 +403,6 @@ export default function ClientAeoPlans({
                         <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">
-                          {plan.searchBoostTarget != null
-                            ? plan.searchBoostTarget.toLocaleString()
-                            : <span className="text-muted-foreground/40">—</span>}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {plan.monthlyAeoBudget != null
-                            ? `$${Number(plan.monthlyAeoBudget).toLocaleString("en-US", { minimumFractionDigits: 2 })}`
-                            : <span className="text-muted-foreground/40">—</span>}
-                        </TableCell>
                         <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
