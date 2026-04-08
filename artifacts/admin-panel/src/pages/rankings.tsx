@@ -18,7 +18,7 @@ import {
   ArrowUp, ArrowDown, Minus, MapPin, TrendingUp, TrendingDown,
   Clock, CheckCircle2, AlertCircle, Search, BarChart3,
   ExternalLink, PencilLine, Plus, Loader2, Link2,
-  Download, FileDown, ChevronDown, Building2, Camera,
+  Download, FileDown, ChevronDown, Building2, Camera, CalendarDays,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import jsPDF from "jspdf";
@@ -881,11 +881,18 @@ export default function Rankings() {
   const [statusFilter,  setStatusFilter]  = useState<PerfStatus | "all">("all");
   const [search,        setSearch]        = useState("");
   const [bizExpanded,   setBizExpanded]   = useState<Set<number>>(new Set());
+  const [period,        setPeriod]        = useState<"weekly" | "monthly" | "quarterly">("monthly");
+
+  const periodDays: Record<typeof period, number> = { weekly: 7, monthly: 30, quarterly: 90 };
+  const periodLabel: Record<typeof period, string> = { weekly: "This Week", monthly: "This Month", quarterly: "Last Quarter" };
 
   const [mapsDialog, setMapsDialog] = useState<{
     open: boolean; reportId: number | null; clientName: string; keyword: string; url: string;
   }>({ open: false, reportId: null, clientName: "", keyword: "", url: "" });
   const [savingMaps, setSavingMaps] = useState(false);
+
+  /* Period cutoff — filter to rows whose currentDate falls within the selected window */
+  const periodCutoff = new Date(Date.now() - periodDays[period] * 24 * 60 * 60 * 1000);
 
   /* Enrich rows with status */
   const enriched: CompRow[] = (comparison as CompRow[] | undefined ?? []).map((row) => ({
@@ -894,15 +901,20 @@ export default function Rankings() {
   }));
 
   const counts = {
-    performing:      enriched.filter((r) => r.status === "performing").length,
-    steady:          enriched.filter((r) => r.status === "steady").length,
-    underperforming: enriched.filter((r) => r.status === "underperforming").length,
-    pending:         enriched.filter((r) => r.status === "pending").length,
+    performing:      periodFiltered.filter((r) => r.status === "performing").length,
+    steady:          periodFiltered.filter((r) => r.status === "steady").length,
+    underperforming: periodFiltered.filter((r) => r.status === "underperforming").length,
+    pending:         periodFiltered.filter((r) => r.status === "pending").length,
   };
-  const total       = enriched.length;
+  const total       = periodFiltered.length;
   const successRate = total > 0 ? Math.round((counts.performing / total) * 100) : 0;
 
-  const filtered = enriched.filter((row) => {
+  /* Apply period filter — keep rows with a currentDate in the selected window (or no date yet) */
+  const periodFiltered = enriched.filter((row) =>
+    !row.currentDate || new Date(row.currentDate) >= periodCutoff
+  );
+
+  const filtered = periodFiltered.filter((row) => {
     const matchStatus = statusFilter === "all" || row.status === statusFilter;
     const q = search.toLowerCase();
     const matchSearch = !q
@@ -911,9 +923,9 @@ export default function Rankings() {
     return matchStatus && matchSearch;
   });
 
-  /* Group by client for "By Business" tab */
+  /* Group by client for "By Business" tab — uses period-filtered data */
   const byBusiness = new Map<number, { name: string; rows: CompRow[] }>();
-  for (const r of enriched) {
+  for (const r of periodFiltered) {
     if (!byBusiness.has(r.clientId)) byBusiness.set(r.clientId, { name: r.clientName, rows: [] });
     byBusiness.get(r.clientId)!.rows.push(r);
   }
@@ -930,15 +942,16 @@ export default function Rankings() {
 
   /* ── Export helpers ── */
   const dateStamp = format(new Date(), "yyyy-MM-dd");
+  const periodSlug = period; // "weekly" | "monthly" | "quarterly"
 
   function exportAllCSV() {
-    exportCSV(filtered, `aeo-performance-report-${dateStamp}.csv`);
+    exportCSV(filtered, `aeo-performance-${periodSlug}-${dateStamp}.csv`);
   }
   function exportAllPDF() {
     exportPDF(
       filtered,
-      `All businesses · ${filtered.length} keywords · ${format(new Date(), "PPP")}`,
-      `aeo-performance-report-${dateStamp}.pdf`,
+      `All businesses · ${periodLabel[period]} · ${filtered.length} keywords · ${format(new Date(), "PPP")}`,
+      `aeo-performance-${periodSlug}-${dateStamp}.pdf`,
     );
   }
   function exportBizCSV(clientId: number, rows: CompRow[]) {
@@ -997,7 +1010,24 @@ export default function Rankings() {
             Initial vs current rankings — AI answer engine visibility across all clients
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period selector */}
+          <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-card/60 p-0.5">
+            <CalendarDays className="w-3.5 h-3.5 text-muted-foreground ml-2" />
+            {(["weekly", "monthly", "quarterly"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all capitalize ${
+                  period === p
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                }`}
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
           <Button variant="outline" size="sm"
             className="gap-1.5 border-border/50 text-muted-foreground hover:text-foreground"
             onClick={exportAllCSV} disabled={filtered.length === 0}>
@@ -1086,7 +1116,7 @@ export default function Rankings() {
             </div>
           ) : (() => {
             /* Sort all keywords by current position (best first, nulls last) */
-            const sorted = [...enriched].sort((a, b) => {
+            const sorted = [...periodFiltered].sort((a, b) => {
               if (a.currentPosition == null && b.currentPosition == null) return 0;
               if (a.currentPosition == null) return 1;
               if (b.currentPosition == null) return -1;
