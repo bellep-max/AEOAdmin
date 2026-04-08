@@ -900,6 +900,11 @@ export default function Rankings() {
     status: getStatus(row.positionChange ?? null, row.currentPosition ?? null, row.initialPosition ?? null),
   }));
 
+  /* Apply period filter — keep rows with a currentDate in the selected window (or no date yet) */
+  const periodFiltered = enriched.filter((row) =>
+    !row.currentDate || new Date(row.currentDate) >= periodCutoff
+  );
+
   const counts = {
     performing:      periodFiltered.filter((r) => r.status === "performing").length,
     steady:          periodFiltered.filter((r) => r.status === "steady").length,
@@ -908,11 +913,6 @@ export default function Rankings() {
   };
   const total       = periodFiltered.length;
   const successRate = total > 0 ? Math.round((counts.performing / total) * 100) : 0;
-
-  /* Apply period filter — keep rows with a currentDate in the selected window (or no date yet) */
-  const periodFiltered = enriched.filter((row) =>
-    !row.currentDate || new Date(row.currentDate) >= periodCutoff
-  );
 
   const filtered = periodFiltered.filter((row) => {
     const matchStatus = statusFilter === "all" || row.status === statusFilter;
