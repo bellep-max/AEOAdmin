@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Plus, Pencil, Trash2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
+import { getPlanMeta } from "@/lib/plan-meta";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -235,90 +236,6 @@ function PlanForm({
   );
 }
 
-/* ── Plan card (collapsed/expanded view) ──────────────────── */
-function PlanCard({
-  plan,
-  onEdit,
-  onDelete,
-}: {
-  plan: AeoPlan;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const questions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
-  const filledQuestions = questions
-    .map((n) => ({ n, q: plan[`sampleQuestion${n}` as keyof AeoPlan] as string | null }))
-    .filter((x) => x.q);
-
-  return (
-    <div className="rounded-xl border border-border/60 bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 font-semibold">
-            {plan.planType}
-          </Badge>
-          {plan.serviceCategory && (
-            <span className="text-sm text-foreground font-medium">{plan.serviceCategory}</span>
-          )}
-          {plan.targetCityRadius && (
-            <span className="text-xs text-muted-foreground">{plan.targetCityRadius}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={onEdit}>
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500" onClick={onDelete}>
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => setExpanded(!expanded)}>
-            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </Button>
-        </div>
-      </div>
-
-      {/* Summary row always visible */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-border/40 border-b border-border/40">
-        {[
-          { label: "Answer Presence",    value: plan.currentAnswerPresence ?? "—" },
-          { label: "3-Month Target",     value: plan.searchBoostTarget != null ? plan.searchBoostTarget.toLocaleString() + " searches" : "—" },
-          { label: "Monthly Budget",     value: plan.monthlyAeoBudget != null ? `$${Number(plan.monthlyAeoBudget).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—" },
-          { label: "Schema Implementor", value: plan.schemaImplementor ?? "—" },
-        ].map(({ label, value }) => (
-          <div key={label} className="px-4 py-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">{label}</p>
-            <p className="text-sm font-medium text-foreground">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Expanded: sample questions */}
-      {expanded && (
-        <div className="px-4 py-4 space-y-3">
-          {filledQuestions.length > 0 ? (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Sample Questions</p>
-              <ol className="space-y-1.5 list-none">
-                {filledQuestions.map(({ n, q }) => (
-                  <li key={n} className="flex items-start gap-2 text-sm">
-                    <span className="text-xs text-muted-foreground mt-0.5 w-5 flex-shrink-0">{n}.</span>
-                    <span className="text-foreground">{q}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">No sample questions added yet.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ══════════════════════════════════════════════════════════
    Main exported component
 ══════════════════════════════════════════════════════════ */
@@ -428,7 +345,7 @@ export default function ClientAeoPlans({
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-primary" />
-            AEO Plans
+            Campaigns
             {plans.length > 0 && (
               <Badge variant="outline" className="text-xs border-primary/20 text-primary bg-primary/5">{plans.length}</Badge>
             )}
@@ -442,27 +359,86 @@ export default function ClientAeoPlans({
           </Button>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="p-0">
           {loading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-full rounded-xl" />
-              <Skeleton className="h-16 w-full rounded-xl" />
+            <div className="p-4 space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded" />
+              ))}
             </div>
           ) : plans.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2 border border-dashed border-border/50 rounded-xl">
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2 border-t border-border/30">
               <ClipboardList className="w-8 h-8 opacity-30" />
-              <p className="text-sm">No AEO plans yet — click <strong>Add Plan</strong></p>
+              <p className="text-sm">No campaigns yet — click <strong>Add Plan</strong></p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {plans.map((plan) => (
-                <PlanCard
-                  key={plan.id}
-                  plan={plan}
-                  onEdit={() => openEdit(plan)}
-                  onDelete={() => handleDelete(plan.id)}
-                />
-              ))}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Plan Type</TableHead>
+                    <TableHead>Tier</TableHead>
+                    <TableHead>Service Category</TableHead>
+                    <TableHead>Target City / Radius</TableHead>
+                    <TableHead>Answer Presence</TableHead>
+                    <TableHead>3-Mo Target</TableHead>
+                    <TableHead>Monthly Budget</TableHead>
+                    <TableHead>Schema By</TableHead>
+                    <TableHead className="w-20 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plans.map((plan) => {
+                    const meta = getPlanMeta(plan.planType);
+                    return (
+                      <TableRow key={plan.id} className="hover:bg-muted/30">
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                            {plan.planType}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                            {meta.tier}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                        <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                        <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                        <TableCell className="text-sm">
+                          {plan.searchBoostTarget != null
+                            ? plan.searchBoostTarget.toLocaleString()
+                            : <span className="text-muted-foreground/40">—</span>}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {plan.monthlyAeoBudget != null
+                            ? `$${Number(plan.monthlyAeoBudget).toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+                            : <span className="text-muted-foreground/40">—</span>}
+                        </TableCell>
+                        <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => openEdit(plan)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                              onClick={() => handleDelete(plan.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
