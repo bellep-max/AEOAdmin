@@ -21,6 +21,8 @@ router.get("/", async (req, res) => {
         reasonRecommended: rankingReportsTable.reasonRecommended,
         mapsPresence: rankingReportsTable.mapsPresence,
         mapsUrl: rankingReportsTable.mapsUrl,
+        screenshotUrl: rankingReportsTable.screenshotUrl,
+        textRanking: rankingReportsTable.textRanking,
         isInitialRanking: rankingReportsTable.isInitialRanking,
         createdAt: rankingReportsTable.createdAt,
         clientName: clientsTable.businessName,
@@ -68,10 +70,12 @@ router.patch("/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     const body = req.body;
     const updates: Record<string, unknown> = {};
-    if (body.mapsUrl        !== undefined) updates.mapsUrl        = body.mapsUrl ?? null;
-    if (body.mapsPresence   !== undefined) updates.mapsPresence   = body.mapsPresence;
-    if (body.rankingPosition !== undefined) updates.rankingPosition = body.rankingPosition;
+    if (body.mapsUrl          !== undefined) updates.mapsUrl          = body.mapsUrl ?? null;
+    if (body.mapsPresence     !== undefined) updates.mapsPresence     = body.mapsPresence;
+    if (body.rankingPosition  !== undefined) updates.rankingPosition  = body.rankingPosition;
     if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
+    if (body.screenshotUrl    !== undefined) updates.screenshotUrl    = body.screenshotUrl ?? null;
+    if (body.textRanking      !== undefined) updates.textRanking      = body.textRanking ?? null;
 
     const [report] = await db
       .update(rankingReportsTable)
@@ -233,6 +237,8 @@ router.get("/initial-vs-current", async (req, res) => {
         isInitialRanking: rankingReportsTable.isInitialRanking,
         mapsPresence: rankingReportsTable.mapsPresence,
         mapsUrl: rankingReportsTable.mapsUrl,
+        screenshotUrl: rankingReportsTable.screenshotUrl,
+        textRanking: rankingReportsTable.textRanking,
         createdAt: rankingReportsTable.createdAt,
       })
       .from(rankingReportsTable)
@@ -287,6 +293,8 @@ router.get("/initial-vs-current", async (req, res) => {
         isInTopTen:      currentReport?.rankingPosition != null && currentReport.rankingPosition <= 10,
         mapsPresence:    currentReport?.mapsPresence ?? null,
         mapsUrl:         currentReport?.mapsUrl ?? null,
+        screenshotUrl:   currentReport?.screenshotUrl ?? null,
+        textRanking:     currentReport?.textRanking ?? null,
       };
     });
 

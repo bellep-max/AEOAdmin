@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useGetRankingReports, useGetInitialVsCurrentRankings } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
@@ -18,7 +18,7 @@ import {
   ArrowUp, ArrowDown, Minus, MapPin, TrendingUp, TrendingDown,
   Clock, CheckCircle2, AlertCircle, Search, BarChart3,
   ExternalLink, PencilLine, Plus, Loader2, Link2,
-  Download, FileDown, ChevronDown, Building2,
+  Download, FileDown, ChevronDown, Building2, Camera,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import jsPDF from "jspdf";
@@ -72,6 +72,8 @@ type CompRow = {
   isInTopTen: boolean;
   mapsPresence: string | null;
   mapsUrl: string | null;
+  screenshotUrl?: string | null;
+  textRanking?: string | null;
   status: PerfStatus;
 };
 
@@ -592,6 +594,180 @@ function exportPlatformPDF(data: PlatformSummary[], crossRows: CrossRow[], filen
   }
 
   doc.save(filename);
+}
+
+/* ── Image compression helper ───────────────────────────── */
+function compressImage(file: File, maxWidth: number, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+/* ── Screenshot cell ────────────────────────────────────── */
+function ScreenshotCell({ reportId, screenshotUrl: initialUrl }: {
+  reportId: number | null;
+  screenshotUrl: string | null | undefined;
+}) {
+  const { toast }  = useToast();
+  const fileRef    = useRef<HTMLInputElement>(null);
+  const [preview,  setPreview]  = useState<string | null | undefined>(initialUrl);
+  const [saving,   setSaving]   = useState(false);
+
+  useEffect(() => { setPreview(initialUrl); }, [initialUrl]);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !reportId) return;
+    setSaving(true);
+    try {
+      const base64 = await compressImage(file, 900, 0.72);
+      const res = await rawFetch(`/api/ranking-reports/${reportId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ screenshotUrl: base64 }),
+      });
+      if (!res.ok) throw new Error();
+      setPreview(base64);
+      toast({ title: "Screenshot saved" });
+    } catch {
+      toast({ title: "Failed to save screenshot", variant: "destructive" });
+    } finally {
+      setSaving(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {preview ? (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => window.open(preview, "_blank")}
+            className="rounded overflow-hidden border border-border/50 hover:border-primary/50 transition-colors"
+            title="View full screenshot"
+          >
+            <img src={preview} className="w-10 h-7 object-cover" alt="screenshot" />
+          </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            title="Replace screenshot"
+          >
+            <PencilLine className="w-3 h-3" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={saving || !reportId}
+          className="flex items-center gap-1 text-muted-foreground hover:text-primary text-xs border border-dashed border-border/40 hover:border-primary/40 rounded px-1.5 py-0.5 transition-all disabled:opacity-40"
+          title="Upload screenshot"
+        >
+          {saving
+            ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+            : <Camera  className="w-2.5 h-2.5" />}
+          {saving ? "Saving…" : "Add"}
+        </button>
+      )}
+    </>
+  );
+}
+
+/* ── Text-ranking cell ──────────────────────────────────── */
+function TextRankingCell({ reportId, textRanking: initialText }: {
+  reportId: number | null;
+  textRanking: string | null | undefined;
+}) {
+  const { toast }    = useToast();
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+  const [editing,    setEditing]  = useState(false);
+  const [value,      setValue]    = useState(initialText ?? "");
+  const [saved,      setSaved]    = useState(initialText ?? "");
+  const [saving,     setSaving]   = useState(false);
+
+  useEffect(() => { setValue(initialText ?? ""); setSaved(initialText ?? ""); }, [initialText]);
+  useEffect(() => { if (editing) textareaRef.current?.focus(); }, [editing]);
+
+  async function save() {
+    if (!reportId) { setEditing(false); return; }
+    const trimmed = value.trim() || null;
+    setSaving(true);
+    try {
+      const res = await rawFetch(`/api/ranking-reports/${reportId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ textRanking: trimmed }),
+      });
+      if (!res.ok) throw new Error();
+      setSaved(trimmed ?? "");
+      toast({ title: "Note saved" });
+    } catch {
+      toast({ title: "Failed to save note", variant: "destructive" });
+      setValue(saved);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="min-w-[130px]">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void save(); }
+            if (e.key === "Escape") { setValue(saved); setEditing(false); }
+          }}
+          className="w-full text-xs bg-muted/40 border border-primary/40 rounded px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-primary/40"
+          rows={2}
+          placeholder="Add ranking notes…"
+        />
+        {saving && <p className="text-[10px] text-muted-foreground mt-0.5">Saving…</p>}
+      </div>
+    );
+  }
+
+  if (saved) {
+    return (
+      <button
+        onClick={() => { setValue(saved); setEditing(true); }}
+        className="text-xs text-left text-muted-foreground hover:text-foreground max-w-[150px] line-clamp-2 transition-colors leading-relaxed"
+        title={saved}
+      >
+        {saved}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setValue(""); setEditing(true); }}
+      disabled={!reportId}
+      className="flex items-center gap-1 text-muted-foreground hover:text-primary text-xs border border-dashed border-border/40 hover:border-primary/40 rounded px-1.5 py-0.5 transition-all disabled:opacity-40"
+    >
+      <Plus className="w-2.5 h-2.5" />Add
+    </button>
+  );
 }
 
 /* ── Helpers ────────────────────────────────────────────── */
@@ -1433,6 +1609,8 @@ export default function Rankings() {
                       <TableHead className="text-xs text-center">Before</TableHead>
                       <TableHead className="text-xs text-center">Now</TableHead>
                       <TableHead className="text-xs text-center">Change</TableHead>
+                      <TableHead className="text-xs">Screenshot</TableHead>
+                      <TableHead className="text-xs">Text Ranking</TableHead>
                       <TableHead className="text-xs text-right">Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1462,6 +1640,12 @@ export default function Rankings() {
                         </TableCell>
                         <TableCell className="text-center">
                           <ChangeCell change={row.positionChange ?? null} />
+                        </TableCell>
+                        <TableCell>
+                          <ScreenshotCell reportId={row.currentReportId} screenshotUrl={row.screenshotUrl} />
+                        </TableCell>
+                        <TableCell>
+                          <TextRankingCell reportId={row.currentReportId} textRanking={row.textRanking} />
                         </TableCell>
                         <TableCell className="text-right">
                           <StatusBadge status={row.status} />
@@ -1494,6 +1678,16 @@ export default function Rankings() {
                       </div>
                     </div>
                     <MapsCell mapsPresence={row.mapsPresence} mapsUrl={row.mapsUrl} onEdit={() => openMapsEdit(row)} />
+                    <div className="flex items-start gap-4">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Screenshot</p>
+                        <ScreenshotCell reportId={row.currentReportId} screenshotUrl={row.screenshotUrl} />
+                      </div>
+                      <div className="flex-1 flex flex-col gap-1">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Text Ranking</p>
+                        <TextRankingCell reportId={row.currentReportId} textRanking={row.textRanking} />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1516,16 +1710,18 @@ export default function Rankings() {
                     <TableHead className="text-xs text-center">Position</TableHead>
                     <TableHead className="text-xs">Maps</TableHead>
                     <TableHead className="text-xs">AI Snippet</TableHead>
+                    <TableHead className="text-xs">Screenshot</TableHead>
+                    <TableHead className="text-xs">Text Ranking</TableHead>
                     <TableHead className="text-xs text-right">Type</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {!reports || reports.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground text-sm">No ranking history yet.</TableCell>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground text-sm">No ranking history yet.</TableCell>
                     </TableRow>
                   ) : (
-                    (reports as (typeof reports[number] & { mapsUrl?: string | null })[]).map((report) => (
+                    (reports as (typeof reports[number] & { mapsUrl?: string | null; screenshotUrl?: string | null; textRanking?: string | null })[]).map((report) => (
                       <TableRow key={report.id} className="hover:bg-muted/20">
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           <div>{format(new Date(report.createdAt), "MMM d, yyyy")}</div>
@@ -1554,6 +1750,12 @@ export default function Rankings() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate" title={report.reasonRecommended ?? ""}>
                           {report.reasonRecommended ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          <ScreenshotCell reportId={report.id} screenshotUrl={report.screenshotUrl} />
+                        </TableCell>
+                        <TableCell>
+                          <TextRankingCell reportId={report.id} textRanking={report.textRanking} />
                         </TableCell>
                         <TableCell className="text-right">
                           {report.isInitialRanking
