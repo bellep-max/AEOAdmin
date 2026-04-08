@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { Separator } from "@/components/ui/separator";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
 } from "lucide-react";
@@ -153,102 +154,81 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      {/* ── Two-column cards ── */}
-      <div className="grid md:grid-cols-2 gap-6">
+      {/* ── Unified profile card ── */}
+      <Card className="border-border/50">
 
-        {/* ── Business Details ── */}
-        <Card className="border-border/50">
-          <CardHeader className="pb-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-primary" />
-              Business Details
-            </CardTitle>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setEditBizOpen(true)}
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </Button>
-          </CardHeader>
+        {/* ─ Business Details ─ */}
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-primary" />
+            Business Details
+          </CardTitle>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setEditBizOpen(true)}
+          >
+            <Pencil className="w-3 h-3" /> Edit
+          </Button>
+        </CardHeader>
 
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-              <Field label="Business Name"                    value={client.businessName} />
-              <Field label="Plan"                             value={client.planName} />
-              <Field label="Search Address"                   value={client.searchAddress} />
-              <Field label="GMB Address"                      value={client.publishedAddress} />
-              <Field label="GMB Link"                         value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
-              <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
+        <CardContent className="pb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
+            <Field label="Business Name"   value={client.businessName} />
+            <Field label="Plan"            value={client.planName} />
+            <Field label="Account User"    value={c.accountUser as string} />
+            <Field label="Start Date"      value={c.startDate as string} />
+            <Field label="Next Bill Date"  value={c.nextBillDate as string} />
+            <Field label="Subscription ID" value={c.subscriptionId as string} />
+            {/* Last 4 with card icon */}
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Last 4 Credit Card</p>
+              {(c.lastFourCard as string) ? (
+                <p className="text-sm text-foreground flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
+                  •••• {c.lastFourCard as string}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground/40">—</p>
+              )}
+            </div>
+            <div className="col-span-2 sm:col-span-3 lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 pt-1">
+              <Field label="Search Address"                        value={client.searchAddress} />
+              <Field label="GMB Address"                           value={client.publishedAddress} />
+              <Field label="GMB Link"                              value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
+              <Field label="Website Published on GMB"              value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
               <Field label="Website Linked to on GMB (if different)" value={c.websiteLinkedOnGmb as string} href={(c.websiteLinkedOnGmb as string) ?? undefined} />
-              <Field label="Account User"                     value={c.accountUser as string} />
-              <Field label="Start Date"                       value={c.startDate as string} />
-              <Field label="Next Bill Date"                   value={c.nextBillDate as string} />
-              <Field label="Subscription ID"                  value={c.subscriptionId as string} />
-              {/* Last 4 with card icon */}
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  Last 4 of Billing Credit Card
-                </p>
-                {(c.lastFourCard as string) ? (
-                  <p className="text-sm text-foreground flex items-center gap-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
-                    •••• {c.lastFourCard as string}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground/40">—</p>
-                )}
-              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
 
-        {/* ── Account Details ── */}
-        <Card className="border-border/50">
-          <CardHeader className="pb-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-primary" />
-              Account Details
-            </CardTitle>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setEditAccOpen(true)}
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </Button>
-          </CardHeader>
+        <Separator />
 
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-              <Field label="Account Type"              value={c.accountType as string} />
-              <Field label="Account User Name"         value={c.accountUserName as string} />
-              <Field label="Account Email"             value={c.accountEmail as string} />
-              <Field label="Contact / Billing Email"   value={c.billingEmail as string} />
-              <Field label="Plan"                      value={client.planName} />
-              <Field label="Subscription ID"           value={c.subscriptionId as string} />
-              <Field label="Business Name"             value={client.businessName} />
-              <Field label="Search Address"            value={client.searchAddress} />
-              <Field label="Start Date"                value={c.startDate as string} />
-              <Field label="Next Bill Date"            value={c.nextBillDate as string} />
-              {/* Last 4 with card icon */}
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  Last 4 of Billing Credit Card
-                </p>
-                {(c.lastFourCard as string) ? (
-                  <p className="text-sm text-foreground flex items-center gap-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
-                    •••• {c.lastFourCard as string}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground/40">—</p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        {/* ─ Account Details ─ */}
+        <CardHeader className="pb-3 pt-5 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Briefcase className="w-4 h-4 text-primary" />
+            Account Details
+          </CardTitle>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setEditAccOpen(true)}
+          >
+            <Pencil className="w-3 h-3" /> Edit
+          </Button>
+        </CardHeader>
+
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
+            <Field label="Account Type"            value={c.accountType as string} />
+            <Field label="Account User Name"       value={c.accountUserName as string} />
+            <Field label="Account Email"           value={c.accountEmail as string} />
+            <Field label="Contact / Billing Email" value={c.billingEmail as string} />
+          </div>
+        </CardContent>
+
+      </Card>
 
       {/* ═══ AEO PLANS ═══ */}
       <ClientAeoPlans clientId={clientId} clientBusinessName={client.businessName ?? ""} />
