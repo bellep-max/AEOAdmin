@@ -163,6 +163,7 @@ function PlanForm({
       </div>
 
       {/* 10 Sample Questions */}
+      {/* COMMENTED OUT - temporarily disabled
       <div className="space-y-2">
         <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">10 Sample Questions</Label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -182,9 +183,11 @@ function PlanForm({
           })}
         </div>
       </div>
+      */}
 
       {/* Bottom fields */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* COMMENTED OUT - temporarily disabled
         <div className="space-y-2">
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Answer Presence</Label>
           <Input
@@ -216,6 +219,7 @@ function PlanForm({
             onChange={(e) => set("monthlyAeoBudget", e.target.value !== "" ? Number(e.target.value) : null)}
           />
         </div>
+        */}
 
         <div className="space-y-2">
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Who Implements Schema</Label>
