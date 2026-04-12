@@ -652,8 +652,31 @@ function EditBizDialog({
     // Required field: Client Name
     if (!vals.businessName?.trim()) {
       newErrors.businessName = "Client name is required";
+    } else if (vals.businessName.length < 2) {
+      newErrors.businessName = "Client name must be at least 2 characters";
     } else if (vals.businessName.length > 100) {
       newErrors.businessName = "Client name cannot exceed 100 characters";
+    }
+
+    // Plan Name validation (optional)
+    if (vals.planName && vals.planName.trim()) {
+      if (vals.planName.length > 100) {
+        newErrors.planName = "Plan name cannot exceed 100 characters";
+      }
+    }
+
+    // Search Address validation
+    if (vals.searchAddress && vals.searchAddress.trim()) {
+      if (vals.searchAddress.length > 200) {
+        newErrors.searchAddress = "Search address cannot exceed 200 characters";
+      }
+    }
+
+    // Published Address validation
+    if (vals.publishedAddress && vals.publishedAddress.trim()) {
+      if (vals.publishedAddress.length > 200) {
+        newErrors.publishedAddress = "GMB address cannot exceed 200 characters";
+      }
     }
 
     // GMB Link URL validation
@@ -668,19 +691,84 @@ function EditBizDialog({
       }
     }
 
+    // Website Published on GMB validation
+    if (vals.websitePublishedOnGmb && vals.websitePublishedOnGmb.trim()) {
+      try {
+        new URL(vals.websitePublishedOnGmb);
+        if (vals.websitePublishedOnGmb.length > 200) {
+          newErrors.websitePublishedOnGmb = "URL cannot exceed 200 characters";
+        }
+      } catch {
+        newErrors.websitePublishedOnGmb = "Please enter a valid URL (e.g., https://example.com)";
+      }
+    }
+
+    // Website Linked on GMB validation
+    if (vals.websiteLinkedOnGmb && vals.websiteLinkedOnGmb.trim()) {
+      try {
+        new URL(vals.websiteLinkedOnGmb);
+        if (vals.websiteLinkedOnGmb.length > 200) {
+          newErrors.websiteLinkedOnGmb = "URL cannot exceed 200 characters";
+        }
+      } catch {
+        newErrors.websiteLinkedOnGmb = "Please enter a valid URL (e.g., https://example.com)";
+      }
+    }
+
+    // Account User validation
+    if (vals.accountUser && vals.accountUser.trim()) {
+      if (vals.accountUser.length > 50) {
+        newErrors.accountUser = "Account user cannot exceed 50 characters";
+      }
+    }
+
+    // Start Date validation
+    if (vals.startDate && vals.startDate.trim()) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(vals.startDate)) {
+        newErrors.startDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-01-15)";
+      } else {
+        const date = new Date(vals.startDate);
+        if (isNaN(date.getTime())) {
+          newErrors.startDate = "Please enter a valid date";
+        }
+      }
+    }
+
+    // Next Bill Date validation
+    if (vals.nextBillDate && vals.nextBillDate.trim()) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(vals.nextBillDate)) {
+        newErrors.nextBillDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-04-15)";
+      } else {
+        const date = new Date(vals.nextBillDate);
+        if (isNaN(date.getTime())) {
+          newErrors.nextBillDate = "Please enter a valid date";
+        }
+      }
+    }
+
+    // Subscription ID validation
+    if (vals.subscriptionId && vals.subscriptionId.trim()) {
+      if (vals.subscriptionId.length > 50) {
+        newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
+      }
+    }
+
     // Last 4 card validation
     if (vals.lastFourCard && vals.lastFourCard.trim()) {
       if (!/^\d{4}$/.test(vals.lastFourCard)) {
-        newErrors.lastFourCard = "Please enter exactly 4 digits";
+        newErrors.lastFourCard = "Please enter exactly 4 digits (e.g., 1234)";
       }
     }
 
     setErrors(newErrors);
     
     if (Object.keys(newErrors).length > 0) {
+      const errorCount = Object.keys(newErrors).length;
       toast({
         title: "❌ Validation Error",
-        description: "Please fix the errors before saving.",
+        description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving.`,
         variant: "destructive",
       });
       return false;
@@ -865,11 +953,23 @@ function EditAccDialog({
   function validateFields(): boolean {
     const newErrors: Record<string, string> = {};
 
+    // Account Type validation (dropdown - always valid if set)
+    // No validation needed as it's a dropdown
+
+    // Account User Name validation
+    if (vals.accountUserName && vals.accountUserName.trim()) {
+      if (vals.accountUserName.length < 2) {
+        newErrors.accountUserName = "Account user name must be at least 2 characters";
+      } else if (vals.accountUserName.length > 100) {
+        newErrors.accountUserName = "Account user name cannot exceed 100 characters";
+      }
+    }
+
     // Account Email validation
     if (vals.accountEmail && vals.accountEmail.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(vals.accountEmail)) {
-        newErrors.accountEmail = "Please enter a valid email address";
+        newErrors.accountEmail = "Please enter a valid email address (e.g., user@example.com)";
       } else if (vals.accountEmail.length > 100) {
         newErrors.accountEmail = "Email cannot exceed 100 characters";
       }
@@ -879,57 +979,91 @@ function EditAccDialog({
     if (vals.billingEmail && vals.billingEmail.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(vals.billingEmail)) {
-        newErrors.billingEmail = "Please enter a valid email address";
+        newErrors.billingEmail = "Please enter a valid billing email address (e.g., billing@example.com)";
       } else if (vals.billingEmail.length > 100) {
         newErrors.billingEmail = "Email cannot exceed 100 characters";
       }
     }
 
-    // Client Name validation (if changed)
-    if (vals.businessName && vals.businessName.length > 100) {
-      newErrors.businessName = "Client name cannot exceed 100 characters";
-    }
-
-    // Account User Name validation
-    if (vals.accountUserName && vals.accountUserName.length > 100) {
-      newErrors.accountUserName = "Account user name cannot exceed 100 characters";
-    }
-
     // Plan Name validation
-    if (vals.planName && vals.planName.length > 100) {
-      newErrors.planName = "Plan name cannot exceed 100 characters";
+    if (vals.planName && vals.planName.trim()) {
+      if (vals.planName.length > 100) {
+        newErrors.planName = "Plan name cannot exceed 100 characters";
+      }
     }
 
     // Subscription ID validation
-    if (vals.subscriptionId && vals.subscriptionId.length > 50) {
-      newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
+    if (vals.subscriptionId && vals.subscriptionId.trim()) {
+      if (vals.subscriptionId.length > 50) {
+        newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
+      }
+    }
+
+    // Client Name validation
+    if (vals.businessName && vals.businessName.trim()) {
+      if (vals.businessName.length < 2) {
+        newErrors.businessName = "Client name must be at least 2 characters";
+      } else if (vals.businessName.length > 100) {
+        newErrors.businessName = "Client name cannot exceed 100 characters";
+      }
     }
 
     // Search Address validation
-    if (vals.searchAddress && vals.searchAddress.length > 200) {
-      newErrors.searchAddress = "Address cannot exceed 200 characters";
+    if (vals.searchAddress && vals.searchAddress.trim()) {
+      if (vals.searchAddress.length > 200) {
+        newErrors.searchAddress = "Address cannot exceed 200 characters";
+      }
     }
 
     // Card validation
     if (vals.lastFourCard && vals.lastFourCard.trim()) {
       if (!/^\d{4}$/.test(vals.lastFourCard)) {
-        newErrors.lastFourCard = "Please enter exactly 4 digits";
+        newErrors.lastFourCard = "Please enter exactly 4 digits (e.g., 1234)";
+      }
+    }
+
+    // Next Bill Date validation
+    if (vals.nextBillDate && vals.nextBillDate.trim()) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(vals.nextBillDate)) {
+        newErrors.nextBillDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-04-15)";
+      } else {
+        const date = new Date(vals.nextBillDate);
+        if (isNaN(date.getTime())) {
+          newErrors.nextBillDate = "Please enter a valid date";
+        }
+      }
+    }
+
+    // Start Date validation
+    if (vals.startDate && vals.startDate.trim()) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(vals.startDate)) {
+        newErrors.startDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-01-15)";
+      } else {
+        const date = new Date(vals.startDate);
+        if (isNaN(date.getTime())) {
+          newErrors.startDate = "Please enter a valid date";
+        }
       }
     }
 
     // Created By validation (REQUIRED)
     if (!vals.createdBy || !vals.createdBy.trim()) {
-      newErrors.createdBy = "Created by is required";
+      newErrors.createdBy = "Please enter who is making these changes (this field is required)";
+    } else if (vals.createdBy.length < 2) {
+      newErrors.createdBy = "Name must be at least 2 characters";
     } else if (vals.createdBy.length > 50) {
-      newErrors.createdBy = "Created by cannot exceed 50 characters";
+      newErrors.createdBy = "Name cannot exceed 50 characters";
     }
 
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length > 0) {
+      const errorCount = Object.keys(newErrors).length;
       toast({
         title: "❌ Validation Error",
-        description: "Please fix the errors before saving.",
+        description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving.`,
         variant: "destructive",
       });
       return false;
