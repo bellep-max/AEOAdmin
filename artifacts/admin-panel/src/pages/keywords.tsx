@@ -16,7 +16,7 @@ import { Link }      from "wouter";
 import {
   Search, Plus, Key, Loader2, Star, Filter, X,
   Building2, ExternalLink, Pencil, Trash2, Calendar,
-  Download, ChevronDown, FileDown, Link2, FileText,
+  Download, ChevronDown, FileDown, Link2, FileText, Bookmark,
 } from "lucide-react";
 import { format } from "date-fns";
 import jsPDF       from "jspdf";
@@ -773,6 +773,16 @@ export default function Keywords() {
   const [editKw,         setEditKw]         = useState<KwRecord | null>(null);
   const [addForClient,   setAddForClient]   = useState<number | null>(null);
   const [saving,         setSaving]         = useState(false);
+  const [allPlans,       setAllPlans]       = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
+
+  useEffect(() => {
+    rawFetch("/api/aeo-plans", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setAllPlans(Array.isArray(data) ? data : []))
+      .catch(() => { /* silent */ });
+  }, []);
+
+  const plansMap = new Map(allPlans.map((p) => [p.id, p]));
 
   function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }
   function setBizTypeFilter(cid: number, v: string) {
@@ -1090,22 +1100,59 @@ export default function Keywords() {
                         </button>
                       ))}
                     </div>
-                    <div className="p-4 space-y-4">
                     {displayedKws.length === 0 ? (
-                      <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-3">
+                      <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-3 m-4">
                         <Key className="w-4 h-4 text-slate-500" />
                         <p className="text-sm text-slate-500 italic">No keywords match this filter</p>
                       </div>
-                    ) : displayedKws.map((kw) => (
-                      <KeywordCard
-                        key={kw.id as number}
-                        kw={kw}
-                        onEdit={() => setEditKw({ ...kw })}
-                        onDelete={() => deleteKeyword(kw.id as number)}
-                        onToggleActive={(v) => toggleActive(kw, v)}
-                      />
-                    ))}
-                    </div>
+                    ) : (() => {
+                      /* Group keywords by campaign (aeoPlanId) */
+                      const byCampaign = new Map<number | null, KwRecord[]>();
+                      for (const kw of displayedKws) {
+                        const pid = (kw.aeoPlanId as number | null) ?? null;
+                        if (!byCampaign.has(pid)) byCampaign.set(pid, []);
+                        byCampaign.get(pid)!.push(kw);
+                      }
+                      /* Sort: named campaigns first (ascending id), then null */
+                      const entries = Array.from(byCampaign.entries()).sort(([a], [b]) => {
+                        if (a === null) return 1;
+                        if (b === null) return -1;
+                        return (a as number) - (b as number);
+                      });
+                      return entries.map(([planId, planKws]) => {
+                        const plan = planId != null ? plansMap.get(planId) : null;
+                        return (
+                          <div key={planId ?? "unassigned"} className="border-t border-slate-200 dark:border-slate-700 first:border-t-0">
+                            {/* Campaign sub-header */}
+                            <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60">
+                              <Bookmark className={`w-3.5 h-3.5 flex-shrink-0 ${plan ? "text-blue-500" : "text-slate-400"}`} />
+                              {plan ? (
+                                <>
+                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-400">{plan.planType}</span>
+                                  {plan.serviceCategory && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.serviceCategory}</span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-sm text-slate-500 dark:text-slate-400 italic">No campaign assigned</span>
+                              )}
+                              <span className="ml-auto text-xs font-bold text-slate-500 dark:text-slate-400">{planKws.length} keyword{planKws.length !== 1 ? "s" : ""}</span>
+                            </div>
+                            <div className="p-4 space-y-4">
+                              {planKws.map((kw) => (
+                                <KeywordCard
+                                  key={kw.id as number}
+                                  kw={kw}
+                                  onEdit={() => setEditKw({ ...kw })}
+                                  onDelete={() => deleteKeyword(kw.id as number)}
+                                  onToggleActive={(v) => toggleActive(kw, v)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </div>
