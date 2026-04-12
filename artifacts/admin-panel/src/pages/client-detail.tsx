@@ -917,8 +917,10 @@ function EditAccDialog({
       }
     }
 
-    // Created By validation
-    if (vals.createdBy && vals.createdBy.length > 50) {
+    // Created By validation (REQUIRED)
+    if (!vals.createdBy || !vals.createdBy.trim()) {
+      newErrors.createdBy = "Created by is required";
+    } else if (vals.createdBy.length > 50) {
       newErrors.createdBy = "Created by cannot exceed 50 characters";
     }
 
@@ -984,6 +986,7 @@ function EditAccDialog({
             <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 {f.label}
+                {f.key === "createdBy" && <span className="text-red-500 ml-1">*</span>}
               </Label>
               {f.dropdown ? (
                 <Select
