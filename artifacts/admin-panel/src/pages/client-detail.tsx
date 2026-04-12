@@ -953,6 +953,11 @@ function EditAccDialog({
   function validateFields(): boolean {
     const newErrors: Record<string, string> = {};
 
+    // Check if user has made any changes (excluding createdBy field)
+    const hasChanges = Object.keys(vals).some(
+      (key) => key !== 'createdBy' && vals[key] !== initValues[key]
+    );
+
     // Account Type validation (dropdown - always valid if set)
     // No validation needed as it's a dropdown
 
@@ -1048,13 +1053,22 @@ function EditAccDialog({
       }
     }
 
-    // Created By validation (REQUIRED)
-    if (!vals.createdBy || !vals.createdBy.trim()) {
-      newErrors.createdBy = "Please enter who is making these changes (this field is required)";
-    } else if (vals.createdBy.length < 2) {
-      newErrors.createdBy = "Name must be at least 2 characters";
-    } else if (vals.createdBy.length > 50) {
-      newErrors.createdBy = "Name cannot exceed 50 characters";
+    // Created By validation (ONLY REQUIRED IF USER MADE CHANGES)
+    if (hasChanges) {
+      if (!vals.createdBy || !vals.createdBy.trim()) {
+        newErrors.createdBy = "Please enter your name before saving changes";
+      } else if (vals.createdBy.length < 2) {
+        newErrors.createdBy = "Name must be at least 2 characters";
+      } else if (vals.createdBy.length > 50) {
+        newErrors.createdBy = "Name cannot exceed 50 characters";
+      }
+    } else if (vals.createdBy && vals.createdBy.trim()) {
+      // Only validate format if field has a value (but not required if no changes)
+      if (vals.createdBy.length < 2) {
+        newErrors.createdBy = "Name must be at least 2 characters";
+      } else if (vals.createdBy.length > 50) {
+        newErrors.createdBy = "Name cannot exceed 50 characters";
+      }
     }
 
     setErrors(newErrors);
@@ -1116,12 +1130,19 @@ function EditAccDialog({
         saving={saving} onSave={handleSave}
       >
         <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-          {ACC_FIELDS.map((f) => (
-            <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {f.label}
-                {f.key === "createdBy" && <span className="text-red-500 ml-1">*</span>}
-              </Label>
+          {ACC_FIELDS.map((f) => {
+            // Check if user has made changes (for conditional required indicator)
+            const hasChanges = Object.keys(vals).some(
+              (key) => key !== 'createdBy' && vals[key] !== initValues[key]
+            );
+            
+            return (
+              <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {f.label}
+                  {f.key === "createdBy" && hasChanges && <span className="text-red-500 ml-1">*</span>}
+                  {f.key === "createdBy" && !hasChanges && <span className="text-muted-foreground ml-1 text-xs">(optional)</span>}
+                </Label>
               {f.dropdown ? (
                 <Select
                   value={vals[f.key] ?? ""}
@@ -1158,7 +1179,8 @@ function EditAccDialog({
                 <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       </FullScreenDialog>
 
