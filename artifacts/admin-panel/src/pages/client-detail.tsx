@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetClient } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -599,9 +600,9 @@ function FullScreenDialog({
 /* ─────────────────────────────────────────────────────────── */
 /* Edit Business Details                                        */
 /* ─────────────────────────────────────────────────────────── */
-const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string }> = [
+const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string; dropdown?: string[] }> = [
   { key: "businessName",          label: "Client Name", maxLength: 100 },
-  { key: "planName",              label: "Plan", maxLength: 100 },
+  { key: "planName",              label: "Plan" },
   { key: "searchAddress",         label: "Search Address", maxLength: 200, wide: true },
   { key: "publishedAddress",      label: "GMB Address", maxLength: 200, wide: true },
   { key: "gmbUrl",                label: "GMB Link", placeholder: "https://maps.google.com/…", maxLength: 500, wide: true, type: "url" },
@@ -628,6 +629,7 @@ function EditBizDialog({
   const [confirmSave, setConfirmSave] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const { toast } = useToast();
+  const allPlanNames = useAllPlanNames();
 
   function handleOpenChange(v: boolean) {
     if (v) {
@@ -719,22 +721,52 @@ function EditBizDialog({
                 {f.label}
                 {f.key === "businessName" && <span className="text-red-500 ml-1">*</span>}
               </Label>
-              <Input
-                className={`bg-muted/30 border-border/60 h-11 text-sm ${errors[f.key] ? "border-red-500" : ""}`}
-                placeholder={f.placeholder ?? ""}
-                maxLength={f.maxLength}
-                type={f.type}
-                value={vals[f.key] ?? ""}
-                onChange={(e) => {
-                  setVals((p) => ({ ...p, [f.key]: e.target.value }));
-                  if (errors[f.key]) {
-                    setErrors((p) => {
-                      const { [f.key]: _, ...rest } = p;
-                      return rest;
-                    });
-                  }
-                }}
-              />
+              {f.key === "planName" ? (
+                <Select
+                  value={vals[f.key] ?? ""}
+                  onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
+                >
+                  <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
+                    <SelectValue placeholder="Select a plan…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allPlanNames.map((plan) => (
+                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : f.dropdown ? (
+                <Select
+                  value={vals[f.key] ?? ""}
+                  onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
+                >
+                  <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {f.dropdown.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className={`bg-muted/30 border-border/60 h-11 text-sm ${errors[f.key] ? "border-red-500" : ""}`}
+                  placeholder={f.placeholder ?? ""}
+                  maxLength={f.maxLength}
+                  type={f.type}
+                  value={vals[f.key] ?? ""}
+                  onChange={(e) => {
+                    setVals((p) => ({ ...p, [f.key]: e.target.value }));
+                    if (errors[f.key]) {
+                      setErrors((p) => {
+                        const { [f.key]: _, ...rest } = p;
+                        return rest;
+                      });
+                    }
+                  }}
+                />
+              )}
               {errors[f.key] && (
                 <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
               )}
