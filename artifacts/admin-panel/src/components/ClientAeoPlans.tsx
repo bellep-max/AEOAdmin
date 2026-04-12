@@ -301,6 +301,7 @@ export default function ClientAeoPlans({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [confirmSave, setConfirmSave] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<AeoPlan | null>(null);
 
   /* keywords per plan: planId → rows */
   const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
@@ -458,13 +459,17 @@ export default function ClientAeoPlans({
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete() {
+    if (!confirmDelete) return;
+    const planName = confirmDelete.planType;
+    const id = confirmDelete.id;
+    setConfirmDelete(null);
     try {
       await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, { method: "DELETE", credentials: "include" });
-      toast({ title: "Plan deleted" });
+      toast({ title: "🗑️ Campaign deleted", description: `"${planName}" has been removed successfully.` });
       fetchPlans();
     } catch {
-      toast({ title: "Delete failed", variant: "destructive" });
+      toast({ title: "❌ Delete failed", description: "Something went wrong. Please try again.", variant: "destructive" });
     }
   }
 
@@ -564,7 +569,7 @@ export default function ClientAeoPlans({
                               <Button
                                 variant="ghost" size="sm"
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                                onClick={() => handleDelete(plan.id)}
+                                onClick={() => setConfirmDelete(plan)}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
@@ -617,6 +622,28 @@ export default function ClientAeoPlans({
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the campaign{" "}
+              <strong>&ldquo;{confirmDelete?.planType}&rdquo;</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              Yes, Delete Campaign
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Save Confirmation Dialog */}
       <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
