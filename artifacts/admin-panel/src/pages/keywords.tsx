@@ -764,16 +764,16 @@ function KeywordCard({
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
 export default function Keywords() {
-  const [search,         setSearch]         = useState("");
-  const [typeFilter,     setTypeFilter]     = useState<string>("all");
-  const [businessFilter, setBusinessFilter] = useState<string>("all");
-  const [bizTypeFilters, setBizTypeFilters] = useState<Map<number, string>>(new Map());
-  const [expanded,       setExpanded]       = useState<Set<number>>(new Set());
-  const [addOpen,        setAddOpen]        = useState(false);
-  const [editKw,         setEditKw]         = useState<KwRecord | null>(null);
-  const [addForClient,   setAddForClient]   = useState<number | null>(null);
-  const [saving,         setSaving]         = useState(false);
-  const [allPlans,       setAllPlans]       = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
+  const [search,           setSearch]           = useState("");
+  const [typeFilter,       setTypeFilter]       = useState<string>("all");
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [bizTypeFilters,   setBizTypeFilters]   = useState<Map<number, string>>(new Map());
+  const [expanded,         setExpanded]         = useState<Set<number>>(new Set());
+  const [addOpen,          setAddOpen]          = useState(false);
+  const [editKw,           setEditKw]           = useState<KwRecord | null>(null);
+  const [addForClient,     setAddForClient]     = useState<number | null>(null);
+  const [saving,           setSaving]           = useState(false);
+  const [allPlans,         setAllPlans]         = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
 
   useEffect(() => {
     rawFetch("/api/aeo-plans", { credentials: "include" })
@@ -789,7 +789,10 @@ export default function Keywords() {
     setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
   }
 
-  const { data: keywords, isLoading } = useGetKeywords();
+  const { data: keywords, isLoading } = useGetKeywords(
+    { clientId: selectedClientId ?? undefined },
+    { query: { enabled: !!selectedClientId } }
+  );
   const { data: clients }             = useGetClients();
   const updateKeyword                 = useUpdateKeyword();
   const { toast }                     = useToast();
@@ -860,11 +863,9 @@ export default function Keywords() {
   /* Filter */
   const searchLower  = search.toLowerCase();
   const filteredKws  = ((keywords ?? []) as unknown as KwRecord[]).filter((k: KwRecord) => {
-    const matchText   = (k.keywordText as string).toLowerCase().includes(searchLower);
-    const client      = clients?.find((c) => c.id === k.clientId);
-    const matchClient = client ? (client.businessName ?? "").toLowerCase().includes(searchLower) : true;
-    const matchType   = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    return (matchText || matchClient) && matchType;
+    const matchText = (k.keywordText as string).toLowerCase().includes(searchLower);
+    const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
+    return matchText && matchType;
   });
 
   /* Group by client */
@@ -919,6 +920,49 @@ export default function Keywords() {
         </div>
       </div>
 
+      {/* Client Selector */}
+      <div className="flex items-center gap-3">
+        <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
+        <Select
+          value={selectedClientId !== null ? String(selectedClientId) : ""}
+          onValueChange={(v) => {
+            setSelectedClientId(Number(v));
+            setSearch("");
+            setTypeFilter("all");
+            setExpanded(new Set([Number(v)]));
+          }}
+        >
+          <SelectTrigger className="w-80 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-12 text-base font-bold">
+            <SelectValue placeholder="Select a client to view their keywords…" />
+          </SelectTrigger>
+          <SelectContent>
+            {(clients ?? []).map((c) => (
+              <SelectItem key={c.id} value={String(c.id)}>
+                <div className="flex flex-col gap-0">
+                  <span className="font-bold text-base">{c.businessName}</span>
+                  {c.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedClientId !== null && (
+          <button
+            onClick={() => { setSelectedClientId(null); setSearch(""); setTypeFilter("all"); }}
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold"
+          >
+            <X className="w-4 h-4" /> Clear client
+          </button>
+        )}
+      </div>
+
+      {selectedClientId === null ? (
+        <div className="flex flex-col items-center justify-center h-64 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 gap-3">
+          <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600" />
+          <p className="text-lg font-semibold text-slate-400 dark:text-slate-500">Select a client above to view their keywords</p>
+        </div>
+      ) : (<>
+
       {/* Summary strip */}
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -941,7 +985,7 @@ export default function Keywords() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-3.5 h-5 w-5 text-slate-600 pointer-events-none" />
-          <Input type="search" placeholder="Search business or keyword…"
+          <Input type="search" placeholder="Search keyword…"
             className="pl-11 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-700 dark:placeholder:text-slate-500"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
@@ -962,30 +1006,8 @@ export default function Keywords() {
             </button>
           ))}
         </div>
-        {/* Business filter */}
-        <Select value={businessFilter} onValueChange={setBusinessFilter}>
-          <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-base text-slate-900 dark:text-slate-100">
-            <SelectValue placeholder="All businesses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All businesses</SelectItem>
-            {Array.from(grouped.entries()).map(([cid]) => {
-              const c = clients?.find((x) => x.id === cid);
-              return (
-                <SelectItem key={cid} value={String(cid)}>
-                  <div className="flex flex-col gap-0">
-                    <span className="font-bold">{c?.businessName ?? `Business #${cid}`}</span>
-                    {c?.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
-                    {c?.publishedAddress && <span className="text-xs text-slate-500">GMB: {c.publishedAddress}</span>}
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-
-        {(search || typeFilter !== "all" || businessFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setTypeFilter("all"); setBusinessFilter("all"); }}
+        {(search || typeFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
             className="flex items-center gap-1.5 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
@@ -1011,7 +1033,6 @@ export default function Keywords() {
       ) : (
         <div className="space-y-4">
           {Array.from(grouped.entries())
-            .filter(([cid]) => businessFilter === "all" || String(cid) === businessFilter)
             .map(([clientId, kws]) => {
             const client      = clients?.find((c) => c.id === clientId);
             const isOpen      = expanded.has(clientId);
@@ -1166,6 +1187,7 @@ export default function Keywords() {
         open={addOpen} onOpenChange={setAddOpen}
         title="Add Keyword" saving={saving}
         clients={clients}
+        defaultClientId={selectedClientId ?? undefined}
         onSave={(data) => saveKeyword(null, data)}
       />
 
@@ -1189,6 +1211,7 @@ export default function Keywords() {
           onSave={(data) => saveKeyword(null, data)}
         />
       )}
+      </>)}
     </div>
   );
 }
