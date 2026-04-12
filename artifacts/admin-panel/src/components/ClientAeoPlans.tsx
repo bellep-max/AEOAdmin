@@ -109,15 +109,16 @@ function PlanForm({
 
   return (
     <div className="space-y-6">
-      {/* Business Name */}
+      {/* Client Name */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Business Name</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client Name</Label>
           <Input
-            className="h-10 bg-muted/30 border-border/60"
-            placeholder={clientBusinessName || "Business name"}
+            className="h-10 bg-muted/50 border-border/60 cursor-not-allowed"
+            placeholder={clientBusinessName || "Client name"}
             value={values.businessName ?? ""}
-            onChange={(e) => set("businessName", e.target.value)}
+            readOnly
+            disabled
           />
         </div>
 
