@@ -2458,13 +2458,80 @@ export default function Rankings() {
                     className="w-full h-9 rounded-md border border-border/50 bg-card/80 text-sm px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                   >
                     <option value="">Select a business…</option>
+                    <option value="__all__">⬇️ All Businesses (Download Everything)</option>
                     {bizListAll.map(([id, grp]) => (
                       <option key={id} value={String(id)}>{grp.name}</option>
                     ))}
                   </select>
                 </div>
 
-                {dlBizId && (() => {
+                {/* All Businesses aggregate view */}
+                {dlBizId === "__all__" && (() => {
+                  const allRows  = enriched;
+                  const periodRows = periodFiltered;
+                  const perf  = allRows.filter((r) => r.status === "performing").length;
+                  const under = allRows.filter((r) => r.status === "underperforming").length;
+                  const steady= allRows.filter((r) => r.status === "steady").length;
+                  return (
+                    <div className="space-y-3">
+                      {/* Stats */}
+                      <div className="rounded-md bg-card/60 border border-border/30 px-3 py-2 space-y-1">
+                        <p className="text-sm font-semibold text-foreground">All Businesses</p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-semibold text-foreground">{bizListAll.length}</span> businesses ·{" "}
+                          <span className="font-semibold text-foreground">{allRows.length}</span> total keywords ·{" "}
+                          <span className="text-emerald-400 font-semibold">{perf} performing</span> ·{" "}
+                          <span className="text-amber-400 font-semibold">{steady} steady</span> ·{" "}
+                          <span className="text-destructive font-semibold">{under} underperforming</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/60">
+                          {periodRows.length} in {periodLabel[period]} · {allRows.length - periodRows.length} from other periods
+                        </p>
+                      </div>
+
+                      {/* All Keywords — Full Report */}
+                      <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2.5 space-y-1.5">
+                        <p className="text-xs font-bold text-primary flex items-center gap-1.5">
+                          <Archive className="w-3 h-3" /> All Keywords — Full Report
+                          <span className="text-primary/60 font-normal">({allRows.length} keywords · All Businesses · Initial + Current)</span>
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-primary/30 hover:bg-primary/10"
+                            onClick={() => handleDownload(() => exportBizPlatformCSV(allRows, platByKw, `all-businesses-ALL-keywords-${dateStamp}.csv`), "All Businesses — All Keywords", "CSV")}>
+                            <Download className="w-3 h-3" />Download All Keywords CSV
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                            onClick={() => handleDownload(() => exportBizPlatformPDF("All Businesses", allRows, platByKw, `all-businesses-ALL-keywords-${dateStamp}.pdf`), "All Businesses — All Keywords", "PDF")}>
+                            <FileDown className="w-3 h-3" />Download All Keywords PDF
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Period-only */}
+                      {periodRows.length > 0 && (
+                        <div className="rounded-md bg-muted/20 border border-border/30 px-3 py-2.5 space-y-1.5">
+                          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <CalendarDays className="w-3 h-3" /> {periodLabel[period]} Only
+                            <span className="font-normal">({periodRows.length} keywords)</span>
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleDownload(() => exportAllCSV(), `All Businesses · ${periodLabel[period]}`, "CSV")}>
+                              <Download className="w-3 h-3" />CSV
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-rose-400/70 hover:text-rose-400"
+                              onClick={() => handleDownload(() => exportAllPDF(), `All Businesses · ${periodLabel[period]}`, "PDF")}>
+                              <FileDown className="w-3 h-3" />PDF
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Individual business view */}
+                {dlBizId && dlBizId !== "__all__" && (() => {
                   const bizAll = byBusinessAll.get(Number(dlBizId));
                   const bizPeriod = byBusiness.get(Number(dlBizId));
                   if (!bizAll) return null;
@@ -2531,6 +2598,7 @@ export default function Rankings() {
                   );
                 })()}
 
+                {!dlBizId && (
                 <div className="pt-2 border-t border-border/20 flex items-center justify-between flex-wrap gap-2">
                   <p className="text-xs text-muted-foreground">{bizListAll.length} businesses · download all at once ({enriched.length} total keywords)</p>
                   <div className="flex items-center gap-1.5">
@@ -2546,6 +2614,7 @@ export default function Rankings() {
                     </Button>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
