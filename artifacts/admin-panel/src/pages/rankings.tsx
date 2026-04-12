@@ -1222,6 +1222,15 @@ export default function Rankings() {
   const [dlBizId,  setDlBizId]  = useState("");
   const [dlKwText, setDlKwText] = useState("");
 
+  function handleDownload(fn: () => void, label: string, fileFormat: "CSV" | "PDF") {
+    fn();
+    toast({
+      title: `📥 ${fileFormat} download started`,
+      description: `"${label}" is downloading to your device.`,
+    });
+    setDlOpen(false);
+  }
+
   /* Period cutoff — filter to rows whose currentDate falls within the selected window */
   const periodCutoff = new Date(Date.now() - periodDays[period] * 24 * 60 * 60 * 1000);
 
@@ -2291,7 +2300,7 @@ export default function Rankings() {
 
       {/* ════ Download Center Dialog ════ */}
       <Dialog open={dlOpen} onOpenChange={setDlOpen}>
-        <DialogContent className="sm:max-w-[600px] border-border/60 bg-card max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!left-0 !top-0 !translate-x-0 !translate-y-0 !max-w-none !max-h-none w-screen h-screen !rounded-none border-0 bg-card overflow-y-auto flex flex-col">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -2345,12 +2354,12 @@ export default function Rankings() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
-                      onClick={() => { exportCSV(periodFiltered, `aeo-overall-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportCSV(periodFiltered, `aeo-overall-${periodSlug}-${dateStamp}.csv`), `All Data (Overall) · ${periodLabel[period]}`, "CSV")}
                       disabled={periodFiltered.length === 0}>
                       <Download className="w-3 h-3" />CSV
                     </Button>
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                      onClick={() => { exportPDF(periodFiltered, `All Businesses · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-overall-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportPDF(periodFiltered, `All Businesses · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-overall-${periodSlug}-${dateStamp}.pdf`), `All Data (Overall) · ${periodLabel[period]}`, "PDF")}
                       disabled={periodFiltered.length === 0}>
                       <FileDown className="w-3 h-3" />PDF
                     </Button>
@@ -2364,12 +2373,12 @@ export default function Rankings() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
-                      onClick={() => { exportCSV(periodFiltered, `aeo-before-after-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportCSV(periodFiltered, `aeo-before-after-${periodSlug}-${dateStamp}.csv`), `Before / After Comparison · ${periodLabel[period]}`, "CSV")}
                       disabled={periodFiltered.length === 0}>
                       <Download className="w-3 h-3" />CSV
                     </Button>
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                      onClick={() => { exportPDF(periodFiltered, `Before/After · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-before-after-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportPDF(periodFiltered, `Before/After · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-before-after-${periodSlug}-${dateStamp}.pdf`), `Before / After Comparison · ${periodLabel[period]}`, "PDF")}
                       disabled={periodFiltered.length === 0}>
                       <FileDown className="w-3 h-3" />PDF
                     </Button>
@@ -2400,12 +2409,12 @@ export default function Rankings() {
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
-                          onClick={() => { if (ps) exportPlatformOnlyCSV(label, kws, `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                          onClick={() => { if (ps) handleDownload(() => exportPlatformOnlyCSV(label, kws, `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.csv`), `${label} Rankings · ${periodLabel[period]}`, "CSV"); else setDlOpen(false); }}
                           disabled={!ps || kws.length === 0}>
                           <Download className="w-3 h-3" />CSV
                         </Button>
                         <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                          onClick={() => { if (ps) exportPlatformOnlyPDF(label, ps, kws, periodLabel[period], `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                          onClick={() => { if (ps) handleDownload(() => exportPlatformOnlyPDF(label, ps, kws, periodLabel[period], `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.pdf`), `${label} Rankings · ${periodLabel[period]}`, "PDF"); else setDlOpen(false); }}
                           disabled={!ps || kws.length === 0}>
                           <FileDown className="w-3 h-3" />PDF
                         </Button>
@@ -2421,12 +2430,12 @@ export default function Rankings() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
-                      onClick={() => { exportPlatformCSV(crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportPlatformCSV(crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.csv`), `All Platforms (Cross-Platform) · ${periodLabel[period]}`, "CSV")}
                       disabled={crossRows.length === 0}>
                       <Download className="w-3 h-3" />CSV
                     </Button>
                     <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                      onClick={() => { if (platformData) exportPlatformPDF(platformData, crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      onClick={() => { if (platformData) handleDownload(() => exportPlatformPDF(platformData, crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.pdf`), `All Platforms (Cross-Platform) · ${periodLabel[period]}`, "PDF"); else setDlOpen(false); }}
                       disabled={!platformData || crossRows.length === 0}>
                       <FileDown className="w-3 h-3" />PDF
                     </Button>
@@ -2489,11 +2498,11 @@ export default function Rankings() {
                         </p>
                         <div className="flex items-center gap-1.5">
                           <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-primary/30 hover:bg-primary/10"
-                            onClick={() => { exportBizPlatformCSV(allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.csv`); setDlOpen(false); }}>
+                            onClick={() => handleDownload(() => exportBizPlatformCSV(allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.csv`), `${bizAll.name} — All Keywords`, "CSV")}>
                             <Download className="w-3 h-3" />Download All Keywords CSV
                           </Button>
                           <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                            onClick={() => { exportBizPlatformPDF(bizAll.name, allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.pdf`); setDlOpen(false); }}>
+                            onClick={() => handleDownload(() => exportBizPlatformPDF(bizAll.name, allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.pdf`), `${bizAll.name} — All Keywords`, "PDF")}>
                             <FileDown className="w-3 h-3" />Download All Keywords PDF
                           </Button>
                         </div>
@@ -2508,11 +2517,11 @@ export default function Rankings() {
                           </p>
                           <div className="flex items-center gap-1.5">
                             <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-muted-foreground hover:text-foreground"
-                              onClick={() => { exportBizPlatformCSV(periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}>
+                              onClick={() => handleDownload(() => exportBizPlatformCSV(periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.csv`), `${bizAll.name} · ${periodLabel[period]}`, "CSV")}>
                               <Download className="w-3 h-3" />CSV
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-rose-400/70 hover:text-rose-400"
-                              onClick={() => { exportBizPlatformPDF(bizAll.name, periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}>
+                              onClick={() => handleDownload(() => exportBizPlatformPDF(bizAll.name, periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.pdf`), `${bizAll.name} · ${periodLabel[period]}`, "PDF")}>
                               <FileDown className="w-3 h-3" />PDF
                             </Button>
                           </div>
@@ -2526,12 +2535,12 @@ export default function Rankings() {
                   <p className="text-xs text-muted-foreground">{bizListAll.length} businesses · download all at once ({enriched.length} total keywords)</p>
                   <div className="flex items-center gap-1.5">
                     <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs px-2.5 text-muted-foreground hover:text-foreground"
-                      onClick={() => { exportAllCSV(); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportAllCSV(), `All Businesses · ${periodLabel[period]}`, "CSV")}
                       disabled={periodFiltered.length === 0}>
                       <Download className="w-3 h-3" />{periodLabel[period]} CSV
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs px-2.5 text-rose-400/70 hover:text-rose-400"
-                      onClick={() => { exportAllPDF(); setDlOpen(false); }}
+                      onClick={() => handleDownload(() => exportAllPDF(), `All Businesses · ${periodLabel[period]}`, "PDF")}
                       disabled={periodFiltered.length === 0}>
                       <FileDown className="w-3 h-3" />{periodLabel[period]} PDF
                     </Button>
@@ -2562,8 +2571,7 @@ export default function Rankings() {
                       const row = crossRows.find((r) => r.keywordText === dlKwText);
                       if (!row) return;
                       const slug = row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
-                      exportKeywordCSV(row, `${slug}-cross-platform-${dateStamp}.csv`);
-                      setDlOpen(false);
+                      handleDownload(() => exportKeywordCSV(row, `${slug}-cross-platform-${dateStamp}.csv`), `${row.keywordText} — ${row.clientName}`, "CSV");
                     }}
                     disabled={!dlKwText}>
                     <Download className="w-3 h-3" />CSV
@@ -2573,8 +2581,7 @@ export default function Rankings() {
                       const row = crossRows.find((r) => r.keywordText === dlKwText);
                       if (!row) return;
                       const slug = row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
-                      exportKeywordPDF(row, `${slug}-cross-platform-${dateStamp}.pdf`);
-                      setDlOpen(false);
+                      handleDownload(() => exportKeywordPDF(row, `${slug}-cross-platform-${dateStamp}.pdf`), `${row.keywordText} — ${row.clientName}`, "PDF");
                     }}
                     disabled={!dlKwText}>
                     <FileDown className="w-3 h-3" />PDF
