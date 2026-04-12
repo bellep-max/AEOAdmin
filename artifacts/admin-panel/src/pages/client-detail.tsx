@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetClient } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
@@ -103,10 +113,13 @@ export default function ClientDetail() {
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
       await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });
       await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({ title: "Saved" });
+      toast({ 
+        title: "✅ Changes saved successfully!",
+        description: `Updated information for ${body.businessName || client?.businessName || "client"}.`
+      });
       onSuccess();
     } catch (err: unknown) {
-      toast({ title: "Save failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
+      toast({ title: "❌ Save failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -586,18 +599,18 @@ function FullScreenDialog({
 /* ─────────────────────────────────────────────────────────── */
 /* Edit Business Details                                        */
 /* ─────────────────────────────────────────────────────────── */
-const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean }> = [
-  { key: "businessName",          label: "Business Name" },
-  { key: "planName",              label: "Plan" },
-  { key: "searchAddress",         label: "Search Address",                           wide: true },
-  { key: "publishedAddress",      label: "GMB Address",                              wide: true },
-  { key: "gmbUrl",                label: "GMB Link",                  placeholder: "https://maps.google.com/…", wide: true },
-  { key: "websitePublishedOnGmb", label: "Website Published on GMB",  placeholder: "https://…", wide: true },
-  { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…", wide: true },
-  { key: "accountUser",           label: "Account User" },
-  { key: "startDate",             label: "Start Date",                placeholder: "YYYY-MM-DD" },
-  { key: "nextBillDate",          label: "Next Bill Date",            placeholder: "YYYY-MM-DD" },
-  { key: "subscriptionId",        label: "Subscription ID" },
+const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string }> = [
+  { key: "businessName",          label: "Client Name", maxLength: 100 },
+  { key: "planName",              label: "Plan", maxLength: 100 },
+  { key: "searchAddress",         label: "Search Address", maxLength: 200, wide: true },
+  { key: "publishedAddress",      label: "GMB Address", maxLength: 200, wide: true },
+  { key: "gmbUrl",                label: "GMB Link", placeholder: "https://maps.google.com/…", maxLength: 500, wide: true, type: "url" },
+  { key: "websitePublishedOnGmb", label: "Website Published on GMB", placeholder: "https://…", maxLength: 200, wide: true },
+  { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…", maxLength: 200, wide: true },
+  { key: "accountUser",           label: "Account User", maxLength: 50 },
+  { key: "startDate",             label: "Start Date", placeholder: "YYYY-MM-DD", type: "date" },
+  { key: "nextBillDate",          label: "Next Bill Date", placeholder: "YYYY-MM-DD", type: "date" },
+  { key: "subscriptionId",        label: "Subscription ID", maxLength: 50 },
   { key: "lastFourCard",          label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
 ];
 
@@ -611,52 +624,188 @@ function EditBizDialog({
   values:       Record<string, string>;
 }) {
   const [vals, setVals] = useState<Record<string, string>>(initValues);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirmSave, setConfirmSave] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const { toast } = useToast();
 
   function handleOpenChange(v: boolean) {
-    if (v) setVals(initValues);
-    onOpenChange(v);
+    if (v) {
+      setVals(initValues);
+      setErrors({});
+    } else {
+      // Check if any data has changed
+      const hasChanges = Object.keys(vals).some(key => vals[key] !== initValues[key]);
+      if (hasChanges) {
+        setConfirmCancel(true);
+      } else {
+        onOpenChange(false);
+      }
+    }
+  }
+
+  function validateFields(): boolean {
+    const newErrors: Record<string, string> = {};
+
+    // Required field: Client Name
+    if (!vals.businessName?.trim()) {
+      newErrors.businessName = "Client name is required";
+    } else if (vals.businessName.length > 100) {
+      newErrors.businessName = "Client name cannot exceed 100 characters";
+    }
+
+    // GMB Link URL validation
+    if (vals.gmbUrl && vals.gmbUrl.trim()) {
+      try {
+        new URL(vals.gmbUrl);
+        if (vals.gmbUrl.length > 500) {
+          newErrors.gmbUrl = "URL cannot exceed 500 characters";
+        }
+      } catch {
+        newErrors.gmbUrl = "Please enter a valid URL (e.g., https://maps.google.com/...)";
+      }
+    }
+
+    // Last 4 card validation
+    if (vals.lastFourCard && vals.lastFourCard.trim()) {
+      if (!/^\d{4}$/.test(vals.lastFourCard)) {
+        newErrors.lastFourCard = "Please enter exactly 4 digits";
+      }
+    }
+
+    setErrors(newErrors);
+    
+    if (Object.keys(newErrors).length > 0) {
+      toast({
+        title: "❌ Validation Error",
+        description: "Please fix the errors before saving.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    
+    return true;
+  }
+
+  function handleSave() {
+    if (validateFields()) {
+      setConfirmSave(true);
+    }
+  }
+
+  function handleConfirmSave() {
+    onSave(vals);
+    setConfirmSave(false);
+  }
+
+  function handleConfirmCancel() {
+    setConfirmCancel(false);
+    setVals(initValues);
+    setErrors({});
+    onOpenChange(false);
   }
 
   return (
-    <FullScreenDialog
-      open={open} onOpenChange={handleOpenChange}
-      title="Edit Business Details" icon={Building2}
-      saving={saving} onSave={() => onSave(vals)}
-    >
-      <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-        {BIZ_FIELDS.map((f) => (
-          <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{f.label}</Label>
-            <Input
-              className="bg-muted/30 border-border/60 h-11 text-sm"
-              placeholder={f.placeholder ?? ""}
-              maxLength={f.maxLength}
-              value={vals[f.key] ?? ""}
-              onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
-            />
-          </div>
-        ))}
-      </div>
-    </FullScreenDialog>
+    <>
+      <FullScreenDialog
+        open={open} onOpenChange={handleOpenChange}
+        title="Edit Client Details" icon={Building2}
+        saving={saving} onSave={handleSave}
+      >
+        <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+          {BIZ_FIELDS.map((f) => (
+            <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {f.label}
+                {f.key === "businessName" && <span className="text-red-500 ml-1">*</span>}
+              </Label>
+              <Input
+                className={`bg-muted/30 border-border/60 h-11 text-sm ${errors[f.key] ? "border-red-500" : ""}`}
+                placeholder={f.placeholder ?? ""}
+                maxLength={f.maxLength}
+                type={f.type}
+                value={vals[f.key] ?? ""}
+                onChange={(e) => {
+                  setVals((p) => ({ ...p, [f.key]: e.target.value }));
+                  if (errors[f.key]) {
+                    setErrors((p) => {
+                      const { [f.key]: _, ...rest } = p;
+                      return rest;
+                    });
+                  }
+                }}
+              />
+              {errors[f.key] && (
+                <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </FullScreenDialog>
+
+      {/* Save Confirmation Dialog */}
+      <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Would you like to save the changes to <strong>{vals.businessName}</strong>?
+              This will update the client information immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleConfirmSave}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Yes, Save Changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to discard your changes? All unsaved modifications will be lost. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleConfirmCancel}
+            >
+              Yes, Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
 /* ─────────────────────────────────────────────────────────── */
 /* Edit Account Details                                         */
 /* ─────────────────────────────────────────────────────────── */
-const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; dropdown?: string[] }> = [
+const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; dropdown?: string[]; type?: string }> = [
   { key: "accountType",     label: "Account Type",             dropdown: ["Agency", "Retail"] },
-  { key: "accountUserName", label: "Account User Name" },
-  { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true },
-  { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true },
-  { key: "planName",        label: "Plan" },
-  { key: "subscriptionId",  label: "Subscription ID" },
-  { key: "businessName",    label: "Business Name" },
-  { key: "searchAddress",   label: "Search Address",           wide: true },
+  { key: "accountUserName", label: "Account User Name",        maxLength: 100 },
+  { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true, maxLength: 100, type: "email" },
+  { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true, maxLength: 100, type: "email" },
+  { key: "planName",        label: "Plan",                     maxLength: 100 },
+  { key: "subscriptionId",  label: "Subscription ID",          maxLength: 50 },
+  { key: "businessName",    label: "Client Name",              maxLength: 100 },
+  { key: "searchAddress",   label: "Search Address",           wide: true, maxLength: 200 },
   { key: "lastFourCard",    label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
-  { key: "nextBillDate",    label: "Next Bill Date",           placeholder: "YYYY-MM-DD" },
-  { key: "startDate",       label: "Start Date",               placeholder: "YYYY-MM-DD" },
-  { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle" },
+  { key: "nextBillDate",    label: "Next Bill Date",           placeholder: "YYYY-MM-DD", type: "date" },
+  { key: "startDate",       label: "Start Date",               placeholder: "YYYY-MM-DD", type: "date" },
+  { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle", maxLength: 50 },
 ];
 
 function EditAccDialog({
@@ -669,48 +818,224 @@ function EditAccDialog({
   values:       Record<string, string>;
 }) {
   const [vals, setVals] = useState<Record<string, string>>(initValues);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirmSave, setConfirmSave] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (open) {
+      setVals(initValues);
+      setErrors({});
+    }
+  }, [open, initValues]);
+
+  function validateFields(): boolean {
+    const newErrors: Record<string, string> = {};
+
+    // Account Email validation
+    if (vals.accountEmail && vals.accountEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(vals.accountEmail)) {
+        newErrors.accountEmail = "Please enter a valid email address";
+      } else if (vals.accountEmail.length > 100) {
+        newErrors.accountEmail = "Email cannot exceed 100 characters";
+      }
+    }
+
+    // Billing Email validation
+    if (vals.billingEmail && vals.billingEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(vals.billingEmail)) {
+        newErrors.billingEmail = "Please enter a valid email address";
+      } else if (vals.billingEmail.length > 100) {
+        newErrors.billingEmail = "Email cannot exceed 100 characters";
+      }
+    }
+
+    // Client Name validation (if changed)
+    if (vals.businessName && vals.businessName.length > 100) {
+      newErrors.businessName = "Client name cannot exceed 100 characters";
+    }
+
+    // Account User Name validation
+    if (vals.accountUserName && vals.accountUserName.length > 100) {
+      newErrors.accountUserName = "Account user name cannot exceed 100 characters";
+    }
+
+    // Plan Name validation
+    if (vals.planName && vals.planName.length > 100) {
+      newErrors.planName = "Plan name cannot exceed 100 characters";
+    }
+
+    // Subscription ID validation
+    if (vals.subscriptionId && vals.subscriptionId.length > 50) {
+      newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
+    }
+
+    // Search Address validation
+    if (vals.searchAddress && vals.searchAddress.length > 200) {
+      newErrors.searchAddress = "Address cannot exceed 200 characters";
+    }
+
+    // Card validation
+    if (vals.lastFourCard && vals.lastFourCard.trim()) {
+      if (!/^\d{4}$/.test(vals.lastFourCard)) {
+        newErrors.lastFourCard = "Please enter exactly 4 digits";
+      }
+    }
+
+    // Created By validation
+    if (vals.createdBy && vals.createdBy.length > 50) {
+      newErrors.createdBy = "Created by cannot exceed 50 characters";
+    }
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      toast({
+        title: "❌ Validation Error",
+        description: "Please fix the errors before saving.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  }
 
   function handleOpenChange(v: boolean) {
-    if (v) setVals(initValues);
+    if (!v) {
+      // Check if there are unsaved changes
+      const hasChanges = Object.keys(vals).some(
+        (key) => vals[key] !== initValues[key]
+      );
+      if (hasChanges) {
+        setConfirmCancel(true);
+        return;
+      }
+    }
+    
+    if (v) {
+      setVals(initValues);
+      setErrors({});
+    }
     onOpenChange(v);
   }
 
+  function handleSave() {
+    if (validateFields()) {
+      setConfirmSave(true);
+    }
+  }
+
+  function handleConfirmSave() {
+    setConfirmSave(false);
+    onSave(vals);
+  }
+
+  function handleConfirmCancel() {
+    setConfirmCancel(false);
+    setVals(initValues);
+    setErrors({});
+    onOpenChange(false);
+  }
+
   return (
-    <FullScreenDialog
-      open={open} onOpenChange={handleOpenChange}
-      title="Edit Account Details" icon={Briefcase}
-      saving={saving} onSave={() => onSave(vals)}
-    >
-      <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-        {ACC_FIELDS.map((f) => (
-          <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{f.label}</Label>
-            {f.dropdown ? (
-              <Select
-                value={vals[f.key] ?? ""}
-                onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
-              >
-                <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
-                  <SelectValue placeholder="Select…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {f.dropdown.map((o) => (
-                    <SelectItem key={o} value={o}>{o}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                className="bg-muted/30 border-border/60 h-11 text-sm"
-                placeholder={f.placeholder ?? ""}
-                maxLength={f.maxLength}
-                value={vals[f.key] ?? ""}
-                onChange={(e) => setVals((p) => ({ ...p, [f.key]: e.target.value }))}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-    </FullScreenDialog>
+    <>
+      <FullScreenDialog
+        open={open} onOpenChange={handleOpenChange}
+        title="Edit Account Details" icon={Briefcase}
+        saving={saving} onSave={handleSave}
+      >
+        <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+          {ACC_FIELDS.map((f) => (
+            <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {f.label}
+              </Label>
+              {f.dropdown ? (
+                <Select
+                  value={vals[f.key] ?? ""}
+                  onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
+                >
+                  <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {f.dropdown.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className={`bg-muted/30 border-border/60 h-11 text-sm ${errors[f.key] ? "border-red-500" : ""}`}
+                  placeholder={f.placeholder ?? ""}
+                  maxLength={f.maxLength}
+                  type={f.type}
+                  value={vals[f.key] ?? ""}
+                  onChange={(e) => {
+                    setVals((p) => ({ ...p, [f.key]: e.target.value }));
+                    if (errors[f.key]) {
+                      setErrors((p) => {
+                        const { [f.key]: _, ...rest } = p;
+                        return rest;
+                      });
+                    }
+                  }}
+                />
+              )}
+              {errors[f.key] && (
+                <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </FullScreenDialog>
+
+      {/* Save Confirmation Dialog */}
+      <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Would you like to save the changes to the account details?
+              This will update the information immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleConfirmSave}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Yes, Save Changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard Changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to discard your changes? All unsaved modifications will be lost. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleConfirmCancel}
+            >
+              Yes, Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
