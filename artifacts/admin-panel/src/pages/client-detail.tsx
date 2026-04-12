@@ -766,9 +766,16 @@ function EditBizDialog({
     
     if (Object.keys(newErrors).length > 0) {
       const errorCount = Object.keys(newErrors).length;
+      const errorFields = Object.keys(newErrors).map(key => {
+        const field = BIZ_FIELDS.find(f => f.key === key);
+        return field?.label || key;
+      }).join(', ');
+      
       toast({
         title: "❌ Validation Error",
-        description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving.`,
+        description: errorCount === 1 
+          ? `Please fix the error in: ${errorFields}. The field is shown with a red border.`
+          : `Please fix ${errorCount} errors. Fields with errors are shown with red borders.`,
         variant: "destructive",
       });
       return false;
@@ -1074,12 +1081,29 @@ function EditAccDialog({
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length > 0) {
-      const errorCount = Object.keys(newErrors).length;
-      toast({
-        title: "❌ Validation Error",
-        description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving.`,
-        variant: "destructive",
-      });
+      // Check if the only error is Created By (when user made changes)
+      const onlyCreatedByError = Object.keys(newErrors).length === 1 && newErrors.createdBy;
+      
+      if (onlyCreatedByError) {
+        toast({
+          title: "❌ Created By Required",
+          description: "Please fill in the 'Created By' field (shown in red) to track who is making these changes.",
+          variant: "destructive",
+        });
+      } else if (newErrors.createdBy) {
+        toast({
+          title: "❌ Validation Errors",
+          description: `Please fix ${Object.keys(newErrors).length} errors including the 'Created By' field (shown in red).`,
+          variant: "destructive",
+        });
+      } else {
+        const errorCount = Object.keys(newErrors).length;
+        toast({
+          title: "❌ Validation Error",
+          description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving. Fields with errors are shown in red.`,
+          variant: "destructive",
+        });
+      }
       return false;
     }
     return true;
