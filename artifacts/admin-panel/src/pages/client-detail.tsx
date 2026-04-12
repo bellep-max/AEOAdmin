@@ -294,7 +294,7 @@ export default function ClientDetail() {
       </div>
 
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
-      <ClientAeoPlans clientId={clientId} clientBusinessName={client.businessName ?? ""} />
+      <ClientAeoPlans clientId={clientId} client={client} />
 
       {/* ═══ ORGANISATION DETAILS ═══ */}
       <div className="rounded-xl border bg-card shadow-sm overflow-hidden">

@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, Loader2, Key, ChevronDown, ChevronRight, Building2, Mail, CreditCard } from "lucide-react";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { getPlanMeta } from "@/lib/plan-meta";
 
@@ -43,6 +43,26 @@ interface AeoPlan {
   searchBoostTarget: number | null;
   monthlyAeoBudget: number | null;
   schemaImplementor: string | null;
+}
+
+interface ClientInfo {
+  id: number;
+  businessName: string;
+  status?: string | null;
+  planName?: string | null;
+  contactEmail?: string | null;
+  accountEmail?: string | null;
+  accountType?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
+interface KeywordRow {
+  id: number;
+  keywordText: string;
+  keywordType?: number | null;
+  isActive?: boolean | null;
+  isPrimary?: number | null;
 }
 
 type PlanFormData = Omit<AeoPlan, "id" | "clientId">;
@@ -241,11 +261,12 @@ function PlanForm({
 ══════════════════════════════════════════════════════════ */
 export default function ClientAeoPlans({
   clientId,
-  clientBusinessName,
+  client,
 }: {
   clientId: number;
-  clientBusinessName: string;
+  client: ClientInfo;
 }) {
+  const clientBusinessName = client.businessName ?? "";
   const { toast } = useToast();
   const [plans, setPlans]     = useState<AeoPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,6 +275,11 @@ export default function ClientAeoPlans({
   const [addOpen,  setAddOpen]  = useState(false);
   const [editPlan, setEditPlan] = useState<AeoPlan | null>(null);
   const [formData, setFormData] = useState<PlanFormData>({ ...EMPTY_FORM, businessName: clientBusinessName });
+
+  /* keywords per plan: planId → rows */
+  const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
+  const [kwLoading,    setKwLoading]    = useState<Set<number>>(new Set());
+  const [expanded,     setExpanded]     = useState<Set<number>>(new Set());
 
   const fetchPlans = useCallback(async () => {
     setLoading(true);
@@ -265,6 +291,32 @@ export default function ClientAeoPlans({
   }, [clientId]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+  async function fetchPlanKeywords(planId: number) {
+    setKwLoading((s) => new Set(s).add(planId));
+    try {
+      const r = await rawFetch(`/api/keywords?aeoPlanId=${planId}`, { credentials: "include" });
+      const rows: KeywordRow[] = await r.json();
+      setPlanKeywords((m) => new Map(m).set(planId, rows));
+    } catch {
+      setPlanKeywords((m) => new Map(m).set(planId, []));
+    } finally {
+      setKwLoading((s) => { const n = new Set(s); n.delete(planId); return n; });
+    }
+  }
+
+  function toggleExpand(planId: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(planId)) {
+        next.delete(planId);
+      } else {
+        next.add(planId);
+        if (!planKeywords.has(planId)) fetchPlanKeywords(planId);
+      }
+      return next;
+    });
+  }
 
   function openAdd() {
     setFormData({ ...EMPTY_FORM, businessName: clientBusinessName });
@@ -316,7 +368,7 @@ export default function ClientAeoPlans({
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({ ...formData, businessName: formData.businessName || clientBusinessName }),
         });
         toast({ title: "Plan added" });
         setAddOpen(false);
@@ -355,7 +407,7 @@ export default function ClientAeoPlans({
             className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
             onClick={openAdd}
           >
-            <Plus className="w-3 h-3" /> Add Plan
+            <Plus className="w-3 h-3" /> Add Campaign
           </Button>
         </CardHeader>
 
@@ -369,13 +421,14 @@ export default function ClientAeoPlans({
           ) : plans.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2 border-t border-border/30">
               <ClipboardList className="w-8 h-8 opacity-30" />
-              <p className="text-sm">No campaigns yet — click <strong>Add Plan</strong></p>
+              <p className="text-sm">No campaigns yet — click <strong>Add Campaign</strong></p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead className="w-6" />
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
@@ -387,42 +440,96 @@ export default function ClientAeoPlans({
                 </TableHeader>
                 <TableBody>
                   {plans.map((plan) => {
-                    const meta = getPlanMeta(plan.planType);
+                    const meta    = getPlanMeta(plan.planType);
+                    const isOpen  = expanded.has(plan.id);
+                    const kws     = planKeywords.get(plan.id) ?? [];
+                    const isKwLoading = kwLoading.has(plan.id);
                     return (
-                      <TableRow key={plan.id} className="hover:bg-muted/30">
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
-                            {plan.planType}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
-                            {meta.tier}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                              onClick={() => openEdit(plan)}
+                      <React.Fragment key={plan.id}>
+                        <TableRow className="hover:bg-muted/30">
+                          {/* Expand toggle */}
+                          <TableCell className="pr-0">
+                            <button
+                              onClick={() => toggleExpand(plan.id)}
+                              className="w-6 h-6 flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
+                              title={isOpen ? "Hide keywords" : "Show keywords"}
                             >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                              onClick={() => handleDelete(plan.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                              {isOpen
+                                ? <ChevronDown className="w-3.5 h-3.5" />
+                                : <ChevronRight className="w-3.5 h-3.5" />}
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                              {plan.planType}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                              {meta.tier}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                          <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                          <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                          <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => openEdit(plan)}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                                onClick={() => handleDelete(plan.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+
+                        {/* ── Inline keywords for this campaign ── */}
+                        {isOpen && (
+                          <TableRow className="bg-muted/10 hover:bg-muted/10">
+                            <TableCell colSpan={8} className="py-2 px-6">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Key className="w-3.5 h-3.5 text-primary" />
+                                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keywords linked to this campaign</span>
+                              </div>
+                              {isKwLoading ? (
+                                <div className="flex gap-2">
+                                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-6 w-28 rounded-full" />)}
+                                </div>
+                              ) : kws.length === 0 ? (
+                                <p className="text-xs text-muted-foreground/60 italic">No keywords assigned to this campaign yet. When adding a keyword, select this campaign.</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {kws.map((kw) => (
+                                    <span
+                                      key={kw.id}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                                        kw.isActive === false
+                                          ? "bg-muted/40 text-muted-foreground border-border/30"
+                                          : Number(kw.keywordType) === 4
+                                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                                            : "bg-primary/10 text-primary border-primary/20"
+                                      }`}
+                                    >
+                                      {kw.keywordText}
+                                      {kw.isActive === false && <span className="opacity-50">(inactive)</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </TableBody>
@@ -440,13 +547,71 @@ export default function ClientAeoPlans({
               <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
                 <ClipboardList className="w-4 h-4 text-primary" />
               </div>
-              <DialogTitle className="text-xl">{editPlan ? "Edit AEO Plan" : "Add AEO Plan"}</DialogTitle>
+              <DialogTitle className="text-xl">{editPlan ? "Edit Campaign" : "Add Campaign"}</DialogTitle>
             </div>
-            <DialogDescription className="sr-only">{editPlan ? "Edit AEO Plan" : "Add AEO Plan"}</DialogDescription>
+            <DialogDescription className="sr-only">{editPlan ? "Edit Campaign" : "Add Campaign"}</DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 flex flex-col items-center justify-start px-8 py-6">
             <div className="w-full max-w-3xl space-y-6">
+
+              {/* ── Client info summary (read-only) ── */}
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Client Information</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="flex items-start gap-2">
+                    <Building2 className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Business</p>
+                      <p className="text-sm font-semibold text-foreground">{clientBusinessName}</p>
+                    </div>
+                  </div>
+                  {(client.planName) && (
+                    <div className="flex items-start gap-2">
+                      <ClipboardList className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Subscription Plan</p>
+                        <p className="text-sm font-semibold text-foreground">{client.planName}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(client.contactEmail || client.accountEmail) && (
+                    <div className="flex items-start gap-2">
+                      <Mail className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Contact Email</p>
+                        <p className="text-sm font-semibold text-foreground break-all">{client.contactEmail ?? client.accountEmail}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(client.accountType) && (
+                    <div className="flex items-start gap-2">
+                      <CreditCard className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Account Type</p>
+                        <p className="text-sm font-semibold text-foreground">{client.accountType}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(client.city || client.state) && (
+                    <div className="flex items-start gap-2">
+                      <Building2 className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Location</p>
+                        <p className="text-sm font-semibold text-foreground">{[client.city, client.state].filter(Boolean).join(", ")}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <div className={`w-4 h-4 mt-0.5 rounded-full shrink-0 ${client.status === "active" ? "bg-emerald-400" : "bg-slate-400"}`} />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Status</p>
+                      <p className={`text-sm font-semibold capitalize ${client.status === "active" ? "text-emerald-500" : "text-muted-foreground"}`}>{client.status ?? "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <PlanForm values={formData} onChange={setFormData} clientBusinessName={clientBusinessName} />
 
               <div className="flex gap-4 pt-6">
@@ -466,7 +631,7 @@ export default function ClientAeoPlans({
                     boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
                   }}
                 >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save Plan"}
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save Campaign"}
                 </Button>
               </div>
             </div>

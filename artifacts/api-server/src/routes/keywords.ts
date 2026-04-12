@@ -11,9 +11,10 @@ const router = Router();
 ──────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   try {
-    const { clientId } = req.query as Record<string, string>;
+    const { clientId, aeoPlanId } = req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId) conditions.push(eq(keywordsTable.clientId, parseInt(clientId)));
+    if (clientId)  conditions.push(eq(keywordsTable.clientId,  parseInt(clientId)));
+    if (aeoPlanId) conditions.push(eq(keywordsTable.aeoPlanId, parseInt(aeoPlanId)));
     const keywords = await db
       .select()
       .from(keywordsTable)
@@ -39,6 +40,7 @@ router.post("/", async (req, res) => {
       .insert(keywordsTable)
       .values({
         clientId: Number(body.clientId),
+        aeoPlanId: body.aeoPlanId != null ? Number(body.aeoPlanId) : null,
         keywordText: body.keywordText.trim(),
         keywordType: body.keywordType ? Number(body.keywordType) : 3,
         isActive:   body.isActive !== false,
@@ -180,6 +182,7 @@ router.patch("/:id", async (req, res) => {
     if (body.keywordType      !== undefined) allowed.keywordType      = Number(body.keywordType);
     if (body.isActive         !== undefined) allowed.isActive         = Boolean(body.isActive);
     if (body.isPrimary        !== undefined) allowed.isPrimary        = Number(body.isPrimary);
+    if (body.aeoPlanId        !== undefined) allowed.aeoPlanId        = body.aeoPlanId === null ? null : Number(body.aeoPlanId);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
     if (body.linkActive       !== undefined) allowed.linkActive       = Boolean(body.linkActive);

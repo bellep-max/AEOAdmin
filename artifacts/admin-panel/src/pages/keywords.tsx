@@ -271,6 +271,7 @@ function KeywordDialog({
 }) {
   const blank: KwRecord = {
     clientId: "", keywordText: "", keywordType: "3", isPrimary: "0", isActive: true,
+    aeoPlanId: "",
     initialSearchCount30Days: 0, followupSearchCount30Days: 0,
     initialSearchCountLife: 0,  followupSearchCountLife: 0,
     initialRankReportCount: 0,  currentRankReportCount: 0,
@@ -278,10 +279,24 @@ function KeywordDialog({
     initialRankReportLink: "", currentRankReportLink: "",
   };
   const [vals, setVals] = useState<KwRecord>(blank);
+  const [campaigns, setCampaigns] = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   function set(k: string, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
   const isEdit = !!initial;
 
   useEffect(() => { if (open) setVals(initial ?? (defaultClientId ? { ...blank, clientId: String(defaultClientId) } : blank)); }, [open]);
+
+  /* fetch campaigns whenever the selected client changes */
+  const selectedClientId = vals.clientId as string;
+  useEffect(() => {
+    if (!selectedClientId || isEdit) { setCampaigns([]); return; }
+    setLoadingCampaigns(true);
+    rawFetch(`/api/clients/${selectedClientId}/aeo-plans`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setCampaigns(Array.isArray(data) ? data : []))
+      .catch(() => setCampaigns([]))
+      .finally(() => setLoadingCampaigns(false));
+  }, [selectedClientId, isEdit]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -305,7 +320,7 @@ function KeywordDialog({
             {!isEdit && (
               <div className="space-y-1.5">
                 <Label className="text-sm uppercase tracking-widest text-black font-bold">Business <span className="text-red-600">*</span></Label>
-                <Select value={vals.clientId as string} onValueChange={(v) => set("clientId", v)}>
+                <Select value={vals.clientId as string} onValueChange={(v) => { set("clientId", v); set("aeoPlanId", ""); }}>
                   <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white"><SelectValue placeholder="Select business…" /></SelectTrigger>
                   <SelectContent>
                     {clients?.map((c) => (
@@ -329,6 +344,33 @@ function KeywordDialog({
                 onChange={(e) => set("keywordText", e.target.value)} />
             </div>
           </div>
+
+          {/* Campaign assignment */}
+          {!isEdit && (vals.clientId as string) && (
+            <div className="space-y-1.5">
+              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Assign to Campaign <span className="text-slate-500 font-normal normal-case">(optional)</span></Label>
+              {loadingCampaigns ? (
+                <div className="h-11 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 animate-pulse" />
+              ) : campaigns.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">No campaigns found for this client</p>
+              ) : (
+                <Select value={(vals.aeoPlanId as string) || "__none__"} onValueChange={(v) => set("aeoPlanId", v === "__none__" ? "" : v)}>
+                  <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white">
+                    <SelectValue placeholder="Select campaign (optional)…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— No campaign —</SelectItem>
+                    {campaigns.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        <span className="font-semibold">{c.planType}</span>
+                        {c.serviceCategory && <span className="text-slate-500 ml-1">· {c.serviceCategory}</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
 
           {/* Keyword type */}
           <div className="space-y-1.5">
@@ -438,6 +480,7 @@ function KeywordDialog({
               disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
               onClick={() => onSave({
                 ...vals,
+                aeoPlanId: (vals.aeoPlanId as string) ? Number(vals.aeoPlanId) : null,
                 keywordType:               Number(vals.keywordType),
                 isPrimary:                 (vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true) ? 1 : 0,
                 initialSearchCount30Days:  Number(vals.initialSearchCount30Days)  || 0,
@@ -456,10 +499,6 @@ function KeywordDialog({
     </Dialog>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════
-   KEYWORD CARD — shows all fields + inline links
-═══════════════════════════════════════════════════════════ */
 function KeywordCard({
   kw, onEdit, onDelete, onToggleActive,
 }: {
@@ -760,7 +799,7 @@ export default function Keywords() {
         const r = await rawFetch(`/api/keywords`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...kwData, clientId: Number(kwData.clientId) }),
+          body: JSON.stringify({ ...kwData, clientId: Number(kwData.clientId), aeoPlanId: kwData.aeoPlanId != null && kwData.aeoPlanId !== "" ? Number(kwData.aeoPlanId) : null }),
         });
         if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
         const newKw = await r.json();
