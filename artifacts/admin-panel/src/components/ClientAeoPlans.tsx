@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
@@ -93,10 +94,12 @@ function PlanForm({
   values,
   onChange,
   clientBusinessName,
+  errors = {},
 }: {
   values: PlanFormData;
   onChange: (v: PlanFormData) => void;
   clientBusinessName: string;
+  errors?: Record<string, string>;
 }) {
   const allPlanNames = useAllPlanNames();
   const [customSchemaImplementor, setCustomSchemaImplementor] = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
@@ -142,24 +145,34 @@ function PlanForm({
 
         {/* Service Category */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service Category</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Service Category <span className="text-red-500">*</span>
+          </Label>
           <Input
-            className="h-10 bg-muted/30 border-border/60"
+            className={`h-10 bg-muted/30 border-border/60 ${errors.serviceCategory ? "border-red-500" : ""}`}
             placeholder="e.g. Airport Black Car Service"
             value={values.serviceCategory ?? ""}
             onChange={(e) => set("serviceCategory", e.target.value)}
           />
+          {errors.serviceCategory && (
+            <p className="text-xs text-red-500 mt-1">{errors.serviceCategory}</p>
+          )}
         </div>
 
         {/* Target City/Radius */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Target City / Radius</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Target City / Radius <span className="text-red-500">*</span>
+          </Label>
           <Input
-            className="h-10 bg-muted/30 border-border/60"
+            className={`h-10 bg-muted/30 border-border/60 ${errors.targetCityRadius ? "border-red-500" : ""}`}
             placeholder="e.g. Provo, UT — 30 mi radius"
             value={values.targetCityRadius ?? ""}
             onChange={(e) => set("targetCityRadius", e.target.value)}
           />
+          {errors.targetCityRadius && (
+            <p className="text-xs text-red-500 mt-1">{errors.targetCityRadius}</p>
+          )}
         </div>
       </div>
 
@@ -223,7 +236,9 @@ function PlanForm({
         */}
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Who Implements Schema</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Who Implements Schema <span className="text-red-500">*</span>
+          </Label>
           {!customSchemaImplementor ? (
             <Select
               value={SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") ? (values.schemaImplementor ?? "") : ""}
@@ -232,7 +247,7 @@ function PlanForm({
                 else set("schemaImplementor", v);
               }}
             >
-              <SelectTrigger className="h-10 bg-muted/30 border-border/60">
+              <SelectTrigger className={`h-10 bg-muted/30 border-border/60 ${errors.schemaImplementor ? "border-red-500" : ""}`}>
                 <SelectValue placeholder="Select implementor" />
               </SelectTrigger>
               <SelectContent>
@@ -245,7 +260,7 @@ function PlanForm({
           ) : (
             <div className="flex gap-2">
               <Input
-                className="h-10 bg-muted/30 border-border/60"
+                className={`h-10 bg-muted/30 border-border/60 ${errors.schemaImplementor ? "border-red-500" : ""}`}
                 placeholder="Describe who implements"
                 value={values.schemaImplementor ?? ""}
                 onChange={(e) => set("schemaImplementor", e.target.value)}
@@ -254,6 +269,9 @@ function PlanForm({
                 ← Presets
               </Button>
             </div>
+          )}
+          {errors.schemaImplementor && (
+            <p className="text-xs text-red-500 mt-1">{errors.schemaImplementor}</p>
           )}
         </div>
       </div>
@@ -280,6 +298,9 @@ export default function ClientAeoPlans({
   const [addOpen,  setAddOpen]  = useState(false);
   const [editPlan, setEditPlan] = useState<AeoPlan | null>(null);
   const [formData, setFormData] = useState<PlanFormData>({ ...EMPTY_FORM, businessName: clientBusinessName });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [confirmSave, setConfirmSave] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   /* keywords per plan: planId → rows */
   const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
@@ -325,6 +346,7 @@ export default function ClientAeoPlans({
 
   function openAdd() {
     setFormData({ ...EMPTY_FORM, businessName: clientBusinessName });
+    setFormErrors({});
     setAddOpen(true);
   }
 
@@ -352,11 +374,48 @@ export default function ClientAeoPlans({
     setEditPlan(plan);
   }
 
-  async function handleSave() {
-    if (!formData.planType.trim()) {
-      toast({ title: "Plan type is required", variant: "destructive" });
-      return;
+  function validateForm(): boolean {
+    const errors: Record<string, string> = {};
+
+    if (!formData.planType?.trim()) {
+      errors.planType = "Plan type is required";
     }
+    if (!formData.serviceCategory?.trim()) {
+      errors.serviceCategory = "Service category is required (e.g. Airport Black Car Service)";
+    } else if (formData.serviceCategory.length > 200) {
+      errors.serviceCategory = "Service category cannot exceed 200 characters";
+    }
+    if (!formData.targetCityRadius?.trim()) {
+      errors.targetCityRadius = "Target city / radius is required (e.g. Provo, UT — 30 mi radius)";
+    } else if (formData.targetCityRadius.length > 200) {
+      errors.targetCityRadius = "Target city / radius cannot exceed 200 characters";
+    }
+    if (!formData.schemaImplementor?.trim()) {
+      errors.schemaImplementor = "Please select who implements the schema";
+    }
+
+    setFormErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      const errorCount = Object.keys(errors).length;
+      toast({
+        title: "❌ Required Fields Missing",
+        description: `Please fill in ${errorCount} required ${errorCount === 1 ? 'field' : 'fields'} highlighted in red.`,
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  }
+
+  function handleSaveClick() {
+    if (validateForm()) {
+      setConfirmSave(true);
+    }
+  }
+
+  async function handleSave() {
+    setConfirmSave(false);
     setSaving(true);
     try {
       if (editPlan) {
@@ -366,7 +425,7 @@ export default function ClientAeoPlans({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
-        toast({ title: "Plan updated" });
+        toast({ title: "✅ Campaign updated!", description: `The campaign for ${formData.businessName || clientBusinessName} has been updated successfully.` });
         setEditPlan(null);
       } else {
         await rawFetch(`/api/clients/${clientId}/aeo-plans`, {
@@ -375,13 +434,28 @@ export default function ClientAeoPlans({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...formData, businessName: formData.businessName || clientBusinessName }),
         });
-        toast({ title: "Plan added" });
+        toast({ title: "✅ Campaign added!", description: `New campaign for ${formData.businessName || clientBusinessName} has been created successfully.` });
         setAddOpen(false);
       }
       fetchPlans();
     } catch {
-      toast({ title: "Save failed", variant: "destructive" });
+      toast({ title: "❌ Save failed", description: "Something went wrong. Please try again.", variant: "destructive" });
     } finally { setSaving(false); }
+  }
+
+  function handleCancelClick() {
+    const hasData =
+      (formData.serviceCategory?.trim()) ||
+      (formData.targetCityRadius?.trim()) ||
+      (formData.schemaImplementor?.trim()) ||
+      (formData.planType?.trim());
+    if (hasData) {
+      setConfirmCancel(true);
+    } else {
+      setAddOpen(false);
+      setEditPlan(null);
+      setFormErrors({});
+    }
   }
 
   async function handleDelete(id: number) {
@@ -544,8 +618,51 @@ export default function ClientAeoPlans({
         </CardContent>
       </Card>
 
+      {/* Save Confirmation Dialog */}
+      <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save Campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you ready to save this campaign for <strong>{formData.businessName || clientBusinessName}</strong>? This will {editPlan ? "update the existing" : "create a new"} campaign.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : `Yes, ${editPlan ? "Update" : "Save"} Campaign`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard Campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel? All the information you've entered will be lost and cannot be recovered.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { setConfirmCancel(false); setAddOpen(false); setEditPlan(null); setFormErrors({}); }}
+            >
+              Yes, Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Add / Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(o) => { if (!o) { setAddOpen(false); setEditPlan(null); } }}>
+      <Dialog open={isDialogOpen} onOpenChange={(o) => { if (!o) { handleCancelClick(); } }}>
         <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-card overflow-y-auto flex flex-col">
           <DialogHeader className="px-8 pt-8 pb-0">
             <div className="flex items-center gap-3 mb-1">
@@ -617,12 +734,12 @@ export default function ClientAeoPlans({
                 </div>
               </div>
 
-              <PlanForm values={formData} onChange={setFormData} clientBusinessName={clientBusinessName} />
+              <PlanForm values={formData} onChange={(v) => { setFormData(v); setFormErrors({}); }} clientBusinessName={clientBusinessName} errors={formErrors} />
 
               <div className="flex gap-4 pt-6">
                 <Button
                   variant="outline" size="lg" className="flex-1 border-border/50 h-12"
-                  onClick={() => { setAddOpen(false); setEditPlan(null); }}
+                  onClick={handleCancelClick}
                   disabled={saving}
                 >
                   Cancel
@@ -630,7 +747,7 @@ export default function ClientAeoPlans({
                 <Button
                   size="lg" className="flex-1 gap-2 h-12"
                   disabled={saving}
-                  onClick={handleSave}
+                  onClick={handleSaveClick}
                   style={{
                     background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
                     boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
