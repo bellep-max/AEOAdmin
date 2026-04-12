@@ -260,13 +260,12 @@ function LinkDialog({
    KEYWORD DIALOG — add / edit keyword
 ═══════════════════════════════════════════════════════════ */
 function KeywordDialog({
-  open, onOpenChange, title, saving, initial, clients, onSave, defaultClientId, lockClient,
+  open, onOpenChange, title, saving, initial, clients, onSave, defaultClientId,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void;
   title: string; saving: boolean;
   initial?: KwRecord;
   defaultClientId?: number;
-  lockClient?: boolean;
   clients?: { id: number; businessName: string; city?: string | null; searchAddress?: string | null; publishedAddress?: string | null }[];
   onSave: (data: KwRecord) => void;
 }) {
@@ -318,7 +317,7 @@ function KeywordDialog({
         <div className="flex-1 overflow-y-auto px-6 py-6 max-w-3xl w-full mx-auto space-y-5">
           {/* Business + Keyword */}
           <div className="grid grid-cols-2 gap-3">
-            {!isEdit && !lockClient && (
+            {!isEdit && (
               <div className="space-y-1.5">
                 <Label className="text-sm uppercase tracking-widest text-black font-bold">Business <span className="text-red-600">*</span></Label>
                 <Select value={vals.clientId as string} onValueChange={(v) => { set("clientId", v); set("aeoPlanId", ""); }}>
@@ -335,17 +334,6 @@ function KeywordDialog({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
-            {!isEdit && lockClient && (
-              <div className="space-y-1.5">
-                <Label className="text-sm uppercase tracking-widest text-black font-bold">Business</Label>
-                <div className="h-11 px-3 flex items-center rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 gap-2">
-                  <Building2 className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                  <span className="text-base font-bold text-black dark:text-white truncate">
-                    {clients?.find((c) => String(c.id) === String(vals.clientId))?.businessName ?? `Client #${vals.clientId}`}
-                  </span>
-                </div>
               </div>
             )}
             <div className={!isEdit ? "" : "col-span-2"}>
@@ -776,10 +764,10 @@ function KeywordCard({
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
 export default function Keywords() {
-  const [search,           setSearch]           = useState("");
-  const [typeFilter,       setTypeFilter]       = useState<string>("all");
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [bizTypeFilters,   setBizTypeFilters]   = useState<Map<number, string>>(new Map());
+  const [search,         setSearch]         = useState("");
+  const [typeFilter,     setTypeFilter]     = useState<string>("all");
+  const [businessFilter, setBusinessFilter] = useState<string>("all");
+  const [bizTypeFilters, setBizTypeFilters] = useState<Map<number, string>>(new Map());
   const [expanded,       setExpanded]       = useState<Set<number>>(new Set());
   const [addOpen,        setAddOpen]        = useState(false);
   const [editKw,         setEditKw]         = useState<KwRecord | null>(null);
@@ -791,10 +779,7 @@ export default function Keywords() {
     setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
   }
 
-  const { data: keywords, isLoading } = useGetKeywords(
-    { clientId: selectedClientId ?? undefined },
-    { query: { enabled: !!selectedClientId } },
-  );
+  const { data: keywords, isLoading } = useGetKeywords();
   const { data: clients }             = useGetClients();
   const updateKeyword                 = useUpdateKeyword();
   const { toast }                     = useToast();
@@ -865,9 +850,11 @@ export default function Keywords() {
   /* Filter */
   const searchLower  = search.toLowerCase();
   const filteredKws  = ((keywords ?? []) as unknown as KwRecord[]).filter((k: KwRecord) => {
-    const matchText = (k.keywordText as string).toLowerCase().includes(searchLower);
-    const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    return matchText && matchType;
+    const matchText   = (k.keywordText as string).toLowerCase().includes(searchLower);
+    const client      = clients?.find((c) => c.id === k.clientId);
+    const matchClient = client ? (client.businessName ?? "").toLowerCase().includes(searchLower) : true;
+    const matchType   = typeFilter === "all" || String(k.keywordType) === typeFilter;
+    return (matchText || matchClient) && matchType;
   });
 
   /* Group by client */
@@ -922,49 +909,6 @@ export default function Keywords() {
         </div>
       </div>
 
-      {/* Client selector */}
-      <div className="flex items-center gap-3">
-        <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
-        <Select
-          value={selectedClientId !== null ? String(selectedClientId) : ""}
-          onValueChange={(v) => {
-            setSelectedClientId(Number(v));
-            setSearch("");
-            setTypeFilter("all");
-            setExpanded(new Set([Number(v)]));
-          }}
-        >
-          <SelectTrigger className="w-80 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-12 text-base font-bold">
-            <SelectValue placeholder="Select a client to view their keywords…" />
-          </SelectTrigger>
-          <SelectContent>
-            {(clients ?? []).map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>
-                <div className="flex flex-col gap-0">
-                  <span className="font-bold text-base">{c.businessName}</span>
-                  {c.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selectedClientId !== null && (
-          <button
-            onClick={() => { setSelectedClientId(null); setSearch(""); setTypeFilter("all"); }}
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold"
-          >
-            <X className="w-4 h-4" /> Clear client
-          </button>
-        )}
-      </div>
-
-      {selectedClientId === null ? (
-        <div className="flex flex-col items-center justify-center h-64 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 gap-3">
-          <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600" />
-          <p className="text-lg font-semibold text-slate-400 dark:text-slate-500">Select a client above to view their keywords</p>
-        </div>
-      ) : (<>
-
       {/* Summary strip */}
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -987,7 +931,7 @@ export default function Keywords() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-3.5 h-5 w-5 text-slate-600 pointer-events-none" />
-          <Input type="search" placeholder="Search keyword…"
+          <Input type="search" placeholder="Search business or keyword…"
             className="pl-11 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-700 dark:placeholder:text-slate-500"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
@@ -1008,8 +952,30 @@ export default function Keywords() {
             </button>
           ))}
         </div>
-        {(search || typeFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
+        {/* Business filter */}
+        <Select value={businessFilter} onValueChange={setBusinessFilter}>
+          <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-base text-slate-900 dark:text-slate-100">
+            <SelectValue placeholder="All businesses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All businesses</SelectItem>
+            {Array.from(grouped.entries()).map(([cid]) => {
+              const c = clients?.find((x) => x.id === cid);
+              return (
+                <SelectItem key={cid} value={String(cid)}>
+                  <div className="flex flex-col gap-0">
+                    <span className="font-bold">{c?.businessName ?? `Business #${cid}`}</span>
+                    {c?.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
+                    {c?.publishedAddress && <span className="text-xs text-slate-500">GMB: {c.publishedAddress}</span>}
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+
+        {(search || typeFilter !== "all" || businessFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); setBusinessFilter("all"); }}
             className="flex items-center gap-1.5 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
@@ -1035,6 +1001,7 @@ export default function Keywords() {
       ) : (
         <div className="space-y-4">
           {Array.from(grouped.entries())
+            .filter(([cid]) => businessFilter === "all" || String(cid) === businessFilter)
             .map(([clientId, kws]) => {
             const client      = clients?.find((c) => c.id === clientId);
             const isOpen      = expanded.has(clientId);
@@ -1152,8 +1119,6 @@ export default function Keywords() {
         open={addOpen} onOpenChange={setAddOpen}
         title="Add Keyword" saving={saving}
         clients={clients}
-        defaultClientId={selectedClientId ?? undefined}
-        lockClient={selectedClientId !== null}
         onSave={(data) => saveKeyword(null, data)}
       />
 
@@ -1174,11 +1139,9 @@ export default function Keywords() {
           title="Add Keyword" saving={saving}
           clients={clients}
           defaultClientId={addForClient}
-          lockClient
           onSave={(data) => saveKeyword(null, data)}
         />
       )}
-      </>)}
     </div>
   );
 }
