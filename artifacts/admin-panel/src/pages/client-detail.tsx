@@ -1087,13 +1087,13 @@ function EditAccDialog({
       if (onlyCreatedByError) {
         toast({
           title: "❌ Created By Required",
-          description: "Please fill in the 'Created By' field (shown in red) to track who is making these changes.",
+          description: "Please fill in the 'Created By' field.",
           variant: "destructive",
         });
       } else if (newErrors.createdBy) {
         toast({
           title: "❌ Validation Errors",
-          description: `Please fix ${Object.keys(newErrors).length} errors including the 'Created By' field (shown in red).`,
+          description: `Please fix ${Object.keys(newErrors).length} errors including the 'Created By' field.`,
           variant: "destructive",
         });
       } else {
@@ -1183,7 +1183,13 @@ function EditAccDialog({
                 </Select>
               ) : (
                 <Input
-                  className={`bg-muted/30 border-border/60 h-11 text-sm ${errors[f.key] ? "border-red-500" : ""}`}
+                  className={`bg-muted/30 border-border/60 h-11 text-sm ${
+                    errors[f.key] 
+                      ? "border-red-500" 
+                      : f.key === "createdBy" && hasChanges && (!vals.createdBy || !vals.createdBy.trim())
+                      ? "border-red-500"
+                      : ""
+                  }`}
                   placeholder={f.placeholder ?? ""}
                   maxLength={f.maxLength}
                   type={f.type}
