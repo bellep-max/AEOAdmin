@@ -19,6 +19,7 @@ import {
   Clock, CheckCircle2, AlertCircle, Search, BarChart3,
   ExternalLink, PencilLine, Plus, Loader2, Link2,
   Download, FileDown, ChevronDown, Building2, Camera, CalendarDays,
+  Archive, Layers,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import jsPDF from "jspdf";
@@ -239,13 +240,18 @@ function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: st
   const chgStr = (v: number | null | undefined) => v == null ? "" : v > 0 ? `+${v}` : String(v);
   const headers = [
     "Business", "Keyword",
-    "Initial Rank", "Initial Date",
-    "Current Rank", "Current Date",
-    "Position Change", "Status",
-    "ChatGPT Rank", "ChatGPT Δ",
-    "Gemini Rank",  "Gemini Δ",
-    "Perplexity Rank", "Perplexity Δ",
-    "Best Platform", "Maps URL",
+    // ── Overall ──────────────────────────────────
+    "Overall Initial Rank", "Overall Initial Date",
+    "Overall Current Rank", "Overall Current Date",
+    "Overall Change", "Status",
+    // ── ChatGPT ──────────────────────────────────
+    "ChatGPT Initial Rank", "ChatGPT Current Rank", "ChatGPT Change",
+    // ── Gemini ───────────────────────────────────
+    "Gemini Initial Rank",  "Gemini Current Rank",  "Gemini Change",
+    // ── Perplexity ───────────────────────────────
+    "Perplexity Initial Rank", "Perplexity Current Rank", "Perplexity Change",
+    // ── Summary ──────────────────────────────────
+    "Best Platform", "Maps Presence", "Maps URL",
   ];
   const lines = [
     headers.join(","),
@@ -260,16 +266,21 @@ function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: st
       const best = bestPos < 9999 ? (positions.find(([, p]) => p === bestPos)?.[0] ?? "") : "";
       return [
         esc(r.clientName), esc(r.keywordText),
+        // Overall
         esc(posStr(r.initialPosition)),
         esc(r.initialDate ? format(new Date(r.initialDate), "yyyy-MM-dd") : ""),
         esc(posStr(r.currentPosition)),
         esc(r.currentDate ? format(new Date(r.currentDate), "yyyy-MM-dd") : ""),
         esc(chgStr(r.positionChange)),
         esc(r.status.charAt(0).toUpperCase() + r.status.slice(1)),
-        esc(posStr(plat.chatgpt?.currentPosition)),    esc(chgStr(plat.chatgpt?.positionChange)),
-        esc(posStr(plat.gemini?.currentPosition)),     esc(chgStr(plat.gemini?.positionChange)),
-        esc(posStr(plat.perplexity?.currentPosition)), esc(chgStr(plat.perplexity?.positionChange)),
-        esc(best), esc(r.mapsUrl ?? ""),
+        // ChatGPT
+        esc(posStr(plat.chatgpt?.initialPosition)), esc(posStr(plat.chatgpt?.currentPosition)), esc(chgStr(plat.chatgpt?.positionChange)),
+        // Gemini
+        esc(posStr(plat.gemini?.initialPosition)),  esc(posStr(plat.gemini?.currentPosition)),  esc(chgStr(plat.gemini?.positionChange)),
+        // Perplexity
+        esc(posStr(plat.perplexity?.initialPosition)), esc(posStr(plat.perplexity?.currentPosition)), esc(chgStr(plat.perplexity?.positionChange)),
+        // Summary
+        esc(best), esc(r.mapsPresence ?? ""), esc(r.mapsUrl ?? ""),
       ].join(",");
     }),
   ];
@@ -281,23 +292,14 @@ function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: st
   URL.revokeObjectURL(a.href);
 }
 
-/* ── Per-business platform PDF export ──────────────────── */
+/* ── Per-business full report PDF (2-table layout) ─────── */
 function exportBizPlatformPDF(bizName: string, bRows: CompRow[], platByKw: PlatByKw, filename: string) {
   const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  doc.setFillColor(17, 24, 39);
-  doc.rect(0, 0, pageW, 22, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(13);
-  doc.setFont("helvetica", "bold");
-  doc.text("Signal AEO — Platform Keyword Report", 10, 10);
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(180, 190, 210);
-  doc.text(`${bizName} · ${bRows.length} keywords`, 10, 16);
-  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+  const posStr = (v: number | null | undefined) => v != null ? `#${v}` : "—";
+  const chgStr = (v: number | null | undefined) => v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "=" : String(v);
 
   const PLAT_COLORS: Record<string, [number, number, number]> = {
     ChatGPT:    [52, 211, 153],
@@ -305,19 +307,110 @@ function exportBizPlatformPDF(bizName: string, bRows: CompRow[], platByKw: PlatB
     Perplexity: [167, 139, 250],
   };
 
-  const posStr = (v: number | null | undefined) => v != null ? `#${v}` : "—";
-  const chgStr = (v: number | null | undefined) => v == null ? "—" : v > 0 ? `+${v}` : v === 0 ? "=" : String(v);
+  const perf   = bRows.filter((r) => r.status === "performing").length;
+  const under  = bRows.filter((r) => r.status === "underperforming").length;
+  const steady = bRows.filter((r) => r.status === "steady").length;
+  const pend   = bRows.filter((r) => r.status === "pending").length;
+
+  /* ── Cover header ── */
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 26, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Full Rankings Report", 10, 10);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text(`${bizName}  ·  ${bRows.length} keywords`, 10, 17);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 17, { align: "right" });
+
+  /* ── Business stat strip ── */
+  doc.setFontSize(7.5);
+  doc.setTextColor(180, 190, 210);
+  doc.text(
+    `Performing: ${perf}   Steady: ${steady}   Underperforming: ${under}   Pending: ${pend}`,
+    10, 23,
+  );
+
+  /* ═══════════════════════════════════════════
+     TABLE 1 — Overall Performance
+     Keyword | Initial Rank | Initial Date | Current Rank | Current Date | Change | Status | Maps
+  ═══════════════════════════════════════════ */
+  let y = 32;
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 130, 200);
+  doc.text("Section 1 — Overall Performance (Initial vs Current)", 10, y);
+  y += 5;
 
   autoTable(doc, {
-    startY: 28,
+    startY: y,
+    margin: { left: 8, right: 8 },
+    head: [["Keyword", "Initial Rank", "Initial Date", "Current Rank", "Current Date", "Change", "Status", "Maps"]],
+    body: bRows.map((r) => [
+      r.keywordText,
+      posStr(r.initialPosition),
+      r.initialDate ? format(new Date(r.initialDate), "MMM d, yyyy") : "—",
+      posStr(r.currentPosition),
+      r.currentDate ? format(new Date(r.currentDate), "MMM d, yyyy") : "—",
+      chgStr(r.positionChange),
+      r.status.charAt(0).toUpperCase() + r.status.slice(1),
+      r.mapsUrl ? "Yes (link)" : r.mapsPresence === "yes" ? "Listed" : "—",
+    ]),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+    bodyStyles: { fontSize: 7, textColor: [220, 225, 235] },
+    alternateRowStyles: { fillColor: [22, 30, 50] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 48 },
+      1: { cellWidth: 20, halign: "center" },
+      2: { cellWidth: 26, halign: "center" },
+      3: { cellWidth: 20, halign: "center" },
+      4: { cellWidth: 26, halign: "center" },
+      5: { cellWidth: 16, halign: "center" },
+      6: { cellWidth: 28, halign: "center" },
+      7: { cellWidth: "auto", halign: "center" },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body") return;
+      if (d.column.index === 5) {
+        const v = String(d.cell.raw ?? "");
+        if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
+        else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
+      }
+      if (d.column.index === 6) {
+        const v = String(d.cell.raw ?? "").toLowerCase();
+        if (v === "performing")      d.cell.styles.textColor = [52, 211, 153];
+        else if (v === "underperforming") d.cell.styles.textColor = [248, 113, 113];
+        else if (v === "steady")     d.cell.styles.textColor = [251, 191, 36];
+      }
+    },
+  });
+
+  /* ═══════════════════════════════════════════
+     TABLE 2 — Platform Rankings (Initial → Current per platform)
+     Keyword | ChatGPT Init | GPT Now | GPT Δ | Gemini Init | Gemini Now | Gemini Δ | Perp Init | Perp Now | Perp Δ | Best
+  ═══════════════════════════════════════════ */
+  const afterT1 = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  y = afterT1 + 10;
+  if (y > pageH - 40) { doc.addPage(); y = 15; }
+
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 130, 200);
+  doc.text("Section 2 — Platform Rankings: ChatGPT · Gemini · Perplexity (Initial → Current)", 10, y);
+  y += 5;
+
+  autoTable(doc, {
+    startY: y,
     margin: { left: 8, right: 8 },
     head: [[
       "Keyword",
-      "Init Rank", "Cur Rank", "Δ", "Status",
-      "ChatGPT", "ChatGPT Δ",
-      "Gemini",  "Gemini Δ",
-      "Perplexity", "Perplexity Δ",
-      "Best",
+      "GPT Init", "GPT Now", "GPT Δ",
+      "Gemini Init", "Gemini Now", "Gemini Δ",
+      "Perp Init", "Perp Now", "Perp Δ",
+      "Best Platform",
     ]],
     body: bRows.map((r) => {
       const plat = platByKw.get(r.keywordId) ?? {};
@@ -330,59 +423,51 @@ function exportBizPlatformPDF(bizName: string, bRows: CompRow[], platByKw: PlatB
       const best = bestPos < 9999 ? (positions.find(([, p]) => p === bestPos)?.[0] ?? "—") : "—";
       return [
         r.keywordText,
-        posStr(r.initialPosition),
-        posStr(r.currentPosition),
-        chgStr(r.positionChange),
-        r.status.charAt(0).toUpperCase() + r.status.slice(1),
-        posStr(plat.chatgpt?.currentPosition),    chgStr(plat.chatgpt?.positionChange),
-        posStr(plat.gemini?.currentPosition),     chgStr(plat.gemini?.positionChange),
-        posStr(plat.perplexity?.currentPosition), chgStr(plat.perplexity?.positionChange),
+        posStr(plat.chatgpt?.initialPosition),    posStr(plat.chatgpt?.currentPosition),    chgStr(plat.chatgpt?.positionChange),
+        posStr(plat.gemini?.initialPosition),     posStr(plat.gemini?.currentPosition),     chgStr(plat.gemini?.positionChange),
+        posStr(plat.perplexity?.initialPosition), posStr(plat.perplexity?.currentPosition), chgStr(plat.perplexity?.positionChange),
         best,
       ];
     }),
-    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7, fontStyle: "bold" },
     bodyStyles: { fontSize: 7, textColor: [220, 225, 235] },
     alternateRowStyles: { fillColor: [22, 30, 50] },
     styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
     columnStyles: {
-      0:  { cellWidth: 38 },
+      0:  { cellWidth: 42 },
       1:  { cellWidth: 16, halign: "center" },
       2:  { cellWidth: 16, halign: "center" },
       3:  { cellWidth: 12, halign: "center" },
-      4:  { cellWidth: 22, halign: "center" },
+      4:  { cellWidth: 18, halign: "center" },
       5:  { cellWidth: 18, halign: "center" },
-      6:  { cellWidth: 14, halign: "center" },
-      7:  { cellWidth: 18, halign: "center" },
-      8:  { cellWidth: 14, halign: "center" },
-      9:  { cellWidth: 20, halign: "center" },
-      10: { cellWidth: 14, halign: "center" },
-      11: { cellWidth: "auto", halign: "center" },
+      6:  { cellWidth: 12, halign: "center" },
+      7:  { cellWidth: 16, halign: "center" },
+      8:  { cellWidth: 16, halign: "center" },
+      9:  { cellWidth: 12, halign: "center" },
+      10: { cellWidth: "auto", halign: "center" },
     },
     didParseCell: (d) => {
       if (d.section !== "body") return;
-      /* Change columns — green/red */
-      if ([3, 6, 8, 10].includes(d.column.index)) {
+      /* Change columns for each platform */
+      if ([3, 6, 9].includes(d.column.index)) {
         const v = String(d.cell.raw ?? "");
         if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
         else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
       }
-      /* Status column */
-      if (d.column.index === 4) {
-        const v = String(d.cell.raw ?? "").toLowerCase();
-        if (v === "performing")      d.cell.styles.textColor = [52, 211, 153];
-        else if (v === "underperforming") d.cell.styles.textColor = [248, 113, 113];
-        else if (v === "steady")     d.cell.styles.textColor = [251, 191, 36];
-      }
       /* Best platform column */
-      if (d.column.index === 11) {
+      if (d.column.index === 10) {
         const v = String(d.cell.raw ?? "");
         const col = PLAT_COLORS[v];
         if (col) d.cell.styles.textColor = col;
       }
+      /* GPT Init/Now columns — brand tint */
+      if ([1, 2].includes(d.column.index)) d.cell.styles.textColor = [52, 211, 153];
+      if ([4, 5].includes(d.column.index)) d.cell.styles.textColor = [96, 165, 250];
+      if ([7, 8].includes(d.column.index)) d.cell.styles.textColor = [167, 139, 250];
     },
   });
 
-  /* Footer */
+  /* Footer on every page */
   const pageCount = (doc as jsPDF & { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
@@ -593,6 +678,247 @@ function exportPlatformPDF(data: PlatformSummary[], crossRows: CrossRow[], filen
     doc.text(`Page ${i} / ${pageCount}`, pageW - 10, pageH - 5, { align: "right" });
   }
 
+  doc.save(filename);
+}
+
+/* ── Platform-specific CSV export ───────────────────────── */
+function exportPlatformOnlyCSV(platformLabel: string, rows: PlatformKw[], filename: string) {
+  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = ["Keyword", "Business", "Initial Rank", "Current Rank", "Change", "Status"];
+  const lines = [
+    headers.join(","),
+    ...rows
+      .slice()
+      .sort((a, b) => (a.currentPosition ?? 999) - (b.currentPosition ?? 999))
+      .map((r) => {
+        const c = r.positionChange;
+        const status = c == null ? "Pending" : c > 0 ? "Performing" : c < 0 ? "Underperforming" : "Steady";
+        return [
+          esc(r.keywordText),
+          esc(r.clientName),
+          esc(r.initialPosition != null ? `#${r.initialPosition}` : ""),
+          esc(r.currentPosition != null ? `#${r.currentPosition}` : ""),
+          esc(c != null ? (c > 0 ? `+${c}` : String(c)) : ""),
+          esc(status),
+        ].join(",");
+      }),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── Platform-specific PDF export ───────────────────────── */
+function exportPlatformOnlyPDF(
+  platformLabel: string,
+  summary: PlatformSummary,
+  rows: PlatformKw[],
+  period: string,
+  filename: string,
+) {
+  const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  const BRAND: Record<string, [number, number, number]> = {
+    ChatGPT:    [52, 211, 153],
+    Gemini:     [96, 165, 250],
+    Perplexity: [167, 139, 250],
+  };
+  const brand = BRAND[platformLabel] ?? [100, 130, 200];
+
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Signal AEO — ${platformLabel} Rankings`, 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text(`${period} · ${rows.length} keywords tracked`, 10, 16);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+
+  let y = 28;
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(brand[0], brand[1], brand[2]);
+  doc.text(`${platformLabel} — ${period}`, 10, y);
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(160, 170, 190);
+  doc.text(
+    `With data: ${summary.withData}/${summary.totalKeywords} · Avg Rank: ${
+      summary.avgCurrentRank != null ? `#${summary.avgCurrentRank}` : "N/A"
+    } · Top 10: ${summary.topTenCount} · Improving: ${summary.improving} · Steady: ${summary.steady} · Declining: ${summary.declining}`,
+    10, y,
+  );
+  y += 7;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 10, right: 10 },
+    head: [["Keyword", "Business", "Initial Rank", "Current Rank", "Change", "Status"]],
+    body: rows
+      .slice()
+      .sort((a, b) => (a.currentPosition ?? 999) - (b.currentPosition ?? 999))
+      .map((r) => {
+        const c = r.positionChange;
+        const status = c == null ? "Pending" : c > 0 ? "Performing" : c < 0 ? "Underperforming" : "Steady";
+        return [
+          r.keywordText,
+          r.clientName,
+          r.initialPosition != null ? `#${r.initialPosition}` : "—",
+          r.currentPosition != null ? `#${r.currentPosition}` : "—",
+          c != null ? (c > 0 ? `+${c}` : c === 0 ? "=" : String(c)) : "—",
+          status,
+        ];
+      }),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 7.5, fontStyle: "bold" },
+    bodyStyles:  { fontSize: 7, textColor: [220, 225, 235] },
+    alternateRowStyles: { fillColor: [22, 30, 50] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 50 },
+      1: { cellWidth: 40 },
+      2: { cellWidth: 22, halign: "center" },
+      3: { cellWidth: 22, halign: "center" },
+      4: { cellWidth: 16, halign: "center" },
+      5: { cellWidth: "auto", halign: "center" },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body") return;
+      if (d.column.index === 4) {
+        const v = String(d.cell.raw ?? "");
+        if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
+        else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
+      }
+      if (d.column.index === 5) {
+        const v = String(d.cell.raw ?? "").toLowerCase();
+        if (v === "performing")      d.cell.styles.textColor = [52, 211, 153];
+        else if (v === "underperforming") d.cell.styles.textColor = [248, 113, 113];
+        else if (v === "steady")     d.cell.styles.textColor = [251, 191, 36];
+      }
+    },
+  });
+
+  const pageCount = (doc as jsPDF & { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 110, 130);
+    doc.text("Signal AEO Platform — Confidential", 10, pageH - 5);
+    doc.text(`Page ${i} / ${pageCount}`, pageW - 10, pageH - 5, { align: "right" });
+  }
+  doc.save(filename);
+}
+
+/* ── Per-keyword cross-platform CSV ─────────────────────── */
+function exportKeywordCSV(row: CrossRow, filename: string) {
+  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = ["Keyword", "Business", "Platform", "Initial Rank", "Current Rank", "Change"];
+  const platforms: Array<["chatgpt" | "gemini" | "perplexity", string]> = [
+    ["chatgpt", "ChatGPT"],
+    ["gemini", "Gemini"],
+    ["perplexity", "Perplexity"],
+  ];
+  const lines = [
+    headers.join(","),
+    ...platforms.map(([key, label]) => {
+      const kw = row[key];
+      const c  = kw?.positionChange ?? null;
+      return [
+        esc(row.keywordText),
+        esc(row.clientName),
+        esc(label),
+        esc(kw?.initialPosition != null ? `#${kw.initialPosition}` : ""),
+        esc(kw?.currentPosition != null ? `#${kw.currentPosition}` : ""),
+        esc(c != null ? (c > 0 ? `+${c}` : String(c)) : ""),
+      ].join(",");
+    }),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── Per-keyword cross-platform PDF ─────────────────────── */
+function exportKeywordPDF(row: CrossRow, filename: string) {
+  const doc   = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Signal AEO — Keyword Rankings", 10, 10);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 190, 210);
+  doc.text(`${row.keywordText} · ${row.clientName}`, 10, 16);
+  doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
+
+  const PLAT_COLORS: Record<string, [number, number, number]> = {
+    ChatGPT:    [52, 211, 153],
+    Gemini:     [96, 165, 250],
+    Perplexity: [167, 139, 250],
+  };
+  const platforms: Array<["chatgpt" | "gemini" | "perplexity", string]> = [
+    ["chatgpt", "ChatGPT"],
+    ["gemini", "Gemini"],
+    ["perplexity", "Perplexity"],
+  ];
+
+  autoTable(doc, {
+    startY: 30,
+    margin: { left: 15, right: 15 },
+    head: [["Platform", "Initial Rank", "Current Rank", "Change"]],
+    body: platforms.map(([key, label]) => {
+      const kw = row[key];
+      const c  = kw?.positionChange ?? null;
+      return [
+        label,
+        kw?.initialPosition != null ? `#${kw.initialPosition}` : "—",
+        kw?.currentPosition != null ? `#${kw.currentPosition}` : "—",
+        c != null ? (c > 0 ? `+${c}` : c === 0 ? "=" : String(c)) : "—",
+      ];
+    }),
+    headStyles: { fillColor: [25, 35, 60], textColor: [180, 190, 220], fontSize: 10, fontStyle: "bold" },
+    bodyStyles:  { fontSize: 11, textColor: [220, 225, 235] },
+    styles: { fillColor: [17, 24, 42], lineColor: [40, 55, 90], lineWidth: 0.2 },
+    columnStyles: {
+      0: { cellWidth: 45, fontStyle: "bold" },
+      1: { halign: "center" },
+      2: { halign: "center" },
+      3: { halign: "center" },
+    },
+    didParseCell: (d) => {
+      if (d.section !== "body") return;
+      if (d.column.index === 0) {
+        const col = PLAT_COLORS[String(d.cell.raw ?? "")];
+        if (col) d.cell.styles.textColor = col;
+      }
+      if (d.column.index === 3) {
+        const v = String(d.cell.raw ?? "");
+        if (v.startsWith("+")) d.cell.styles.textColor = [52, 211, 153];
+        else if (v.startsWith("-")) d.cell.styles.textColor = [248, 113, 113];
+      }
+    },
+  });
+
+  doc.setFontSize(6.5);
+  doc.setTextColor(100, 110, 130);
+  doc.text("Signal AEO Platform — Confidential", 10, pageH - 5);
+  doc.text("Page 1 / 1", pageW - 10, pageH - 5, { align: "right" });
   doc.save(filename);
 }
 
@@ -891,6 +1217,11 @@ export default function Rankings() {
   }>({ open: false, reportId: null, clientName: "", keyword: "", url: "" });
   const [savingMaps, setSavingMaps] = useState(false);
 
+  /* ── Download center state ── */
+  const [dlOpen,   setDlOpen]   = useState(false);
+  const [dlBizId,  setDlBizId]  = useState("");
+  const [dlKwText, setDlKwText] = useState("");
+
   /* Period cutoff — filter to rows whose currentDate falls within the selected window */
   const periodCutoff = new Date(Date.now() - periodDays[period] * 24 * 60 * 60 * 1000);
 
@@ -931,6 +1262,38 @@ export default function Rankings() {
   }
   const bizList = [...byBusiness.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
 
+  /* All-time business map (no period filter) — used for comprehensive downloads */
+  const byBusinessAll = new Map<number, { name: string; rows: CompRow[] }>();
+  for (const r of enriched) {
+    if (!byBusinessAll.has(r.clientId)) byBusinessAll.set(r.clientId, { name: r.clientName, rows: [] });
+    byBusinessAll.get(r.clientId)!.rows.push(r);
+  }
+  const bizListAll = [...byBusinessAll.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+  /* Cross-platform keyword rows — hoisted so Download Center + Platform tab can share it */
+  const crossRows: CrossRow[] = (() => {
+    const kwMap = new Map<number, CrossRow>();
+    for (const p of platformData ?? []) {
+      for (const kw of p.keywords) {
+        if (!kwMap.has(kw.keywordId)) {
+          kwMap.set(kw.keywordId, {
+            keywordText: kw.keywordText,
+            clientName:  kw.clientName,
+            chatgpt:     undefined,
+            gemini:      undefined,
+            perplexity:  undefined,
+          });
+        }
+        kwMap.get(kw.keywordId)![p.platform] = kw;
+      }
+    }
+    return [...kwMap.values()].sort((a, b) => {
+      const bestA = Math.min(a.chatgpt?.currentPosition ?? 99, a.gemini?.currentPosition ?? 99, a.perplexity?.currentPosition ?? 99);
+      const bestB = Math.min(b.chatgpt?.currentPosition ?? 99, b.gemini?.currentPosition ?? 99, b.perplexity?.currentPosition ?? 99);
+      return bestA - bestB;
+    });
+  })();
+
   /* Platform lookup by keyword id */
   const platByKw: PlatByKw = new Map();
   for (const p of platformData ?? []) {
@@ -955,14 +1318,25 @@ export default function Rankings() {
     );
   }
   function exportBizCSV(clientId: number, rows: CompRow[]) {
-    const biz  = byBusiness.get(clientId)!;
+    const biz  = byBusiness.get(clientId) ?? byBusinessAll.get(clientId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
-    exportBizPlatformCSV(rows, platByKw, `${slug}-platform-rankings-${dateStamp}.csv`);
+    exportBizPlatformCSV(rows, platByKw, `${slug}-${periodSlug}-rankings-${dateStamp}.csv`);
   }
   function exportBizPDF(clientId: number, rows: CompRow[]) {
-    const biz  = byBusiness.get(clientId)!;
+    const biz  = byBusiness.get(clientId) ?? byBusinessAll.get(clientId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
-    exportBizPlatformPDF(biz.name, rows, platByKw, `${slug}-platform-rankings-${dateStamp}.pdf`);
+    exportBizPlatformPDF(biz.name, rows, platByKw, `${slug}-${periodSlug}-rankings-${dateStamp}.pdf`);
+  }
+  /* All-time (ignores period filter) — exports every keyword ever recorded */
+  function exportBizAllCSV(clientId: number) {
+    const biz  = byBusinessAll.get(clientId)!;
+    const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
+    exportBizPlatformCSV(biz.rows, platByKw, `${slug}-ALL-keywords-${dateStamp}.csv`);
+  }
+  function exportBizAllPDF(clientId: number) {
+    const biz  = byBusinessAll.get(clientId)!;
+    const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
+    exportBizPlatformPDF(biz.name, biz.rows, platByKw, `${slug}-ALL-keywords-${dateStamp}.pdf`);
   }
 
   function openMapsEdit(row: CompRow) {
@@ -1013,13 +1387,18 @@ export default function Rankings() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm"
             className="gap-1.5 border-border/50 text-muted-foreground hover:text-foreground"
-            onClick={exportAllCSV} disabled={filtered.length === 0}>
+            onClick={exportAllCSV} disabled={periodFiltered.length === 0}>
             <Download className="w-3.5 h-3.5" /> CSV
           </Button>
           <Button variant="outline" size="sm"
             className="gap-1.5 border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 hover:border-rose-500/50"
-            onClick={exportAllPDF} disabled={filtered.length === 0}>
-            <FileDown className="w-3.5 h-3.5" /> PDF Report
+            onClick={exportAllPDF} disabled={periodFiltered.length === 0}>
+            <FileDown className="w-3.5 h-3.5" /> PDF
+          </Button>
+          <Button variant="outline" size="sm"
+            className="gap-1.5 border-primary/40 text-primary hover:bg-primary/10 hover:border-primary/60 font-semibold"
+            onClick={() => setDlOpen(true)}>
+            <Archive className="w-3.5 h-3.5" /> Download Center
           </Button>
         </div>
       </div>
@@ -1246,29 +1625,6 @@ export default function Rankings() {
               perplexity: { label: "Perplexity", color: "text-violet-400",  bg: "bg-violet-500/10",  border: "border-violet-500/30",  dot: "bg-violet-400"  },
             };
 
-            /* ── Build per-keyword cross-platform table ── */
-            const kwMap = new Map<number, {
-              keywordText: string; clientName: string;
-              chatgpt: PlatformKw | undefined;
-              gemini:  PlatformKw | undefined;
-              perplexity: PlatformKw | undefined;
-            }>();
-            for (const p of platformData) {
-              for (const kw of p.keywords) {
-                if (!kwMap.has(kw.keywordId)) {
-                  kwMap.set(kw.keywordId, { keywordText: kw.keywordText, clientName: kw.clientName, chatgpt: undefined, gemini: undefined, perplexity: undefined });
-                }
-                kwMap.get(kw.keywordId)![p.platform] = kw;
-              }
-            }
-            const crossRows = [...kwMap.values()].sort((a, b) => {
-              const bestA = Math.min(a.chatgpt?.currentPosition ?? 99, a.gemini?.currentPosition ?? 99, a.perplexity?.currentPosition ?? 99);
-              const bestB = Math.min(b.chatgpt?.currentPosition ?? 99, b.gemini?.currentPosition ?? 99, b.perplexity?.currentPosition ?? 99);
-              return bestA - bestB;
-            });
-
-            const dateStamp = format(new Date(), "yyyy-MM-dd");
-
             return (
               <>
                 {/* ── Export bar ── */}
@@ -1359,6 +1715,24 @@ export default function Rankings() {
                             </div>
                           </div>
                         )}
+
+                        {/* Per-platform download buttons */}
+                        <div className="flex items-center gap-1.5 pt-2 border-t border-border/20">
+                          <button
+                            onClick={() => exportPlatformOnlyCSV(m.label, p.keywords, `signal-aeo-${p.platform}-${periodSlug}-${dateStamp}.csv`)}
+                            className="flex-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
+                            title={`Download ${m.label} CSV`}
+                          >
+                            <Download className="w-3 h-3" />CSV
+                          </button>
+                          <button
+                            onClick={() => exportPlatformOnlyPDF(m.label, p, p.keywords, periodLabel[period], `signal-aeo-${p.platform}-${periodSlug}-${dateStamp}.pdf`)}
+                            className="flex-1 flex items-center justify-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
+                            title={`Download ${m.label} PDF`}
+                          >
+                            <FileDown className="w-3 h-3" />PDF
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1382,6 +1756,7 @@ export default function Rankings() {
                         <TableHead className="text-sm font-bold text-center text-blue-400">Gemini</TableHead>
                         <TableHead className="text-sm font-bold text-center text-violet-400">Perplexity</TableHead>
                         <TableHead className="text-sm font-bold text-center">Best</TableHead>
+                        <TableHead className="text-xs w-20 text-center text-muted-foreground">Export</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1432,6 +1807,24 @@ export default function Rankings() {
                                   {bestPlatform}
                                 </span>
                               ) : <span className="text-muted-foreground/40 text-xs">—</span>}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-0.5">
+                                <button
+                                  onClick={() => exportKeywordCSV(row, `${row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 25)}-cross-${dateStamp}.csv`)}
+                                  className="p-1.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
+                                  title="Download keyword CSV"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => exportKeywordPDF(row, `${row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 25)}-cross-${dateStamp}.pdf`)}
+                                  className="p-1.5 rounded text-rose-400/40 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                  title="Download keyword PDF"
+                                >
+                                  <FileDown className="w-3 h-3" />
+                                </button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1526,20 +1919,48 @@ export default function Rankings() {
 
                       {/* Per-business export buttons */}
                       <div className="flex items-center gap-1 shrink-0 pl-2">
-                        <button
-                          onClick={() => exportBizCSV(clientId, bRows)}
-                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
-                          title={`Download ${grp.name} CSV (${periodLabel[period]})`}
-                        >
-                          <Download className="w-3 h-3" /> CSV
-                        </button>
-                        <button
-                          onClick={() => exportBizPDF(clientId, bRows)}
-                          className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
-                          title={`Download ${grp.name} PDF (${periodLabel[period]})`}
-                        >
-                          <FileDown className="w-3 h-3" /> PDF
-                        </button>
+                        {/* Period-filtered downloads */}
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => exportBizCSV(clientId, bRows)}
+                              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
+                              title={`Download ${grp.name} — ${periodLabel[period]} (${bRows.length} keywords)`}
+                            >
+                              <Download className="w-3 h-3" />{periodLabel[period]} CSV
+                            </button>
+                            <button
+                              onClick={() => exportBizPDF(clientId, bRows)}
+                              className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
+                              title={`Download ${grp.name} PDF — ${periodLabel[period]}`}
+                            >
+                              <FileDown className="w-3 h-3" /> PDF
+                            </button>
+                          </div>
+                          {/* All-keywords downloads (ignores period) */}
+                          {(() => {
+                            const allRows = byBusinessAll.get(clientId)?.rows ?? [];
+                            const extra   = allRows.length - bRows.length;
+                            return (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => exportBizAllCSV(clientId)}
+                                  className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 rounded-lg px-2 py-1.5 bg-primary/5 hover:bg-primary/10 transition-all"
+                                  title={`Download ALL ${allRows.length} keywords for ${grp.name} (includes ${extra} from other periods)`}
+                                >
+                                  <Archive className="w-3 h-3" />All ({allRows.length}) CSV
+                                </button>
+                                <button
+                                  onClick={() => exportBizAllPDF(clientId)}
+                                  className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 rounded-lg px-2 py-1.5 bg-primary/5 hover:bg-primary/10 transition-all"
+                                  title={`Download ALL ${allRows.length} keywords PDF for ${grp.name}`}
+                                >
+                                  <FileDown className="w-3 h-3" />All PDF
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
 
@@ -1629,6 +2050,30 @@ export default function Rankings() {
 
         {/* ═══════ COMPARISON TAB ═══════ */}
         <TabsContent value="comparison" className="mt-4 space-y-3">
+          {/* Download bar */}
+          <div className="flex items-center justify-between flex-wrap gap-3 rounded-lg border border-border/40 bg-card/40 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-black dark:text-white">
+                {periodLabel[period]} · Before / After
+              </span>
+              <span className="text-xs text-muted-foreground">· {periodFiltered.length} comparisons</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline"
+                className="h-7 gap-1.5 text-xs border-border/50"
+                onClick={() => exportCSV(periodFiltered, `aeo-before-after-${periodSlug}-${dateStamp}.csv`)}
+                disabled={periodFiltered.length === 0}>
+                <Download className="w-3 h-3" /> CSV
+              </Button>
+              <Button size="sm" variant="outline"
+                className="h-7 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                onClick={() => exportPDF(periodFiltered, `Before/After · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-before-after-${periodSlug}-${dateStamp}.pdf`)}
+                disabled={periodFiltered.length === 0}>
+                <FileDown className="w-3 h-3" /> PDF Report
+              </Button>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -1843,6 +2288,327 @@ export default function Rankings() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ════ Download Center Dialog ════ */}
+      <Dialog open={dlOpen} onOpenChange={setDlOpen}>
+        <DialogContent className="sm:max-w-[600px] border-border/60 bg-card max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Archive className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <DialogTitle>Download Reports</DialogTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Export rankings data as CSV or PDF — choose your scope and format</p>
+              </div>
+            </div>
+            <DialogDescription className="sr-only">Comprehensive download center for rankings reports</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 mt-2">
+            {/* ── Period selector ── */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <CalendarDays className="w-3 h-3" /> Reporting Period
+              </p>
+              <div className="flex items-center gap-2">
+                {(["weekly", "monthly", "quarterly"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`flex-1 py-2.5 rounded-lg border-2 font-bold text-sm transition-all capitalize ${
+                      period === p
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "bg-card border-border/50 text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    }`}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-primary">{periodFiltered.length}</span> keywords in the selected window
+              </p>
+            </div>
+
+            {/* ── Overview ── */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <BarChart3 className="w-3 h-3" /> Overview
+              </p>
+              <div className="rounded-lg border border-border/40 bg-muted/10 divide-y divide-border/30">
+                {/* Overall */}
+                <div className="flex items-center justify-between px-4 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">All Data (Overall)</p>
+                    <p className="text-xs text-muted-foreground">{periodFiltered.length} keywords · all businesses · {periodLabel[period]}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
+                      onClick={() => { exportCSV(periodFiltered, `aeo-overall-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <Download className="w-3 h-3" />CSV
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => { exportPDF(periodFiltered, `All Businesses · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-overall-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <FileDown className="w-3 h-3" />PDF
+                    </Button>
+                  </div>
+                </div>
+                {/* Before / After */}
+                <div className="flex items-center justify-between px-4 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">Before / After Comparison</p>
+                    <p className="text-xs text-muted-foreground">{periodFiltered.length} keyword comparisons · initial vs current position</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
+                      onClick={() => { exportCSV(periodFiltered, `aeo-before-after-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <Download className="w-3 h-3" />CSV
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => { exportPDF(periodFiltered, `Before/After · ${periodLabel[period]} · ${format(new Date(), "PPP")}`, `aeo-before-after-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <FileDown className="w-3 h-3" />PDF
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── By Platform ── */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <Layers className="w-3 h-3" /> By Platform
+              </p>
+              <div className="rounded-lg border border-border/40 bg-muted/10 divide-y divide-border/30">
+                {[
+                  { key: "chatgpt",    label: "ChatGPT",    color: "text-emerald-400" },
+                  { key: "gemini",     label: "Gemini",     color: "text-blue-400"    },
+                  { key: "perplexity", label: "Perplexity", color: "text-violet-400"  },
+                ].map(({ key, label, color }) => {
+                  const ps  = platformData?.find((p) => p.platform === key);
+                  const kws = ps?.keywords ?? [];
+                  const platSlug = label.toLowerCase();
+                  return (
+                    <div key={key} className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${color}`}>{label} Rankings</p>
+                        <p className="text-xs text-muted-foreground">{kws.length} keywords · {periodLabel[period]}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
+                          onClick={() => { if (ps) exportPlatformOnlyCSV(label, kws, `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                          disabled={!ps || kws.length === 0}>
+                          <Download className="w-3 h-3" />CSV
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                          onClick={() => { if (ps) exportPlatformOnlyPDF(label, ps, kws, periodLabel[period], `signal-aeo-${platSlug}-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                          disabled={!ps || kws.length === 0}>
+                          <FileDown className="w-3 h-3" />PDF
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* All platforms cross */}
+                <div className="flex items-center justify-between px-4 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">All Platforms (Cross-Platform)</p>
+                    <p className="text-xs text-muted-foreground">{crossRows.length} keywords · ChatGPT, Gemini &amp; Perplexity combined</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5"
+                      onClick={() => { exportPlatformCSV(crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}
+                      disabled={crossRows.length === 0}>
+                      <Download className="w-3 h-3" />CSV
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs px-2.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => { if (platformData) exportPlatformPDF(platformData, crossRows, `signal-aeo-cross-platform-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}
+                      disabled={!platformData || crossRows.length === 0}>
+                      <FileDown className="w-3 h-3" />PDF
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── By Business ── */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <Building2 className="w-3 h-3" /> By Business
+              </p>
+              <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-4">
+                {/* Business selector */}
+                <div>
+                  <select
+                    value={dlBizId}
+                    onChange={(e) => setDlBizId(e.target.value)}
+                    className="w-full h-9 rounded-md border border-border/50 bg-card/80 text-sm px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  >
+                    <option value="">Select a business…</option>
+                    {bizListAll.map(([id, grp]) => (
+                      <option key={id} value={String(id)}>{grp.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {dlBizId && (() => {
+                  const bizAll = byBusinessAll.get(Number(dlBizId));
+                  const bizPeriod = byBusiness.get(Number(dlBizId));
+                  if (!bizAll) return null;
+                  const allRows    = bizAll.rows;
+                  const periodRows = bizPeriod?.rows ?? [];
+                  const slug       = bizAll.name.replace(/\s+/g, "-").toLowerCase();
+                  const perf  = allRows.filter((r) => r.status === "performing").length;
+                  const under = allRows.filter((r) => r.status === "underperforming").length;
+                  const steady= allRows.filter((r) => r.status === "steady").length;
+                  return (
+                    <div className="space-y-3">
+                      {/* Stats */}
+                      <div className="rounded-md bg-card/60 border border-border/30 px-3 py-2 space-y-1">
+                        <p className="text-sm font-semibold text-foreground">{bizAll.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-semibold text-foreground">{allRows.length}</span> total keywords ·{" "}
+                          <span className="text-emerald-400 font-semibold">{perf} performing</span> ·{" "}
+                          <span className="text-amber-400 font-semibold">{steady} steady</span> ·{" "}
+                          <span className="text-destructive font-semibold">{under} underperforming</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/60">
+                          {periodRows.length} in {periodLabel[period]} · {allRows.length - periodRows.length} from other periods
+                        </p>
+                      </div>
+
+                      {/* All-keywords (comprehensive) */}
+                      <div className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2.5 space-y-1.5">
+                        <p className="text-xs font-bold text-primary flex items-center gap-1.5">
+                          <Archive className="w-3 h-3" /> All Keywords — Full Report
+                          <span className="text-primary/60 font-normal">({allRows.length} keywords · Initial + Current · All Platforms)</span>
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-primary/30 hover:bg-primary/10"
+                            onClick={() => { exportBizPlatformCSV(allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.csv`); setDlOpen(false); }}>
+                            <Download className="w-3 h-3" />Download All Keywords CSV
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs flex-1 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                            onClick={() => { exportBizPlatformPDF(bizAll.name, allRows, platByKw, `${slug}-ALL-keywords-${dateStamp}.pdf`); setDlOpen(false); }}>
+                            <FileDown className="w-3 h-3" />Download All Keywords PDF
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Period-only */}
+                      {periodRows.length > 0 && (
+                        <div className="rounded-md bg-muted/20 border border-border/30 px-3 py-2.5 space-y-1.5">
+                          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <CalendarDays className="w-3 h-3" /> {periodLabel[period]} Only
+                            <span className="font-normal">({periodRows.length} keywords)</span>
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => { exportBizPlatformCSV(periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.csv`); setDlOpen(false); }}>
+                              <Download className="w-3 h-3" />CSV
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs flex-1 text-rose-400/70 hover:text-rose-400"
+                              onClick={() => { exportBizPlatformPDF(bizAll.name, periodRows, platByKw, `${slug}-${periodSlug}-${dateStamp}.pdf`); setDlOpen(false); }}>
+                              <FileDown className="w-3 h-3" />PDF
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="pt-2 border-t border-border/20 flex items-center justify-between flex-wrap gap-2">
+                  <p className="text-xs text-muted-foreground">{bizListAll.length} businesses · download all at once ({enriched.length} total keywords)</p>
+                  <div className="flex items-center gap-1.5">
+                    <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs px-2.5 text-muted-foreground hover:text-foreground"
+                      onClick={() => { exportAllCSV(); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <Download className="w-3 h-3" />{periodLabel[period]} CSV
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs px-2.5 text-rose-400/70 hover:text-rose-400"
+                      onClick={() => { exportAllPDF(); setDlOpen(false); }}
+                      disabled={periodFiltered.length === 0}>
+                      <FileDown className="w-3 h-3" />{periodLabel[period]} PDF
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Per Keyword ── */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                <Search className="w-3 h-3" /> Per Keyword (Cross-Platform)
+              </p>
+              <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={dlKwText}
+                    onChange={(e) => setDlKwText(e.target.value)}
+                    className="flex-1 min-w-[160px] h-8 rounded-md border border-border/50 bg-card/80 text-sm px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  >
+                    <option value="">Select a keyword…</option>
+                    {crossRows.map((r, idx) => (
+                      <option key={idx} value={r.keywordText}>{r.keywordText} — {r.clientName}</option>
+                    ))}
+                  </select>
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs px-2.5 shrink-0"
+                    onClick={() => {
+                      const row = crossRows.find((r) => r.keywordText === dlKwText);
+                      if (!row) return;
+                      const slug = row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
+                      exportKeywordCSV(row, `${slug}-cross-platform-${dateStamp}.csv`);
+                      setDlOpen(false);
+                    }}
+                    disabled={!dlKwText}>
+                    <Download className="w-3 h-3" />CSV
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs px-2.5 shrink-0 border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                    onClick={() => {
+                      const row = crossRows.find((r) => r.keywordText === dlKwText);
+                      if (!row) return;
+                      const slug = row.keywordText.replace(/\s+/g, "-").toLowerCase().slice(0, 30);
+                      exportKeywordPDF(row, `${slug}-cross-platform-${dateStamp}.pdf`);
+                      setDlOpen(false);
+                    }}
+                    disabled={!dlKwText}>
+                    <FileDown className="w-3 h-3" />PDF
+                  </Button>
+                </div>
+                {dlKwText && (() => {
+                  const row = crossRows.find((r) => r.keywordText === dlKwText);
+                  if (!row) return null;
+                  return (
+                    <div className="flex items-center gap-3 flex-wrap text-xs">
+                      {(["chatgpt", "gemini", "perplexity"] as const).map((key) => {
+                        const kw = row[key];
+                        const color = key === "chatgpt" ? "text-emerald-400" : key === "gemini" ? "text-blue-400" : "text-violet-400";
+                        const label = key === "chatgpt" ? "ChatGPT" : key === "gemini" ? "Gemini" : "Perplexity";
+                        return (
+                          <span key={key} className="flex items-center gap-1">
+                            <span className={`font-semibold ${color}`}>{label}:</span>
+                            <span className="text-foreground font-mono">{kw?.currentPosition != null ? `#${kw.currentPosition}` : "N/A"}</span>
+                            {kw?.positionChange != null && kw.positionChange !== 0 && (
+                              <span className={kw.positionChange > 0 ? "text-emerald-400" : "text-destructive"}>
+                                ({kw.positionChange > 0 ? `+${kw.positionChange}` : kw.positionChange})
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ════ Maps Link Dialog ════ */}
       <Dialog open={mapsDialog.open} onOpenChange={(o) => !savingMaps && setMapsDialog((d) => ({ ...d, open: o }))}>

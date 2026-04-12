@@ -96,8 +96,8 @@ export default function Packages() {
   useEffect(() => { fetchCustom(); }, []);
 
   async function handleAdd() {
-    if (!form.name.trim()) { toast({ title: "Package name is required", variant: "destructive" }); return; }
-    if (!form.createdBy)   { toast({ title: "Please select who created this package", variant: "destructive" }); return; }
+    if (!form.name.trim()) { toast({ title: "Plan name is required", variant: "destructive" }); return; }
+    if (!form.createdBy)   { toast({ title: "Please select who created this plan", variant: "destructive" }); return; }
     setSaving(true);
     try {
       const features = form.features.trim()
@@ -116,12 +116,12 @@ export default function Packages() {
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
-      toast({ title: "Package added successfully" });
+      toast({ title: "Plan added successfully" });
       setAddOpen(false);
       setForm({ name: "", description: "", target: "", features: "", tier: "", color: COLOR_OPTIONS[0].hex, createdBy: "" });
       await fetchCustom();
     } catch (err) {
-      toast({ title: "Failed to add package", description: err instanceof Error ? err.message : "", variant: "destructive" });
+      toast({ title: "Failed to add plan", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally { setSaving(false); }
   }
 
@@ -133,7 +133,7 @@ export default function Packages() {
       setDeleteTarget(null);
       await fetchCustom();
     } catch {
-      toast({ title: "Failed to delete package", variant: "destructive" });
+      toast({ title: "Failed to delete plan", variant: "destructive" });
     }
   }
 
@@ -146,23 +146,23 @@ export default function Packages() {
             <Box className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Package Options</h1>
-            <p className="text-sm text-muted-foreground">All available service packages offered to clients</p>
+            <h1 className="text-2xl font-bold tracking-tight">Plan Options</h1>
+            <p className="text-sm text-muted-foreground">All available service plans offered to clients</p>
           </div>
         </div>
         <Button onClick={() => setAddOpen(true)} className="gap-2 font-bold">
-          <Plus className="w-4 h-4" /> Add Package
+          <Plus className="w-4 h-4" /> Add Plan
         </Button>
       </div>
 
-      {/* -- Standard packages -- */}
+      {/* -- Standard plans -- */}
       <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Standard Packages</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Standard Plans</p>
         <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-[200px] font-semibold">Package Name</TableHead>
+                <TableHead className="w-[200px] font-semibold">Plan Name</TableHead>
                 <TableHead className="font-semibold">Description</TableHead>
                 <TableHead className="font-semibold">Best For</TableHead>
                 <TableHead className="font-semibold">Key Features</TableHead>
@@ -199,9 +199,9 @@ export default function Packages() {
         </div>
       </div>
 
-      {/* -- Custom packages -- */}
+      {/* -- Custom plans -- */}
       <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Custom Packages</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Custom Plans</p>
         {loading ? (
           <div className="space-y-2">
             <Skeleton className="h-16 w-full rounded-xl" />
@@ -210,15 +210,15 @@ export default function Packages() {
         ) : customPkgs.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:bg-slate-800/30 px-6 py-10 text-center">
             <Box className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-500">No custom packages yet</p>
-            <p className="text-xs text-slate-400 mt-1">Click <strong>Add Package</strong> to create your first custom package</p>
+            <p className="text-sm font-medium text-slate-500">No custom plans yet</p>
+            <p className="text-xs text-slate-400 mt-1">Click <strong>Add Plan</strong> to create your first custom plan</p>
           </div>
         ) : (
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">Package Name</TableHead>
+                  <TableHead className="font-semibold">Plan Name</TableHead>
                   <TableHead className="font-semibold">Description</TableHead>
                   <TableHead className="font-semibold">Best For</TableHead>
                   <TableHead className="font-semibold">Features</TableHead>
@@ -293,10 +293,10 @@ export default function Packages() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {PLAN_META.length} standard · {customPkgs.length} custom · {PLAN_META.length + customPkgs.length} total packages
+        {PLAN_META.length} standard · {customPkgs.length} custom · {PLAN_META.length + customPkgs.length} total plans
       </p>
 
-      {/* -- Add Package Dialog -- */}
+      {/* -- Add Plan Dialog -- */}
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o && !saving) { setAddOpen(false); } }}>
         <DialogContent className="w-[95vw] max-w-[820px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
@@ -304,15 +304,15 @@ export default function Packages() {
               <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
                 <Box className="w-5 h-5 text-primary" />
               </div>
-              <DialogTitle className="text-lg font-bold">Add Custom Package</DialogTitle>
+              <DialogTitle className="text-lg font-bold">Add Custom Plan</DialogTitle>
             </div>
-            <DialogDescription>Create a new service package. Fields marked <span className="text-red-500">*</span> are required.</DialogDescription>
+            <DialogDescription>Create a new service plan. Fields marked <span className="text-red-500">*</span> are required.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 mt-2">
             {/* Name */}
             <div className="space-y-1.5">
-              <Label className="text-sm font-bold uppercase tracking-widest">Package Name <span className="text-red-500">*</span></Label>
+              <Label className="text-sm font-bold uppercase tracking-widest">Plan Name <span className="text-red-500">*</span></Label>
               <Input
                 placeholder="e.g. Premium Local Bundle"
                 value={form.name}
@@ -380,7 +380,7 @@ export default function Packages() {
                 </Label>
                 <Select value={form.createdBy} onValueChange={(v) => setF("createdBy", v)}>
                   <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Select who created this package..." />
+                    <SelectValue placeholder="Select who created this plan..." />
                   </SelectTrigger>
                   <SelectContent>
                     {CREATORS.map((c) => (
@@ -401,7 +401,7 @@ export default function Packages() {
               disabled={saving || !form.name.trim() || !form.createdBy}
               onClick={handleAdd}
             >
-              {saving ? "Saving..." : <><Plus className="w-4 h-4" /> Add Package</>}
+              {saving ? "Saving..." : <><Plus className="w-4 h-4" /> Add Plan</>}
             </Button>
           </div>
         </DialogContent>
@@ -411,7 +411,7 @@ export default function Packages() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete custom package?</AlertDialogTitle>
+            <AlertDialogTitle>Delete custom plan?</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete <strong>"{deleteTarget?.name}"</strong>? This action cannot be undone.
             </AlertDialogDescription>

@@ -34,7 +34,7 @@ const navGroups = [
       // { name: "Organisation Details", href: "/organization", icon: Building2   },
       // { name: "Campaigns",            href: "/plans",        icon: ClipboardList },
       { name: "Keywords",             href: "/keywords",     icon: Key         },
-      { name: "Package Options",      href: "/packages",     icon: Box         },
+      { name: "Plan Options",         href: "/packages",     icon: Box         },
     ],
   },
   {

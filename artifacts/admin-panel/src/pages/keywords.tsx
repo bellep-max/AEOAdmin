@@ -790,8 +790,7 @@ export default function Keywords() {
   }
 
   const { data: keywords, isLoading } = useGetKeywords(
-    { clientId: selectedClientId ?? undefined },
-    { query: { enabled: !!selectedClientId } }
+    selectedClientId !== null ? { clientId: selectedClientId } : undefined
   );
   const { data: clients }             = useGetClients();
   const updateKeyword                 = useUpdateKeyword();
@@ -924,18 +923,26 @@ export default function Keywords() {
       <div className="flex items-center gap-3">
         <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
         <Select
-          value={selectedClientId !== null ? String(selectedClientId) : ""}
+          value={selectedClientId !== null ? String(selectedClientId) : "all"}
           onValueChange={(v) => {
-            setSelectedClientId(Number(v));
+            const newClientId = v === "all" ? null : Number(v);
+            setSelectedClientId(newClientId);
             setSearch("");
             setTypeFilter("all");
-            setExpanded(new Set([Number(v)]));
+            if (newClientId !== null) {
+              setExpanded(new Set([newClientId]));
+            } else {
+              setExpanded(new Set());
+            }
           }}
         >
           <SelectTrigger className="w-80 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-12 text-base font-bold">
-            <SelectValue placeholder="Select a client to view their keywords…" />
+            <SelectValue placeholder="Select a client or view all…" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">
+              <span className="font-bold text-base">All Clients</span>
+            </SelectItem>
             {(clients ?? []).map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 <div className="flex flex-col gap-0">
@@ -946,22 +953,7 @@ export default function Keywords() {
             ))}
           </SelectContent>
         </Select>
-        {selectedClientId !== null && (
-          <button
-            onClick={() => { setSelectedClientId(null); setSearch(""); setTypeFilter("all"); }}
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold"
-          >
-            <X className="w-4 h-4" /> Clear client
-          </button>
-        )}
       </div>
-
-      {selectedClientId === null ? (
-        <div className="flex flex-col items-center justify-center h-64 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 gap-3">
-          <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600" />
-          <p className="text-lg font-semibold text-slate-400 dark:text-slate-500">Select a client above to view their keywords</p>
-        </div>
-      ) : (<>
 
       {/* Summary strip */}
       <div className="grid grid-cols-4 gap-3">
@@ -1211,7 +1203,6 @@ export default function Keywords() {
           onSave={(data) => saveKeyword(null, data)}
         />
       )}
-      </>)}
     </div>
   );
 }

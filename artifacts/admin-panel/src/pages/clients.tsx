@@ -152,13 +152,13 @@ export default function Clients() {
   const onSubmit = (values: z.infer<typeof businessFormSchema>) => {
     createClient.mutate({ data: values }, {
       onSuccess: () => {
-        toast({ title: "Business added successfully" });
+        toast({ title: "Client added successfully" });
         setIsAddOpen(false);
         form.reset();
         refetch();
       },
       onError: () => {
-        toast({ title: "Failed to add business", variant: "destructive" });
+        toast({ title: "Failed to add client", variant: "destructive" });
       }
     });
   };
@@ -178,33 +178,33 @@ export default function Clients() {
     <div className="space-y-6">
       <div className="flex flex-col gap-6">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Business</h1>
-          <p className="text-lg text-slate-700 dark:text-slate-300">Business List</p>
+          <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Client</h1>
+          <p className="text-lg text-slate-700 dark:text-slate-300">Client List</p>
         </div>
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
               <Plus className="w-4 h-4 mr-2" />
-              Add Business
+              Add Client
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[1200px] bg-white max-h-[90vh]">
             <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-black">Add New Business</DialogTitle>
+              <DialogTitle className="text-lg font-bold text-black">Add New Client</DialogTitle>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-4 max-h-[70vh] overflow-y-auto pr-4">
-                {/* Business Information Section */}
+                {/* Client Information Section */}
                 <div>
-                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Business Information</h3>
+                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Client Information</h3>
                   <div className="space-y-4">
                     <FormField
                       control={form.control}
                       name="businessName"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Business Name *</FormLabel>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Client Name *</FormLabel>
                           <FormControl>
                             <Input placeholder="Acme Plumbers" className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
@@ -445,7 +445,7 @@ export default function Clients() {
 
                 <div className="pt-4 flex justify-end sticky bottom-0 bg-white">
                   <Button type="submit" disabled={createClient.isPending} className="h-12 text-base font-bold">
-                    {createClient.isPending ? "Creating..." : "Create Business"}
+                    {createClient.isPending ? "Creating..." : "Create Client"}
                   </Button>
                 </div>
               </form>
@@ -456,12 +456,12 @@ export default function Clients() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-center">
-        {/* Business Name */}
+        {/* Client Name */}
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
           <Input
             type="search"
-            placeholder="Business name…"
+            placeholder="Client name…"
             className="pl-9 h-10 w-52 bg-white text-sm text-black placeholder:text-slate-500"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -527,7 +527,7 @@ export default function Clients() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 dark:bg-slate-900">
-              <TableHead className="text-base font-bold text-black dark:text-white">Business Name</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Client Name</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Location</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Account Type</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Status</TableHead>
@@ -541,14 +541,14 @@ export default function Clients() {
                 <TableCell colSpan={6} className="h-52">
                   <div className="flex flex-col items-center justify-center gap-4 py-8">
                     <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-                    <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Loading businesses…</p>
+                    <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Loading clients…</p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : filteredClients?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
-                  No businesses found.
+                  No clients found.
                 </TableCell>
               </TableRow>
             ) : (
@@ -655,7 +655,7 @@ export default function Clients() {
               {confirmReactivate?.keywordCount != null && confirmReactivate.keywordCount > 0
                 ? ` All ${confirmReactivate.keywordCount} keyword${confirmReactivate.keywordCount !== 1 ? "s" : ""} for this client will also be reactivated.`
                 : " No keywords are linked to this client."}
-              {" "}Please confirm this is the correct business.
+              {" "}Please confirm this is the correct client.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -685,7 +685,7 @@ export default function Clients() {
               {confirmDeactivate?.keywordCount != null && confirmDeactivate.keywordCount > 0
                 ? ` All ${confirmDeactivate.keywordCount} keyword${confirmDeactivate.keywordCount !== 1 ? "s" : ""} for this client will also be deactivated.`
                 : " No keywords are linked to this client."}
-              {" "}Please confirm this is the correct business.
+              {" "}Please confirm this is the correct client.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
