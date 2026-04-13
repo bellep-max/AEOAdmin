@@ -219,11 +219,14 @@ export default function ClientDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
               <Field label="Business Name"                    value={client.businessName} />
               <Field label="Plan"                             value={client.planName} />
+              {/* Search Address, GMB Address, GMB Link, Website fields managed via Campaign form */}
+              {/*
               <Field label="Search Address"                   value={client.searchAddress} />
               <Field label="GMB Address"                      value={client.publishedAddress} />
               <Field label="GMB Link"                         value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
               <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
               <Field label="Website Linked to on GMB (if different)" value={c.websiteLinkedOnGmb as string} href={(c.websiteLinkedOnGmb as string) ?? undefined} />
+              */}
               <Field label="Account User"                     value={c.accountUser as string} />
               <Field label="Start Date"                       value={c.startDate as string} />
               <Field label="Next Bill Date"                   value={c.nextBillDate as string} />
