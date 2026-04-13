@@ -1145,7 +1145,7 @@ export default function Keywords() {
                               <Bookmark className={`w-3.5 h-3.5 flex-shrink-0 ${plan ? "text-blue-500" : "text-slate-400"}`} />
                               {plan ? (
                                 <>
-                                  <span className="text-sm font-bold text-blue-700 dark:text-blue-400">{plan.planType}</span>
+                                  <Link href={`/clients/${clientId}`} className="text-sm font-bold text-blue-700 dark:text-blue-400 hover:underline">{plan.planType}</Link>
                                   {plan.serviceCategory && (
                                     <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.serviceCategory}</span>
                                   )}
