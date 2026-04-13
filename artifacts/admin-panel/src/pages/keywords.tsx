@@ -325,11 +325,7 @@ function KeywordDialog({
                   <SelectContent>
                     {clients?.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        <div className="flex flex-col gap-0">
-                          <span className="font-bold text-base">{c.businessName}</span>
-                          {c.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
-                          {c.publishedAddress && <span className="text-xs text-slate-500">GMB: {c.publishedAddress}</span>}
-                        </div>
+                        <span className="font-bold text-base">{c.businessName}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -945,10 +941,7 @@ export default function Keywords() {
             </SelectItem>
             {(clients ?? []).map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
-                <div className="flex flex-col gap-0">
-                  <span className="font-bold text-base">{c.businessName}</span>
-                  {c.searchAddress && <span className="text-xs text-slate-500">Search: {c.searchAddress}</span>}
-                </div>
+                <span className="font-bold text-base">{c.businessName}</span>
               </SelectItem>
             ))}
           </SelectContent>
