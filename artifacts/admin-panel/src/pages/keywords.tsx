@@ -333,16 +333,14 @@ function KeywordDialog({
                 </Select>
               </div>
             )}
-            {!isEdit && (vals.clientId as string) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black font-bold">Search Address</Label>
-                  <Input className="bg-slate-50 border-slate-300 h-11 text-base text-black" placeholder="123 Main St, Austin, TX" maxLength={200} value={(vals.searchAddress as string) || ""} onChange={(e) => set("searchAddress", e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black font-bold">GMB Address</Label>
-                  <Input className="bg-slate-50 border-slate-300 h-11 text-base text-black" placeholder="123 Main St, Austin, TX" maxLength={200} value={(vals.publishedAddress as string) || ""} onChange={(e) => set("publishedAddress", e.target.value)} />
-                </div>
+            {!isEdit && (vals.clientId as string) && ((vals.searchAddress as string) || (vals.publishedAddress as string)) && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
+                {(vals.searchAddress as string) && (
+                  <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">Search:</span> {vals.searchAddress as string}</span>
+                )}
+                {(vals.publishedAddress as string) && (
+                  <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">GMB:</span> {vals.publishedAddress as string}</span>
+                )}
               </div>
             )}
             <div className={!isEdit ? "" : "col-span-1"}>
@@ -811,13 +809,6 @@ export default function Keywords() {
   async function saveKeyword(id: number | null, data: KwRecord) {
     setSaving(true);
     try {
-      if (!id && data.clientId) {
-        await rawFetch(`/api/clients/${data.clientId}`, {
-          method: "PATCH", credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ searchAddress: (data.searchAddress as string) || null, publishedAddress: (data.publishedAddress as string) || null }),
-        });
-      }
       if (id) {
         await new Promise<void>((res, rej) =>
           updateKeyword.mutate({ id, data }, { onSuccess: () => res(), onError: (e) => rej(e) }),
