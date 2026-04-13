@@ -146,7 +146,7 @@ export default function Packages() {
             <Box className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Plan Options</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Plans</h1>
             <p className="text-sm text-muted-foreground">All available service plans offered to clients</p>
           </div>
         </div>
