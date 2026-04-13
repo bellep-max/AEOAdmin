@@ -199,7 +199,8 @@ export default function ClientDetail() {
       {/* ── Two-column cards ── */}
       <div className="grid md:grid-cols-2 gap-6">
 
-        {/* ── Client Details ── */}
+        {/* ── Client Details (commented out) ── */}
+        {/*
         <Card className="border-border/50">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -219,22 +220,15 @@ export default function ClientDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
               <Field label="Business Name"                    value={client.businessName} />
               <Field label="Plan"                             value={client.planName} />
-              {/* Search Address, GMB Address, GMB Link, Website fields managed via Campaign form */}
-              {/*
               <Field label="Search Address"                   value={client.searchAddress} />
               <Field label="GMB Address"                      value={client.publishedAddress} />
               <Field label="GMB Link"                         value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
               <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
               <Field label="Website Linked to on GMB (if different)" value={c.websiteLinkedOnGmb as string} href={(c.websiteLinkedOnGmb as string) ?? undefined} />
-              */}
-              {/*
               <Field label="Account User"                     value={c.accountUser as string} />
               <Field label="Start Date"                       value={c.startDate as string} />
               <Field label="Next Bill Date"                   value={c.nextBillDate as string} />
               <Field label="Subscription ID"                  value={c.subscriptionId as string} />
-              */}
-              {/* Last 4 with card icon */}
-              {/*
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
                   Last 4 of Billing Credit Card
@@ -248,10 +242,10 @@ export default function ClientDetail() {
                   <p className="text-sm text-muted-foreground/40">—</p>
                 )}
               </div>
-              */}
             </div>
           </CardContent>
         </Card>
+        */}
 
         {/* ── Account Details ── */}
         <Card className="border-border/50">
