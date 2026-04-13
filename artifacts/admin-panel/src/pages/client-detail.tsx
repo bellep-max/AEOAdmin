@@ -247,12 +247,12 @@ export default function ClientDetail() {
         </Card>
         */}
 
-        {/* ── Account Details ── */}
+        {/* ── Client Details ── */}
         <Card className="border-border/50">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Briefcase className="w-4 h-4 text-primary" />
-              Account Details
+              Client Details
             </CardTitle>
             <Button
               variant="ghost" size="sm"
@@ -512,7 +512,7 @@ export default function ClientDetail() {
         }}
       />
 
-      {/* ═══ EDIT ACCOUNT DETAILS DIALOG ═══ */}
+      {/* ═══ EDIT CLIENT DETAILS DIALOG ═══ */}
       <EditAccDialog
         open={editAccOpen}
         onOpenChange={setEditAccOpen}
@@ -919,7 +919,7 @@ function EditBizDialog({
 }
 
 /* ─────────────────────────────────────────────────────────── */
-/* Edit Account Details                                         */
+/* Edit Client Details                                          */
 /* ─────────────────────────────────────────────────────────── */
 const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; dropdown?: string[]; type?: string }> = [
   { key: "accountType",     label: "Account Type",             dropdown: ["Agency", "Retail"] },
@@ -1151,7 +1151,7 @@ function EditAccDialog({
     <>
       <FullScreenDialog
         open={open} onOpenChange={handleOpenChange}
-        title="Edit Account Details" icon={Briefcase}
+        title="Edit Client Details" icon={Briefcase}
         saving={saving} onSave={handleSave}
       >
         <div className="grid grid-cols-2 gap-x-8 gap-y-6">
@@ -1221,7 +1221,7 @@ function EditAccDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Save Changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              Would you like to save the changes to the account details?
+              Would you like to save the changes to the client details?
               This will update the information immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
