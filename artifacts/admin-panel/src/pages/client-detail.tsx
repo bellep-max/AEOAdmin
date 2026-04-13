@@ -197,7 +197,7 @@ export default function ClientDetail() {
       </div>
 
       {/* ── Two-column cards ── */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
 
         {/* ── Client Details (commented out) ── */}
         {/*
@@ -311,9 +311,9 @@ export default function ClientDetail() {
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       <ClientAeoPlans clientId={clientId} client={client} />
 
-      {/* ═══ ORGANISATION DETAILS ═══ */}
+      {/* ═══ ORGANISATION DETAILS (commented out) ═══ */}
+      {/*
       <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-        {/* Section header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60 bg-muted/30">
           <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
             <Building2 className="w-4 h-4 text-primary" />
@@ -340,7 +340,6 @@ export default function ClientDetail() {
             </TableHeader>
             <TableBody>
               <TableRow className="hover:bg-primary/5 transition-colors">
-                {/* Business Name */}
                 <TableCell className="align-top py-3 min-w-[160px]">
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${client.status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
@@ -348,7 +347,6 @@ export default function ClientDetail() {
                   </div>
                 </TableCell>
 
-                {/* User Type */}
                 <TableCell className="align-top py-3 whitespace-nowrap">
                   {(c.accountType as string) ? (
                     <Badge variant="outline" className="capitalize text-xs font-semibold">
@@ -357,7 +355,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Account Email */}
                 <TableCell className="align-top py-3 min-w-[160px]">
                   {(c.accountEmail as string) ? (
                     <div className="flex items-center gap-1.5 text-sm">
@@ -367,7 +364,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Account Username */}
                 <TableCell className="align-top py-3 whitespace-nowrap">
                   {(c.accountUserName as string) ? (
                     <div className="flex items-center gap-1.5 text-sm">
@@ -377,7 +373,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Contact Email */}
                 <TableCell className="align-top py-3 min-w-[160px]">
                   {(client.contactEmail ?? (c.billingEmail as string)) ? (
                     <div className="flex items-center gap-1.5 text-sm">
@@ -389,7 +384,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Plan */}
                 <TableCell className="align-top py-3">
                   {client.planName ? (() => {
                     const plan = getPlanMeta(client.planName!);
@@ -401,7 +395,6 @@ export default function ClientDetail() {
                   })() : <span className="text-xs text-slate-400 italic">No plan</span>}
                 </TableCell>
 
-                {/* Subscription ID */}
                 <TableCell className="align-top py-3">
                   {(c.subscriptionId as string) ? (
                     <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
@@ -410,7 +403,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Payment Type */}
                 <TableCell className="align-top py-3 whitespace-nowrap">
                   {(c.lastFourCard as string) ? (
                     <div className="flex items-center gap-1.5 text-sm">
@@ -420,7 +412,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Date Created */}
                 <TableCell className="align-top py-3 whitespace-nowrap">
                   <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
@@ -428,7 +419,6 @@ export default function ClientDetail() {
                   </div>
                 </TableCell>
 
-                {/* Created By */}
                 <TableCell className="align-top py-3 whitespace-nowrap">
                   {(c.createdBy as string) ? (
                     <div className="flex items-center gap-1.5 text-sm">
@@ -438,7 +428,6 @@ export default function ClientDetail() {
                   ) : <span className="text-xs text-slate-400 italic">—</span>}
                 </TableCell>
 
-                {/* Notes */}
                 <TableCell className="align-top py-3 min-w-[200px]">
                   <button
                     onClick={() => { setNotesDraft((c.notes as string) ?? ""); setNotesOpen(true); }}
@@ -459,6 +448,7 @@ export default function ClientDetail() {
           </Table>
         </div>
       </div>
+      */}
 
       {/* ═══ NOTES DIALOG ═══ */}
       <Dialog open={notesOpen} onOpenChange={(o) => { if (!o && !notesSaving) setNotesOpen(false); }}>
