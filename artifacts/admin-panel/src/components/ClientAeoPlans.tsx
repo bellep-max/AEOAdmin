@@ -419,13 +419,7 @@ export default function ClientAeoPlans({
   function openAdd() {
     setFormData({ ...EMPTY_FORM, businessName: clientBusinessName });
     setFormErrors({});
-    setClientLocData({
-      searchAddress:        client?.searchAddress        ?? "",
-      publishedAddress:     client?.publishedAddress     ?? "",
-      gmbUrl:               client?.gmbUrl               ?? "",
-      websitePublishedOnGmb: client?.websitePublishedOnGmb ?? "",
-      websiteLinkedOnGmb:   client?.websiteLinkedOnGmb   ?? "",
-    });
+    setClientLocData({ ...EMPTY_LOC });
     setAddOpen(true);
   }
 
