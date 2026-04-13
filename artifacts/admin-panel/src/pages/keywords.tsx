@@ -316,7 +316,7 @@ function KeywordDialog({
 
         <div className="flex-1 overflow-y-auto px-6 py-6 max-w-3xl w-full mx-auto space-y-5">
           {/* Business + Keyword */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {!isEdit && (
               <div className="space-y-1.5">
                 <Label className="text-sm uppercase tracking-widest text-black font-bold">Business <span className="text-red-600">*</span></Label>
@@ -336,7 +336,7 @@ function KeywordDialog({
                 </Select>
               </div>
             )}
-            <div className={!isEdit ? "" : "col-span-2"}>
+            <div className={!isEdit ? "" : "col-span-1"}>
               <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Keyword <span className="text-red-600">*</span></Label>
               <Input className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base mt-1.5 text-black dark:text-white"
                 placeholder="e.g. best plumber in Manchester"
