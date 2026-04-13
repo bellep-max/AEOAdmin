@@ -283,6 +283,8 @@ export default function Clients() {
                         </FormItem>
                       )}
                     />
+                    {/* Search Address, GMB Address, GMB Link, Website fields moved to Add Campaign form */}
+                    {/*
                     <FormField
                       control={form.control}
                       name="searchAddress"
@@ -348,6 +350,7 @@ export default function Clients() {
                         </FormItem>
                       )}
                     />
+                    */}
                   </div>
                 </div>
 

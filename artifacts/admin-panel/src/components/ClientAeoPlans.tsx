@@ -56,6 +56,11 @@ interface ClientInfo {
   accountType?: string | null;
   city?: string | null;
   state?: string | null;
+  searchAddress?: string | null;
+  publishedAddress?: string | null;
+  gmbUrl?: string | null;
+  websitePublishedOnGmb?: string | null;
+  websiteLinkedOnGmb?: string | null;
 }
 
 interface KeywordRow {
@@ -67,6 +72,15 @@ interface KeywordRow {
 }
 
 type PlanFormData = Omit<AeoPlan, "id" | "clientId">;
+
+type ClientLocData = {
+  searchAddress: string;
+  publishedAddress: string;
+  gmbUrl: string;
+  websitePublishedOnGmb: string;
+  websiteLinkedOnGmb: string;
+};
+const EMPTY_LOC: ClientLocData = { searchAddress: "", publishedAddress: "", gmbUrl: "", websitePublishedOnGmb: "", websiteLinkedOnGmb: "" };
 
 const EMPTY_FORM: PlanFormData = {
   businessName: "",
@@ -95,11 +109,15 @@ function PlanForm({
   onChange,
   clientBusinessName,
   errors = {},
+  locData,
+  onLocChange,
 }: {
   values: PlanFormData;
   onChange: (v: PlanFormData) => void;
   clientBusinessName: string;
   errors?: Record<string, string>;
+  locData: ClientLocData;
+  onLocChange: (v: ClientLocData) => void;
 }) {
   const allPlanNames = useAllPlanNames();
   const [customSchemaImplementor, setCustomSchemaImplementor] = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
@@ -275,6 +293,58 @@ function PlanForm({
           )}
         </div>
       </div>
+
+      {/* Client Location & GMB */}
+      <div className="border-t border-border/40 pt-5 space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Client Location &amp; GMB</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search Address</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="123 Main St, Austin, TX"
+              value={locData.searchAddress}
+              onChange={(e) => onLocChange({ ...locData, searchAddress: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GMB Address</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="123 Main St, Austin, TX"
+              value={locData.publishedAddress}
+              onChange={(e) => onLocChange({ ...locData, publishedAddress: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GMB Link</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="https://maps.google.com/..."
+              value={locData.gmbUrl}
+              onChange={(e) => onLocChange({ ...locData, gmbUrl: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website Published on GMB</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="https://example.com"
+              value={locData.websitePublishedOnGmb}
+              onChange={(e) => onLocChange({ ...locData, websitePublishedOnGmb: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website Linked on GMB <span className="font-normal normal-case text-muted-foreground/60">(if different)</span></Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="https://example.com"
+              value={locData.websiteLinkedOnGmb}
+              onChange={(e) => onLocChange({ ...locData, websiteLinkedOnGmb: e.target.value })}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -302,6 +372,7 @@ export default function ClientAeoPlans({
   const [confirmSave, setConfirmSave] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<AeoPlan | null>(null);
+  const [clientLocData, setClientLocData] = useState<ClientLocData>({ ...EMPTY_LOC });
 
   /* keywords per plan: planId → rows */
   const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
@@ -348,6 +419,13 @@ export default function ClientAeoPlans({
   function openAdd() {
     setFormData({ ...EMPTY_FORM, businessName: clientBusinessName });
     setFormErrors({});
+    setClientLocData({
+      searchAddress:        client?.searchAddress        ?? "",
+      publishedAddress:     client?.publishedAddress     ?? "",
+      gmbUrl:               client?.gmbUrl               ?? "",
+      websitePublishedOnGmb: client?.websitePublishedOnGmb ?? "",
+      websiteLinkedOnGmb:   client?.websiteLinkedOnGmb   ?? "",
+    });
     setAddOpen(true);
   }
 
@@ -371,6 +449,13 @@ export default function ClientAeoPlans({
       searchBoostTarget:     plan.searchBoostTarget,
       monthlyAeoBudget:      plan.monthlyAeoBudget,
       schemaImplementor:     plan.schemaImplementor,
+    });
+    setClientLocData({
+      searchAddress:         client?.searchAddress         ?? "",
+      publishedAddress:      client?.publishedAddress      ?? "",
+      gmbUrl:                client?.gmbUrl                ?? "",
+      websitePublishedOnGmb: client?.websitePublishedOnGmb ?? "",
+      websiteLinkedOnGmb:    client?.websiteLinkedOnGmb    ?? "",
     });
     setEditPlan(plan);
   }
@@ -419,6 +504,14 @@ export default function ClientAeoPlans({
     setConfirmSave(false);
     setSaving(true);
     try {
+      // Also save location & GMB fields back to the client record
+      await rawFetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clientLocData),
+      });
+
       if (editPlan) {
         await rawFetch(`/api/clients/${clientId}/aeo-plans/${editPlan.id}`, {
           method: "PATCH",
@@ -761,7 +854,14 @@ export default function ClientAeoPlans({
                 </div>
               </div>
 
-              <PlanForm values={formData} onChange={(v) => { setFormData(v); setFormErrors({}); }} clientBusinessName={clientBusinessName} errors={formErrors} />
+              <PlanForm
+                values={formData}
+                onChange={(v) => { setFormData(v); setFormErrors({}); }}
+                clientBusinessName={clientBusinessName}
+                errors={formErrors}
+                locData={clientLocData}
+                onLocChange={setClientLocData}
+              />
 
               <div className="flex gap-4 pt-6">
                 <Button
