@@ -199,12 +199,12 @@ export default function ClientDetail() {
       {/* ── Two-column cards ── */}
       <div className="grid md:grid-cols-2 gap-6">
 
-        {/* ── Business Details ── */}
+        {/* ── Client Details ── */}
         <Card className="border-border/50">
           <CardHeader className="pb-4 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Building2 className="w-4 h-4 text-primary" />
-              Business Details
+              Client Details
             </CardTitle>
             <Button
               variant="ghost" size="sm"
@@ -489,7 +489,7 @@ export default function ClientDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══ EDIT BUSINESS DETAILS DIALOG ═══ */}
+      {/* ═══ EDIT CLIENT DETAILS DIALOG ═══ */}
       <EditBizDialog
         open={editBizOpen}
         onOpenChange={setEditBizOpen}
@@ -598,7 +598,7 @@ function FullScreenDialog({
 }
 
 /* ─────────────────────────────────────────────────────────── */
-/* Edit Business Details                                        */
+/* Edit Client Details                                          */
 /* ─────────────────────────────────────────────────────────── */
 const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string; dropdown?: string[] }> = [
   { key: "businessName",          label: "Client Name", maxLength: 100 },
