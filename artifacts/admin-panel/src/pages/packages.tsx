@@ -155,7 +155,7 @@ export default function Packages() {
         </Button>
       </div>
 
-      {/* -- Standard plans -- */}
+      {/* -- Standard plans -- COMMENTED OUT
       <div>
         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Standard Plans</p>
         <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -198,6 +198,7 @@ export default function Packages() {
           </Table>
         </div>
       </div>
+      -- END COMMENTED OUT */}
 
       {/* -- Custom plans -- */}
       <div>
