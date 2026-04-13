@@ -32,26 +32,58 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const businessFormSchema = z.object({
   // Business Information
-  businessName: z.string().min(2, "Business name is required"),
-  searchAddress: z.string().optional(),
-  gmbAddress: z.string().optional(),
-  gmbLink: z.string().url().optional().or(z.literal('')),
-  websitePublishedOnGMB: z.string().optional(),
-  websiteLinkedOnGMB: z.string().optional(),
+  businessName: z.string()
+    .min(2, "Client name must be at least 2 characters")
+    .max(100, "Client name cannot exceed 100 characters"),
+  searchAddress: z.string()
+    .max(200, "Address cannot exceed 200 characters")
+    .optional(),
+  gmbAddress: z.string()
+    .max(200, "Address cannot exceed 200 characters")
+    .optional(),
+  gmbLink: z.string()
+    .url("Please enter a valid URL (e.g., https://maps.google.com/...)")
+    .max(500, "URL cannot exceed 500 characters")
+    .optional()
+    .or(z.literal('')),
+  websitePublishedOnGMB: z.string()
+    .max(200, "Website URL cannot exceed 200 characters")
+    .optional(),
+  websiteLinkedOnGMB: z.string()
+    .max(200, "Website URL cannot exceed 200 characters")
+    .optional(),
   
   // Subscription Information
   plan: z.string().optional(),
   accountType: z.enum(['agency', 'retail']).optional(),
   startDate: z.string().optional(),
   nextBillDate: z.string().optional(),
-  subscriptionId: z.string().optional(),
+  subscriptionId: z.string()
+    .max(50, "Subscription ID cannot exceed 50 characters")
+    .optional(),
   
   // Account Information
-  accountUser: z.string().optional(),
-  accountUserName: z.string().optional(),
-  accountEmail: z.string().email().optional().or(z.literal('')),
-  billingEmail: z.string().email().optional().or(z.literal('')),
-  cardLast4: z.string().optional(),
+  accountUser: z.string()
+    .max(50, "Username cannot exceed 50 characters")
+    .optional(),
+  accountUserName: z.string()
+    .max(100, "Name cannot exceed 100 characters")
+    .optional(),
+  accountEmail: z.string()
+    .email("Please enter a valid email address")
+    .max(100, "Email cannot exceed 100 characters")
+    .optional()
+    .or(z.literal('')),
+  billingEmail: z.string()
+    .email("Please enter a valid email address")
+    .max(100, "Email cannot exceed 100 characters")
+    .optional()
+    .or(z.literal('')),
+  cardLast4: z.string()
+    .length(4, "Please enter exactly 4 digits")
+    .regex(/^\d{4}$/, "Please enter only numbers")
+    .optional()
+    .or(z.literal('')),
 });
 
 export default function Clients() {
@@ -68,6 +100,8 @@ export default function Clients() {
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [confirmReactivate, setConfirmReactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [confirmAddClient, setConfirmAddClient] = useState<z.infer<typeof businessFormSchema> | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const allPlanNames = useAllPlanNames();
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -150,17 +184,54 @@ export default function Clients() {
   });
 
   const onSubmit = (values: z.infer<typeof businessFormSchema>) => {
-    createClient.mutate({ data: values }, {
+    // Show confirmation dialog before submitting
+    setConfirmAddClient(values);
+  };
+
+  const handleConfirmAdd = () => {
+    if (!confirmAddClient) return;
+    
+    createClient.mutate({ data: confirmAddClient }, {
       onSuccess: () => {
-        toast({ title: "Client added successfully" });
+        toast({ 
+          title: "✅ Client added successfully!",
+          description: `${confirmAddClient.businessName} has been added to your client list.`
+        });
+        setConfirmAddClient(null);
         setIsAddOpen(false);
         form.reset();
         refetch();
       },
       onError: () => {
-        toast({ title: "Failed to add client", variant: "destructive" });
+        toast({ 
+          title: "❌ Failed to add client", 
+          description: "Something went wrong. Please try again.",
+          variant: "destructive" 
+        });
+        setConfirmAddClient(null);
       }
     });
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      // Check if form has any data before showing cancel confirmation
+      const hasData = Object.values(form.getValues()).some(val => val && val !== "");
+      if (hasData) {
+        setConfirmCancel(true);
+      } else {
+        setIsAddOpen(false);
+        form.reset();
+      }
+    } else {
+      setIsAddOpen(true);
+    }
+  };
+
+  const handleConfirmCancel = () => {
+    setConfirmCancel(false);
+    setIsAddOpen(false);
+    form.reset();
   };
 
   const filteredClients = clients?.filter((c) => {
@@ -182,7 +253,7 @@ export default function Clients() {
           <p className="text-lg text-slate-700 dark:text-slate-300">Client List</p>
         </div>
         
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
               <Plus className="w-4 h-4 mr-2" />
@@ -206,7 +277,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Client Name *</FormLabel>
                           <FormControl>
-                            <Input placeholder="Acme Plumbers" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="Acme Plumbers" maxLength={100} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -219,7 +290,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Search Address</FormLabel>
                           <FormControl>
-                            <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="123 Main St, Austin, TX" maxLength={200} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -232,7 +303,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">GMB Address</FormLabel>
                           <FormControl>
-                            <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="123 Main St, Austin, TX" maxLength={200} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -245,7 +316,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">GMB Link</FormLabel>
                           <FormControl>
-                            <Input placeholder="https://maps.google.com/..." className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="https://maps.google.com/..." maxLength={500} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -258,7 +329,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Website Published on GMB</FormLabel>
                           <FormControl>
-                            <Input placeholder="https://example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="https://example.com" maxLength={200} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -271,7 +342,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Website Linked on GMB (if different)</FormLabel>
                           <FormControl>
-                            <Input placeholder="https://example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="https://example.com" maxLength={200} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -362,7 +433,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Subscription ID</FormLabel>
                           <FormControl>
-                            <Input placeholder="SUB-12345" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="SUB-12345" maxLength={50} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -382,7 +453,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account User</FormLabel>
                           <FormControl>
-                            <Input placeholder="john.doe" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="john.doe" maxLength={50} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -395,7 +466,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account User Name</FormLabel>
                           <FormControl>
-                            <Input placeholder="John Doe" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input placeholder="John Doe" maxLength={100} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -408,7 +479,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account Email</FormLabel>
                           <FormControl>
-                            <Input type="email" placeholder="john@example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input type="email" placeholder="john@example.com" maxLength={100} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -421,7 +492,7 @@ export default function Clients() {
                         <FormItem>
                           <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Contact / Billing Email</FormLabel>
                           <FormControl>
-                            <Input type="email" placeholder="billing@example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                            <Input type="email" placeholder="billing@example.com" maxLength={100} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -700,6 +771,51 @@ export default function Clients() {
               }}
             >
               Yes, deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add Client confirmation dialog */}
+      <AlertDialog open={!!confirmAddClient} onOpenChange={(open) => { if (!open) setConfirmAddClient(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add New Client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Would you like to add <strong>{confirmAddClient?.businessName}</strong> to your client list?
+              {confirmAddClient?.plan && ` This client will be on the ${confirmAddClient.plan} plan.`}
+              {" "}Please review the information and confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmAddClient(null)}>Go Back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleConfirmAdd}
+              disabled={createClient.isPending}
+            >
+              {createClient.isPending ? "Adding..." : "Yes, Add Client"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel creating client confirmation dialog */}
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Creating Client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel? All the information you've entered will be lost. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleConfirmCancel}
+            >
+              Yes, Cancel
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
