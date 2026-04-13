@@ -227,11 +227,14 @@ export default function ClientDetail() {
               <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
               <Field label="Website Linked to on GMB (if different)" value={c.websiteLinkedOnGmb as string} href={(c.websiteLinkedOnGmb as string) ?? undefined} />
               */}
+              {/*
               <Field label="Account User"                     value={c.accountUser as string} />
               <Field label="Start Date"                       value={c.startDate as string} />
               <Field label="Next Bill Date"                   value={c.nextBillDate as string} />
               <Field label="Subscription ID"                  value={c.subscriptionId as string} />
+              */}
               {/* Last 4 with card icon */}
+              {/*
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
                   Last 4 of Billing Credit Card
@@ -245,6 +248,7 @@ export default function ClientDetail() {
                   <p className="text-sm text-muted-foreground/40">—</p>
                 )}
               </div>
+              */}
             </div>
           </CardContent>
         </Card>
