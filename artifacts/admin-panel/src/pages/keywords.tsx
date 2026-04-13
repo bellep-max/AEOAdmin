@@ -277,6 +277,7 @@ function KeywordDialog({
     initialRankReportCount: 0,  currentRankReportCount: 0,
     linkUrl: "", linkTypeLabel: "", linkActive: true,
     initialRankReportLink: "", currentRankReportLink: "",
+    searchAddress: "", publishedAddress: "",
   };
   const [vals, setVals] = useState<KwRecord>(blank);
   const [campaigns, setCampaigns] = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
@@ -320,7 +321,7 @@ function KeywordDialog({
             {!isEdit && (
               <div className="space-y-1.5">
                 <Label className="text-sm uppercase tracking-widest text-black font-bold">Business <span className="text-red-600">*</span></Label>
-                <Select value={vals.clientId as string} onValueChange={(v) => { set("clientId", v); set("aeoPlanId", ""); }}>
+                <Select value={vals.clientId as string} onValueChange={(v) => { set("clientId", v); set("aeoPlanId", ""); const c = clients?.find((cl) => String(cl.id) === v); set("searchAddress", c?.searchAddress ?? ""); set("publishedAddress", c?.publishedAddress ?? ""); }}>
                   <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white"><SelectValue placeholder="Select business…" /></SelectTrigger>
                   <SelectContent>
                     {clients?.map((c) => (
@@ -330,6 +331,18 @@ function KeywordDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {!isEdit && (vals.clientId as string) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm uppercase tracking-widest text-black font-bold">Search Address</Label>
+                  <Input className="bg-slate-50 border-slate-300 h-11 text-base text-black" placeholder="123 Main St, Austin, TX" maxLength={200} value={(vals.searchAddress as string) || ""} onChange={(e) => set("searchAddress", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm uppercase tracking-widest text-black font-bold">GMB Address</Label>
+                  <Input className="bg-slate-50 border-slate-300 h-11 text-base text-black" placeholder="123 Main St, Austin, TX" maxLength={200} value={(vals.publishedAddress as string) || ""} onChange={(e) => set("publishedAddress", e.target.value)} />
+                </div>
               </div>
             )}
             <div className={!isEdit ? "" : "col-span-1"}>
@@ -798,6 +811,13 @@ export default function Keywords() {
   async function saveKeyword(id: number | null, data: KwRecord) {
     setSaving(true);
     try {
+      if (!id && data.clientId) {
+        await rawFetch(`/api/clients/${data.clientId}`, {
+          method: "PATCH", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ searchAddress: (data.searchAddress as string) || null, publishedAddress: (data.publishedAddress as string) || null }),
+        });
+      }
       if (id) {
         await new Promise<void>((res, rej) =>
           updateKeyword.mutate({ id, data }, { onSuccess: () => res(), onError: (e) => rej(e) }),
