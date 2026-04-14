@@ -272,24 +272,6 @@ export default function ClientDetail() {
               <Field label="Account User Name"         value={c.accountUserName as string} />
               <Field label="Account Email"             value={c.accountEmail as string} />
               <Field label="Contact / Billing Email"   value={c.billingEmail as string} />
-              <Field label="Plan"                      value={client.planName} />
-              <Field label="Subscription ID"           value={c.subscriptionId as string} />
-              <Field label="Start Date"                value={c.startDate as string} />
-              <Field label="Next Bill Date"            value={c.nextBillDate as string} />
-              {/* Last 4 with card icon */}
-              <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  Last 4 of Billing Credit Card
-                </p>
-                {(c.lastFourCard as string) ? (
-                  <p className="text-sm text-foreground flex items-center gap-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-muted-foreground" />
-                    •••• {c.lastFourCard as string}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground/40">—</p>
-                )}
-              </div>
               <Field label="Created By" value={c.createdBy as string} />
               {/* Notes — inline edit */}
               <div className="space-y-1 col-span-full">
@@ -313,7 +295,7 @@ export default function ClientDetail() {
       <BusinessesSection clientId={clientId} clientName={client.businessName} />
 
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
-      <ClientAeoPlans clientId={clientId} client={client} />
+      {/* <ClientAeoPlans clientId={clientId} client={client} /> */}
 
       {/* ═══ ORGANISATION DETAILS (commented out) ═══ */}
       {/*
@@ -920,13 +902,8 @@ const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxL
   { key: "accountUserName", label: "Account User Name",        maxLength: 100 },
   { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true, maxLength: 100, type: "email" },
   { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true, maxLength: 100, type: "email" },
-  { key: "planName",        label: "Plan",                     maxLength: 100 },
-  { key: "subscriptionId",  label: "Subscription ID",          maxLength: 50 },
   { key: "businessName",    label: "Client Name",              maxLength: 100 },
   { key: "searchAddress",   label: "Search Address",           wide: true, maxLength: 200 },
-  { key: "lastFourCard",    label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
-  { key: "nextBillDate",    label: "Next Bill Date",           placeholder: "YYYY-MM-DD", type: "date" },
-  { key: "startDate",       label: "Start Date",               placeholder: "YYYY-MM-DD", type: "date" },
   { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle", maxLength: 50 },
 ];
 
@@ -992,20 +969,6 @@ function EditAccDialog({
       }
     }
 
-    // Plan Name validation
-    if (vals.planName && vals.planName.trim()) {
-      if (vals.planName.length > 100) {
-        newErrors.planName = "Plan name cannot exceed 100 characters";
-      }
-    }
-
-    // Subscription ID validation
-    if (vals.subscriptionId && vals.subscriptionId.trim()) {
-      if (vals.subscriptionId.length > 50) {
-        newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
-      }
-    }
-
     // Client Name validation
     if (vals.businessName && vals.businessName.trim()) {
       if (vals.businessName.length < 2) {
@@ -1019,39 +982,6 @@ function EditAccDialog({
     if (vals.searchAddress && vals.searchAddress.trim()) {
       if (vals.searchAddress.length > 200) {
         newErrors.searchAddress = "Address cannot exceed 200 characters";
-      }
-    }
-
-    // Card validation
-    if (vals.lastFourCard && vals.lastFourCard.trim()) {
-      if (!/^\d{4}$/.test(vals.lastFourCard)) {
-        newErrors.lastFourCard = "Please enter exactly 4 digits (e.g., 1234)";
-      }
-    }
-
-    // Next Bill Date validation
-    if (vals.nextBillDate && vals.nextBillDate.trim()) {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(vals.nextBillDate)) {
-        newErrors.nextBillDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-04-15)";
-      } else {
-        const date = new Date(vals.nextBillDate);
-        if (isNaN(date.getTime())) {
-          newErrors.nextBillDate = "Please enter a valid date";
-        }
-      }
-    }
-
-    // Start Date validation
-    if (vals.startDate && vals.startDate.trim()) {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(vals.startDate)) {
-        newErrors.startDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-01-15)";
-      } else {
-        const date = new Date(vals.startDate);
-        if (isNaN(date.getTime())) {
-          newErrors.startDate = "Please enter a valid date";
-        }
       }
     }
 

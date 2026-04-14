@@ -51,15 +51,6 @@ const businessFormSchema = z.object({
     .max(200, "Website URL cannot exceed 200 characters")
     .optional(),
   
-  // Subscription Information
-  plan: z.string().optional(),
-  accountType: z.enum(['agency', 'retail']).optional(),
-  startDate: z.string().optional(),
-  nextBillDate: z.string().optional(),
-  subscriptionId: z.string()
-    .max(50, "Subscription ID cannot exceed 50 characters")
-    .optional(),
-  
   // Account Information
   accountUser: z.string()
     .max(50, "Username cannot exceed 50 characters")
@@ -75,11 +66,6 @@ const businessFormSchema = z.object({
   billingEmail: z.string()
     .email("Please enter a valid email address")
     .max(100, "Email cannot exceed 100 characters")
-    .optional()
-    .or(z.literal('')),
-  cardLast4: z.string()
-    .length(4, "Please enter exactly 4 digits")
-    .regex(/^\d{4}$/, "Please enter only numbers")
     .optional()
     .or(z.literal('')),
 });
@@ -187,16 +173,10 @@ export default function Clients() {
       gmbLink: "",
       websitePublishedOnGMB: "",
       websiteLinkedOnGMB: "",
-      plan: "",
-      accountType: undefined,
-      startDate: "",
-      nextBillDate: "",
-      subscriptionId: "",
       accountUser: "",
       accountUserName: "",
       accountEmail: "",
       billingEmail: "",
-      cardLast4: "",
     },
   });
 
@@ -375,97 +355,6 @@ export default function Clients() {
                   </div>
                 </div>
 
-                {/* Subscription Information Section */}
-                <div>
-                  <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Subscription Information</h3>
-                  <div className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="plan"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Plan</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger className="h-11 text-base text-black bg-slate-50">
-                                <SelectValue placeholder="Select a plan" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {allPlanNames.map((p) => (
-                                <SelectItem key={p} value={p}>{p}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="accountType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account Type</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
-                            <FormControl>
-                              <SelectTrigger className="h-11 text-base text-black bg-slate-50">
-                                <SelectValue placeholder="Select account type" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="agency">Agency</SelectItem>
-                              <SelectItem value="retail">Retail</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="startDate"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Start Date</FormLabel>
-                            <FormControl>
-                              <Input type="date" className="h-11 text-base text-black bg-slate-50" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="nextBillDate"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Next Bill Date</FormLabel>
-                            <FormControl>
-                              <Input type="date" className="h-11 text-base text-black bg-slate-50" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField
-                      control={form.control}
-                      name="subscriptionId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Subscription ID</FormLabel>
-                          <FormControl>
-                            <Input placeholder="SUB-12345" maxLength={50} className="h-11 text-base text-black bg-slate-50" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-
                 {/* Account Information Section */}
                 <div>
                   <h3 className="text-sm uppercase tracking-widest text-black font-bold mb-4">Account Information</h3>
@@ -522,19 +411,7 @@ export default function Clients() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="cardLast4"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Last 4 of Billing Credit Card</FormLabel>
-                          <FormControl>
-                            <Input placeholder="4242" maxLength={4} className="h-11 text-base text-black bg-slate-50" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+
                   </div>
                 </div>
 
@@ -821,7 +698,6 @@ export default function Clients() {
             <AlertDialogTitle>Add New Client?</AlertDialogTitle>
             <AlertDialogDescription>
               Would you like to add <strong>{confirmAddClient?.businessName}</strong> to your client list?
-              {confirmAddClient?.plan && ` This client will be on the ${confirmAddClient.plan} plan.`}
               {" "}Please review the information and confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
