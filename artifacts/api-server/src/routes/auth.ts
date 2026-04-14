@@ -3,37 +3,40 @@ import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { ok, badRequest, unauthorized, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
 function hashPassword(password: string): string {
-  const salt = process.env.SESSION_SECRET ?? "signal-aeo-dev-secret";
+  const salt = process.env.SESSION_SECRET;
+  if (!salt) throw new Error("SESSION_SECRET environment variable is required");
   return crypto.createHmac("sha256", salt).update(password).digest("hex");
 }
 
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body as { email: string; password: string };
+    const { email, password } = req.body as { email?: string; password?: string };
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
+      return badRequest(res, "Email and password are required");
     }
 
     const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email));
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return unauthorized(res, "Invalid credentials");
     }
 
     const hashed = hashPassword(password);
     if (user.passwordHash !== hashed) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return unauthorized(res, "Invalid credentials");
     }
 
-    (req.session as unknown as Record<string, unknown>).userId = user.id;
-    (req.session as unknown as Record<string, unknown>).userEmail = user.email;
-    (req.session as unknown as Record<string, unknown>).userName = user.name;
-    (req.session as unknown as Record<string, unknown>).userRole = user.role;
+    req.session.userId = user.id;
+    req.session.userEmail = user.email;
+    req.session.userName = user.name;
+    req.session.userRole = user.role;
 
-    res.json({
+    ok(res, {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -41,58 +44,56 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Login error");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.post("/logout", (req, res) => {
   req.session.destroy(() => {
     res.clearCookie("connect.sid");
-    res.json({ success: true });
+    ok(res, { message: "Logged out" });
   });
 });
 
 router.get("/me", (req, res) => {
-  const session = req.session as unknown as Record<string, unknown>;
-  if (!session.userId) {
-    return res.status(401).json({ error: "Not authenticated" });
+  if (!req.session.userId) {
+    return unauthorized(res);
   }
-  res.json({
-    id: session.userId,
-    email: session.userEmail,
-    name: session.userName,
-    role: session.userRole,
+  ok(res, {
+    id: req.session.userId,
+    email: req.session.userEmail,
+    name: req.session.userName,
+    role: req.session.userRole,
   });
 });
 
 router.post("/change-password", async (req, res) => {
   try {
-    const session = req.session as unknown as Record<string, unknown>;
-    if (!session.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (!req.session.userId) return unauthorized(res);
 
-    const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: "currentPassword and newPassword are required" });
+      return badRequest(res, "currentPassword and newPassword are required");
     }
     if (newPassword.length < 8) {
-      return res.status(400).json({ error: "New password must be at least 8 characters" });
+      return badRequest(res, "New password must be at least 8 characters");
     }
 
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, Number(session.userId)));
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+    if (!user) return unauthorized(res, "User not found");
 
     if (user.passwordHash !== hashPassword(currentPassword)) {
-      return res.status(401).json({ error: "Current password is incorrect" });
+      return unauthorized(res, "Current password is incorrect");
     }
 
     await db.update(usersTable)
       .set({ passwordHash: hashPassword(newPassword) })
       .where(eq(usersTable.id, user.id));
 
-    res.json({ success: true });
+    ok(res, { message: "Password updated" });
   } catch (err) {
     req.log.error({ err }, "Change password error");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

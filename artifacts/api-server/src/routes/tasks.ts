@@ -16,8 +16,11 @@
 
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tasksTable, subtasksTable } from "@workspace/db/schema";
+import { tasksTable, insertTaskSchema, subtasksTable, insertSubtaskSchema } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { ok, created, noContent, badRequest, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -36,8 +39,8 @@ router.get("/", async (req, res) => {
 
     // Build dynamic WHERE conditions from provided query params
     const conditions: ReturnType<typeof eq>[] = [];
-    if (status)   conditions.push(eq(tasksTable.status,   status));
-    if (priority) conditions.push(eq(tasksTable.priority, priority));
+    if (status)   conditions.push(eq(tasksTable.status,   status as typeof tasksTable.status.enumValues[number]));
+    if (priority) conditions.push(eq(tasksTable.priority, priority as typeof tasksTable.priority.enumValues[number]));
 
     const tasks = await db
       .select()
@@ -54,11 +57,10 @@ router.get("/", async (req, res) => {
       subtaskMap[s.taskId].push(s);
     }
 
-    // Embed subtask arrays into each task row before sending
-    res.json(tasks.map((t) => ({ ...t, subtasks: subtaskMap[t.id] ?? [] })));
+    ok(res, tasks.map((t) => ({ ...t, subtasks: subtaskMap[t.id] ?? [] })));
   } catch (err) {
     req.log.error({ err }, "Error fetching tasks");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -71,22 +73,18 @@ router.get("/", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
+    const data = validateBody(req, res, insertTaskSchema);
+    if (!data) return;
+
     const [task] = await db
       .insert(tasksTable)
-      .values({
-        title:    req.body.title,
-        category: req.body.category  ?? null,
-        status:   req.body.status    ?? "todo",
-        priority: req.body.priority  ?? "medium",
-        notes:    req.body.notes     ?? null,
-      })
+      .values(data)
       .returning();
 
-    // Return subtasks: [] so callers can treat the response uniformly
-    res.status(201).json({ ...task, subtasks: [] });
+    created(res, { ...task, subtasks: [] });
   } catch (err) {
     req.log.error({ err }, "Error creating task");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -101,24 +99,31 @@ router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
+    const body = req.body as Record<string, unknown>;
+    const TASK_FIELDS = ["title", "category", "status", "priority", "notes"] as const;
+    const updates: Record<string, unknown> = {};
+    for (const f of TASK_FIELDS) {
+      if (f in body) updates[f] = body[f];
+    }
+    if (Object.keys(updates).length === 0) return badRequest(res, "No valid fields to update");
+
     const [task] = await db
       .update(tasksTable)
-      .set(req.body)
+      .set(updates)
       .where(eq(tasksTable.id, id))
       .returning();
 
-    if (!task) return res.status(404).json({ error: "Not found" });
+    if (!task) return notFound(res);
 
-    // Re-fetch current subtasks to return a complete task object
     const subtasks = await db
       .select()
       .from(subtasksTable)
       .where(eq(subtasksTable.taskId, id));
 
-    res.json({ ...task, subtasks });
+    ok(res, { ...task, subtasks });
   } catch (err) {
     req.log.error({ err }, "Error updating task");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -131,10 +136,10 @@ router.patch("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     await db.delete(tasksTable).where(eq(tasksTable.id, parseInt(req.params.id)));
-    res.status(204).send();
+    noContent(res);
   } catch (err) {
     req.log.error({ err }, "Error deleting task");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -146,43 +151,41 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/subtasks", async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
+    const data = validateBody(req, res, insertSubtaskSchema);
+    if (!data) return;
 
     const [subtask] = await db
       .insert(subtasksTable)
-      .values({
-        taskId,
-        title: req.body.title,
-        done:  req.body.done ?? false, // New subtasks default to unchecked
-      })
+      .values({ ...data, taskId })
       .returning();
 
-    res.status(201).json(subtask);
+    created(res, subtask);
   } catch (err) {
     req.log.error({ err }, "Error creating subtask");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
-/**
- * PATCH /api/tasks/:taskId/subtasks/:subtaskId
- * Updates a single checklist item — typically toggling `done` or renaming it.
- * Body: { title?, done? }
- */
 router.patch("/:taskId/subtasks/:subtaskId", async (req, res) => {
   try {
     const subtaskId = parseInt(req.params.subtaskId);
+    const body = req.body as Record<string, unknown>;
+    const updates: Record<string, unknown> = {};
+    if ("title" in body) updates.title = body.title;
+    if ("done" in body) updates.done = body.done;
+    if (Object.keys(updates).length === 0) return badRequest(res, "No valid fields");
 
     const [subtask] = await db
       .update(subtasksTable)
-      .set(req.body)
+      .set(updates)
       .where(eq(subtasksTable.id, subtaskId))
       .returning();
 
-    if (!subtask) return res.status(404).json({ error: "Not found" });
-    res.json(subtask);
+    if (!subtask) return notFound(res);
+    ok(res, subtask);
   } catch (err) {
     req.log.error({ err }, "Error updating subtask");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

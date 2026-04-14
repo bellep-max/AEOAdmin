@@ -9,9 +9,10 @@
 
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable } from "@workspace/db/schema";
-import { clientsTable } from "@workspace/db/schema";
+import { clientAeoPlansTable, clientsTable } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { ok, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -51,7 +52,8 @@ router.get("/", async (req, res) => {
       .leftJoin(clientsTable, eq(clientAeoPlansTable.clientId, clientsTable.id))
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    res.json(
+    ok(
+      res,
       plans.map((p) => ({
         ...p,
         monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
@@ -59,7 +61,7 @@ router.get("/", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching all AEO plans");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

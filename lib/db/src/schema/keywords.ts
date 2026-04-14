@@ -18,6 +18,7 @@ export const keywordsTable = pgTable("keywords", {
   followupSearchCountLife: integer("followup_search_count_life"),
   initialRankReportCount: integer("initial_rank_report_count"),
   currentRankReportCount: integer("current_rank_report_count"),
+  // TODO: these 4 fields duplicate keyword_links columns — migrate FE to use keyword_links, then drop
   linkTypeLabel: varchar("link_type_label", { length: 100 }),
   linkActive: boolean("link_active").default(true),
   initialRankReportLink: varchar("initial_rank_report_link", { length: 512 }),

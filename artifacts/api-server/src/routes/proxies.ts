@@ -12,8 +12,11 @@
 
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { proxiesTable, devicesTable } from "@workspace/db/schema";
+import { proxiesTable, insertProxySchema, devicesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { ok, created, noContent, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -45,10 +48,10 @@ router.get("/", async (req, res) => {
       .from(proxiesTable)
       .leftJoin(devicesTable, eq(proxiesTable.deviceId, devicesTable.id));
 
-    res.json(proxies);
+    ok(res, proxies);
   } catch (err) {
     req.log.error({ err }, "Error fetching proxies");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -60,32 +63,24 @@ router.get("/", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
+    const data = validateBody(req, res, insertProxySchema);
+    if (!data) return;
 
     // Auto-build proxyUrl from individual credential fields when not provided
-    const proxyUrl = body.proxyUrl
-      ?? (body.host && body.port
-          ? `http://${body.username ?? ""}:${body.password ?? ""}@${body.host}:${body.port}`
+    const proxyUrl = data.proxyUrl
+      ?? (data.host && data.port
+          ? `http://${data.username ?? ""}:${data.password ?? ""}@${data.host}:${data.port}`
           : null);
 
     const [proxy] = await db
       .insert(proxiesTable)
-      .values({
-        label:     body.label     ?? null,
-        proxyUrl:  proxyUrl,
-        proxyType: body.proxyType ?? "mobile",    // "mobile" | "residential"
-        host:      body.host      ?? null,
-        port:      body.port      ? Number(body.port) : null,
-        username:  body.username  ?? null,
-        password:  body.password  ?? null,
-        deviceId:  body.deviceId  ? Number(body.deviceId) : null,
-      })
+      .values({ ...data, proxyUrl })
       .returning();
 
-    res.status(201).json(proxy);
+    created(res, proxy);
   } catch (err) {
     req.log.error({ err }, "Error creating proxy");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -138,11 +133,11 @@ router.patch("/:id", async (req, res) => {
       .where(eq(proxiesTable.id, id))
       .returning();
 
-    if (!proxy) return res.status(404).json({ error: "Not found" });
-    res.json(proxy);
+    if (!proxy) return notFound(res);
+    ok(res, proxy);
   } catch (err) {
     req.log.error({ err }, "Error updating proxy");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -155,10 +150,10 @@ router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     await db.delete(proxiesTable).where(eq(proxiesTable.id, id));
-    res.status(204).send();
+    noContent(res);
   } catch (err) {
     req.log.error({ err }, "Error deleting proxy");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

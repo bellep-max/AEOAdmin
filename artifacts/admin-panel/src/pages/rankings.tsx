@@ -23,13 +23,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
-}
+import { apiFetch, apiJson } from "@/lib/api";
 
 /* ── Types ──────────────────────────────────────────────── */
 type PerfStatus = "performing" | "steady" | "underperforming" | "pending";
@@ -695,11 +689,7 @@ export default function Rankings() {
   const { data: comparison, isLoading: isComparisonLoading } = useGetInitialVsCurrentRankings();
   const { data: platformData, isLoading: isPlatformLoading } = useQuery<PlatformSummary[]>({
     queryKey: ["/api/ranking-reports/platform-summary"],
-    queryFn: async () => {
-      const res = await rawFetch(`/api/ranking-reports/platform-summary`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch platform summary");
-      return res.json();
-    },
+    queryFn: () => apiJson<PlatformSummary[]>(`/api/ranking-reports/platform-summary`),
   });
 
   const [statusFilter,  setStatusFilter]  = useState<PerfStatus | "all">("all");
@@ -790,10 +780,8 @@ export default function Rankings() {
     if (!mapsDialog.reportId) return;
     setSavingMaps(true);
     try {
-      const res = await rawFetch(`/api/ranking-reports/${mapsDialog.reportId}`, {
+      const res = await apiFetch(`/api/ranking-reports/${mapsDialog.reportId}`, {
         method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mapsUrl:      mapsDialog.url.trim() || null,
           mapsPresence: mapsDialog.url.trim() ? "yes" : "no",

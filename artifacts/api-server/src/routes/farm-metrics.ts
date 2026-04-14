@@ -4,11 +4,11 @@
  *
  * Manages the configurable KPI targets and current values for the Android
  * device farm. Metrics are grouped into five categories:
- *   • performance   — session execution quality (rotation, accuracy)
- *   • device_health — battery, uptime, error rate, reboots
- *   • proxy_network — proxy success rate, latency, rotation interval
- *   • campaign      — daily targets, keyword coverage, platform split
- *   • capacity      — device counts, session volumes
+ *   - performance   — session execution quality (rotation, accuracy)
+ *   - device_health — battery, uptime, error rate, reboots
+ *   - proxy_network — proxy success rate, latency, rotation interval
+ *   - campaign      — daily targets, keyword coverage, platform split
+ *   - capacity      — device counts, session volumes
  *
  * On first request, the table is seeded with sensible defaults so the
  * dashboard is immediately usable on a fresh database.
@@ -18,14 +18,14 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { farmMetrics } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { ok, notFound, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
 /**
  * Canonical metric definitions with human-readable labels, descriptions,
  * units, and target values. These are written to the DB on first boot.
- * Admins can override `value` and `targetValue` via PATCH without losing
- * the description metadata.
  */
 const DEFAULT_METRICS = [
   /* ── Device Farm Performance ── */
@@ -62,28 +62,21 @@ const DEFAULT_METRICS = [
 
 /**
  * Seed helper — runs once on startup (or after a DB wipe).
- * Only inserts rows if the table is completely empty; subsequent boots skip it
- * to avoid overwriting any admin changes made through the dashboard.
  */
 async function ensureSeed() {
   const existing = await db.select().from(farmMetrics);
-  if (existing.length > 0) return; // Already seeded, nothing to do
+  if (existing.length > 0) return;
 
   for (const row of DEFAULT_METRICS) {
-    // Seed initial `value` with the same value as `targetValue` so every KPI
-    // starts at 100% achievement on a fresh install
     await db
       .insert(farmMetrics)
       .values({ ...row, value: row.targetValue })
-      .onConflictDoNothing(); // Safe to re-run without duplicating rows
+      .onConflictDoNothing();
   }
 }
 
 /**
  * GET /api/farm-metrics
- * Returns all farm KPI rows, sorted by category then ID so the UI can group
- * them into collapsible sections without client-side sorting.
- * Triggers seed on first call if the table is empty.
  */
 router.get("/", async (req, res) => {
   try {
@@ -93,26 +86,21 @@ router.get("/", async (req, res) => {
       .from(farmMetrics)
       .orderBy(farmMetrics.category, farmMetrics.id);
 
-    res.json(rows);
+    ok(res, rows);
   } catch (err) {
     req.log.error({ err }, "Error fetching farm metrics");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 /**
  * PATCH /api/farm-metrics/:key
- * Updates the `value` (current actual) and/or `targetValue` (goal) for a
- * single metric identified by its string key (e.g. "device_rotation").
- * Both fields are stored as strings to support decimal and integer values
- * uniformly; the frontend formats them as numbers for display.
  */
 router.patch("/:key", async (req, res) => {
   try {
     const { key } = req.params;
     const { value, targetValue } = req.body as { value?: string; targetValue?: string };
 
-    // Always update the updatedAt timestamp so the UI can show "last edited"
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (value       !== undefined) update.value       = String(value);
     if (targetValue !== undefined) update.targetValue = String(targetValue);
@@ -123,11 +111,11 @@ router.patch("/:key", async (req, res) => {
       .where(eq(farmMetrics.key, key))
       .returning();
 
-    if (!row) return res.status(404).json({ error: "Metric not found" });
-    res.json(row);
+    if (!row) return notFound(res, "Metric not found");
+    ok(res, row);
   } catch (err) {
     req.log.error({ err }, "Error updating farm metric");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

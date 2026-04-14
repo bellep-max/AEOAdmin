@@ -1,6 +1,8 @@
-import { pgTable, serial, text, integer, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, doublePrecision, date, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+export const clientStatusEnum = pgEnum("client_status", ["active", "inactive"]);
 
 export const clientsTable = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -11,7 +13,7 @@ export const clientsTable = pgTable("clients", {
   searchAddress: text("search_address"),
   city: text("city"),
   state: text("state"),
-  status: text("status").notNull().default("active"),
+  status: clientStatusEnum("status").notNull().default("active"),
   planName: text("plan_name"),
   addressType: integer("address_type").default(1),
   placeId: text("place_id"),
@@ -26,8 +28,8 @@ export const clientsTable = pgTable("clients", {
   accountUserName: text("account_user_name"),
   accountEmail:    text("account_email"),
   billingEmail:    text("billing_email"),
-  startDate:       text("start_date"),
-  nextBillDate:    text("next_bill_date"),
+  startDate:       date("start_date"),
+  nextBillDate:    date("next_bill_date"),
   subscriptionId:  text("subscription_id"),
   lastFourCard:    text("last_four_card"),
   /* ── Location ── */

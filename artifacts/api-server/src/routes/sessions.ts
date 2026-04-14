@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { sessionsTable, clientsTable, keywordsTable, devicesTable, proxiesTable } from "@workspace/db/schema";
-import { eq, and, desc, count, avg, sql } from "drizzle-orm";
+import { sessionsTable, insertSessionSchema, clientsTable, keywordsTable, devicesTable, proxiesTable } from "@workspace/db/schema";
+import { eq, and, desc, count, sql } from "drizzle-orm";
+import { ok, created, badRequest, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -11,7 +14,7 @@ router.get("/", async (req, res) => {
     const conditions: ReturnType<typeof eq>[] = [];
     if (clientId) conditions.push(eq(sessionsTable.clientId, parseInt(clientId)));
     if (deviceId) conditions.push(eq(sessionsTable.deviceId, parseInt(deviceId)));
-    if (aiPlatform) conditions.push(eq(sessionsTable.aiPlatform, aiPlatform));
+    if (aiPlatform) conditions.push(eq(sessionsTable.aiPlatform, aiPlatform as typeof sessionsTable.aiPlatform.enumValues[number]));
 
     const lim = Math.min(parseInt(limit), 200);
     const off = parseInt(offset);
@@ -46,7 +49,7 @@ router.get("/", async (req, res) => {
       .limit(lim)
       .offset(off);
 
-    res.json({
+    ok(res, {
       sessions: sessions.map((s) => ({ ...s, durationSeconds: null })),
       total: Number(totalResult.count),
       offset: off,
@@ -54,74 +57,27 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching sessions");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
+    const data = validateBody(req, res, insertSessionSchema);
+    if (!data) return;
+
     const [session] = await db
       .insert(sessionsTable)
-      .values({
-        clientId: body.clientId,
-        keywordId: body.keywordId ?? null,
-        deviceId: body.deviceId ?? null,
-        proxyId: body.proxyId ?? null,
-        promptText: body.promptText ?? null,
-        followupText: body.followupText ?? null,
-        aiPlatform: body.aiPlatform,
-        screenshotUrl: body.screenshotUrl ?? null,
-        type: body.type ?? "aeo",
-        status: body.status ?? "pending",
-        proxySessionId: body.proxySessionId ?? null,
-        proxyUsername: body.proxyUsername ?? null,
-      })
+      .values(data)
       .returning();
-    res.status(201).json(session);
+    created(res, session);
   } catch (err) {
     req.log.error({ err }, "Error creating session");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
-router.patch("/:id/screenshot", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const { screenshotUrl } = req.body;
-    const [updated] = await db
-      .update(sessionsTable)
-      .set({ screenshotUrl: screenshotUrl?.trim() || null })
-      .where(eq(sessionsTable.id, id))
-      .returning();
-    if (!updated) return res.status(404).json({ error: "Session not found" });
-    res.json(updated);
-  } catch (err) {
-    req.log.error({ err }, "Error updating session screenshot");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.patch("/:id/followup", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const { followupText } = req.body;
-    if (typeof followupText !== "string") {
-      return res.status(400).json({ error: "followupText must be a string" });
-    }
-    const [updated] = await db
-      .update(sessionsTable)
-      .set({ followupText: followupText.trim() || null })
-      .where(eq(sessionsTable.id, id))
-      .returning();
-    if (!updated) return res.status(404).json({ error: "Session not found" });
-    res.json(updated);
-  } catch (err) {
-    req.log.error({ err }, "Error updating session followup");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
+// /stress-test BEFORE /:id routes
 router.get("/stress-test", async (req, res) => {
   try {
     const [deviceCount] = await db
@@ -156,7 +112,7 @@ router.get("/stress-test", async (req, res) => {
       { platform: "perplexity", count: Number(perplexityCount.count), percentage: totalSessions > 0 ? (Number(perplexityCount.count) / totalSessions) * 100 : 33.4 },
     ];
 
-    res.json({
+    ok(res, {
       maxSessionsPerDay,
       avgSessionDurationSeconds: 45,
       devicesAvailable: availableDevices,
@@ -171,7 +127,44 @@ router.get("/stress-test", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching stress test stats");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
+  }
+});
+
+router.patch("/:id/screenshot", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { screenshotUrl } = req.body;
+    const [updated] = await db
+      .update(sessionsTable)
+      .set({ screenshotUrl: screenshotUrl?.trim() || null })
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!updated) return notFound(res, "Session not found");
+    ok(res, updated);
+  } catch (err) {
+    req.log.error({ err }, "Error updating session screenshot");
+    serverError(res);
+  }
+});
+
+router.patch("/:id/followup", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { followupText } = req.body;
+    if (typeof followupText !== "string") {
+      return badRequest(res, "followupText must be a string");
+    }
+    const [updated] = await db
+      .update(sessionsTable)
+      .set({ followupText: followupText.trim() || null })
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!updated) return notFound(res, "Session not found");
+    ok(res, updated);
+  } catch (err) {
+    req.log.error({ err }, "Error updating session followup");
+    serverError(res);
   }
 });
 

@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { devicesTable, sessionsTable } from "@workspace/db/schema";
-import { eq, and, count, sql } from "drizzle-orm";
+import { devicesTable, insertDeviceSchema, sessionsTable } from "@workspace/db/schema";
+import { eq, count, sql } from "drizzle-orm";
+import { ok, created, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -23,7 +26,7 @@ router.get("/farm-status", async (req, res) => {
 
     const avgSessionsPerDevice = total > 0 ? Number(sessionsToday.count) / total : 0;
 
-    res.json({
+    ok(res, {
       total,
       available,
       inUse,
@@ -32,11 +35,11 @@ router.get("/farm-status", async (req, res) => {
       averageSessionsPerDevice: Math.round(avgSessionsPerDevice * 100) / 100,
       maxSessionsPerDevicePerDay: 1,
       currentUtilization: total > 0 ? inUse / total : 0,
-      devices: devices.map((d) => ({ ...d, sessionsToday: null })),
+      devices,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching device farm status");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -46,45 +49,51 @@ router.get("/", async (req, res) => {
     const devices = await db
       .select()
       .from(devicesTable)
-      .where(status ? eq(devicesTable.status, status) : undefined);
-    res.json(devices.map((d) => ({ ...d, sessionsToday: null })));
+      .where(status ? eq(devicesTable.status, status as typeof devicesTable.status.enumValues[number]) : undefined);
+    ok(res, devices);
   } catch (err) {
     req.log.error({ err }, "Error fetching devices");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
+    const data = validateBody(req, res, insertDeviceSchema);
+    if (!data) return;
+
     const [device] = await db
       .insert(devicesTable)
-      .values({
-        deviceIdentifier: body.deviceIdentifier,
-        model: body.model,
-        status: body.status ?? "available",
-      })
+      .values(data)
       .returning();
-    res.status(201).json({ ...device, sessionsToday: null });
+    created(res, device);
   } catch (err) {
     req.log.error({ err }, "Error creating device");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const body = req.body;
+
+    const DEVICE_FIELDS = ["deviceIdentifier", "label", "serial", "port", "useAdb", "brand", "model", "status", "retiredToday", "lastUsedAt"] as const;
+    const updates: Record<string, unknown> = {};
+    for (const f of DEVICE_FIELDS) {
+      if (f in body) updates[f] = body[f];
+    }
+
     const [device] = await db
       .update(devicesTable)
-      .set(req.body)
+      .set(updates)
       .where(eq(devicesTable.id, id))
       .returning();
-    if (!device) return res.status(404).json({ error: "Not found" });
-    res.json({ ...device, sessionsToday: null });
+    if (!device) return notFound(res);
+    ok(res, device);
   } catch (err) {
     req.log.error({ err }, "Error updating device");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

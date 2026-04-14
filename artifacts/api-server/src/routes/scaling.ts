@@ -15,6 +15,8 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clientsTable } from "@workspace/db/schema";
 import { count, eq } from "drizzle-orm";
+import { ok, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -90,10 +92,10 @@ router.get("/plan", async (req, res) => {
       },
     ];
 
-    res.json(milestones);
+    ok(res, milestones);
   } catch (err) {
     req.log.error({ err }, "Error fetching scaling plan");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

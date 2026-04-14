@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { keywordsTable, keywordLinksTable } from "@workspace/db/schema";
+import { keywordsTable, insertKeywordSchema, keywordLinksTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
+import { ok, created, noContent, badRequest, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -18,10 +21,10 @@ router.get("/", async (req, res) => {
       .select()
       .from(keywordsTable)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
-    res.json(keywords);
+    ok(res, keywords);
   } catch (err) {
     req.log.error({ err }, "Error fetching keywords");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -31,35 +34,17 @@ router.get("/", async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
-    if (!body.clientId || !body.keywordText?.trim()) {
-      return res.status(400).json({ error: "clientId and keywordText are required" });
-    }
+    const data = validateBody(req, res, insertKeywordSchema);
+    if (!data) return;
+
     const [keyword] = await db
       .insert(keywordsTable)
-      .values({
-        clientId: Number(body.clientId),
-        keywordText: body.keywordText.trim(),
-        keywordType: body.keywordType ? Number(body.keywordType) : 3,
-        isActive:   body.isActive !== false,
-        isPrimary:  body.isPrimary ? Number(body.isPrimary) : 0,
-        verificationStatus: body.verificationStatus ?? null,
-        initialSearchCount30Days:  body.initialSearchCount30Days  ?? null,
-        followupSearchCount30Days: body.followupSearchCount30Days ?? null,
-        initialSearchCountLife:    body.initialSearchCountLife    ?? null,
-        followupSearchCountLife:   body.followupSearchCountLife   ?? null,
-        initialRankReportCount:    body.initialRankReportCount    ?? null,
-        currentRankReportCount:    body.currentRankReportCount    ?? null,
-        linkTypeLabel:         body.linkTypeLabel         ?? null,
-        linkActive:            body.linkActive !== false,
-        initialRankReportLink: body.initialRankReportLink ?? null,
-        currentRankReportLink: body.currentRankReportLink ?? null,
-      })
+      .values(data)
       .returning();
-    res.status(201).json(keyword);
+    created(res, keyword);
   } catch (err) {
     req.log.error({ err }, "Error creating keyword");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -75,10 +60,10 @@ router.get("/:id/links", async (req, res) => {
       .from(keywordLinksTable)
       .where(eq(keywordLinksTable.keywordId, keywordId))
       .orderBy(keywordLinksTable.createdAt);
-    res.json(links);
+    ok(res, links);
   } catch (err) {
     req.log.error({ err }, "Error fetching keyword links");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -105,10 +90,10 @@ router.post("/:id/links", async (req, res) => {
     await db.update(keywordsTable)
       .set({ keywordType: 4 })
       .where(eq(keywordsTable.id, keywordId));
-    res.status(201).json(link);
+    created(res, link);
   } catch (err) {
     req.log.error({ err }, "Error creating keyword link");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -127,18 +112,18 @@ router.patch("/:id/links/:linkId", async (req, res) => {
     if (body.initialRankReportLink !== undefined) allowed.initialRankReportLink = body.initialRankReportLink ?? null;
     if (body.currentRankReportLink !== undefined) allowed.currentRankReportLink = body.currentRankReportLink ?? null;
     if (Object.keys(allowed).length === 0) {
-      return res.status(400).json({ error: "No valid fields to update" });
+      return badRequest(res, "No valid fields to update");
     }
     const [link] = await db
       .update(keywordLinksTable)
       .set(allowed)
       .where(eq(keywordLinksTable.id, linkId))
       .returning();
-    if (!link) return res.status(404).json({ error: "Not found" });
-    res.json(link);
+    if (!link) return notFound(res);
+    ok(res, link);
   } catch (err) {
     req.log.error({ err }, "Error updating keyword link");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -159,10 +144,10 @@ router.delete("/:id/links/:linkId", async (req, res) => {
         .set({ keywordType: 3 })
         .where(eq(keywordsTable.id, keywordId));
     }
-    res.status(204).send();
+    noContent(res);
   } catch (err) {
     req.log.error({ err }, "Error deleting keyword link");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -198,7 +183,7 @@ router.patch("/:id", async (req, res) => {
     }
 
     if (Object.keys(allowed).length === 0) {
-      return res.status(400).json({ error: "No valid fields to update" });
+      return badRequest(res, "No valid fields to update");
     }
 
     const [keyword] = await db
@@ -207,11 +192,11 @@ router.patch("/:id", async (req, res) => {
       .where(eq(keywordsTable.id, id))
       .returning();
 
-    if (!keyword) return res.status(404).json({ error: "Not found" });
-    res.json(keyword);
+    if (!keyword) return notFound(res);
+    ok(res, keyword);
   } catch (err) {
     req.log.error({ err }, "Error updating keyword");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -223,10 +208,10 @@ router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     await db.delete(keywordsTable).where(eq(keywordsTable.id, id));
-    res.status(204).send();
+    noContent(res);
   } catch (err) {
     req.log.error({ err }, "Error deleting keyword");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

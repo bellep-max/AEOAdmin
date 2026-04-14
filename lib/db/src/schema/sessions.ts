@@ -1,10 +1,14 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
 import { keywordsTable } from "./keywords";
 import { devicesTable } from "./devices";
 import { proxiesTable } from "./proxies";
+
+export const sessionStatusEnum = pgEnum("session_status", ["pending", "running", "success", "failed"]);
+export const sessionTypeEnum = pgEnum("session_type", ["aeo", "audit"]);
+export const aiPlatformEnum = pgEnum("ai_platform", ["gemini", "chatgpt", "perplexity"]);
 
 export const sessionsTable = pgTable("sessions", {
   id: serial("id").primaryKey(),
@@ -14,10 +18,10 @@ export const sessionsTable = pgTable("sessions", {
   proxyId: integer("proxy_id").references(() => proxiesTable.id),
   promptText: text("prompt_text"),
   followupText: text("followup_text"),
-  status: text("status").notNull().default("pending"),
-  type: text("type").notNull().default("aeo"), // aeo or audit
+  status: sessionStatusEnum("status").notNull().default("pending"),
+  type: sessionTypeEnum("type").notNull().default("aeo"),
   errorClass: text("error_class"),
-  aiPlatform: text("ai_platform").notNull().default("gemini"),
+  aiPlatform: aiPlatformEnum("ai_platform").notNull().default("gemini"),
   screenshotUrl: text("screenshot_url"),
   proxySessionId: text("proxy_session_id"),
   proxyUsername:  text("proxy_username"),

@@ -47,8 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiFetch("/api/auth/me")
       .then(async (res) => {
         if (res.ok) {
-          const data = await parseJSON(res);
-          if (data) setUser(data);
+          const json = await parseJSON(res);
+          // Handle both envelope { success, data } and raw formats
+          const userData = json?.data ?? json;
+          if (userData?.id) setUser(userData);
         }
       })
       .catch(() => {})
@@ -70,8 +72,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     try {
-      const userData = await parseJSON(res);
-      if (!userData) throw new Error("No user data in response");
+      const json = await parseJSON(res);
+      if (!json) throw new Error("No user data in response");
+      // Handle both envelope { success, data } and raw formats
+      const userData = json.data ?? json;
+      if (!userData?.id) throw new Error("No user data in response");
       setUser(userData);
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : "Invalid server response");

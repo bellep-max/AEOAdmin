@@ -1,13 +1,16 @@
-import { pgTable, serial, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+export const taskStatusEnum = pgEnum("task_status", ["todo", "in_progress", "done"]);
+export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 
 export const tasksTable = pgTable("tasks", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   category: text("category"),
-  status: text("status").notNull().default("todo"),
-  priority: text("priority").notNull().default("medium"),
+  status: taskStatusEnum("status").notNull().default("todo"),
+  priority: taskPriorityEnum("priority").notNull().default("medium"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

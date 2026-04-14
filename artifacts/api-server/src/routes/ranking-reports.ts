@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rankingReportsTable, clientsTable, keywordsTable } from "@workspace/db/schema";
+import { rankingReportsTable, insertRankingReportSchema, clientsTable, keywordsTable } from "@workspace/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
+import { ok, created, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -32,63 +35,30 @@ router.get("/", async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(rankingReportsTable.createdAt));
 
-    res.json(reports);
+    ok(res, reports);
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
+    const data = validateBody(req, res, insertRankingReportSchema);
+    if (!data) return;
+
     const [report] = await db
       .insert(rankingReportsTable)
-      .values({
-        clientId: body.clientId,
-        keywordId: body.keywordId,
-        rankingPosition: body.rankingPosition ?? null,
-        reasonRecommended: body.reasonRecommended ?? null,
-        mapsPresence: body.mapsPresence ?? null,
-        mapsUrl: body.mapsUrl ?? null,
-        isInitialRanking: body.isInitialRanking ?? false,
-        platform: body.platform ?? null,
-      })
+      .values(data)
       .returning();
-    res.status(201).json(report);
+    created(res, report);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
-/* PATCH /api/ranking-reports/:id — update mapsUrl / mapsPresence / position */
-router.patch("/:id", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const body = req.body;
-    const updates: Record<string, unknown> = {};
-    if (body.mapsUrl        !== undefined) updates.mapsUrl        = body.mapsUrl ?? null;
-    if (body.mapsPresence   !== undefined) updates.mapsPresence   = body.mapsPresence;
-    if (body.rankingPosition !== undefined) updates.rankingPosition = body.rankingPosition;
-    if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
-
-    const [report] = await db
-      .update(rankingReportsTable)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .set(updates as any)
-      .where(eq(rankingReportsTable.id, id))
-      .returning();
-    if (!report) return res.status(404).json({ error: "Not found" });
-    res.json(report);
-  } catch (err) {
-    req.log.error({ err }, "Error updating ranking report");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/* GET /api/ranking-reports/platform-summary
-   Returns per-platform initial-vs-current comparison rows */
+/* GET /api/ranking-reports/platform-summary — BEFORE /:id */
 router.get("/platform-summary", async (req, res) => {
   try {
     const PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
@@ -167,16 +137,14 @@ router.get("/platform-summary", async (req, res) => {
       };
     });
 
-    res.json(summary);
+    ok(res, summary);
   } catch (err) {
     req.log.error({ err }, "Error fetching platform summary");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
-/* GET /api/ranking-reports/per-keyword-platform
-   Returns per-keyword, per-platform latest ranking position.
-   Shape: [{ keywordId, chatgpt, gemini, perplexity }] */
+/* GET /api/ranking-reports/per-keyword-platform — BEFORE /:id */
 router.get("/per-keyword-platform", async (req, res) => {
   try {
     const allReports = await db
@@ -211,13 +179,14 @@ router.get("/per-keyword-platform", async (req, res) => {
       perplexity: platforms["perplexity"] ?? null,
     }));
 
-    res.json(result);
+    ok(res, result);
   } catch (err) {
     req.log.error({ err }, "Error fetching per-keyword platform rankings");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
+/* GET /api/ranking-reports/initial-vs-current — BEFORE /:id */
 router.get("/initial-vs-current", async (req, res) => {
   try {
     const clients = await db.select().from(clientsTable);
@@ -290,10 +259,35 @@ router.get("/initial-vs-current", async (req, res) => {
       };
     });
 
-    res.json(comparisons);
+    ok(res, comparisons);
   } catch (err) {
     req.log.error({ err }, "Error fetching initial vs current rankings");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
+  }
+});
+
+/* PATCH /api/ranking-reports/:id — update mapsUrl / mapsPresence / position */
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const body = req.body;
+    const updates: Record<string, unknown> = {};
+    if (body.mapsUrl        !== undefined) updates.mapsUrl        = body.mapsUrl ?? null;
+    if (body.mapsPresence   !== undefined) updates.mapsPresence   = body.mapsPresence;
+    if (body.rankingPosition !== undefined) updates.rankingPosition = body.rankingPosition;
+    if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
+
+    const [report] = await db
+      .update(rankingReportsTable)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set(updates as any)
+      .where(eq(rankingReportsTable.id, id))
+      .returning();
+    if (!report) return notFound(res);
+    ok(res, report);
+  } catch (err) {
+    req.log.error({ err }, "Error updating ranking report");
+    serverError(res);
   }
 });
 

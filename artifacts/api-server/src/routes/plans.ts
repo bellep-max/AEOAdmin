@@ -17,6 +17,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { plansTable } from "@workspace/db/schema";
+import { ok, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -29,7 +31,8 @@ router.get("/", async (req, res) => {
   try {
     const plans = await db.select().from(plansTable);
 
-    res.json(
+    ok(
+      res,
       plans.map((p) => ({
         ...p,
         // Postgres numeric columns arrive as strings via node-postgres;
@@ -39,7 +42,7 @@ router.get("/", async (req, res) => {
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching plans");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

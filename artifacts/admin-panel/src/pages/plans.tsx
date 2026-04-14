@@ -17,12 +17,7 @@ import {
   ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink,
 } from "lucide-react";
 
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
-}
+import { apiFetch, apiJson } from "@/lib/api";
 
 const SCHEMA_IMPLEMENTORS   = ["Us (Signal AEO)", "Client Developer", "Other"];
 
@@ -325,9 +320,8 @@ export default function Plans() {
   /* ── Fetch all plans ── */
   const fetchPlans = useCallback(async () => {
     try {
-      const res = await rawFetch("/api/aeo-plans", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      setPlans(await res.json());
+      const data = await apiJson<AeoPlan[]>("/api/aeo-plans");
+      setPlans(data);
     } catch {
       toast({ title: "Failed to load plans", variant: "destructive" });
     } finally {
@@ -338,10 +332,8 @@ export default function Plans() {
   /* ── Fetch clients for dropdown ── */
   const fetchClients = useCallback(async () => {
     try {
-      const res = await rawFetch("/api/clients", { credentials: "include" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setClients(Array.isArray(data) ? data : (data.clients ?? []));
+      const data = await apiJson<Client[] | { clients: Client[] }>("/api/clients");
+      setClients(Array.isArray(data) ? data : ((data as { clients: Client[] }).clients ?? []));
     } catch { /* silent */ }
   }, []);
 
@@ -396,26 +388,16 @@ export default function Plans() {
 
     setSaving(true);
     try {
-      let res: Response;
       if (editingPlan) {
-        res = await rawFetch(`/api/clients/${selectedClientId}/aeo-plans/${editingPlan.id}`, {
+        await apiJson(`/api/clients/${selectedClientId}/aeo-plans/${editingPlan.id}`, {
           method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formValues),
         });
       } else {
-        res = await rawFetch(`/api/clients/${selectedClientId}/aeo-plans`, {
+        await apiJson(`/api/clients/${selectedClientId}/aeo-plans`, {
           method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formValues),
         });
-      }
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Save failed");
       }
 
       toast({ title: editingPlan ? "Plan updated" : "Plan created" });
@@ -436,9 +418,8 @@ export default function Plans() {
   async function handleDelete(plan: AeoPlan) {
     setDeleting(true);
     try {
-      const res = await rawFetch(`/api/clients/${plan.clientId}/aeo-plans/${plan.id}`, {
+      const res = await apiFetch(`/api/clients/${plan.clientId}/aeo-plans/${plan.id}`, {
         method: "DELETE",
-        credentials: "include",
       });
       if (!res.ok) throw new Error("Delete failed");
       toast({ title: "Plan deleted" });

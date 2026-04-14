@@ -7,13 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { User, Mail, ShieldCheck, Hash, KeyRound, Loader2, CheckCircle2 } from "lucide-react";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
-}
+import { apiFetch } from "@/lib/api";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -45,10 +39,8 @@ export default function Profile() {
     }
     setSaving(true);
     try {
-      const r = await rawFetch(`/api/auth/change-password`, {
+      const r = await apiFetch(`/api/auth/change-password`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       if (!r.ok) {

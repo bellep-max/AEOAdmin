@@ -251,8 +251,8 @@ export default function Dashboard() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm text-foreground truncate">{client.businessName}</p>
-                      {(client as unknown as Record<string,unknown>).searchAddress && <p className="text-xs text-muted-foreground truncate">Search: {(client as unknown as Record<string,unknown>).searchAddress as string}</p>}
-                      {(client as unknown as Record<string,unknown>).publishedAddress && <p className="text-xs text-muted-foreground truncate">GMB: {(client as unknown as Record<string,unknown>).publishedAddress as string}</p>}
+                      {(client as unknown as Record<string,unknown>).searchAddress ? <p className="text-xs text-muted-foreground truncate">Search: {String((client as unknown as Record<string,unknown>).searchAddress)}</p> : null}
+                      {(client as unknown as Record<string,unknown>).publishedAddress ? <p className="text-xs text-muted-foreground truncate">GMB: {String((client as unknown as Record<string,unknown>).publishedAddress)}</p> : null}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${

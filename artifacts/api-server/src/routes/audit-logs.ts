@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { auditLogsTable, clientsTable, keywordsTable, devicesTable } from "@workspace/db/schema";
+import { auditLogsTable, insertAuditLogSchema, clientsTable, keywordsTable } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { ok, created, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router();
 
@@ -33,32 +36,26 @@ router.get("/", async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(auditLogsTable.createdAt));
 
-    res.json(logs);
+    ok(res, logs);
   } catch (err) {
     req.log.error({ err }, "Error fetching audit logs");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const body = req.body;
+    const data = validateBody(req, res, insertAuditLogSchema);
+    if (!data) return;
+
     const [log] = await db
       .insert(auditLogsTable)
-      .values({
-        clientId: body.clientId ?? null,
-        keywordId: body.keywordId ?? null,
-        deviceId: body.deviceId ?? null,
-        platform: body.platform ?? null,
-        screenshotPath: body.screenshotPath ?? null,
-        responseText: body.responseText ?? null,
-        proxyUsername: body.proxyUsername ?? null,
-      })
+      .values(data)
       .returning();
-    res.status(201).json(log);
+    created(res, log);
   } catch (err) {
     req.log.error({ err }, "Error creating audit log");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

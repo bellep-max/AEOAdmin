@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable } from "@workspace/db/schema";
+import { clientAeoPlansTable, insertClientAeoPlanSchema } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { ok, created, noContent, badRequest, notFound, serverError } from "../lib/response";
+import { validateBody } from "../lib/validate";
+import "../middleware/auth";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -11,8 +14,8 @@ const router = Router({ mergeParams: true }); // gives access to :clientId from 
  */
 router.get("/", async (req, res) => {
   try {
-    const clientId = parseInt(req.params.clientId);
-    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid clientId" });
+    const clientId = parseInt((req.params as Record<string, string>).clientId);
+    if (isNaN(clientId)) return badRequest(res, "Invalid clientId");
 
     const plans = await db
       .select()
@@ -20,10 +23,10 @@ router.get("/", async (req, res) => {
       .where(eq(clientAeoPlansTable.clientId, clientId))
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    res.json(plans.map((p) => ({ ...p, monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null })));
+    ok(res, plans.map((p) => ({ ...p, monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null })));
   } catch (err) {
     req.log.error({ err }, "Error fetching client AEO plans");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -33,41 +36,25 @@ router.get("/", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const clientId = parseInt(req.params.clientId);
-    if (isNaN(clientId)) return res.status(400).json({ error: "Invalid clientId" });
+    const clientId = parseInt((req.params as Record<string, string>).clientId);
+    if (isNaN(clientId)) return badRequest(res, "Invalid clientId");
 
-    const body = req.body as Record<string, unknown>;
-    if (!body.planType) return res.status(400).json({ error: "planType is required" });
+    const data = validateBody(req, res, insertClientAeoPlanSchema);
+    if (!data) return;
 
     const [plan] = await db
       .insert(clientAeoPlansTable)
       .values({
+        ...data,
         clientId,
-        businessName:          (body.businessName          as string)  ?? null,
-        planType:              body.planType               as string,
-        serviceCategory:       (body.serviceCategory       as string)  ?? null,
-        targetCityRadius:      (body.targetCityRadius      as string)  ?? null,
-        sampleQuestion1:       (body.sampleQuestion1       as string)  ?? null,
-        sampleQuestion2:       (body.sampleQuestion2       as string)  ?? null,
-        sampleQuestion3:       (body.sampleQuestion3       as string)  ?? null,
-        sampleQuestion4:       (body.sampleQuestion4       as string)  ?? null,
-        sampleQuestion5:       (body.sampleQuestion5       as string)  ?? null,
-        sampleQuestion6:       (body.sampleQuestion6       as string)  ?? null,
-        sampleQuestion7:       (body.sampleQuestion7       as string)  ?? null,
-        sampleQuestion8:       (body.sampleQuestion8       as string)  ?? null,
-        sampleQuestion9:       (body.sampleQuestion9       as string)  ?? null,
-        sampleQuestion10:      (body.sampleQuestion10      as string)  ?? null,
-        currentAnswerPresence: (body.currentAnswerPresence as string)  ?? null,
-        searchBoostTarget:     body.searchBoostTarget != null ? Number(body.searchBoostTarget) : null,
-        monthlyAeoBudget:      body.monthlyAeoBudget  != null ? String(body.monthlyAeoBudget)  : null,
-        schemaImplementor:     (body.schemaImplementor     as string)  ?? null,
+        monthlyAeoBudget: data.monthlyAeoBudget != null ? String(data.monthlyAeoBudget) : null,
       })
       .returning();
 
-    res.status(201).json({ ...plan, monthlyAeoBudget: plan.monthlyAeoBudget != null ? Number(plan.monthlyAeoBudget) : null });
+    created(res, { ...plan, monthlyAeoBudget: plan.monthlyAeoBudget != null ? Number(plan.monthlyAeoBudget) : null });
   } catch (err) {
     req.log.error({ err }, "Error creating client AEO plan");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -77,9 +64,9 @@ router.post("/", async (req, res) => {
  */
 router.patch("/:planId", async (req, res) => {
   try {
-    const clientId = parseInt(req.params.clientId);
+    const clientId = parseInt((req.params as Record<string, string>).clientId);
     const planId   = parseInt(req.params.planId);
-    if (isNaN(clientId) || isNaN(planId)) return res.status(400).json({ error: "Invalid id" });
+    if (isNaN(clientId) || isNaN(planId)) return badRequest(res, "Invalid id");
 
     const body = req.body as Record<string, unknown>;
     const update: Record<string, unknown> = { updatedAt: new Date() };
@@ -103,11 +90,11 @@ router.patch("/:planId", async (req, res) => {
       .where(eq(clientAeoPlansTable.id, planId))
       .returning();
 
-    if (!updated) return res.status(404).json({ error: "Plan not found" });
-    res.json({ ...updated, monthlyAeoBudget: updated.monthlyAeoBudget != null ? Number(updated.monthlyAeoBudget) : null });
+    if (!updated) return notFound(res, "Plan not found");
+    ok(res, { ...updated, monthlyAeoBudget: updated.monthlyAeoBudget != null ? Number(updated.monthlyAeoBudget) : null });
   } catch (err) {
     req.log.error({ err }, "Error updating client AEO plan");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -118,13 +105,13 @@ router.patch("/:planId", async (req, res) => {
 router.delete("/:planId", async (req, res) => {
   try {
     const planId = parseInt(req.params.planId);
-    if (isNaN(planId)) return res.status(400).json({ error: "Invalid planId" });
+    if (isNaN(planId)) return badRequest(res, "Invalid planId");
 
     await db.delete(clientAeoPlansTable).where(eq(clientAeoPlansTable.id, planId));
-    res.json({ success: true });
+    noContent(res);
   } catch (err) {
     req.log.error({ err }, "Error deleting client AEO plan");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

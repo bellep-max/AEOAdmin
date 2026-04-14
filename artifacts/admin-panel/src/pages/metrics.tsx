@@ -7,13 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Cpu, Wifi, RefreshCcw, ShieldCheck, BarChart2, Search, TrendingUp, TrendingDown,
 } from "lucide-react";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
-}
+import { apiJson } from "@/lib/api";
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface MetricCell {
@@ -62,7 +56,7 @@ export default function Metrics() {
 
   const { data, isLoading } = useQuery<BusinessData>({
     queryKey: ["business-metrics"],
-    queryFn: () => rawFetch(`/api/metrics/business`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => apiJson<BusinessData>(`/api/metrics/business`),
   });
 
   const filtered = (data?.metrics ?? []).filter((m) =>

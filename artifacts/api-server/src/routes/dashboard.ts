@@ -7,89 +7,52 @@ import {
   proxiesTable,
   rankingReportsTable,
 } from "@workspace/db/schema";
-import { eq, count, desc, sql, and, gte } from "drizzle-orm";
+import { eq, count, sql, gte } from "drizzle-orm";
+import { ok, serverError } from "../lib/response";
+import "../middleware/auth";
 
 const router = Router();
 
 router.get("/summary", async (req, res) => {
   try {
-    // Fetch total and active clients (core metrics)
-    let totalClientsNum = 0;
-    let activeClientsNum = 0;
-    try {
-      const [totalClients] = await db.select({ count: count() }).from(clientsTable);
-      const [activeClients] = await db
-        .select({ count: count() })
-        .from(clientsTable)
-        .where(eq(clientsTable.status, "active"));
-      totalClientsNum = Number(totalClients.count);
-      activeClientsNum = Number(activeClients.count);
-    } catch (clientErr) {
-      req.log.warn({ clientErr }, "Failed to fetch clients");
-      totalClientsNum = 0;
-      activeClientsNum = 0;
-    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // Fetch sessions data
-    let sessionsTodayNum = 0;
-    let totalSessionsNum = 0;
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const [sessionsToday] = await db
-        .select({ count: count() })
-        .from(sessionsTable)
-        .where(gte(sessionsTable.timestamp, today));
-      const [totalSessions] = await db.select({ count: count() }).from(sessionsTable);
-      sessionsTodayNum = Number(sessionsToday.count);
-      totalSessionsNum = Number(totalSessions.count);
-    } catch (sessionErr) {
-      req.log.warn({ sessionErr }, "Failed to fetch sessions");
-      sessionsTodayNum = 0;
-      totalSessionsNum = 0;
-    }
+    // Run independent queries in parallel
+    const [
+      [totalClients],
+      [activeClients],
+      [sessionsToday],
+      [totalSessions],
+      devices,
+      [totalProxies],
+      rankingPositions,
+    ] = await Promise.all([
+      db.select({ count: count() }).from(clientsTable),
+      db.select({ count: count() }).from(clientsTable).where(eq(clientsTable.status, "active")),
+      db.select({ count: count() }).from(sessionsTable).where(gte(sessionsTable.timestamp, today)),
+      db.select({ count: count() }).from(sessionsTable),
+      db.select().from(devicesTable),
+      db.select({ count: count() }).from(proxiesTable),
+      db.select({ rankingPosition: rankingReportsTable.rankingPosition }).from(rankingReportsTable),
+    ]);
 
-    // Try to fetch devices
-    let devices: any[] = [];
-    let availableDevices = 0;
-    let totalDevices = 0;
-    try {
-      devices = await db.select().from(devicesTable);
-      availableDevices = devices.filter((d) => d.status === "available").length;
-      totalDevices = devices.length;
-    } catch (deviceErr) {
-      req.log.warn({ deviceErr }, "Failed to fetch devices");
-      devices = [];
-      totalDevices = 0;
-      availableDevices = 0;
-    }
+    const totalClientsNum = Number(totalClients.count);
+    const activeClientsNum = Number(activeClients.count);
+    const sessionsTodayNum = Number(sessionsToday.count);
+    const totalSessionsNum = Number(totalSessions.count);
+    const totalDevices = devices.length;
+    const availableDevices = devices.filter((d) => d.status === "available").length;
+    const totalProxiesNum = Number(totalProxies.count);
 
-    // Fetch proxies
-    let totalProxiesNum = 0;
-    try {
-      const [totalProxies] = await db.select({ count: count() }).from(proxiesTable);
-      totalProxiesNum = Number(totalProxies.count);
-    } catch (proxyErr) {
-      req.log.warn({ proxyErr }, "Failed to fetch proxies");
-      totalProxiesNum = 0;
-    }
-
-    // Fetch ranking reports
-    let avgPosition = 0;
-    try {
-      const rankingReports = await db.select({ rankingPosition: rankingReportsTable.rankingPosition }).from(rankingReportsTable);
-      const positions = rankingReports.map((r) => r.rankingPosition).filter((p): p is number => p != null);
-      avgPosition = positions.length ? positions.reduce((a, b) => a + b, 0) / positions.length : 0;
-    } catch (rankErr) {
-      req.log.warn({ rankErr }, "Failed to fetch ranking reports");
-      avgPosition = 0;
-    }
+    const positions = rankingPositions.map((r) => r.rankingPosition).filter((p): p is number => p != null);
+    const avgPosition = positions.length ? positions.reduce((a, b) => a + b, 0) / positions.length : 0;
 
     const networkHealthScore = totalDevices > 0
       ? Math.min(100, Math.round((availableDevices / totalDevices) * 100 * 0.4 + 60))
       : 60;
 
-    res.json({
+    ok(res, {
       totalClients: totalClientsNum,
       activeClients: activeClientsNum,
       totalSessionsToday: sessionsTodayNum,
@@ -106,7 +69,7 @@ router.get("/summary", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error fetching dashboard summary");
     // Return a partial response with at least zeros so dashboard doesn't break
-    res.json({
+    ok(res, {
       totalClients: 0,
       activeClients: 0,
       totalSessionsToday: 0,
@@ -126,7 +89,29 @@ router.get("/summary", async (req, res) => {
 router.get("/session-activity", async (req, res) => {
   try {
     const days = 14;
-    const result = [];
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (days - 1));
+    startDate.setHours(0, 0, 0, 0);
+
+    const rows = await db
+      .select({
+        date: sql<string>`DATE(${sessionsTable.timestamp})`,
+        platform: sessionsTable.aiPlatform,
+        count: count(),
+      })
+      .from(sessionsTable)
+      .where(gte(sessionsTable.timestamp, startDate))
+      .groupBy(sql`DATE(${sessionsTable.timestamp})`, sessionsTable.aiPlatform);
+
+    // Build a map of date+platform -> count
+    const countMap = new Map<string, Record<string, number>>();
+    for (const row of rows) {
+      const dateStr = String(row.date);
+      if (!countMap.has(dateStr)) countMap.set(dateStr, {});
+      countMap.get(dateStr)![row.platform] = Number(row.count);
+    }
+
+    // Fill dateRange from grouped results
     const dateRange = Array.from({ length: days }, (_, i) => {
       const date = new Date();
       date.setDate(date.getDate() - (days - 1 - i));
@@ -134,46 +119,25 @@ router.get("/session-activity", async (req, res) => {
       return date;
     });
 
-    for (const date of dateRange) {
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-      let sessions = 0, geminiCount = 0, chatgptCount = 0, perplexityCount = 0;
-      try {
-        const [total] = await db
-          .select({ count: count() })
-          .from(sessionsTable)
-          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`));
-        const [gemini] = await db
-          .select({ count: count() })
-          .from(sessionsTable)
-          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "gemini")));
-        const [chatgpt] = await db
-          .select({ count: count() })
-          .from(sessionsTable)
-          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "chatgpt")));
-        const [perplexity] = await db
-          .select({ count: count() })
-          .from(sessionsTable)
-          .where(and(gte(sessionsTable.timestamp, date), sql`${sessionsTable.timestamp} < ${nextDate}`, eq(sessionsTable.aiPlatform, "perplexity")));
-        sessions = Number(total.count);
-        geminiCount = Number(gemini.count);
-        chatgptCount = Number(chatgpt.count);
-        perplexityCount = Number(perplexity.count);
-      } catch (dayErr) {
-        req.log.warn({ dayErr }, "Failed to fetch session counts for date (schema mismatch)");
-      }
-      result.push({
-        date: date.toISOString().split("T")[0],
-        sessions,
-        gemini: geminiCount,
-        chatgpt: chatgptCount,
-        perplexity: perplexityCount,
-      });
-    }
-    res.json(result);
+    const result = dateRange.map((date) => {
+      const dateStr = date.toISOString().split("T")[0];
+      const counts = countMap.get(dateStr) ?? {};
+      const gemini = counts["gemini"] ?? 0;
+      const chatgpt = counts["chatgpt"] ?? 0;
+      const perplexity = counts["perplexity"] ?? 0;
+      return {
+        date: dateStr,
+        sessions: gemini + chatgpt + perplexity,
+        gemini,
+        chatgpt,
+        perplexity,
+      };
+    });
+
+    ok(res, result);
   } catch (err) {
     req.log.error({ err }, "Error fetching session activity");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -190,14 +154,14 @@ router.get("/platform-breakdown", async (req, res) => {
     const chatgptCount = Number(chatgpt.count);
     const perplexityCount = Number(perplexity.count);
 
-    res.json([
+    ok(res, [
       { platform: "Gemini", count: geminiCount, percentage: totalNum > 0 ? (geminiCount / totalNum) * 100 : 33.3 },
       { platform: "ChatGPT", count: chatgptCount, percentage: totalNum > 0 ? (chatgptCount / totalNum) * 100 : 33.3 },
       { platform: "Perplexity", count: perplexityCount, percentage: totalNum > 0 ? (perplexityCount / totalNum) * 100 : 33.4 },
     ]);
   } catch (err) {
     req.log.error({ err }, "Error fetching platform breakdown");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 
@@ -230,7 +194,7 @@ router.get("/network-health", async (req, res) => {
       req.log.warn({ sessErr }, "Failed to fetch sessions for network-health (schema mismatch)");
     }
 
-    res.json({
+    ok(res, {
       score,
       devicesOnline: online,
       devicesOffline: offline,
@@ -241,7 +205,7 @@ router.get("/network-health", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching network health");
-    res.status(500).json({ error: "Internal server error" });
+    serverError(res);
   }
 });
 

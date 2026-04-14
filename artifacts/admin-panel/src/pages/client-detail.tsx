@@ -15,13 +15,7 @@ import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase,
 } from "lucide-react";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
-}
+import { apiFetch } from "@/lib/api";
 
 /* ─── Read-only field ────────────────────────────────────────────────────── */
 function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
@@ -65,11 +59,9 @@ export default function ClientDetail() {
   async function patchClient(body: Record<string, string>, onSuccess: () => void) {
     setSaving(true);
     try {
-      const res = await rawFetch(`/api/clients/${clientId}`, {
-        method:      "PATCH",
-        credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify(body),
+      const res = await apiFetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        body:   JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
       await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });

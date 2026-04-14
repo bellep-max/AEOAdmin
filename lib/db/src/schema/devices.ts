@@ -1,6 +1,8 @@
-import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+export const deviceStatusEnum = pgEnum("device_status", ["available", "in_use", "offline"]);
 
 export const devicesTable = pgTable("devices", {
   id: serial("id").primaryKey(),
@@ -11,7 +13,7 @@ export const devicesTable = pgTable("devices", {
   useAdb: boolean("use_adb").notNull().default(true),
   brand:  text("brand"),
   model:  text("model").notNull(),
-  status: text("status").notNull().default("Available"), // Available, Busy, Away
+  status: deviceStatusEnum("status").notNull().default("available"),
   retiredToday: boolean("retired_today").notNull().default(false),
   lastUsedAt: timestamp("last_used_at"),
 });
