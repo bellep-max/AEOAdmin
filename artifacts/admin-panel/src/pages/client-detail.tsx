@@ -31,6 +31,9 @@ import {
 import { format } from "date-fns";
 import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
+import { AddBusinessDialog } from "@/components/AddBusinessDialog";
+import { useQuery } from "@tanstack/react-query";
+import { Plus, Trash2 } from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -271,8 +274,6 @@ export default function ClientDetail() {
               <Field label="Contact / Billing Email"   value={c.billingEmail as string} />
               <Field label="Plan"                      value={client.planName} />
               <Field label="Subscription ID"           value={c.subscriptionId as string} />
-              <Field label="Business Name"             value={client.businessName} />
-              <Field label="Search Address"            value={client.searchAddress} />
               <Field label="Start Date"                value={c.startDate as string} />
               <Field label="Next Bill Date"            value={c.nextBillDate as string} />
               {/* Last 4 with card icon */}
@@ -307,6 +308,9 @@ export default function ClientDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ═══ BUSINESSES ═══ */}
+      <BusinessesSection clientId={clientId} clientName={client.businessName} />
 
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       <ClientAeoPlans clientId={clientId} client={client} />
@@ -1244,6 +1248,184 @@ function EditAccDialog({
               onClick={handleConfirmCancel}
             >
               Yes, Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* Businesses Section                                                          */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+interface BusinessRow {
+  id: number;
+  clientId: number;
+  name: string;
+  category?: string | null;
+  city?: string | null;
+  state?: string | null;
+  gmbUrl?: string | null;
+  websiteUrl?: string | null;
+  status: "active" | "inactive";
+  keywordCount?: number;
+}
+
+function BusinessesSection({ clientId, clientName }: { clientId: number; clientName: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editBiz, setEditBiz] = useState<BusinessRow | null>(null);
+  const [confirmDeleteBiz, setConfirmDeleteBiz] = useState<BusinessRow | null>(null);
+
+  const { data: businesses, isLoading, refetch } = useQuery<BusinessRow[]>({
+    queryKey: ["/api/businesses", { clientId }],
+    queryFn: async () => {
+      const res = await rawFetch(`/api/businesses?clientId=${clientId}`);
+      if (!res.ok) throw new Error("Failed to load businesses");
+      return res.json();
+    },
+  });
+
+  async function deleteBusiness(id: number) {
+    try {
+      const res = await rawFetch(`/api/businesses/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error();
+      toast({ title: "Business deleted" });
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    } catch {
+      toast({ title: "Failed to delete business", variant: "destructive" });
+    } finally {
+      setConfirmDeleteBiz(null);
+    }
+  }
+
+  return (
+    <>
+      <Card className="border-border/50">
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-primary" />
+            Businesses {businesses ? <span className="text-muted-foreground font-normal">({businesses.length})</span> : null}
+          </CardTitle>
+          <Button size="sm" className="h-8 gap-1" onClick={() => setAddOpen(true)}>
+            <Plus className="w-3.5 h-3.5" /> Add Business
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading businesses…</p>
+          ) : !businesses || businesses.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              No businesses yet. Click <strong>Add Business</strong> to create the first one.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {businesses.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link
+                        href={`/clients/${clientId}/businesses/${b.id}`}
+                        className="font-semibold text-sm text-primary hover:underline"
+                      >
+                        {b.name}
+                      </Link>
+                      <Badge
+                        variant="outline"
+                        className={b.status === "active"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
+                          : "bg-muted text-muted-foreground text-xs"}
+                      >
+                        {b.status}
+                      </Badge>
+                      {b.category && (
+                        <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-xs">
+                          {b.category}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                      {(b.city || b.state) && <span>{[b.city, b.state].filter(Boolean).join(", ")}</span>}
+                      {b.gmbUrl && (
+                        <a href={b.gmbUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary flex items-center gap-1">
+                          GMB <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      {b.websiteUrl && (
+                        <a href={b.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary flex items-center gap-1">
+                          Website <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      <span>{b.keywordCount ?? 0} keywords</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
+                      onClick={() => setEditBiz(b)}
+                      title="Edit"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDeleteBiz(b)}
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AddBusinessDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        clientId={clientId}
+        clientName={clientName}
+        onCreated={() => { refetch(); }}
+      />
+
+      {editBiz && (
+        <AddBusinessDialog
+          open={!!editBiz}
+          onOpenChange={(open) => { if (!open) setEditBiz(null); }}
+          clientId={clientId}
+          business={editBiz}
+          onUpdated={() => { refetch(); setEditBiz(null); }}
+        />
+      )}
+
+      <AlertDialog open={!!confirmDeleteBiz} onOpenChange={(open) => { if (!open) setConfirmDeleteBiz(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{confirmDeleteBiz?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the business and all keywords, sessions, and ranking reports scoped to it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeleteBiz(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (confirmDeleteBiz) deleteBusiness(confirmDeleteBiz.id); }}
+            >
+              Yes, delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

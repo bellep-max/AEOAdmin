@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  useGetKeywords, useUpdateKeyword, useGetClients,
+  useUpdateKeyword, useGetClients,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button }   from "@/components/ui/button";
 import { Input }    from "@/components/ui/input";
 import { Label }    from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
 import { format } from "date-fns";
 import jsPDF       from "jspdf";
 import autoTable   from "jspdf-autotable";
+import { KeywordDialog } from "@/components/KeywordDialog";
 
 const BASE       = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -62,10 +63,10 @@ interface KeywordLink {
 /* ═══════════════════════════════════════════════════════════
    CSV EXPORT
 ═══════════════════════════════════════════════════════════ */
-function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: string) {
+function exportCSV(rows: KwRecord[], businessesMap: Map<number, { name: string; clientId: number }>, clientsMap: Map<number, string>, filename: string) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const headers = [
-    "Business", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
+    "Client", "Business", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
     "Initial Search (30d)", "Follow-up Search (30d)",
     "Initial Search (Life)", "Follow-up Search (Life)",
     "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
@@ -73,8 +74,10 @@ function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: 
   const lines = rows.map((kw) => {
     const type = getKeywordTypeLabel(kw.keywordType as number);
     const date = kw.dateAdded ? format(new Date(kw.dateAdded as string), "yyyy-MM-dd") : "";
+    const biz  = businessesMap.get(kw.businessId as number);
     return [
       esc(clientsMap.get(kw.clientId as number) ?? ""),
+      esc(biz?.name ?? ""),
       esc(kw.keywordText), esc(type),
       esc(kw.isPrimary ? "Yes" : "No"),
       esc(kw.isActive  ? "Active" : "Inactive"),
@@ -100,7 +103,7 @@ function exportCSV(rows: KwRecord[], clientsMap: Map<number, string>, filename: 
 /* ═══════════════════════════════════════════════════════════
    PDF EXPORT
 ═══════════════════════════════════════════════════════════ */
-function exportPDF(rows: KwRecord[], clientsMap: Map<number, string>, filename: string, title: string) {
+function exportPDF(rows: KwRecord[], businessesMap: Map<number, { name: string; clientId: number }>, clientsMap: Map<number, string>, filename: string, title: string) {
   const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -116,9 +119,11 @@ function exportPDF(rows: KwRecord[], clientsMap: Map<number, string>, filename: 
 
   const grouped = new Map<string, KwRecord[]>();
   for (const kw of rows) {
-    const biz = clientsMap.get(kw.clientId as number) ?? `Business #${kw.clientId}`;
-    if (!grouped.has(biz)) grouped.set(biz, []);
-    grouped.get(biz)!.push(kw);
+    const bizRec = businessesMap.get(kw.businessId as number);
+    const clientName = clientsMap.get(kw.clientId as number) ?? `Client #${kw.clientId}`;
+    const label = bizRec ? `${clientName} — ${bizRec.name}` : `${clientName} — (Unassigned)`;
+    if (!grouped.has(label)) grouped.set(label, []);
+    grouped.get(label)!.push(kw);
   }
 
   let startY = 30;
@@ -256,256 +261,6 @@ function LinkDialog({
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
-   KEYWORD DIALOG — add / edit keyword
-═══════════════════════════════════════════════════════════ */
-function KeywordDialog({
-  open, onOpenChange, title, saving, initial, clients, onSave, defaultClientId,
-}: {
-  open: boolean; onOpenChange: (v: boolean) => void;
-  title: string; saving: boolean;
-  initial?: KwRecord;
-  defaultClientId?: number;
-  clients?: { id: number; businessName: string; city?: string | null; searchAddress?: string | null; publishedAddress?: string | null }[];
-  onSave: (data: KwRecord) => void;
-}) {
-  const blank: KwRecord = {
-    clientId: "", keywordText: "", keywordType: "3", isPrimary: "0", isActive: true,
-    aeoPlanId: "",
-    initialSearchCount30Days: 0, followupSearchCount30Days: 0,
-    initialSearchCountLife: 0,  followupSearchCountLife: 0,
-    initialRankReportCount: 0,  currentRankReportCount: 0,
-    linkUrl: "", linkTypeLabel: "", linkActive: true,
-    initialRankReportLink: "", currentRankReportLink: "",
-    searchAddress: "", publishedAddress: "",
-  };
-  const [vals, setVals] = useState<KwRecord>(blank);
-  const [campaigns, setCampaigns] = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
-  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
-  function set(k: string, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
-  const isEdit = !!initial;
-
-  useEffect(() => { if (open) setVals(initial ?? (defaultClientId ? { ...blank, clientId: String(defaultClientId) } : blank)); }, [open]);
-
-  /* fetch campaigns whenever the selected client changes */
-  const selectedClientId = vals.clientId as string;
-  useEffect(() => {
-    if (!selectedClientId || isEdit) { setCampaigns([]); return; }
-    setLoadingCampaigns(true);
-    rawFetch(`/api/clients/${selectedClientId}/aeo-plans`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setCampaigns(Array.isArray(data) ? data : []))
-      .catch(() => setCampaigns([]))
-      .finally(() => setLoadingCampaigns(false));
-  }, [selectedClientId, isEdit]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-screen h-screen max-w-full max-h-screen rounded-none border-0 bg-white dark:bg-slate-900 flex flex-col p-0 gap-0">
-        <DialogHeader className="shrink-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
-              <Key className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg font-bold text-black dark:text-white">{title}</DialogTitle>
-              <p className="text-base text-slate-600 dark:text-slate-400 mt-0.5">Fill in all fields, then save</p>
-            </div>
-          </div>
-          <DialogDescription className="sr-only">{title}</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto px-6 py-6 max-w-3xl w-full mx-auto space-y-5">
-          {/* Business + Keyword */}
-          <div className="grid grid-cols-1 gap-3">
-            {!isEdit && (
-              <div className="space-y-1.5">
-                <Label className="text-sm uppercase tracking-widest text-black font-bold">Business <span className="text-red-600">*</span></Label>
-                <Select value={vals.clientId as string} onValueChange={(v) => { set("clientId", v); set("aeoPlanId", ""); const c = clients?.find((cl) => String(cl.id) === v); set("searchAddress", c?.searchAddress ?? ""); set("publishedAddress", c?.publishedAddress ?? ""); }}>
-                  <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white"><SelectValue placeholder="Select business…" /></SelectTrigger>
-                  <SelectContent>
-                    {clients?.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="font-bold text-base">{c.businessName}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {!isEdit && (vals.clientId as string) && ((vals.searchAddress as string) || (vals.publishedAddress as string)) && (
-              <div className="flex flex-wrap gap-x-6 gap-y-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
-                {(vals.searchAddress as string) && (
-                  <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">Search:</span> {vals.searchAddress as string}</span>
-                )}
-                {(vals.publishedAddress as string) && (
-                  <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">GMB:</span> {vals.publishedAddress as string}</span>
-                )}
-              </div>
-            )}
-            <div className={!isEdit ? "" : "col-span-1"}>
-              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Keyword <span className="text-red-600">*</span></Label>
-              <Input className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base mt-1.5 text-black dark:text-white"
-                placeholder="e.g. best plumber in Manchester"
-                value={vals.keywordText as string}
-                onChange={(e) => set("keywordText", e.target.value)} />
-            </div>
-          </div>
-
-          {/* Campaign assignment */}
-          {!isEdit && (vals.clientId as string) && (
-            <div className="space-y-1.5">
-              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Assign to Campaign <span className="text-slate-500 font-normal normal-case">(optional)</span></Label>
-              {loadingCampaigns ? (
-                <div className="h-11 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 animate-pulse" />
-              ) : campaigns.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No campaigns found for this client</p>
-              ) : (
-                <Select value={(vals.aeoPlanId as string) || "__none__"} onValueChange={(v) => set("aeoPlanId", v === "__none__" ? "" : v)}>
-                  <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white">
-                    <SelectValue placeholder="Select campaign (optional)…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— No campaign —</SelectItem>
-                    {campaigns.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        <span className="font-semibold">{c.planType}</span>
-                        {c.serviceCategory && <span className="text-slate-500 ml-1">· {c.serviceCategory}</span>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          )}
-
-          {/* Keyword type */}
-          <div className="space-y-1.5">
-            <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Keyword Types <span className="text-red-600">*</span></Label>
-            <Select value={String(vals.keywordType)} onValueChange={(v) => set("keywordType", v)}>
-              <SelectTrigger className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white">
-                <SelectValue placeholder="Select keyword type…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="3">Keywords</SelectItem>
-                <SelectItem value="4">Keywords with Backlinks</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Type 4 — full link form */}
-          {String(vals.keywordType) === "4" && (
-            <div className="space-y-3 pt-3 pb-4 px-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
-              <div className="flex items-center gap-2 mb-1">
-                <Link2 className="w-4 h-4 text-emerald-600" />
-                <p className="text-sm font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Backlink Details</p>
-              </div>
-
-              {/* Link URL */}
-              <div className="space-y-1.5">
-                <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link URL</Label>
-                <Input
-                  className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white font-mono"
-                  placeholder="https://…"
-                  value={(vals.linkUrl as string) || ""}
-                  onChange={(e) => set("linkUrl", e.target.value)}
-                />
-              </div>
-
-              {/* Link Type + Active */}
-              <div className="grid grid-cols-3 gap-3 items-end">
-                <div className="col-span-2 space-y-1.5">
-                  <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Link Type Label</Label>
-                  <Select value={(vals.linkTypeLabel as string) || ""} onValueChange={(v) => set("linkTypeLabel", v)}>
-                    <SelectTrigger className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white">
-                      <SelectValue placeholder="Select link type…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GBP snippet">GBP snippet</SelectItem>
-                      <SelectItem value="Client website blog post">Client website blog post</SelectItem>
-                      <SelectItem value="External article">External article</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-4 h-11">
-                  <p className="text-base flex-1 text-black dark:text-white font-bold">Active</p>
-                  <Switch
-                    checked={vals.linkActive !== false}
-                    onCheckedChange={(v) => set("linkActive", v)}
-                    className="data-[state=checked]:bg-emerald-500 scale-75"
-                  />
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* Primary + Active */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { k: "isPrimary", label: "Primary (1st)", sub: "Mark as primary keyword",
-                checked: vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true,
-                onChange: (v: boolean) => set("isPrimary", v ? "1" : "0"), cls: "data-[state=checked]:bg-amber-500" },
-              { k: "isActive", label: "Active", sub: "Include in campaigns",
-                checked: vals.isActive !== false,
-                onChange: (v: boolean) => set("isActive", v), cls: "data-[state=checked]:bg-emerald-500" },
-            ].map((row) => (
-              <div key={row.k} className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-4">
-                <div className="flex-1"><p className="text-base font-bold text-black dark:text-white">{row.label}</p><p className="text-sm text-slate-600 dark:text-slate-400">{row.sub}</p></div>
-                <Switch checked={row.checked} onCheckedChange={row.onChange} className={row.cls} />
-              </div>
-            ))}
-          </div>
-
-          {/* Search counts */}
-          <div>
-            <p className="text-sm uppercase tracking-widest text-black dark:text-white font-bold mb-3">Search Counts</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              {[
-                { k: "initialSearchCount30Days",  label: "Initial Search Count" },
-                { k: "followupSearchCount30Days", label: "Follow-up Search Count" },
-                { k: "initialRankReportCount",    label: "Initial Rank Report" },
-                { k: "currentRankReportCount",    label: "Current Rank Report" },
-              ].map(({ k, label }) => (
-                <div key={k} className="space-y-1.5">
-                  <Label className="text-sm text-black dark:text-white font-medium">{label}</Label>
-                  <Input type="number" min={0}
-                    className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
-                    value={vals[k] as number}
-                    onChange={(e) => set(k, parseInt(e.target.value) || 0)} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-5">
-          <div className="flex gap-3 max-w-3xl mx-auto">
-            <Button variant="outline" className="flex-1 border-slate-300 dark:border-slate-600 text-black dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 text-base font-bold h-12" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button className="flex-1 gap-2 text-base font-bold h-12"
-              disabled={saving || !(vals.keywordText as string)?.trim() || (!isEdit && !vals.clientId)}
-              onClick={() => onSave({
-                ...vals,
-                aeoPlanId: (vals.aeoPlanId as string) ? Number(vals.aeoPlanId) : null,
-                keywordType:               Number(vals.keywordType),
-                isPrimary:                 (vals.isPrimary === "1" || vals.isPrimary === 1 || vals.isPrimary === true) ? 1 : 0,
-                initialSearchCount30Days:  Number(vals.initialSearchCount30Days)  || 0,
-                followupSearchCount30Days: Number(vals.followupSearchCount30Days) || 0,
-                initialSearchCountLife:    Number(vals.initialSearchCountLife)    || 0,
-                followupSearchCountLife:   Number(vals.followupSearchCountLife)   || 0,
-                initialRankReportCount:    Number(vals.initialRankReportCount)    || 0,
-                currentRankReportCount:    Number(vals.currentRankReportCount)    || 0,
-              })}
-              style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}>
-              {saving ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</> : isEdit ? "Save Changes" : "Add Keyword"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 function KeywordCard({
   kw, onEdit, onDelete, onToggleActive,
 }: {
@@ -771,34 +526,51 @@ function KeywordCard({
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
 export default function Keywords() {
-  const [search,           setSearch]           = useState("");
-  const [typeFilter,       setTypeFilter]       = useState<string>("all");
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [search,             setSearch]             = useState("");
+  const [typeFilter,         setTypeFilter]         = useState<string>("all");
+  const [selectedClientId,   setSelectedClientId]   = useState<number | null>(null);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
   const [bizTypeFilters,   setBizTypeFilters]   = useState<Map<number, string>>(new Map());
   const [expanded,         setExpanded]         = useState<Set<number>>(new Set());
   const [addOpen,          setAddOpen]          = useState(false);
   const [editKw,           setEditKw]           = useState<KwRecord | null>(null);
-  const [addForClient,     setAddForClient]     = useState<number | null>(null);
+  const [addForBusiness,   setAddForBusiness]   = useState<{ clientId: number; businessId: number } | null>(null);
   const [saving,           setSaving]           = useState(false);
-  const [allPlans,         setAllPlans]         = useState<{ id: number; planType: string; serviceCategory: string | null }[]>([]);
+  const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; serviceCategory: string | null }[]>([]);
+  const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; searchAddress: string | null; publishedAddress: string | null; status: string }[]>([]);
 
   useEffect(() => {
     rawFetch("/api/aeo-plans", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setAllPlans(Array.isArray(data) ? data : []))
       .catch(() => { /* silent */ });
+    rawFetch("/api/businesses", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setBusinesses(Array.isArray(data) ? data : []))
+      .catch(() => { /* silent */ });
   }, []);
 
   const plansMap = new Map(allPlans.map((p) => [p.id, p]));
+  const businessesMap = new Map(businesses.map((b) => [b.id, b]));
 
   function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }
   function setBizTypeFilter(cid: number, v: string) {
     setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
   }
 
-  const { data: keywords, isLoading } = useGetKeywords(
-    selectedClientId !== null ? { clientId: selectedClientId } : undefined
-  );
+  const { data: keywords, isLoading } = useQuery<KwRecord[]>({
+    queryKey: ["/api/keywords", { clientId: selectedClientId, businessId: selectedBusinessId, aeoPlanId: selectedCampaignId }],
+    queryFn: async () => {
+      const qs = new URLSearchParams();
+      if (selectedClientId   !== null) qs.set("clientId",   String(selectedClientId));
+      if (selectedBusinessId !== null) qs.set("businessId", String(selectedBusinessId));
+      if (selectedCampaignId !== null) qs.set("aeoPlanId",  String(selectedCampaignId));
+      const r = await rawFetch(`/api/keywords${qs.toString() ? `?${qs}` : ""}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
   const { data: clients }             = useGetClients();
   const updateKeyword                 = useUpdateKeyword();
   const { toast }                     = useToast();
@@ -818,7 +590,12 @@ export default function Keywords() {
         const r = await rawFetch(`/api/keywords`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...kwData, clientId: Number(kwData.clientId), aeoPlanId: kwData.aeoPlanId != null && kwData.aeoPlanId !== "" ? Number(kwData.aeoPlanId) : null }),
+          body: JSON.stringify({
+            ...kwData,
+            clientId:   Number(kwData.clientId),
+            businessId: kwData.businessId != null && kwData.businessId !== "" ? Number(kwData.businessId) : null,
+            aeoPlanId:  kwData.aeoPlanId  != null && kwData.aeoPlanId  !== "" ? Number(kwData.aeoPlanId)  : null,
+          }),
         });
         if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
         const newKw = await r.json();
@@ -834,7 +611,7 @@ export default function Keywords() {
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
       toast({ title: id ? "Keyword updated" : "Keyword added" });
-      setEditKw(null); setAddOpen(false); setAddForClient(null);
+      setEditKw(null); setAddOpen(false); setAddForBusiness(null);
     } catch (err) {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally { setSaving(false); }
@@ -874,12 +651,13 @@ export default function Keywords() {
     return matchText && matchType;
   });
 
-  /* Group by client */
+  /* Group by business (null → "Unassigned" bucket keyed as 0) */
+  const UNASSIGNED_BID = 0;
   const grouped = new Map<number, KwRecord[]>();
   for (const kw of filteredKws) {
-    const cid = kw.clientId as number;
-    if (!grouped.has(cid)) grouped.set(cid, []);
-    grouped.get(cid)!.push(kw);
+    const bid = (kw.businessId as number | null) ?? UNASSIGNED_BID;
+    if (!grouped.has(bid)) grouped.set(bid, []);
+    grouped.get(bid)!.push(kw);
   }
 
   /* Stats */
@@ -889,15 +667,17 @@ export default function Keywords() {
   const type3    = all.filter((k: KwRecord) => Number(k.keywordType) === 3).length;
   const type4    = all.filter((k: KwRecord) => Number(k.keywordType) === 4).length;
 
-  /* Exports */
+  /* Exports — now keyed by business, not client */
   const stamp        = format(new Date(), "yyyy-MM-dd");
-  const exportAllCSV = () => exportCSV(filteredKws, clientsMap, `aeo-keywords-${stamp}.csv`);
-  const exportAllPDF = () => exportPDF(filteredKws, clientsMap, `aeo-keywords-${stamp}.pdf`, `All businesses · ${filteredKws.length} keywords`);
-  const exportBizCSV = (clientId: number, kws: KwRecord[]) =>
-    exportCSV(kws, clientsMap, `${(clientsMap.get(clientId) ?? "business").replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.csv`);
-  const exportBizPDF = (clientId: number, kws: KwRecord[]) => {
-    const name = clientsMap.get(clientId) ?? `Business #${clientId}`;
-    exportPDF(kws, clientsMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.pdf`, `${name} · ${kws.length} keywords`);
+  const exportAllCSV = () => exportCSV(filteredKws, businessesMap, clientsMap, `aeo-keywords-${stamp}.csv`);
+  const exportAllPDF = () => exportPDF(filteredKws, businessesMap, clientsMap, `aeo-keywords-${stamp}.pdf`, `All businesses · ${filteredKws.length} keywords`);
+  const exportBizCSV = (businessId: number, kws: KwRecord[]) => {
+    const name = businessesMap.get(businessId)?.name ?? "business";
+    exportCSV(kws, businessesMap, clientsMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.csv`);
+  };
+  const exportBizPDF = (businessId: number, kws: KwRecord[]) => {
+    const name = businessesMap.get(businessId)?.name ?? `Business #${businessId}`;
+    exportPDF(kws, businessesMap, clientsMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.pdf`, `${name} · ${kws.length} keywords`);
   };
 
   return (
@@ -926,38 +706,97 @@ export default function Keywords() {
         </div>
       </div>
 
-      {/* Client Selector */}
-      <div className="flex items-center gap-3">
-        <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0" />
-        <Select
-          value={selectedClientId !== null ? String(selectedClientId) : "all"}
-          onValueChange={(v) => {
-            const newClientId = v === "all" ? null : Number(v);
-            setSelectedClientId(newClientId);
-            setSearch("");
-            setTypeFilter("all");
-            if (newClientId !== null) {
-              setExpanded(new Set([newClientId]));
-            } else {
-              setExpanded(new Set());
-            }
-          }}
-        >
-          <SelectTrigger className="w-80 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-12 text-base font-bold">
-            <SelectValue placeholder="Select a client or view all…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              <span className="font-bold text-base">All Clients</span>
-            </SelectItem>
-            {(clients ?? []).map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>
-                <span className="font-bold text-base">{c.businessName}</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Cascade filter: Client → Business → Campaign */}
+      {(() => {
+        const bizInScope  = businesses.filter((b) => selectedClientId === null || b.clientId === selectedClientId);
+        const planInScope = allPlans.filter((p) =>
+          (selectedClientId === null   || p.clientId   === selectedClientId) &&
+          (selectedBusinessId === null || p.businessId === selectedBusinessId),
+        );
+        return (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3">
+            <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1" />
+
+            <Select
+              value={selectedClientId !== null ? String(selectedClientId) : "all"}
+              onValueChange={(v) => {
+                const next = v === "all" ? null : Number(v);
+                setSelectedClientId(next);
+                setSelectedBusinessId(null);
+                setSelectedCampaignId(null);
+                setExpanded(new Set());
+              }}
+            >
+              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Clients</span></SelectItem>
+                {(clients ?? []).map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    <span className="font-bold">{c.businessName}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-slate-400">›</span>
+
+            <Select
+              value={selectedBusinessId !== null ? String(selectedBusinessId) : "all"}
+              onValueChange={(v) => {
+                const next = v === "all" ? null : Number(v);
+                setSelectedBusinessId(next);
+                setSelectedCampaignId(null);
+                if (next !== null) setExpanded(new Set([next]));
+              }}
+              disabled={bizInScope.length === 0}
+            >
+              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Businesses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Businesses</span></SelectItem>
+                {bizInScope.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    <span className="font-bold">{b.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-slate-400">›</span>
+
+            <Select
+              value={selectedCampaignId !== null ? String(selectedCampaignId) : "all"}
+              onValueChange={(v) => setSelectedCampaignId(v === "all" ? null : Number(v))}
+              disabled={planInScope.length === 0}
+            >
+              <SelectTrigger className="w-64 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Campaigns" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Campaigns</span></SelectItem>
+                {planInScope.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    <span className="font-bold">{p.name ?? p.planType}</span>
+                    <span className="text-slate-500 ml-1">· {p.planType}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {(selectedClientId !== null || selectedBusinessId !== null || selectedCampaignId !== null) && (
+              <button
+                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setExpanded(new Set()); }}
+                className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-bold"
+              >
+                <X className="w-4 h-4" /> Clear filters
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Summary strip */}
       <div className="grid grid-cols-4 gap-3">
@@ -1028,43 +867,94 @@ export default function Keywords() {
         </div>
       ) : (
         <div className="space-y-4">
-          {Array.from(grouped.entries())
-            .map(([clientId, kws]) => {
-            const client      = clients?.find((c) => c.id === clientId);
-            const isOpen      = expanded.has(clientId);
-            const initials    = (client?.businessName ?? "?").split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
-            const activeCount = kws.filter((k) => k.isActive !== false).length;
-            const bizFilter   = getBizTypeFilter(clientId);
+          {(() => {
+            const sortedEntries = Array.from(grouped.entries()).sort(([aBid, aKws], [bBid, bKws]) => {
+              const aBiz = aBid === UNASSIGNED_BID ? null : businessesMap.get(aBid);
+              const bBiz = bBid === UNASSIGNED_BID ? null : businessesMap.get(bBid);
+              const aCid = aBiz?.clientId ?? (aKws[0]?.clientId as number);
+              const bCid = bBiz?.clientId ?? (bKws[0]?.clientId as number);
+              const aCName = clients?.find((c) => c.id === aCid)?.businessName ?? `Client #${aCid}`;
+              const bCName = clients?.find((c) => c.id === bCid)?.businessName ?? `Client #${bCid}`;
+              return aCName.localeCompare(bCName) || (aBiz?.name ?? "").localeCompare(bBiz?.name ?? "");
+            });
+            const showClientDividers = selectedClientId === null && sortedEntries.length > 0;
+            let lastClientId: number | null = null;
+            return sortedEntries.flatMap(([businessId, kws]) => {
+            const biz          = businessId === UNASSIGNED_BID ? null : businessesMap.get(businessId);
+            const clientId     = biz?.clientId ?? (kws[0]?.clientId as number);
+            const client       = clients?.find((c) => c.id === clientId);
+            const displayName  = biz?.name ?? (businessId === UNASSIGNED_BID ? "Unassigned" : `Business #${businessId}`);
+            const clientName   = client?.businessName ?? `Client #${clientId}`;
+            const needDivider  = showClientDividers && clientId !== lastClientId;
+            lastClientId = clientId;
+            const clientBizCount = sortedEntries.filter(([bid, bkws]) => {
+              const b = bid === UNASSIGNED_BID ? null : businessesMap.get(bid);
+              return (b?.clientId ?? (bkws[0]?.clientId as number)) === clientId;
+            }).length;
+            const isOpen       = expanded.has(businessId);
+            const initials     = displayName.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
+            const activeCount  = kws.filter((k) => k.isActive !== false).length;
+            const bizFilter    = getBizTypeFilter(businessId);
             const displayedKws = bizFilter === "all" ? kws : kws.filter((k) => String(k.keywordType) === bizFilter);
 
-            return (
-              <div key={clientId} className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-md">
+            const nodes: React.ReactNode[] = [];
+            if (needDivider) {
+              nodes.push(
+                <div key={`client-${clientId}`} className="flex items-center gap-3 pt-2 first:pt-0">
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                  <Link
+                    href={`/clients/${clientId}`}
+                    className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    {clientName}
+                    <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-200 normal-case tracking-normal">
+                      {clientBizCount} {clientBizCount === 1 ? "business" : "businesses"}
+                    </span>
+                  </Link>
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                </div>,
+              );
+            }
+            nodes.push(
+              <div key={businessId} className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-md">
 
                 {/* Business header */}
                 <div className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 dark:bg-slate-800 border-b border-blue-300 dark:border-blue-700" : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                   <button
-                    onClick={() => setExpanded((p) => { const n = new Set(p); n.has(clientId) ? n.delete(clientId) : n.add(clientId); return n; })}
+                    onClick={() => setExpanded((p) => { const n = new Set(p); n.has(businessId) ? n.delete(businessId) : n.add(businessId); return n; })}
                     className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 dark:border-slate-700 transition-colors ${isOpen ? "text-blue-600 font-bold" : "text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white"}`}>
                     <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${isOpen ? "bg-blue-100 text-blue-600" : "bg-blue-50 text-blue-600"}`}>
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-col gap-0.5">
+                        {biz ? (
+                          <Link
+                            href={`/clients/${clientId}/businesses/${businessId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-bold text-base text-primary hover:underline w-fit"
+                          >
+                            {displayName}
+                          </Link>
+                        ) : (
+                          <span className="font-bold text-base text-slate-500 italic">{displayName}</span>
+                        )}
                         <Link
                           href={`/clients/${clientId}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="font-bold text-base text-primary hover:underline w-fit"
+                          className="text-xs text-slate-500 dark:text-slate-400 hover:underline w-fit"
                         >
-                          {client?.businessName ?? `Business #${clientId}`}
+                          <span className="font-bold uppercase tracking-wide">Client:</span> {clientName}
                         </Link>
-                        {client?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search:</span> {client.searchAddress}</span>}
-                        {client?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB:</span> {client.publishedAddress}</span>}
+                        {biz?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search:</span> {biz.searchAddress}</span>}
+                        {biz?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB:</span> {biz.publishedAddress}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
                         <span className="text-slate-400 dark:text-slate-600">·</span>
-                        {client?.status === "inactive" ? (
-                          <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Client inactive</span>
+                        {biz?.status === "inactive" ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Business inactive</span>
                         ) : activeCount === 0 ? (
                           <span className="text-base text-slate-500 font-bold">0 active</span>
                         ) : (
@@ -1077,22 +967,26 @@ export default function Keywords() {
 
                   {/* Export + profile buttons */}
                   <div className="flex items-center gap-2 px-4">
-                    <button onClick={() => exportBizCSV(clientId, kws)}
+                    <button onClick={() => exportBizCSV(businessId, kws)}
                       className="flex items-center gap-2 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold border-2 border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 rounded-lg px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
                       <Download className="w-5 h-5" /> CSV
                     </button>
-                    <button onClick={() => exportBizPDF(clientId, kws)}
+                    <button onClick={() => exportBizPDF(businessId, kws)}
                       className="flex items-center gap-2 text-base text-red-600 hover:text-red-700 font-bold border-2 border-red-300 hover:border-red-400 rounded-lg px-4 py-2 hover:bg-red-50 transition-all">
                       <FileDown className="w-5 h-5" /> PDF
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setAddForClient(clientId); }}
-                      className="flex items-center gap-2 text-base text-emerald-600 hover:text-emerald-700 font-bold border-2 border-emerald-300 hover:border-emerald-400 rounded-lg px-4 py-2 hover:bg-emerald-50 transition-all">
-                      <Plus className="w-5 h-5" /> Add Keyword
-                    </button>
-                    <Link href={`/clients/${clientId}`}
-                      className="flex items-center gap-2 text-base text-blue-600 hover:text-blue-700 font-bold border-2 border-blue-300 hover:border-blue-400 rounded-lg px-4 py-2 hover:bg-blue-50 transition-all">
-                      <Building2 className="w-5 h-5" /> Profile
-                    </Link>
+                    {biz && (
+                      <button onClick={(e) => { e.stopPropagation(); setAddForBusiness({ clientId, businessId }); }}
+                        className="flex items-center gap-2 text-base text-emerald-600 hover:text-emerald-700 font-bold border-2 border-emerald-300 hover:border-emerald-400 rounded-lg px-4 py-2 hover:bg-emerald-50 transition-all">
+                        <Plus className="w-5 h-5" /> Add Keyword
+                      </button>
+                    )}
+                    {biz && (
+                      <Link href={`/clients/${clientId}/businesses/${businessId}`}
+                        className="flex items-center gap-2 text-base text-blue-600 hover:text-blue-700 font-bold border-2 border-blue-300 hover:border-blue-400 rounded-lg px-4 py-2 hover:bg-blue-50 transition-all">
+                        <Building2 className="w-5 h-5" /> Profile
+                      </Link>
+                    )}
                   </div>
                 </div>
 
@@ -1107,7 +1001,7 @@ export default function Keywords() {
                         { id: "3",   label: "Keywords" },
                         { id: "4",   label: "w/ Backlinks" },
                       ].map((t) => (
-                        <button key={t.id} onClick={() => setBizTypeFilter(clientId, t.id)}
+                        <button key={t.id} onClick={() => setBizTypeFilter(businessId, t.id)}
                           className={`px-3 py-1.5 rounded-full text-sm font-bold border-2 transition-all ${
                             bizFilter === t.id
                               ? (t.id === "4" ? "bg-emerald-600 text-white border-emerald-600" : "bg-blue-600 text-white border-blue-600")
@@ -1143,9 +1037,12 @@ export default function Keywords() {
                             {/* Campaign sub-header */}
                             <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60">
                               <Bookmark className={`w-3.5 h-3.5 flex-shrink-0 ${plan ? "text-blue-500" : "text-slate-400"}`} />
-                              {plan ? (
+                              {plan && biz ? (
                                 <>
-                                  <Link href={`/clients/${clientId}`} className="text-sm font-bold text-blue-700 dark:text-blue-400 hover:underline">{plan.planType}</Link>
+                                  <Link href={`/clients/${clientId}/businesses/${businessId}/campaigns/${plan.id}`} className="text-sm font-bold text-blue-700 dark:text-blue-400 hover:underline">
+                                    {plan.name ?? plan.planType}
+                                  </Link>
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.planType}</span>
                                   {plan.serviceCategory && (
                                     <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.serviceCategory}</span>
                                   )}
@@ -1172,9 +1069,11 @@ export default function Keywords() {
                     })()}
                   </div>
                 )}
-              </div>
+              </div>,
             );
-          })}
+            return nodes;
+          });
+          })()}
         </div>
       )}
 
@@ -1183,6 +1082,8 @@ export default function Keywords() {
         open={addOpen} onOpenChange={setAddOpen}
         title="Add Keyword" saving={saving}
         clients={clients}
+        businesses={businesses}
+        plans={allPlans}
         defaultClientId={selectedClientId ?? undefined}
         onSave={(data) => saveKeyword(null, data)}
       />
@@ -1193,17 +1094,23 @@ export default function Keywords() {
           open onOpenChange={(o) => { if (!o) setEditKw(null); }}
           title="Edit Keyword" saving={saving}
           initial={editKw}
+          clients={clients}
+          businesses={businesses}
+          plans={allPlans}
           onSave={(data) => saveKeyword(editKw.id as number, data)}
         />
       )}
 
-      {/* Add keyword for specific business */}
-      {addForClient !== null && (
+      {/* Add keyword for a specific business */}
+      {addForBusiness !== null && (
         <KeywordDialog
-          open onOpenChange={(o) => { if (!o) setAddForClient(null); }}
+          open onOpenChange={(o) => { if (!o) setAddForBusiness(null); }}
           title="Add Keyword" saving={saving}
           clients={clients}
-          defaultClientId={addForClient}
+          businesses={businesses}
+          plans={allPlans}
+          defaultClientId={addForBusiness.clientId}
+          defaultBusinessId={addForBusiness.businessId}
           onSave={(data) => saveKeyword(null, data)}
         />
       )}

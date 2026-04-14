@@ -2,11 +2,13 @@ import { pgTable, serial, integer, text, timestamp, boolean } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
+import { businessesTable } from "./businesses";
 import { keywordsTable } from "./keywords";
 
 export const rankingReportsTable = pgTable("ranking_reports", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
+  businessId: integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
   keywordId: integer("keyword_id").notNull().references(() => keywordsTable.id, { onDelete: "cascade" }),
   rankingPosition: integer("ranking_position"),
   reasonRecommended: text("reason_recommended"),

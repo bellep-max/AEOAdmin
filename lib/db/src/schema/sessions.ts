@@ -2,6 +2,7 @@ import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
+import { businessesTable } from "./businesses";
 import { keywordsTable } from "./keywords";
 import { devicesTable } from "./devices";
 import { proxiesTable } from "./proxies";
@@ -9,6 +10,7 @@ import { proxiesTable } from "./proxies";
 export const sessionsTable = pgTable("sessions", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
+  businessId: integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
   keywordId: integer("keyword_id").references(() => keywordsTable.id),
   deviceId: integer("device_id").references(() => devicesTable.id),
   proxyId: integer("proxy_id").references(() => proxiesTable.id),

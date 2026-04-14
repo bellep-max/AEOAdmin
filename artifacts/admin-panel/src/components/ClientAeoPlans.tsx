@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardList, Plus, Pencil, Trash2, Loader2, Key, ChevronDown, ChevronRight, Building2, Mail, CreditCard } from "lucide-react";
+import { useLocation } from "wouter";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { getPlanMeta } from "@/lib/plan-meta";
 
@@ -23,9 +24,16 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
 
 const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
 
+interface BusinessOption {
+  id: number;
+  name: string;
+}
+
 interface AeoPlan {
   id: number;
   clientId: number;
+  businessId: number | null;
+  name: string | null;
   businessName: string | null;
   planType: string;
   serviceCategory: string | null;
@@ -83,6 +91,8 @@ type ClientLocData = {
 const EMPTY_LOC: ClientLocData = { searchAddress: "", publishedAddress: "", gmbUrl: "", websitePublishedOnGmb: "", websiteLinkedOnGmb: "" };
 
 const EMPTY_FORM: PlanFormData = {
+  businessId: null,
+  name: "",
   businessName: "",
   planType: "",
   serviceCategory: "",
@@ -108,6 +118,7 @@ function PlanForm({
   values,
   onChange,
   clientBusinessName,
+  businesses,
   errors = {},
   locData,
   onLocChange,
@@ -115,6 +126,7 @@ function PlanForm({
   values: PlanFormData;
   onChange: (v: PlanFormData) => void;
   clientBusinessName: string;
+  businesses: BusinessOption[];
   errors?: Record<string, string>;
   locData: ClientLocData;
   onLocChange: (v: ClientLocData) => void;
@@ -130,17 +142,49 @@ function PlanForm({
 
   return (
     <div className="space-y-6">
-      {/* Client Name */}
+      {/* Campaign Name */}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Campaign Name
+        </Label>
+        <Input
+          className="h-10 bg-muted/30 border-border/60"
+          placeholder="e.g. Downtown SF — Summer 2026"
+          value={values.name ?? ""}
+          onChange={(e) => onChange({ ...values, name: e.target.value })}
+        />
+      </div>
+
+      {/* Business */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client Name</Label>
-          <Input
-            className="h-10 bg-muted/50 border-border/60 cursor-not-allowed"
-            placeholder={clientBusinessName || "Client name"}
-            value={values.businessName ?? ""}
-            readOnly
-            disabled
-          />
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Business <span className="text-red-500">*</span>
+          </Label>
+          {businesses.length === 0 ? (
+            <div className="h-10 px-3 flex items-center text-xs text-muted-foreground bg-muted/30 border border-border/60 rounded-md">
+              No businesses for this client. Add one first.
+            </div>
+          ) : (
+            <Select
+              value={values.businessId != null ? String(values.businessId) : ""}
+              onValueChange={(v) => {
+                const id = Number(v);
+                const biz = businesses.find((b) => b.id === id);
+                onChange({ ...values, businessId: id, businessName: biz?.name ?? "" });
+              }}
+            >
+              <SelectTrigger className={`h-10 bg-muted/30 border-border/60 ${errors.businessId ? "border-red-500" : ""}`}>
+                <SelectValue placeholder="Select a business" />
+              </SelectTrigger>
+              <SelectContent>
+                {businesses.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {errors.businessId && <p className="text-xs text-red-500 mt-1">{errors.businessId}</p>}
         </div>
 
         {/* Plan Type */}
@@ -361,6 +405,8 @@ export default function ClientAeoPlans({
 }) {
   const clientBusinessName = client.businessName ?? "";
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const [businesses, setBusinesses] = useState<BusinessOption[]>([]);
   const [plans, setPlans]     = useState<AeoPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
@@ -378,6 +424,9 @@ export default function ClientAeoPlans({
   const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
   const [kwLoading,    setKwLoading]    = useState<Set<number>>(new Set());
   const [expanded,     setExpanded]     = useState<Set<number>>(new Set());
+  const [addingKwFor,  setAddingKwFor]  = useState<number | null>(null);
+  const [newKwText,    setNewKwText]    = useState("");
+  const [savingKw,     setSavingKw]     = useState(false);
 
   const fetchPlans = useCallback(async () => {
     setLoading(true);
@@ -388,7 +437,45 @@ export default function ClientAeoPlans({
     finally { setLoading(false); }
   }, [clientId]);
 
-  useEffect(() => { fetchPlans(); }, [fetchPlans]);
+  const fetchBusinesses = useCallback(async () => {
+    try {
+      const r = await rawFetch(`/api/businesses?clientId=${clientId}`, { credentials: "include" });
+      if (!r.ok) throw new Error();
+      const rows: Array<{ id: number; name: string }> = await r.json();
+      setBusinesses(rows.map((b) => ({ id: b.id, name: b.name })));
+    } catch { setBusinesses([]); }
+  }, [clientId]);
+
+  useEffect(() => { fetchPlans(); fetchBusinesses(); }, [fetchPlans, fetchBusinesses]);
+
+  async function handleAddKeyword(plan: AeoPlan) {
+    const text = newKwText.trim();
+    if (!text) return;
+    setSavingKw(true);
+    try {
+      const res = await rawFetch(`/api/keywords`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          businessId: plan.businessId,
+          aeoPlanId: plan.id,
+          keywordText: text,
+          isActive: true,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: "Keyword added", description: `"${text}" was linked to this campaign.` });
+      setNewKwText("");
+      setAddingKwFor(null);
+      fetchPlanKeywords(plan.id);
+    } catch {
+      toast({ title: "Failed to add keyword", variant: "destructive" });
+    } finally {
+      setSavingKw(false);
+    }
+  }
 
   async function fetchPlanKeywords(planId: number) {
     setKwLoading((s) => new Set(s).add(planId));
@@ -425,6 +512,8 @@ export default function ClientAeoPlans({
 
   function openEdit(plan: AeoPlan) {
     setFormData({
+      businessId:            plan.businessId,
+      name:                  plan.name,
       businessName:          plan.businessName,
       planType:              plan.planType,
       serviceCategory:       plan.serviceCategory,
@@ -457,6 +546,9 @@ export default function ClientAeoPlans({
   function validateForm(): boolean {
     const errors: Record<string, string> = {};
 
+    if (formData.businessId == null) {
+      errors.businessId = "Please select a business";
+    }
     if (!formData.planType?.trim()) {
       errors.planType = "Plan type is required";
     }
@@ -600,6 +692,7 @@ export default function ClientAeoPlans({
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead className="w-6" />
+                    <TableHead>Business</TableHead>
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
@@ -617,9 +710,18 @@ export default function ClientAeoPlans({
                     const isKwLoading = kwLoading.has(plan.id);
                     return (
                       <React.Fragment key={plan.id}>
-                        <TableRow className="hover:bg-muted/30">
+                        <TableRow
+                          className="hover:bg-muted/30 cursor-pointer"
+                          onClick={() => {
+                            if (plan.businessId) {
+                              navigate(`/clients/${clientId}/businesses/${plan.businessId}/campaigns/${plan.id}`);
+                            } else {
+                              toggleExpand(plan.id);
+                            }
+                          }}
+                        >
                           {/* Expand toggle */}
-                          <TableCell className="pr-0">
+                          <TableCell className="pr-0" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => toggleExpand(plan.id)}
                               className="w-6 h-6 flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
@@ -629,6 +731,17 @@ export default function ClientAeoPlans({
                                 ? <ChevronDown className="w-3.5 h-3.5" />
                                 : <ChevronRight className="w-3.5 h-3.5" />}
                             </button>
+                          </TableCell>
+                          <TableCell className="text-sm font-semibold text-foreground">
+                            {plan.name ?? <span className="text-muted-foreground/40 font-normal">—</span>}
+                          </TableCell>
+                          <TableCell className="text-sm font-medium">
+                            {(() => {
+                              const biz = businesses.find((b) => b.id === plan.businessId);
+                              if (biz) return biz.name;
+                              if (plan.businessName) return <span className="text-muted-foreground italic">{plan.businessName}</span>;
+                              return <span className="text-muted-foreground/40">—</span>;
+                            })()}
                           </TableCell>
                           <TableCell>
                             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
@@ -644,7 +757,7 @@ export default function ClientAeoPlans({
                           <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost" size="sm"
@@ -667,17 +780,58 @@ export default function ClientAeoPlans({
                         {/* ── Inline keywords for this campaign ── */}
                         {isOpen && (
                           <TableRow className="bg-muted/10 hover:bg-muted/10">
-                            <TableCell colSpan={8} className="py-2 px-6">
-                              <div className="flex items-center gap-2 mb-2">
-                                <Key className="w-3.5 h-3.5 text-primary" />
-                                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keywords linked to this campaign</span>
+                            <TableCell colSpan={10} className="py-3 px-6" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Key className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keywords linked to this campaign</span>
+                                </div>
+                                {addingKwFor !== plan.id && (
+                                  <Button
+                                    variant="outline" size="sm"
+                                    className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
+                                    onClick={() => { setAddingKwFor(plan.id); setNewKwText(""); }}
+                                  >
+                                    <Plus className="w-3 h-3" /> Add Keyword
+                                  </Button>
+                                )}
                               </div>
+
+                              {addingKwFor === plan.id && (
+                                <div className="flex gap-2 mb-3">
+                                  <Input
+                                    autoFocus
+                                    className="h-9 bg-background"
+                                    placeholder="Enter keyword text"
+                                    value={newKwText}
+                                    onChange={(e) => setNewKwText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleAddKeyword(plan);
+                                      if (e.key === "Escape") { setAddingKwFor(null); setNewKwText(""); }
+                                    }}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    disabled={savingKw || !newKwText.trim()}
+                                    onClick={() => handleAddKeyword(plan)}
+                                  >
+                                    {savingKw ? "Saving…" : "Save"}
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    onClick={() => { setAddingKwFor(null); setNewKwText(""); }}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              )}
+
                               {isKwLoading ? (
                                 <div className="flex gap-2">
                                   {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-6 w-28 rounded-full" />)}
                                 </div>
                               ) : kws.length === 0 ? (
-                                <p className="text-xs text-muted-foreground/60 italic">No keywords assigned to this campaign yet. When adding a keyword, select this campaign.</p>
+                                <p className="text-xs text-muted-foreground/60 italic">No keywords assigned to this campaign yet.</p>
                               ) : (
                                 <div className="flex flex-wrap gap-1.5">
                                   {kws.map((kw) => (
@@ -852,6 +1006,7 @@ export default function ClientAeoPlans({
                 values={formData}
                 onChange={(v) => { setFormData(v); setFormErrors({}); }}
                 clientBusinessName={clientBusinessName}
+                businesses={businesses}
                 errors={formErrors}
                 locData={clientLocData}
                 onLocChange={setClientLocData}

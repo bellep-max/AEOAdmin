@@ -1,21 +1,24 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rankingReportsTable, clientsTable, keywordsTable } from "@workspace/db/schema";
+import { rankingReportsTable, clientsTable, keywordsTable, businessesTable } from "@workspace/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/", async (req, res) => {
   try {
-    const { clientId, keywordId } = req.query as Record<string, string>;
+    const { clientId, businessId, aeoPlanId, keywordId } = req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId) conditions.push(eq(rankingReportsTable.clientId, parseInt(clientId)));
-    if (keywordId) conditions.push(eq(rankingReportsTable.keywordId, parseInt(keywordId)));
+    if (clientId)   conditions.push(eq(rankingReportsTable.clientId,   parseInt(clientId)));
+    if (businessId) conditions.push(eq(rankingReportsTable.businessId, parseInt(businessId)));
+    if (aeoPlanId)  conditions.push(eq(keywordsTable.aeoPlanId,        parseInt(aeoPlanId)));
+    if (keywordId)  conditions.push(eq(rankingReportsTable.keywordId,  parseInt(keywordId)));
 
     const reports = await db
       .select({
         id: rankingReportsTable.id,
         clientId: rankingReportsTable.clientId,
+        businessId: rankingReportsTable.businessId,
         keywordId: rankingReportsTable.keywordId,
         rankingPosition: rankingReportsTable.rankingPosition,
         reasonRecommended: rankingReportsTable.reasonRecommended,
@@ -26,10 +29,13 @@ router.get("/", async (req, res) => {
         isInitialRanking: rankingReportsTable.isInitialRanking,
         createdAt: rankingReportsTable.createdAt,
         clientName: clientsTable.businessName,
+        businessName: businessesTable.name,
         keywordText: keywordsTable.keywordText,
+        aeoPlanId: keywordsTable.aeoPlanId,
       })
       .from(rankingReportsTable)
       .leftJoin(clientsTable, eq(rankingReportsTable.clientId, clientsTable.id))
+      .leftJoin(businessesTable, eq(rankingReportsTable.businessId, businessesTable.id))
       .leftJoin(keywordsTable, eq(rankingReportsTable.keywordId, keywordsTable.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(rankingReportsTable.createdAt));
@@ -48,6 +54,7 @@ router.post("/", async (req, res) => {
       .insert(rankingReportsTable)
       .values({
         clientId: body.clientId,
+        businessId: body.businessId != null ? Number(body.businessId) : null,
         keywordId: body.keywordId,
         rankingPosition: body.rankingPosition ?? null,
         reasonRecommended: body.reasonRecommended ?? null,

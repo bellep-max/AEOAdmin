@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
 import { clientsTable } from "./clients";
+import { businessesTable } from "./businesses";
 import { keywordsTable } from "./keywords";
 
 export const deviceRotationsTable = pgTable("device_rotations", {
@@ -10,6 +11,7 @@ export const deviceRotationsTable = pgTable("device_rotations", {
   date:        date("date").notNull(),
   deviceId:    integer("device_id").references(() => devicesTable.id, { onDelete: "set null" }),
   clientId:    integer("client_id").references(() => clientsTable.id, { onDelete: "set null" }),
+  businessId:  integer("business_id").references(() => businessesTable.id, { onDelete: "set null" }),
   keywordId:   integer("keyword_id").references(() => keywordsTable.id, { onDelete: "set null" }),
   platform:    text("platform"),
   status:      text("status").notNull().default("pending"),

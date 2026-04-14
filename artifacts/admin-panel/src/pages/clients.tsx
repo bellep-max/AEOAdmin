@@ -14,13 +14,10 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Plus, ExternalLink, MoreHorizontal } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Building2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -29,6 +26,7 @@ import { getPlanMeta } from "@/lib/plan-meta";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 
 const businessFormSchema = z.object({
   // Business Information
@@ -102,6 +100,10 @@ export default function Clients() {
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [confirmAddClient, setConfirmAddClient] = useState<z.infer<typeof businessFormSchema> | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [postCreatePrompt, setPostCreatePrompt] = useState<{ clientId: number; clientName: string } | null>(null);
+  const [addBusinessFor, setAddBusinessFor] = useState<{ clientId: number; clientName: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const allPlanNames = useAllPlanNames();
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -123,6 +125,21 @@ export default function Clients() {
     const client = clients?.find((c) => c.id === clientId);
     const keywordCount = (client as any)?.keywordCount ?? 0;
     setConfirmReactivate({ id: clientId, name: businessName, keywordCount });
+  }
+
+  async function doDeleteClient(clientId: number) {
+    setDeletingId(clientId);
+    try {
+      const res = await rawFetch(`/api/clients/${clientId}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Failed");
+      toast({ title: "Client deleted" });
+      refetch();
+    } catch {
+      toast({ title: "Failed to delete client", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+      setConfirmDelete(null);
+    }
   }
 
   async function doToggle(clientId: number, currentStatus: string) {
@@ -192,15 +209,19 @@ export default function Clients() {
     if (!confirmAddClient) return;
     
     createClient.mutate({ data: confirmAddClient }, {
-      onSuccess: () => {
-        toast({ 
+      onSuccess: (created: unknown) => {
+        toast({
           title: "✅ Client added successfully!",
           description: `${confirmAddClient.businessName} has been added to your client list.`
         });
+        const newClient = (created as { client?: { id: number; businessName: string } })?.client;
         setConfirmAddClient(null);
         setIsAddOpen(false);
         form.reset();
         refetch();
+        if (newClient?.id) {
+          setPostCreatePrompt({ clientId: newClient.id, clientName: newClient.businessName });
+        }
       },
       onError: () => {
         toast({ 
@@ -602,17 +623,17 @@ export default function Clients() {
           <TableHeader>
             <TableRow className="bg-slate-50 dark:bg-slate-900">
               <TableHead className="text-base font-bold text-black dark:text-white">Client Name</TableHead>
-              <TableHead className="text-base font-bold text-black dark:text-white">Location</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Businesses</TableHead>
+              <TableHead className="text-base font-bold text-black dark:text-white">Campaigns</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Account Type</TableHead>
               <TableHead className="text-base font-bold text-black dark:text-white">Status</TableHead>
-              <TableHead className="text-base font-bold text-black dark:text-white">Plan</TableHead>
               <TableHead className="text-right text-base font-bold text-black dark:text-white">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-52">
+                <TableCell colSpan={7} className="h-52">
                   <div className="flex flex-col items-center justify-center gap-4 py-8">
                     <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                     <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Loading clients…</p>
@@ -621,7 +642,7 @@ export default function Clients() {
               </TableRow>
             ) : filteredClients?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
+                <TableCell colSpan={7} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
                   No clients found.
                 </TableCell>
               </TableRow>
@@ -634,14 +655,32 @@ export default function Clients() {
                     </Link>
                   </TableCell>
                   <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
-                    <div className="space-y-0.5">
-                      {client.searchAddress
-                        ? <p className="text-sm text-black dark:text-slate-100"><span className="text-xs font-bold uppercase tracking-wide text-slate-500 mr-1">Search:</span>{client.searchAddress}</p>
-                        : <p className="text-sm text-slate-400 italic">No search address</p>}
-                      {(client as unknown as Record<string,unknown>).publishedAddress
-                        ? <p className="text-sm text-black dark:text-slate-100"><span className="text-xs font-bold uppercase tracking-wide text-slate-500 mr-1">GMB:</span>{(client as unknown as Record<string,unknown>).publishedAddress as string}</p>
-                        : <p className="text-sm text-slate-400 italic">No GMB address</p>}
-                    </div>
+                    {(() => {
+                      const count = (client as unknown as { businessCount?: number }).businessCount ?? 0;
+                      return (
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                          count > 0
+                            ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700"
+                            : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+                        }`}>
+                          {count} {count === 1 ? "business" : "businesses"}
+                        </span>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell className="relative z-10 text-base text-black dark:text-slate-100">
+                    {(() => {
+                      const count = (client as unknown as { campaignCount?: number }).campaignCount ?? 0;
+                      return (
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                          count > 0
+                            ? "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700"
+                            : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+                        }`}>
+                          {count} {count === 1 ? "campaign" : "campaigns"}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="relative z-10">
                     {(() => {
@@ -676,41 +715,37 @@ export default function Clients() {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="relative z-10">
-                    {client.planName
-                      ? (() => {
-                          const meta = getPlanMeta(client.planName);
-                          return (
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
-                              {client.planName}
-                            </span>
-                          );
-                        })()
-                      : <span className="text-muted-foreground text-sm">—</span>
-                    }
-                  </TableCell>
-                  <TableCell className="text-right relative z-20">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0 text-slate-600 dark:text-slate-400">
-                          <span className="sr-only">Open menu</span>
-                          <MoreHorizontal className="h-4 w-4" />
+                  <TableCell className="text-right relative z-20" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
+                        onClick={() => setAddBusinessFor({ clientId: client.id, clientName: client.businessName })}
+                        title="Add Business"
+                      >
+                        <Building2 className="h-4 w-4" />
+                      </Button>
+                      <Link href={`/clients/${client.id}`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
+                          title="Edit / View Details"
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-black dark:text-white">
-                        <DropdownMenuLabel className="text-black dark:text-white font-bold">Actions</DropdownMenuLabel>
-                        <Link href={`/clients/${client.id}`}>
-                          <DropdownMenuItem className="cursor-pointer">
-                            View Details
-                          </DropdownMenuItem>
-                        </Link>
-                        {client.gmbUrl && (
-                          <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(client.gmbUrl!, '_blank')}>
-                            Open Maps <ExternalLink className="ml-2 h-3 w-3" />
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
+                        onClick={() => setConfirmDelete({ id: client.id, name: client.businessName })}
+                        title="Delete Client"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -802,6 +837,65 @@ export default function Clients() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete client confirmation */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{confirmDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the client along with all of its businesses, keywords, sessions, and ranking reports. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deletingId != null}
+              onClick={() => { if (confirmDelete) doDeleteClient(confirmDelete.id); }}
+            >
+              Yes, delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Post-create: prompt to add first business */}
+      <AlertDialog open={!!postCreatePrompt} onOpenChange={(open) => { if (!open) setPostCreatePrompt(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add a business for {postCreatePrompt?.clientName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every client needs at least one business to track keywords and rankings.
+              You can add it now or later from the client's page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPostCreatePrompt(null)}>Later</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => {
+                if (postCreatePrompt) {
+                  setAddBusinessFor(postCreatePrompt);
+                  setPostCreatePrompt(null);
+                }
+              }}
+            >
+              Yes, add business now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {addBusinessFor && (
+        <AddBusinessDialog
+          open={!!addBusinessFor}
+          onOpenChange={(open) => { if (!open) setAddBusinessFor(null); }}
+          clientId={addBusinessFor.clientId}
+          clientName={addBusinessFor.clientName}
+          onCreated={() => { refetch(); setAddBusinessFor(null); }}
+        />
+      )}
 
       {/* Cancel creating client confirmation dialog */}
       <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>

@@ -2,10 +2,13 @@ import { pgTable, serial, integer, text, numeric, timestamp } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
+import { businessesTable } from "./businesses";
 
 export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   id:                     serial("id").primaryKey(),
   clientId:               integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
+  businessId:             integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
+  name:                   text("name"),
   businessName:           text("business_name"),
   planType:               text("plan_type").notNull(),          // e.g. "Starter", "Growth", "Pro", or custom
   serviceCategory:        text("service_category"),

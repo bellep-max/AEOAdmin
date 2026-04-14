@@ -11,10 +11,11 @@ const router = Router();
 ──────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   try {
-    const { clientId, aeoPlanId } = req.query as Record<string, string>;
+    const { clientId, businessId, aeoPlanId } = req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId)  conditions.push(eq(keywordsTable.clientId,  parseInt(clientId)));
-    if (aeoPlanId) conditions.push(eq(keywordsTable.aeoPlanId, parseInt(aeoPlanId)));
+    if (clientId)   conditions.push(eq(keywordsTable.clientId,   parseInt(clientId)));
+    if (businessId) conditions.push(eq(keywordsTable.businessId, parseInt(businessId)));
+    if (aeoPlanId)  conditions.push(eq(keywordsTable.aeoPlanId,  parseInt(aeoPlanId)));
     const keywords = await db
       .select()
       .from(keywordsTable)
@@ -40,6 +41,7 @@ router.post("/", async (req, res) => {
       .insert(keywordsTable)
       .values({
         clientId: Number(body.clientId),
+        businessId: body.businessId != null ? Number(body.businessId) : null,
         aeoPlanId: body.aeoPlanId != null ? Number(body.aeoPlanId) : null,
         keywordText: body.keywordText.trim(),
         keywordType: body.keywordType ? Number(body.keywordType) : 3,
@@ -183,6 +185,8 @@ router.patch("/:id", async (req, res) => {
     if (body.isActive         !== undefined) allowed.isActive         = Boolean(body.isActive);
     if (body.isPrimary        !== undefined) allowed.isPrimary        = Number(body.isPrimary);
     if (body.aeoPlanId        !== undefined) allowed.aeoPlanId        = body.aeoPlanId === null ? null : Number(body.aeoPlanId);
+    if (body.businessId       !== undefined) allowed.businessId       = body.businessId === null ? null : Number(body.businessId);
+    if (body.clientId         !== undefined) allowed.clientId         = Number(body.clientId);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
     if (body.linkActive       !== undefined) allowed.linkActive       = Boolean(body.linkActive);

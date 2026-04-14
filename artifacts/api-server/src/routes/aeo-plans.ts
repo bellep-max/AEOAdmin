@@ -25,6 +25,8 @@ router.get("/", async (req, res) => {
       .select({
         id:                     clientAeoPlansTable.id,
         clientId:               clientAeoPlansTable.clientId,
+        businessId:             clientAeoPlansTable.businessId,
+        name:                   clientAeoPlansTable.name,
         clientBusinessName:     clientsTable.businessName,
         businessName:           clientAeoPlansTable.businessName,
         planType:               clientAeoPlansTable.planType,

@@ -2,10 +2,12 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import {
   clientsTable,
+  businessesTable,
   keywordsTable,
   keywordLinksTable,
   sessionsTable,
   rankingReportsTable,
+  clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { eq, and, ilike, sql, desc, inArray } from "drizzle-orm";
 
@@ -19,18 +21,41 @@ router.get("/", async (req, res) => {
     if (status === "active" || status === "inactive") {
       conditions.push(eq(clientsTable.status, status));
     }
-    const clients = await db
-      .select({
-        ...clientsTable,
-        keywordCount: sql<number>`(select count(*) from keywords where keywords.client_id = ${clientsTable.id})::int`,
-      })
+    const baseClients = await db
+      .select()
       .from(clientsTable)
-      .where(
-        conditions.length > 0
-          ? and(...conditions)
-          : undefined
-      )
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(clientsTable.createdAt));
+
+    const ids = baseClients.map((c) => c.id);
+    const counts = new Map<number, { keywordCount: number; businessCount: number; campaignCount: number }>();
+    if (ids.length > 0) {
+      const kwRows = await db
+        .select({ clientId: keywordsTable.clientId, c: sql<number>`count(*)::int` })
+        .from(keywordsTable)
+        .where(inArray(keywordsTable.clientId, ids))
+        .groupBy(keywordsTable.clientId);
+      const bizRows = await db
+        .select({ clientId: businessesTable.clientId, c: sql<number>`count(*)::int` })
+        .from(businessesTable)
+        .where(inArray(businessesTable.clientId, ids))
+        .groupBy(businessesTable.clientId);
+      const campRows = await db
+        .select({ clientId: clientAeoPlansTable.clientId, c: sql<number>`count(*)::int` })
+        .from(clientAeoPlansTable)
+        .where(inArray(clientAeoPlansTable.clientId, ids))
+        .groupBy(clientAeoPlansTable.clientId);
+      for (const id of ids) counts.set(id, { keywordCount: 0, businessCount: 0, campaignCount: 0 });
+      for (const r of kwRows) counts.get(r.clientId)!.keywordCount = r.c;
+      for (const r of bizRows) counts.get(r.clientId)!.businessCount = r.c;
+      for (const r of campRows) counts.get(r.clientId)!.campaignCount = r.c;
+    }
+    const clients = baseClients.map((c) => ({
+      ...c,
+      keywordCount: counts.get(c.id)?.keywordCount ?? 0,
+      businessCount: counts.get(c.id)?.businessCount ?? 0,
+      campaignCount: counts.get(c.id)?.campaignCount ?? 0,
+    }));
 
     const filtered = search
       ? clients.filter(

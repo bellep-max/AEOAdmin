@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable } from "@workspace/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { and, eq, asc } from "drizzle-orm";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -14,15 +14,42 @@ router.get("/", async (req, res) => {
     const clientId = parseInt(req.params.clientId);
     if (isNaN(clientId)) return res.status(400).json({ error: "Invalid clientId" });
 
+    const businessIdParam = req.query.businessId as string | undefined;
+    const businessId = businessIdParam ? parseInt(businessIdParam) : null;
+
     const plans = await db
       .select()
       .from(clientAeoPlansTable)
-      .where(eq(clientAeoPlansTable.clientId, clientId))
+      .where(
+        businessId != null && !isNaN(businessId)
+          ? and(eq(clientAeoPlansTable.clientId, clientId), eq(clientAeoPlansTable.businessId, businessId))
+          : eq(clientAeoPlansTable.clientId, clientId)
+      )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
     res.json(plans.map((p) => ({ ...p, monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null })));
   } catch (err) {
     req.log.error({ err }, "Error fetching client AEO plans");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/clients/:clientId/aeo-plans/:planId
+ */
+router.get("/:planId", async (req, res) => {
+  try {
+    const clientId = parseInt(req.params.clientId);
+    const planId = parseInt(req.params.planId);
+    if (isNaN(clientId) || isNaN(planId)) return res.status(400).json({ error: "Invalid id" });
+    const [plan] = await db
+      .select()
+      .from(clientAeoPlansTable)
+      .where(and(eq(clientAeoPlansTable.clientId, clientId), eq(clientAeoPlansTable.id, planId)));
+    if (!plan) return res.status(404).json({ error: "Plan not found" });
+    res.json({ ...plan, monthlyAeoBudget: plan.monthlyAeoBudget != null ? Number(plan.monthlyAeoBudget) : null });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching AEO plan");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -43,6 +70,8 @@ router.post("/", async (req, res) => {
       .insert(clientAeoPlansTable)
       .values({
         clientId,
+        businessId:            body.businessId != null ? Number(body.businessId) : null,
+        name:                  (body.name                  as string)  ?? null,
         businessName:          (body.businessName          as string)  ?? null,
         planType:              body.planType               as string,
         serviceCategory:       (body.serviceCategory       as string)  ?? null,
@@ -84,8 +113,10 @@ router.patch("/:planId", async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const update: Record<string, unknown> = { updatedAt: new Date() };
 
+    if ("businessId" in body) update.businessId = body.businessId != null ? Number(body.businessId) : null;
+
     const fields = [
-      "businessName", "planType", "serviceCategory", "targetCityRadius",
+      "name", "businessName", "planType", "serviceCategory", "targetCityRadius",
       "sampleQuestion1", "sampleQuestion2", "sampleQuestion3", "sampleQuestion4",
       "sampleQuestion5", "sampleQuestion6", "sampleQuestion7", "sampleQuestion8",
       "sampleQuestion9", "sampleQuestion10", "currentAnswerPresence",

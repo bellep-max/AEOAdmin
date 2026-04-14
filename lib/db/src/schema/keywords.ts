@@ -2,11 +2,13 @@ import { pgTable, serial, integer, text, boolean, timestamp, date, varchar } fro
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
+import { businessesTable } from "./businesses";
 import { clientAeoPlansTable } from "./client_aeo_plans";
 
 export const keywordsTable = pgTable("keywords", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
+  businessId: integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
   aeoPlanId: integer("aeo_plan_id").references(() => clientAeoPlansTable.id, { onDelete: "set null" }),
   keywordText: varchar("keyword_text", { length: 512 }).notNull(),
   keywordType: integer("keyword_type").default(3),
