@@ -339,7 +339,7 @@ export default function CampaignDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={campaignId}
-        title={`Overall ranking — ${campaign.name ?? campaign.planType}`}
+        title={`Overall ranking · Campaign — ${campaign.name ?? campaign.planType}`}
       />
 
       <KeywordsWithRankingsCard

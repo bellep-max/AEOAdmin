@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rankingReportsTable, clientsTable, keywordsTable, businessesTable } from "@workspace/db/schema";
+import { rankingReportsTable, clientsTable, keywordsTable, businessesTable, clientAeoPlansTable } from "@workspace/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 
@@ -288,10 +288,11 @@ router.get("/period-comparison", async (req, res) => {
       ? { curStart: new Date(0), curEnd: new Date("9999-12-31"), prevStart: new Date(0), prevEnd: new Date("9999-12-31") }
       : windowsFor(period as Exclude<PeriodKey, "lifetime">, new Date());
 
-    const [clients, keywords, businesses, reports] = await Promise.all([
+    const [clients, keywords, businesses, plans, reports] = await Promise.all([
       db.select().from(clientsTable),
       db.select().from(keywordsTable),
       db.select().from(businessesTable),
+      db.select().from(clientAeoPlansTable),
       db
         .select({
           id: rankingReportsTable.id,
@@ -309,6 +310,7 @@ router.get("/period-comparison", async (req, res) => {
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
+    const planMap = new Map(plans.map((p) => [p.id, p]));
 
     // filter by cascade if provided, applied to the keyword, not the report
     const keywordAllowed = (kid: number): boolean => {
@@ -368,6 +370,7 @@ router.get("/period-comparison", async (req, res) => {
       const kw = keywordMap.get(keywordId);
       const client = kw ? clientMap.get(kw.clientId) : null;
       const business = kw?.businessId != null ? businessMap.get(kw.businessId) : null;
+      const plan = kw?.aeoPlanId != null ? planMap.get(kw.aeoPlanId) : null;
       const cur = current.get(key);
       const prev = previous.get(key);
       const lastEver = ever.get(key);
@@ -400,6 +403,7 @@ router.get("/period-comparison", async (req, res) => {
         businessId: kw?.businessId ?? null,
         businessName: business?.name ?? null,
         aeoPlanId: kw?.aeoPlanId ?? null,
+        campaignName: plan?.name ?? plan?.planType ?? null,
         currentReportId: cur?.id ?? null,
         currentPosition: cur?.rankingPosition ?? null,
         currentDate: cur?.createdAt ?? null,

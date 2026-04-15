@@ -314,7 +314,7 @@ export default function BusinessDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={null}
-        title={`Overall ranking — ${business?.name ?? "Business"}`}
+        title={`Overall ranking · Business — ${business?.name ?? "Business"}`}
       />
 
       <CampaignFormDialog

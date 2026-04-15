@@ -69,12 +69,31 @@ interface KeywordLink {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   RANKING HELPERS
+═══════════════════════════════════════════════════════════ */
+interface RankCell { current: number | null; previous: number | null }
+type RankMap = Map<number, Partial<Record<string, RankCell>>>;
+
+function fmtRank(c: RankCell | undefined): string {
+  if (!c || c.current == null) return "—";
+  return `#${c.current}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
    CSV EXPORT
 ═══════════════════════════════════════════════════════════ */
-function exportCSV(rows: KwRecord[], businessesMap: Map<number, { name: string; clientId: number }>, clientsMap: Map<number, string>, filename: string) {
+function exportCSV(
+  rows: KwRecord[],
+  businessesMap: Map<number, { name: string; clientId: number }>,
+  clientsMap: Map<number, string>,
+  plansMap: Map<number, { name: string | null; planType: string }>,
+  rankMap: RankMap,
+  filename: string,
+) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const headers = [
-    "Client", "Business", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
+    "Client", "Business", "Campaign", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
+    "ChatGPT Rank", "Gemini Rank", "Perplexity Rank",
     "Initial Search (30d)", "Follow-up Search (30d)",
     "Initial Search (Life)", "Follow-up Search (Life)",
     "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
@@ -83,13 +102,20 @@ function exportCSV(rows: KwRecord[], businessesMap: Map<number, { name: string; 
     const type = getKeywordTypeLabel(kw.keywordType as number);
     const date = kw.dateAdded ? format(new Date(kw.dateAdded as string), "yyyy-MM-dd") : "";
     const biz  = businessesMap.get(kw.businessId as number);
+    const plan = kw.aeoPlanId != null ? plansMap.get(kw.aeoPlanId as number) : undefined;
+    const campaign = plan ? (plan.name ?? plan.planType) : "";
+    const ranks = rankMap.get(kw.id as number) ?? {};
     return [
       esc(clientsMap.get(kw.clientId as number) ?? ""),
       esc(biz?.name ?? ""),
+      esc(campaign),
       esc(kw.keywordText), esc(type),
       esc(kw.isPrimary ? "Yes" : "No"),
       esc(kw.isActive  ? "Active" : "Inactive"),
       esc(date),
+      esc(fmtRank(ranks.chatgpt)),
+      esc(fmtRank(ranks.gemini)),
+      esc(fmtRank(ranks.perplexity)),
       kw.initialSearchCount30Days  ?? 0,
       kw.followupSearchCount30Days ?? 0,
       kw.initialSearchCountLife    ?? 0,
@@ -111,7 +137,15 @@ function exportCSV(rows: KwRecord[], businessesMap: Map<number, { name: string; 
 /* ═══════════════════════════════════════════════════════════
    PDF EXPORT
 ═══════════════════════════════════════════════════════════ */
-function exportPDF(rows: KwRecord[], businessesMap: Map<number, { name: string; clientId: number }>, clientsMap: Map<number, string>, filename: string, title: string) {
+function exportPDF(
+  rows: KwRecord[],
+  businessesMap: Map<number, { name: string; clientId: number }>,
+  clientsMap: Map<number, string>,
+  plansMap: Map<number, { name: string | null; planType: string }>,
+  rankMap: RankMap,
+  filename: string,
+  title: string,
+) {
   const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -152,37 +186,51 @@ function exportPDF(rows: KwRecord[], businessesMap: Map<number, { name: string; 
     const bodyRows = kws.map((kw) => {
       const type = getKeywordTypeLabel(kw.keywordType as number, true);
       const date = kw.dateAdded ? format(new Date(kw.dateAdded as string), "MMM d, yyyy") : "—";
+      const plan = kw.aeoPlanId != null ? plansMap.get(kw.aeoPlanId as number) : undefined;
+      const campaign = plan ? (plan.name ?? plan.planType) : "—";
+      const ranks = rankMap.get(kw.id as number) ?? {};
       return [
+        campaign,
         kw.keywordText as string, type,
         kw.isPrimary ? "Yes" : "No",
         kw.isActive  ? "Active" : "Inactive",
         date,
+        fmtRank(ranks.chatgpt),
+        fmtRank(ranks.gemini),
+        fmtRank(ranks.perplexity),
         String(kw.initialSearchCount30Days  ?? 0),
         String(kw.followupSearchCount30Days ?? 0),
         String(kw.initialSearchCountLife    ?? 0),
         String(kw.followupSearchCountLife   ?? 0),
         (kw.linkTypeLabel as string) || "—",
         (kw.linkActive as boolean) !== false ? "Active" : "Inactive",
-        (kw.initialRankReportLink as string) || "—",
-        (kw.currentRankReportLink as string) || "—",
       ];
     });
 
     autoTable(doc, {
       startY,
-      head: [["Keyword","Type","1st","Active","Date","Init 30d","F/U 30d","Init Life","F/U Life","Link Type","Link Active","Init Report","Curr Report"]],
+      head: [["Campaign","Keyword","Type","1st","Active","Date","ChatGPT","Gemini","Perplexity","Init 30d","F/U 30d","Init Life","F/U Life","Link Type","Link Active"]],
       body: bodyRows,
       theme: "striped",
       headStyles: { fillColor: [17, 24, 39], textColor: [180, 200, 230], fontSize: 7, fontStyle: "bold", cellPadding: 2.5 },
       bodyStyles: { fontSize: 7, cellPadding: 2, textColor: [30, 30, 50] },
       alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0: { cellWidth: 55, overflow: "linebreak" }, 1: { cellWidth: 20 }, 2: { cellWidth: 9, halign: "center" },
-        3: { cellWidth: 13, halign: "center" }, 4: { cellWidth: 18, halign: "center" },
-        5: { cellWidth: 11, halign: "right" }, 6: { cellWidth: 11, halign: "right" },
-        7: { cellWidth: 11, halign: "right" }, 8: { cellWidth: 11, halign: "right" },
-        9: { cellWidth: 26 }, 10: { cellWidth: 13, halign: "center" },
-        11: { cellWidth: 30, overflow: "linebreak" }, 12: { cellWidth: 30, overflow: "linebreak" },
+        0: { cellWidth: 32, overflow: "linebreak" },
+        1: { cellWidth: 42, overflow: "linebreak" },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 9, halign: "center" },
+        4: { cellWidth: 13, halign: "center" },
+        5: { cellWidth: 17, halign: "center" },
+        6: { cellWidth: 13, halign: "center" },
+        7: { cellWidth: 13, halign: "center" },
+        8: { cellWidth: 15, halign: "center" },
+        9: { cellWidth: 11, halign: "right" },
+        10: { cellWidth: 11, halign: "right" },
+        11: { cellWidth: 11, halign: "right" },
+        12: { cellWidth: 11, halign: "right" },
+        13: { cellWidth: 22 },
+        14: { cellWidth: 13, halign: "center" },
       },
       margin: { left: 10, right: 10 },
       didDrawPage: footerFn,
@@ -412,11 +460,11 @@ function KeywordCard({
               </span>
             </div>
           )}
-          <button onClick={onEdit}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors">
             <Pencil className="w-4 h-4" />
           </button>
-          <button onClick={onDelete}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); console.log("[delete click] kw=", kw); onDelete(); }}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-600 hover:bg-red-100 transition-colors">
             <Trash2 className="w-4 h-4" />
           </button>
@@ -637,6 +685,21 @@ export default function Keywords() {
   const plansMap = new Map(allPlans.map((p) => [p.id, p]));
   const businessesMap = new Map(businesses.map((b) => [b.id, b]));
 
+  const { data: lifetimeRanks } = useQuery<{ rows: Array<{ keywordId: number; platform: string; currentPosition: number | null; previousPosition: number | null }> }>({
+    queryKey: ["/api/ranking-reports/period-comparison", "lifetime"],
+    queryFn: async () => {
+      const r = await rawFetch("/api/ranking-reports/period-comparison?period=lifetime", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
+  const rankMap: RankMap = new Map();
+  for (const row of lifetimeRanks?.rows ?? []) {
+    let bucket = rankMap.get(row.keywordId);
+    if (!bucket) { bucket = {}; rankMap.set(row.keywordId, bucket); }
+    bucket[row.platform] = { current: row.currentPosition, previous: row.previousPosition };
+  }
+
   function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }
   function setBizTypeFilter(cid: number, v: string) {
     setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
@@ -671,7 +734,7 @@ export default function Keywords() {
     if (!targetKeywordId || !keywords) return;
     const kw = keywords.find((k) => k.id === targetKeywordId);
     if (!kw) return;
-    const bizId = kw.businessId ?? -1;
+    const bizId = (kw.businessId as number | null) ?? -1;
     setExpanded((prev) => {
       if (prev.has(bizId)) return prev;
       const next = new Set(prev);
@@ -807,15 +870,15 @@ export default function Keywords() {
 
   /* Exports — now keyed by business, not client */
   const stamp        = format(new Date(), "yyyy-MM-dd");
-  const exportAllCSV = () => exportCSV(filteredKws, businessesMap, clientsMap, `aeo-keywords-${stamp}.csv`);
-  const exportAllPDF = () => exportPDF(filteredKws, businessesMap, clientsMap, `aeo-keywords-${stamp}.pdf`, `All businesses · ${filteredKws.length} keywords`);
+  const exportAllCSV = () => exportCSV(filteredKws, businessesMap, clientsMap, plansMap, rankMap, `aeo-keywords-${stamp}.csv`);
+  const exportAllPDF = () => exportPDF(filteredKws, businessesMap, clientsMap, plansMap, rankMap, `aeo-keywords-${stamp}.pdf`, `All businesses · ${filteredKws.length} keywords`);
   const exportBizCSV = (businessId: number, kws: KwRecord[]) => {
     const name = businessesMap.get(businessId)?.name ?? "business";
-    exportCSV(kws, businessesMap, clientsMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.csv`);
+    exportCSV(kws, businessesMap, clientsMap, plansMap, rankMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.csv`);
   };
   const exportBizPDF = (businessId: number, kws: KwRecord[]) => {
     const name = businessesMap.get(businessId)?.name ?? `Business #${businessId}`;
-    exportPDF(kws, businessesMap, clientsMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.pdf`, `${name} · ${kws.length} keywords`);
+    exportPDF(kws, businessesMap, clientsMap, plansMap, rankMap, `${name.replace(/\s+/g, "-").toLowerCase()}-keywords-${stamp}.pdf`, `${name} · ${kws.length} keywords`);
   };
 
   return (

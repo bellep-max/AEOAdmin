@@ -20,6 +20,7 @@ export interface PeriodRow {
   businessId: number | null;
   businessName: string | null;
   aeoPlanId: number | null;
+  campaignName: string | null;
   currentPosition: number | null;
   currentDate: string | null;
   previousPosition: number | null;
@@ -108,10 +109,13 @@ export interface PlatformAggregate {
   avgCurrent: number | null;
   avgPrevious: number | null;
   change: number | null;
-  topTen: number;
+  topRank: number;
+  topRankThreshold: number;
   improved: number;
   declined: number;
 }
+
+export const TOP_RANK_THRESHOLD = 3;
 
 function avg(nums: number[]): number | null {
   if (nums.length === 0) return null;
@@ -135,14 +139,17 @@ export function aggregatePlatforms(rows: readonly PeriodRow[]): PlatformAggregat
     const prev = list.map((r) => r.previousPosition).filter((n): n is number => n != null);
     const avgCur = avg(cur);
     const avgPrev = avg(prev);
-    const change = avgCur != null && avgPrev != null ? Math.round((avgPrev - avgCur) * 10) / 10 : null;
+    const avgCurRounded = avgCur != null ? Math.round(avgCur) : null;
+    const avgPrevRounded = avgPrev != null ? Math.round(avgPrev) : null;
+    const change = avgCurRounded != null && avgPrevRounded != null ? avgPrevRounded - avgCurRounded : null;
     return {
       platform,
       keywordCount: list.length,
-      avgCurrent: avgCur != null ? Math.round(avgCur * 10) / 10 : null,
-      avgPrevious: avgPrev != null ? Math.round(avgPrev * 10) / 10 : null,
+      avgCurrent: avgCurRounded,
+      avgPrevious: avgPrevRounded,
       change,
-      topTen: cur.filter((n) => n <= 10).length,
+      topRank: cur.filter((n) => n <= TOP_RANK_THRESHOLD).length,
+      topRankThreshold: TOP_RANK_THRESHOLD,
       improved: list.filter((r) => r.status === "improved").length,
       declined: list.filter((r) => r.status === "declined").length,
     };
