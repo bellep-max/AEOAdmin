@@ -15,6 +15,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useLocation } from "wouter";
+import { RankingsSection } from "@/components/RankingsSection";
+import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -297,6 +299,21 @@ export default function BusinessDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PlatformAggregateStrip
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={null}
+        title={`Overall ranking — ${business?.name ?? "Business"}`}
+      />
+
+      <RankingsSection
+        mode="compact"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={null}
+        title={`Keyword breakdown — ${business?.name ?? "Business"}`}
+      />
 
       <CampaignFormDialog
         open={campaignDialogOpen}

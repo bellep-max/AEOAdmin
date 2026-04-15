@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft, ClipboardList, Key, Plus, Pencil, Trash2 } from "lucide-react";
 import { getPlanMeta } from "@/lib/plan-meta";
+import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
+import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -311,50 +313,26 @@ export default function CampaignDetail() {
         </CardContent>
       </Card>
 
-      <Card className="border-border/50">
-        <CardHeader className="pb-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Key className="w-4 h-4 text-primary" />
-            Keywords {keywords ? <span className="text-muted-foreground font-normal">({keywords.length})</span> : null}
-          </CardTitle>
+      <PlatformAggregateStrip
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+        title={`Overall ranking — ${campaign.name ?? campaign.planType}`}
+      />
+
+      <KeywordsWithRankingsCard
+        title="Keywords"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+        addButton={
           <Button size="sm" className="h-8 gap-1" onClick={() => setKwDialogOpen(true)}>
             <Plus className="w-3.5 h-3.5" /> Add Keyword
           </Button>
-        </CardHeader>
-        <CardContent>
-          {!keywords || keywords.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              No keywords yet. Click <strong>Add Keyword</strong> to create one.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {keywords.map((kw) => (
-                <div
-                  key={kw.id}
-                  className="flex items-center justify-between gap-4 p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Key className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-sm font-medium text-foreground">{kw.keywordText}</span>
-                    {kw.isActive === false && (
-                      <Badge variant="outline" className="text-xs bg-muted text-muted-foreground">inactive</Badge>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => deleteKeyword(kw.id)}
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        }
+        onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
+        extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
+      />
 
       <KeywordDialog
         open={kwDialogOpen}

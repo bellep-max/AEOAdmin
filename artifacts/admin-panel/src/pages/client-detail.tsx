@@ -24,6 +24,8 @@ import {
   AlertDialogTitle 
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { RankingsSection } from "@/components/RankingsSection";
+import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
   Mail, User, CalendarDays,
@@ -293,6 +295,22 @@ export default function ClientDetail() {
 
       {/* ═══ BUSINESSES ═══ */}
       <BusinessesSection clientId={clientId} clientName={client.businessName} />
+
+      {/* ═══ RANKINGS ═══ */}
+      <PlatformAggregateStrip
+        clientId={clientId}
+        businessId={null}
+        aeoPlanId={null}
+        title={`Overall ranking — ${client.businessName}`}
+      />
+
+      <RankingsSection
+        mode="by-business"
+        clientId={clientId}
+        businessId={null}
+        aeoPlanId={null}
+        title={`Keyword breakdown — ${client.businessName}`}
+      />
 
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       {/* <ClientAeoPlans clientId={clientId} client={client} /> */}

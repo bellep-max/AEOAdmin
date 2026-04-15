@@ -12,6 +12,7 @@ export * from "./devices";
 export * from "./proxies";
 export * from "./plans";
 export * from "./schedules";
+export * from "./ranking_runs";
 export * from "./ranking_reports";
 export * from "./tasks";
 export * from "./users";

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { clientsTable } from "./clients";
 import { businessesTable } from "./businesses";
 import { keywordsTable } from "./keywords";
+import { rankingRunsTable } from "./ranking_runs";
 
 export const rankingReportsTable = pgTable("ranking_reports", {
   id: serial("id").primaryKey(),
@@ -18,6 +19,7 @@ export const rankingReportsTable = pgTable("ranking_reports", {
   platform: text("platform"),
   screenshotUrl: text("screenshot_url"),
   textRanking: text("text_ranking"),
+  runId: integer("run_id").references(() => rankingRunsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

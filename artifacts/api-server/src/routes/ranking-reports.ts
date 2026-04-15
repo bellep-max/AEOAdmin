@@ -235,6 +235,194 @@ router.get("/per-keyword-platform", async (req, res) => {
   }
 });
 
+/* GET /api/ranking-reports/period-comparison?period=weekly|monthly|quarterly|lifetime
+   One row per (keyword × platform) with current window vs previous window.
+   For lifetime, "previous" = first ever, "current" = latest ever. */
+type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
+
+function startOfIsoWeek(d: Date): Date {
+  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = out.getUTCDay(); // 0 Sun ... 6 Sat
+  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
+  out.setUTCDate(out.getUTCDate() + diff);
+  return out;
+}
+
+function windowsFor(period: PeriodKey, now: Date): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
+  if (period === "weekly") {
+    const curStart = startOfIsoWeek(now);
+    const curEnd = new Date(curStart); curEnd.setUTCDate(curEnd.getUTCDate() + 7);
+    const prevStart = new Date(curStart); prevStart.setUTCDate(prevStart.getUTCDate() - 7);
+    const prevEnd = new Date(curStart);
+    return { curStart, curEnd, prevStart, prevEnd };
+  }
+  if (period === "monthly") {
+    const curStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const curEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const prevStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const prevEnd = curStart;
+    return { curStart, curEnd, prevStart, prevEnd };
+  }
+  // quarterly
+  const qStartMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+  const curStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
+  const curEnd = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth + 3, 1));
+  const prevStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth - 3, 1));
+  const prevEnd = curStart;
+  return { curStart, curEnd, prevStart, prevEnd };
+}
+
+router.get("/period-comparison", async (req, res) => {
+  try {
+    const period = ((req.query.period as string) ?? "weekly") as PeriodKey;
+    if (!["weekly", "monthly", "quarterly", "lifetime"].includes(period)) {
+      return res.status(400).json({ error: "Invalid period" });
+    }
+    const clientId = req.query.clientId ? parseInt(req.query.clientId as string, 10) : null;
+    const businessId = req.query.businessId ? parseInt(req.query.businessId as string, 10) : null;
+    const aeoPlanId = req.query.aeoPlanId ? parseInt(req.query.aeoPlanId as string, 10) : null;
+
+    const isLifetime = period === "lifetime";
+    const { curStart, curEnd, prevStart, prevEnd } = isLifetime
+      ? { curStart: new Date(0), curEnd: new Date("9999-12-31"), prevStart: new Date(0), prevEnd: new Date("9999-12-31") }
+      : windowsFor(period as Exclude<PeriodKey, "lifetime">, new Date());
+
+    const [clients, keywords, businesses, reports] = await Promise.all([
+      db.select().from(clientsTable),
+      db.select().from(keywordsTable),
+      db.select().from(businessesTable),
+      db
+        .select({
+          id: rankingReportsTable.id,
+          clientId: rankingReportsTable.clientId,
+          businessId: rankingReportsTable.businessId,
+          keywordId: rankingReportsTable.keywordId,
+          rankingPosition: rankingReportsTable.rankingPosition,
+          platform: rankingReportsTable.platform,
+          createdAt: rankingReportsTable.createdAt,
+        })
+        .from(rankingReportsTable)
+        .orderBy(asc(rankingReportsTable.createdAt)),
+    ]);
+
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
+    const businessMap = new Map(businesses.map((b) => [b.id, b]));
+
+    // filter by cascade if provided, applied to the keyword, not the report
+    const keywordAllowed = (kid: number): boolean => {
+      const kw = keywordMap.get(kid);
+      if (!kw) return false;
+      if (clientId != null && kw.clientId !== clientId) return false;
+      if (businessId != null && kw.businessId !== businessId) return false;
+      if (aeoPlanId != null && kw.aeoPlanId !== aeoPlanId) return false;
+      return true;
+    };
+
+    type PairKey = string; // `${keywordId}|${platform}`
+    const latestInWindow = (from: Date, to: Date) => {
+      const map = new Map<PairKey, typeof reports[number]>();
+      for (const r of reports) {
+        if (!r.platform) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const t = new Date(r.createdAt as unknown as string).getTime();
+        if (t < from.getTime() || t >= to.getTime()) continue;
+        const key = `${r.keywordId}|${r.platform}`;
+        map.set(key, r); // reports are asc-ordered, so last wins
+      }
+      return map;
+    };
+    const everLatest = () => {
+      const map = new Map<PairKey, typeof reports[number]>();
+      for (const r of reports) {
+        if (!r.platform) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const key = `${r.keywordId}|${r.platform}`;
+        map.set(key, r);
+      }
+      return map;
+    };
+
+    // For lifetime, previous = first-ever, current = latest-ever per (keyword × platform)
+    const firstEver = () => {
+      const map = new Map<PairKey, typeof reports[number]>();
+      for (const r of reports) {
+        if (!r.platform) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const key = `${r.keywordId}|${r.platform}`;
+        if (!map.has(key)) map.set(key, r); // reports are asc, first wins
+      }
+      return map;
+    };
+
+    const ever = everLatest();
+    const current = isLifetime ? ever : latestInWindow(curStart, curEnd);
+    const previous = isLifetime ? firstEver() : latestInWindow(prevStart, prevEnd);
+
+    const allKeys = new Set<PairKey>([...current.keys(), ...previous.keys(), ...ever.keys()]);
+
+    const rows = [...allKeys].map((key) => {
+      const [kidStr, platform] = key.split("|");
+      const keywordId = parseInt(kidStr, 10);
+      const kw = keywordMap.get(keywordId);
+      const client = kw ? clientMap.get(kw.clientId) : null;
+      const business = kw?.businessId != null ? businessMap.get(kw.businessId) : null;
+      const cur = current.get(key);
+      const prev = previous.get(key);
+      const lastEver = ever.get(key);
+      const change =
+        cur?.rankingPosition != null && prev?.rankingPosition != null
+          ? prev.rankingPosition - cur.rankingPosition
+          : null;
+
+      let status: "new" | "improved" | "steady" | "declined" | "missing" | "pending" = "pending";
+      if (cur && !prev) status = "new";
+      else if (cur && prev && change != null) {
+        if (change > 0) status = "improved";
+        else if (change < 0) status = "declined";
+        else status = "steady";
+      } else if (!cur && prev) status = "missing";
+      else status = "pending";
+
+      const lastRunAt = lastEver?.createdAt ?? null;
+      let freshness: "fresh" | "stale" | "cold" | "never" = "never";
+      if (cur) freshness = "fresh";
+      else if (prev) freshness = "stale";
+      else if (lastEver) freshness = "cold";
+
+      return {
+        keywordId,
+        keywordText: kw?.keywordText ?? `Keyword #${keywordId}`,
+        platform,
+        clientId: kw?.clientId ?? null,
+        clientName: client?.businessName ?? null,
+        businessId: kw?.businessId ?? null,
+        businessName: business?.name ?? null,
+        aeoPlanId: kw?.aeoPlanId ?? null,
+        currentReportId: cur?.id ?? null,
+        currentPosition: cur?.rankingPosition ?? null,
+        currentDate: cur?.createdAt ?? null,
+        previousReportId: prev?.id ?? null,
+        previousPosition: prev?.rankingPosition ?? null,
+        previousDate: prev?.createdAt ?? null,
+        change,
+        status,
+        freshness,
+        lastRunAt,
+      };
+    });
+
+    res.json({
+      period,
+      window: { currentStart: curStart, currentEnd: curEnd, previousStart: prevStart, previousEnd: prevEnd },
+      rows,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching period comparison");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/initial-vs-current", async (req, res) => {
   try {
     const clients    = await db.select().from(clientsTable);
