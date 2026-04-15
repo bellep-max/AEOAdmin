@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { rankingReportsTable, clientsTable, keywordsTable, businessesTable } from "@workspace/db/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
+import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
     const [report] = await db
@@ -72,7 +73,7 @@ router.post("/", async (req, res) => {
 });
 
 /* PATCH /api/ranking-reports/:id — update mapsUrl / mapsPresence / position */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireExecutorToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const body = req.body;

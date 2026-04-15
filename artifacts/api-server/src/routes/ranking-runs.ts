@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { rankingRunsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get("/latest", async (_req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body ?? {};
     const [row] = await db
@@ -53,7 +54,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireExecutorToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const body = req.body ?? {};
