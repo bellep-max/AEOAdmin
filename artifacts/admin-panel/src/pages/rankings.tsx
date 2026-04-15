@@ -13,6 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowUp, ArrowDown, Minus, MapPin, TrendingUp, TrendingDown,
@@ -62,6 +64,9 @@ type CrossRow = {
 type CompRow = {
   clientId: number;
   clientName: string;
+  businessId: number | null;
+  businessName: string | null;
+  aeoPlanId: number | null;
   keywordId: number;
   keywordText: string;
   currentReportId: number | null;
@@ -82,7 +87,7 @@ type CompRow = {
 function exportCSV(rows: CompRow[], filename: string) {
   const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const headers = [
-    "Business", "Keyword",
+    "Client", "Business", "Keyword",
     "Initial Position", "Initial Date",
     "Current Position", "Current Date",
     "Position Change", "Status",
@@ -93,6 +98,7 @@ function exportCSV(rows: CompRow[], filename: string) {
     ...rows.map((r) =>
       [
         esc(r.clientName),
+        esc(r.businessName ?? ""),
         esc(r.keywordText),
         esc(r.initialPosition != null ? String(r.initialPosition) : ""),
         esc(r.initialDate ? format(new Date(r.initialDate), "yyyy-MM-dd") : ""),
@@ -130,11 +136,15 @@ function exportPDF(rows: CompRow[], title: string, filename: string) {
   doc.text(title, 10, 16);
   doc.text(`Generated ${format(new Date(), "PPP")}`, pageW - 10, 16, { align: "right" });
 
-  /* Group by business */
+  /* Group by business (fall back to client when unassigned) */
   const groups = new Map<number, { name: string; rows: CompRow[] }>();
   for (const r of rows) {
-    if (!groups.has(r.clientId)) groups.set(r.clientId, { name: r.clientName, rows: [] });
-    groups.get(r.clientId)!.rows.push(r);
+    const bid  = r.businessId ?? -r.clientId; // negative to avoid collision with real businessIds
+    const name = r.businessName
+      ? `${r.clientName} — ${r.businessName}`
+      : `${r.clientName} — (Unassigned)`;
+    if (!groups.has(bid)) groups.set(bid, { name, rows: [] });
+    groups.get(bid)!.rows.push(r);
   }
 
   let y = 28;
@@ -239,7 +249,7 @@ function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: st
   const posStr = (v: number | null | undefined) => v != null ? `#${v}` : "";
   const chgStr = (v: number | null | undefined) => v == null ? "" : v > 0 ? `+${v}` : String(v);
   const headers = [
-    "Business", "Keyword",
+    "Client", "Business", "Keyword",
     // ── Overall ──────────────────────────────────
     "Overall Initial Rank", "Overall Initial Date",
     "Overall Current Rank", "Overall Current Date",
@@ -265,7 +275,7 @@ function exportBizPlatformCSV(bRows: CompRow[], platByKw: PlatByKw, filename: st
       const bestPos = Math.min(...positions.map(([, p]) => p));
       const best = bestPos < 9999 ? (positions.find(([, p]) => p === bestPos)?.[0] ?? "") : "";
       return [
-        esc(r.clientName), esc(r.keywordText),
+        esc(r.clientName), esc(r.businessName ?? ""), esc(r.keywordText),
         // Overall
         esc(posStr(r.initialPosition)),
         esc(r.initialDate ? format(new Date(r.initialDate), "yyyy-MM-dd") : ""),
@@ -1204,10 +1214,36 @@ export default function Rankings() {
     },
   });
 
-  const [statusFilter,  setStatusFilter]  = useState<PerfStatus | "all">("all");
-  const [search,        setSearch]        = useState("");
-  const [bizExpanded,   setBizExpanded]   = useState<Set<number>>(new Set());
-  const [period,        setPeriod]        = useState<"weekly" | "monthly" | "quarterly">("monthly");
+  const [statusFilter,       setStatusFilter]       = useState<PerfStatus | "all">("all");
+  const [search,             setSearch]             = useState("");
+  const [bizExpanded,        setBizExpanded]        = useState<Set<number>>(new Set());
+  const [period,             setPeriod]             = useState<"weekly" | "monthly" | "quarterly">("monthly");
+  const [selectedClientId,   setSelectedClientId]   = useState<number | null>(null);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+
+  /* Client/Business/Campaign lookups for cascade filter */
+  const { data: allClients }    = useQuery<{ id: number; businessName: string }[]>({
+    queryKey: ["/api/clients"],
+    queryFn: async () => {
+      const r = await rawFetch(`/api/clients`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+  const { data: allBusinesses } = useQuery<{ id: number; clientId: number; name: string }[]>({
+    queryKey: ["/api/businesses"],
+    queryFn: async () => {
+      const r = await rawFetch(`/api/businesses`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+  const { data: allPlans }      = useQuery<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string }[]>({
+    queryKey: ["/api/aeo-plans"],
+    queryFn: async () => {
+      const r = await rawFetch(`/api/aeo-plans`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
 
   const periodDays: Record<typeof period, number> = { weekly: 7, monthly: 30, quarterly: 90 };
   const periodLabel: Record<typeof period, string> = { weekly: "This Week", monthly: "This Month", quarterly: "Last Quarter" };
@@ -1235,10 +1271,17 @@ export default function Rankings() {
   const periodCutoff = new Date(Date.now() - periodDays[period] * 24 * 60 * 60 * 1000);
 
   /* Enrich rows with status */
-  const enriched: CompRow[] = (comparison as CompRow[] | undefined ?? []).map((row) => ({
+  const enrichedAll: CompRow[] = (comparison as CompRow[] | undefined ?? []).map((row) => ({
     ...row,
     status: getStatus(row.positionChange ?? null, row.currentPosition ?? null, row.initialPosition ?? null),
   }));
+
+  /* Apply cascade filter (Client → Business → Campaign) */
+  const enriched: CompRow[] = enrichedAll.filter((r) =>
+    (selectedClientId   === null || r.clientId   === selectedClientId) &&
+    (selectedBusinessId === null || r.businessId === selectedBusinessId) &&
+    (selectedCampaignId === null || r.aeoPlanId  === selectedCampaignId),
+  );
 
   /* Apply period filter — keep rows with a currentDate in the selected window (or no date yet) */
   const periodFiltered = enriched.filter((row) =>
@@ -1263,21 +1306,30 @@ export default function Rankings() {
     return matchStatus && matchSearch;
   });
 
-  /* Group by client for "By Business" tab — uses period-filtered data */
-  const byBusiness = new Map<number, { name: string; rows: CompRow[] }>();
+  /* Group by BUSINESS for "By Business" tab — uses period-filtered data.
+     Rows without a businessId fall into an "Unassigned" bucket keyed 0. */
+  const UNASSIGNED_BID = 0;
+  const bizLabel = (r: CompRow) => r.businessName ?? (r.businessId == null ? "Unassigned" : `Business #${r.businessId}`);
+  const byBusiness = new Map<number, { name: string; clientId: number; clientName: string; rows: CompRow[] }>();
   for (const r of periodFiltered) {
-    if (!byBusiness.has(r.clientId)) byBusiness.set(r.clientId, { name: r.clientName, rows: [] });
-    byBusiness.get(r.clientId)!.rows.push(r);
+    const bid = r.businessId ?? UNASSIGNED_BID;
+    if (!byBusiness.has(bid)) byBusiness.set(bid, { name: bizLabel(r), clientId: r.clientId, clientName: r.clientName, rows: [] });
+    byBusiness.get(bid)!.rows.push(r);
   }
-  const bizList = [...byBusiness.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const bizList = [...byBusiness.entries()].sort(
+    (a, b) => a[1].clientName.localeCompare(b[1].clientName) || a[1].name.localeCompare(b[1].name),
+  );
 
   /* All-time business map (no period filter) — used for comprehensive downloads */
-  const byBusinessAll = new Map<number, { name: string; rows: CompRow[] }>();
+  const byBusinessAll = new Map<number, { name: string; clientId: number; clientName: string; rows: CompRow[] }>();
   for (const r of enriched) {
-    if (!byBusinessAll.has(r.clientId)) byBusinessAll.set(r.clientId, { name: r.clientName, rows: [] });
-    byBusinessAll.get(r.clientId)!.rows.push(r);
+    const bid = r.businessId ?? UNASSIGNED_BID;
+    if (!byBusinessAll.has(bid)) byBusinessAll.set(bid, { name: bizLabel(r), clientId: r.clientId, clientName: r.clientName, rows: [] });
+    byBusinessAll.get(bid)!.rows.push(r);
   }
-  const bizListAll = [...byBusinessAll.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const bizListAll = [...byBusinessAll.entries()].sort(
+    (a, b) => a[1].clientName.localeCompare(b[1].clientName) || a[1].name.localeCompare(b[1].name),
+  );
 
   /* Cross-platform keyword rows — hoisted so Download Center + Platform tab can share it */
   const crossRows: CrossRow[] = (() => {
@@ -1326,24 +1378,24 @@ export default function Rankings() {
       `aeo-performance-${periodSlug}-${dateStamp}.pdf`,
     );
   }
-  function exportBizCSV(clientId: number, rows: CompRow[]) {
-    const biz  = byBusiness.get(clientId) ?? byBusinessAll.get(clientId)!;
+  function exportBizCSV(businessId: number, rows: CompRow[]) {
+    const biz  = byBusiness.get(businessId) ?? byBusinessAll.get(businessId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
     exportBizPlatformCSV(rows, platByKw, `${slug}-${periodSlug}-rankings-${dateStamp}.csv`);
   }
-  function exportBizPDF(clientId: number, rows: CompRow[]) {
-    const biz  = byBusiness.get(clientId) ?? byBusinessAll.get(clientId)!;
+  function exportBizPDF(businessId: number, rows: CompRow[]) {
+    const biz  = byBusiness.get(businessId) ?? byBusinessAll.get(businessId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
     exportBizPlatformPDF(biz.name, rows, platByKw, `${slug}-${periodSlug}-rankings-${dateStamp}.pdf`);
   }
   /* All-time (ignores period filter) — exports every keyword ever recorded */
-  function exportBizAllCSV(clientId: number) {
-    const biz  = byBusinessAll.get(clientId)!;
+  function exportBizAllCSV(businessId: number) {
+    const biz  = byBusinessAll.get(businessId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
     exportBizPlatformCSV(biz.rows, platByKw, `${slug}-ALL-keywords-${dateStamp}.csv`);
   }
-  function exportBizAllPDF(clientId: number) {
-    const biz  = byBusinessAll.get(clientId)!;
+  function exportBizAllPDF(businessId: number) {
+    const biz  = byBusinessAll.get(businessId)!;
     const slug = biz.name.replace(/\s+/g, "-").toLowerCase();
     exportBizPlatformPDF(biz.name, biz.rows, platByKw, `${slug}-ALL-keywords-${dateStamp}.pdf`);
   }
@@ -1444,6 +1496,98 @@ export default function Rankings() {
           </div>
         </div>
       </div>
+
+      {/* ── Cascade filter: Client → Business → Campaign ── */}
+      {(() => {
+        const bizScope  = (allBusinesses ?? []).filter((b) => selectedClientId === null || b.clientId === selectedClientId);
+        const planScope = (allPlans ?? []).filter((p) =>
+          (selectedClientId   === null || p.clientId   === selectedClientId) &&
+          (selectedBusinessId === null || p.businessId === selectedBusinessId),
+        );
+        return (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3">
+            <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1" />
+
+            <Select
+              value={selectedClientId !== null ? String(selectedClientId) : "all"}
+              onValueChange={(v) => {
+                const next = v === "all" ? null : Number(v);
+                setSelectedClientId(next);
+                setSelectedBusinessId(null);
+                setSelectedCampaignId(null);
+                setBizExpanded(new Set());
+              }}
+            >
+              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Clients</span></SelectItem>
+                {(allClients ?? []).map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    <span className="font-bold">{c.businessName}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-slate-400">›</span>
+
+            <Select
+              value={selectedBusinessId !== null ? String(selectedBusinessId) : "all"}
+              onValueChange={(v) => {
+                const next = v === "all" ? null : Number(v);
+                setSelectedBusinessId(next);
+                setSelectedCampaignId(null);
+                if (next !== null) setBizExpanded(new Set([next]));
+              }}
+              disabled={bizScope.length === 0}
+            >
+              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Businesses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Businesses</span></SelectItem>
+                {bizScope.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    <span className="font-bold">{b.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-slate-400">›</span>
+
+            <Select
+              value={selectedCampaignId !== null ? String(selectedCampaignId) : "all"}
+              onValueChange={(v) => setSelectedCampaignId(v === "all" ? null : Number(v))}
+              disabled={planScope.length === 0}
+            >
+              <SelectTrigger className="w-64 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
+                <SelectValue placeholder="All Campaigns" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all"><span className="font-bold">All Campaigns</span></SelectItem>
+                {planScope.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    <span className="font-bold">{p.name ?? p.planType}</span>
+                    <span className="text-slate-500 ml-1">· {p.planType}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {(selectedClientId !== null || selectedBusinessId !== null || selectedCampaignId !== null) && (
+              <button
+                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setBizExpanded(new Set()); }}
+                className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-bold"
+              >
+                <X className="w-4 h-4" /> Clear filters
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── AEO Performance Overview ── */}
       <div className="rounded-xl border border-border/50 bg-card/40 p-4">
@@ -1881,8 +2025,8 @@ export default function Rankings() {
             </div>
           ) : (
             <div className="space-y-2">
-              {bizList.map(([clientId, grp]) => {
-                const isOpen = bizExpanded.has(clientId);
+              {bizList.map(([businessId, grp]) => {
+                const isOpen = bizExpanded.has(businessId);
                 const bRows  = grp.rows;
                 const perf   = bRows.filter((r) => r.status === "performing").length;
                 const under  = bRows.filter((r) => r.status === "underperforming").length;
@@ -1894,14 +2038,14 @@ export default function Rankings() {
                 const hasChange = bRows.some((r) => r.positionChange != null);
 
                 return (
-                  <div key={clientId} className="rounded-xl border border-border/50 bg-card/30 overflow-hidden">
+                  <div key={businessId} className="rounded-xl border border-border/50 bg-card/30 overflow-hidden">
                     {/* Business header row */}
                     <div className="flex items-center justify-between gap-3 px-4 py-3">
                       <button
                         className="flex items-center gap-3 flex-1 min-w-0 text-left"
                         onClick={() => setBizExpanded((p) => {
                           const n = new Set(p);
-                          n.has(clientId) ? n.delete(clientId) : n.add(clientId);
+                          n.has(businessId) ? n.delete(businessId) : n.add(businessId);
                           return n;
                         })}
                       >
@@ -1910,6 +2054,7 @@ export default function Rankings() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-base text-black truncate">{grp.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">Client: {grp.clientName}</p>
                           <div className="flex items-center gap-2 flex-wrap mt-0.5">
                             <span className="text-xs text-muted-foreground">{bRows.length} keywords</span>
                             {perf   > 0 && <Pill value={perf}   label="performing"      color="text-emerald-400 border-emerald-500/25 bg-emerald-500/10" />}
@@ -1932,14 +2077,14 @@ export default function Rankings() {
                         <div className="flex flex-col items-end gap-1">
                           <div className="flex items-center gap-1">
                             <button
-                              onClick={() => exportBizCSV(clientId, bRows)}
+                              onClick={() => exportBizCSV(businessId, bRows)}
                               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border/40 hover:border-border/70 rounded-lg px-2 py-1.5 bg-muted/10 hover:bg-muted/20 transition-all"
                               title={`Download ${grp.name} — ${periodLabel[period]} (${bRows.length} keywords)`}
                             >
                               <Download className="w-3 h-3" />{periodLabel[period]} CSV
                             </button>
                             <button
-                              onClick={() => exportBizPDF(clientId, bRows)}
+                              onClick={() => exportBizPDF(businessId, bRows)}
                               className="flex items-center gap-1.5 text-xs text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/50 rounded-lg px-2 py-1.5 bg-rose-500/5 hover:bg-rose-500/10 transition-all"
                               title={`Download ${grp.name} PDF — ${periodLabel[period]}`}
                             >
@@ -1948,19 +2093,19 @@ export default function Rankings() {
                           </div>
                           {/* All-keywords downloads (ignores period) */}
                           {(() => {
-                            const allRows = byBusinessAll.get(clientId)?.rows ?? [];
+                            const allRows = byBusinessAll.get(businessId)?.rows ?? [];
                             const extra   = allRows.length - bRows.length;
                             return (
                               <div className="flex items-center gap-1">
                                 <button
-                                  onClick={() => exportBizAllCSV(clientId)}
+                                  onClick={() => exportBizAllCSV(businessId)}
                                   className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 rounded-lg px-2 py-1.5 bg-primary/5 hover:bg-primary/10 transition-all"
                                   title={`Download ALL ${allRows.length} keywords for ${grp.name} (includes ${extra} from other periods)`}
                                 >
                                   <Archive className="w-3 h-3" />All ({allRows.length}) CSV
                                 </button>
                                 <button
-                                  onClick={() => exportBizAllPDF(clientId)}
+                                  onClick={() => exportBizAllPDF(businessId)}
                                   className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/50 rounded-lg px-2 py-1.5 bg-primary/5 hover:bg-primary/10 transition-all"
                                   title={`Download ALL ${allRows.length} keywords PDF for ${grp.name}`}
                                 >

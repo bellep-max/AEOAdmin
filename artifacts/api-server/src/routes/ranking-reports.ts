@@ -103,9 +103,10 @@ router.patch("/:id", async (req, res) => {
 router.get("/platform-summary", async (req, res) => {
   try {
     const PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
-    const [clients, keywords, platformRows] = await Promise.all([
+    const [clients, keywords, businesses, platformRows] = await Promise.all([
       db.select().from(clientsTable),
       db.select().from(keywordsTable),
+      db.select().from(businessesTable),
       db
         .select({
           clientId: rankingReportsTable.clientId,
@@ -119,8 +120,9 @@ router.get("/platform-summary", async (req, res) => {
         .orderBy(asc(rankingReportsTable.createdAt)),
     ]);
 
-    const clientMap  = new Map(clients.map((c) => [c.id, c]));
-    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
+    const clientMap   = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap  = new Map(keywords.map((k) => [k.id, k]));
+    const businessMap = new Map(businesses.map((b) => [b.id, b]));
 
     // Build summary per platform
     const summary = PLATFORMS.map((platform) => {
@@ -143,9 +145,13 @@ router.get("/platform-summary", async (req, res) => {
           initial?.rankingPosition != null && current?.rankingPosition != null
             ? initial.rankingPosition - current.rankingPosition
             : null;
+        const business = keyword?.businessId != null ? businessMap.get(keyword.businessId) : null;
         return {
           clientId:        initial.clientId,
           clientName:      client?.businessName ?? `Client #${initial.clientId}`,
+          businessId:      keyword?.businessId ?? null,
+          businessName:    business?.name ?? null,
+          aeoPlanId:       keyword?.aeoPlanId ?? null,
           keywordId:       initial.keywordId,
           keywordText:     keyword?.keywordText ?? `Keyword #${initial.keywordId}`,
           initialPosition: initial?.rankingPosition ?? null,
@@ -231,10 +237,9 @@ router.get("/per-keyword-platform", async (req, res) => {
 
 router.get("/initial-vs-current", async (req, res) => {
   try {
-    const clients = await db.select().from(clientsTable);
-    const keywords = await db
-      .select()
-      .from(keywordsTable);
+    const clients    = await db.select().from(clientsTable);
+    const keywords   = await db.select().from(keywordsTable);
+    const businesses = await db.select().from(businessesTable);
     const allReports = await db
       .select({
         id: rankingReportsTable.id,
@@ -251,12 +256,16 @@ router.get("/initial-vs-current", async (req, res) => {
       .from(rankingReportsTable)
       .orderBy(asc(rankingReportsTable.createdAt));
 
-    const clientMap  = new Map(clients.map((c) => [c.id, c]));
-    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
+    const clientMap   = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap  = new Map(keywords.map((k) => [k.id, k]));
+    const businessMap = new Map(businesses.map((b) => [b.id, b]));
 
     const grouped: Record<string, {
       clientId: number;
       clientName: string;
+      businessId: number | null;
+      businessName: string | null;
+      aeoPlanId: number | null;
       keywordId: number;
       keywordText: string;
       reports: typeof allReports;
@@ -268,9 +277,13 @@ router.get("/initial-vs-current", async (req, res) => {
       const keyword = keywordMap.get(report.keywordId);
       if (!client || !keyword) continue;
       if (!grouped[key]) {
+        const business = keyword.businessId != null ? businessMap.get(keyword.businessId) : null;
         grouped[key] = {
           clientId: report.clientId,
           clientName: client.businessName,
+          businessId: keyword.businessId ?? null,
+          businessName: business?.name ?? null,
+          aeoPlanId: keyword.aeoPlanId ?? null,
           keywordId: report.keywordId,
           keywordText: keyword.keywordText,
           reports: [],
@@ -289,6 +302,9 @@ router.get("/initial-vs-current", async (req, res) => {
       return {
         clientId:        g.clientId,
         clientName:      g.clientName,
+        businessId:      g.businessId,
+        businessName:    g.businessName,
+        aeoPlanId:       g.aeoPlanId,
         keywordId:       g.keywordId,
         keywordText:     g.keywordText,
         currentReportId: currentReport?.id ?? null,

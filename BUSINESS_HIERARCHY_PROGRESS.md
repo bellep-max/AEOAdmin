@@ -129,7 +129,25 @@ Applied via `scripts/migrate-to-businesses.mjs` (seed/backfill) and `drizzle-kit
 - `PATCH /api/keywords/:id` now accepts `businessId` (and `clientId`) for reassignment.
 - `GET /api/keywords` already supported `clientId`/`businessId`/`aeoPlanId` filters — verified working together.
 
-## Rankings page — backend done, FE pending
+## Rankings page — DONE (2026-04-15)
+
+**Frontend** (`artifacts/admin-panel/src/pages/rankings.tsx`):
+- `CompRow` type expanded with `businessId`, `businessName`, `aeoPlanId`.
+- `byBusiness` / `byBusinessAll` now key on `businessId` (not `clientId`); "Unassigned" bucket (key 0) for rows without a business.
+- Business card header shows `Client: X` sub-label underneath the business name; sort is `clientName → businessName`.
+- Cascading filter bar **Client → Business → Campaign** (shadcn Select) placed under the Period Selector — applies before period filter, with Clear button.
+- Export helpers renamed (`exportBizCSV(businessId, ...)` etc.) and lookups go through the business-keyed maps.
+- CSV/PDF: new **Client** column; PDF `exportPDF` groups by business with `Client — Business` labels.
+- All three lookup queries (`/api/clients`, `/api/businesses`, `/api/aeo-plans`) fetched via `useQuery` + `rawFetch`.
+
+**Backend** (`ranking-reports.ts`):
+- `GET /api/ranking-reports` joins `businesses` and returns `businessId`/`businessName`/`aeoPlanId` (done earlier).
+- `GET /api/ranking-reports/initial-vs-current` now enriches each row with `businessId`/`businessName`/`aeoPlanId` derived from the keyword's business.
+- `GET /api/ranking-reports/platform-summary` does the same for the per-platform keyword list.
+
+**Removed:** (empty — placeholder below was previous pending section)
+
+## Rankings page — pending notes (archived)
 
 **Backend** (`artifacts/api-server/src/routes/ranking-reports.ts`): `GET /api/ranking-reports` now:
 - Joins `businesses` table and returns `businessId`, `businessName`, `aeoPlanId` on each row.
