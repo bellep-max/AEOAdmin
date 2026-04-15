@@ -34,7 +34,6 @@ interface AeoPlan {
   businessName: string | null;
   planType: string;
   serviceCategory: string | null;
-  targetCityRadius: string | null;
   sampleQuestion1: string | null;
   sampleQuestion2: string | null;
   sampleQuestion3: string | null;
@@ -64,7 +63,6 @@ const EMPTY_FORM: PlanFormData = {
   businessName: "",
   planType: "",
   serviceCategory: "",
-  targetCityRadius: "",
   sampleQuestion1: "",
   sampleQuestion2: "",
   sampleQuestion3: "",
@@ -196,16 +194,6 @@ function PlanForm({
           />
         </div>
 
-        {/* Target City/Radius */}
-        <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Target City / Radius</Label>
-          <Input
-            className="h-10 bg-muted/30 border-border/60"
-            placeholder="e.g. Provo, UT — 30 mi radius"
-            value={values.targetCityRadius ?? ""}
-            onChange={(e) => set("targetCityRadius", e.target.value)}
-          />
-        </div>
       </div>
 
       {/* 10 Sample Questions */}
@@ -366,7 +354,6 @@ export default function Plans() {
       businessName:          plan.businessName,
       planType:              plan.planType,
       serviceCategory:       plan.serviceCategory,
-      targetCityRadius:      plan.targetCityRadius,
       sampleQuestion1:       plan.sampleQuestion1,
       sampleQuestion2:       plan.sampleQuestion2,
       sampleQuestion3:       plan.sampleQuestion3,
@@ -458,8 +445,7 @@ export default function Plans() {
       || (p.clientBusinessName ?? "").toLowerCase().includes(q)
       || (p.businessName ?? "").toLowerCase().includes(q)
       || p.planType.toLowerCase().includes(q)
-      || (p.serviceCategory ?? "").toLowerCase().includes(q)
-      || (p.targetCityRadius ?? "").toLowerCase().includes(q);
+      || (p.serviceCategory ?? "").toLowerCase().includes(q);
   });
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -499,7 +485,6 @@ export default function Plans() {
               <TableHead>Plan Type</TableHead>
               <TableHead>Tier</TableHead>
               <TableHead>Service Category</TableHead>
-              <TableHead>Target City / Radius</TableHead>
               <TableHead>Answer Presence</TableHead>
               <TableHead>3-Mo Target</TableHead>
               <TableHead>Monthly Budget</TableHead>
@@ -511,14 +496,14 @@ export default function Plans() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 9}).map((__, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                   {plans.length === 0 ? "No AEO plans yet. Click Add Plan to create one." : "No plans match your search."}
                 </TableCell>
               </TableRow>
@@ -567,7 +552,6 @@ export default function Plans() {
                         })()}
                       </TableCell>
                       <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                      <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                       <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                       <TableCell className="text-sm">
                         {plan.searchBoostTarget != null

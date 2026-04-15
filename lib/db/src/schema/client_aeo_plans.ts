@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -12,7 +12,6 @@ export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   businessName:           text("business_name"),
   planType:               text("plan_type").notNull(),          // e.g. "Starter", "Growth", "Pro", or custom
   serviceCategory:        text("service_category"),
-  targetCityRadius:       text("target_city_radius"),
   sampleQuestion1:        text("sample_question_1"),
   sampleQuestion2:        text("sample_question_2"),
   sampleQuestion3:        text("sample_question_3"),
@@ -27,6 +26,11 @@ export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   searchBoostTarget:      integer("search_boost_target"),        // 3-month target # of question searches
   monthlyAeoBudget:       numeric("monthly_aeo_budget", { precision: 10, scale: 2 }),
   schemaImplementor:      text("schema_implementor"),            // "us" | "client_dev" | custom
+  searchAddress:          text("search_address"),
+  subscriptionId:         text("subscription_id"),
+  subscriptionStartDate:  date("subscription_start_date"),
+  nextBillingDate:        date("next_billing_date"),
+  cardLast4:              text("card_last4"),
   createdAt:              timestamp("created_at").notNull().defaultNow(),
   updatedAt:              timestamp("updated_at").notNull().defaultNow(),
 });

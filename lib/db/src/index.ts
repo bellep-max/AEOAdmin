@@ -19,6 +19,6 @@ export const pool = new Pool({
   connectionString,
   ssl: forceSsl ? { rejectUnauthorized: false } : undefined,
 });
-export const db = drizzle(pool, { schema });
+export const db = drizzle(pool, { schema, logger: process.env.DB_LOG === "true" });
 
 export * from "./schema";

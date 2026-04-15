@@ -1,46 +1,43 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { businessesTable, keywordsTable } from "@workspace/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { businessesTable, keywordsTable, clientAeoPlansTable } from "@workspace/db/schema";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/", async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
-    const query = db
-      .select({
-        id: businessesTable.id,
-        clientId: businessesTable.clientId,
-        name: businessesTable.name,
-        gmbUrl: businessesTable.gmbUrl,
-        websiteUrl: businessesTable.websiteUrl,
-        category: businessesTable.category,
-        publishedAddress: businessesTable.publishedAddress,
-        searchAddress: businessesTable.searchAddress,
-        city: businessesTable.city,
-        state: businessesTable.state,
-        country: businessesTable.country,
-        placeId: businessesTable.placeId,
-        latitude: businessesTable.latitude,
-        longitude: businessesTable.longitude,
-        timezone: businessesTable.timezone,
-        websitePublishedOnGmb: businessesTable.websitePublishedOnGmb,
-        websiteLinkedOnGmb: businessesTable.websiteLinkedOnGmb,
-        status: businessesTable.status,
-        notes: businessesTable.notes,
-        createdAt: businessesTable.createdAt,
-        updatedAt: businessesTable.updatedAt,
-        keywordCount: sql<number>`(select count(*) from keywords where keywords.business_id = ${businessesTable.id})::int`,
-      })
-      .from(businessesTable)
-      .orderBy(desc(businessesTable.createdAt));
-
+    const query = db.select().from(businessesTable).orderBy(desc(businessesTable.createdAt));
     const rows = clientId
       ? await query.where(eq(businessesTable.clientId, parseInt(clientId)))
       : await query;
 
-    res.json(rows);
+    const ids = rows.map((b) => b.id);
+    const counts = new Map<number, { keywordCount: number; campaignCount: number }>();
+    for (const id of ids) counts.set(id, { keywordCount: 0, campaignCount: 0 });
+
+    if (ids.length > 0) {
+      const kwRows = await db
+        .select({ businessId: keywordsTable.businessId, c: sql<number>`count(*)::int` })
+        .from(keywordsTable)
+        .where(inArray(keywordsTable.businessId, ids))
+        .groupBy(keywordsTable.businessId);
+      for (const r of kwRows) {
+        if (r.businessId != null) counts.get(r.businessId)!.keywordCount = Number(r.c);
+      }
+
+      const cpRows = await db
+        .select({ businessId: clientAeoPlansTable.businessId, c: sql<number>`count(*)::int` })
+        .from(clientAeoPlansTable)
+        .where(inArray(clientAeoPlansTable.businessId, ids))
+        .groupBy(clientAeoPlansTable.businessId);
+      for (const r of cpRows) {
+        if (r.businessId != null) counts.get(r.businessId)!.campaignCount = Number(r.c);
+      }
+    }
+
+    res.json(rows.map((b) => ({ ...b, ...counts.get(b.id)! })));
   } catch (err) {
     req.log.error({ err }, "Error fetching businesses");
     res.status(500).json({ error: "Internal server error" });
@@ -74,7 +71,6 @@ router.post("/", async (req, res) => {
         websiteUrl: body.websiteUrl ?? null,
         category: body.category ?? null,
         publishedAddress: body.publishedAddress ?? null,
-        searchAddress: body.searchAddress ?? null,
         city: body.city ?? null,
         state: body.state ?? null,
         country: body.country ?? null,
@@ -98,7 +94,8 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const body = { ...req.body, updatedAt: new Date() };
+    const { searchAddress: _ignored, ...rest } = req.body ?? {};
+    const body = { ...rest, updatedAt: new Date() };
     const [business] = await db
       .update(businessesTable)
       .set(body)

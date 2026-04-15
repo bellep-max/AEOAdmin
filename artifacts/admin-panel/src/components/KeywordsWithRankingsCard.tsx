@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -136,23 +137,27 @@ export function KeywordsWithRankingsCard({
                     <button
                       type="button"
                       onClick={() => hasData && toggle(keywordId)}
-                      className={`flex items-center gap-2 flex-1 min-w-0 text-left ${hasData ? "cursor-pointer hover:text-primary" : "cursor-default"}`}
+                      className={`shrink-0 ${hasData ? "cursor-pointer text-muted-foreground hover:text-primary" : "cursor-default text-muted-foreground"}`}
                       disabled={!hasData}
+                      aria-label={isOpen ? "Collapse" : "Expand"}
                     >
                       {hasData ? (
-                        isOpen ? (
-                          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        )
+                        isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />
                       ) : (
-                        <Key className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <Key className="w-3.5 h-3.5" />
                       )}
-                      <span className="text-sm font-semibold text-foreground truncate">{keywordText}</span>
+                    </button>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Link
+                        href={`/keywords?keywordId=${keywordId}`}
+                        className="text-sm font-semibold text-primary hover:underline truncate"
+                      >
+                        {keywordText}
+                      </Link>
                       {!hasData && (
                         <Badge variant="outline" className="text-[10px] text-muted-foreground">No data yet</Badge>
                       )}
-                    </button>
+                    </div>
                     <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                       {sorted.map((p) => (
                         <PlatformChip key={`chip-${p.keywordId}-${p.platform}`} row={p} />

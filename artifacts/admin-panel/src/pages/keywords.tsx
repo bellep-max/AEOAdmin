@@ -11,6 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch }   from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useToast }  from "@/hooks/use-toast";
 import { Link }      from "wouter";
 import {
@@ -270,8 +274,9 @@ function KeywordCard({
   onToggleActive: (v: boolean) => void;
 }) {
   const { toast } = useToast();
-  const [links, setLinks]       = useState<KeywordLink[] | null>(null);
-  const [loading, setLoading]   = useState(true);
+  const initialLinks = ((kw as unknown as { links?: KeywordLink[] }).links ?? null);
+  const [links, setLinks]       = useState<KeywordLink[] | null>(initialLinks);
+  const [loading, setLoading]   = useState(initialLinks == null);
   const [saving, setSaving]     = useState(false);
   const [addOpen, setAddOpen]   = useState(false);
   const [editLink, setEditLink] = useState<KeywordLink | null>(null);
@@ -285,7 +290,9 @@ function KeywordCard({
     finally { setLoading(false); }
   }, [kw.id]);
 
-  useEffect(() => { fetchLinks(); }, [fetchLinks]);
+  useEffect(() => {
+    if (initialLinks == null) fetchLinks();
+  }, [fetchLinks, initialLinks]);
 
   async function addLink(data: Partial<KeywordLink>) {
     setSaving(true);
@@ -522,6 +529,67 @@ function KeywordCard({
   );
 }
 
+/* ── Searchable combobox ────────────────────────────────── */
+type ComboOption = { value: string; label: string; sublabel?: string };
+function SearchableSelect({
+  value, onChange, options, placeholder, allLabel, disabled, width = "w-56",
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: ComboOption[];
+  placeholder: string;
+  allLabel: string;
+  disabled?: boolean;
+  width?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? options.find((o) => o.value === value) : null;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${width} h-11 inline-flex items-center justify-between gap-2 px-3 text-sm font-bold rounded-md bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed`}
+        >
+          <span className="truncate text-left">
+            {selected ? selected.label : <span className="text-slate-500">{placeholder}</span>}
+          </span>
+          <ChevronsUpDown className="w-4 h-4 opacity-50 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0" align="start" style={{ width: "var(--radix-popover-trigger-width)" }}>
+        <Command>
+          <CommandInput placeholder={`Search ${placeholder.toLowerCase()}…`} />
+          <CommandList>
+            <CommandEmpty>No match.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value={`__all__ ${allLabel}`}
+                onSelect={() => { onChange(null); setOpen(false); }}
+              >
+                <Check className={cn("mr-2 h-4 w-4", value == null ? "opacity-100" : "opacity-0")} />
+                <span className="font-bold">{allLabel}</span>
+              </CommandItem>
+              {options.map((o) => (
+                <CommandItem
+                  key={o.value}
+                  value={`${o.label} ${o.sublabel ?? ""}`}
+                  onSelect={() => { onChange(o.value); setOpen(false); }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === o.value ? "opacity-100" : "opacity-0")} />
+                  <span className="font-bold truncate">{o.label}</span>
+                  {o.sublabel && <span className="text-slate-500 ml-1 truncate">· {o.sublabel}</span>}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
@@ -538,7 +606,7 @@ export default function Keywords() {
   const [addForBusiness,   setAddForBusiness]   = useState<{ clientId: number; businessId: number } | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; serviceCategory: string | null }[]>([]);
-  const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; searchAddress: string | null; publishedAddress: string | null; status: string }[]>([]);
+  const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; publishedAddress: string | null; status: string }[]>([]);
 
   useEffect(() => {
     rawFetch("/api/aeo-plans", { credentials: "include" })
@@ -559,6 +627,12 @@ export default function Keywords() {
     setBizTypeFilters((p) => { const n = new Map(p); n.set(cid, v); return n; });
   }
 
+  const [targetKeywordId] = useState<number | null>(() => {
+    const q = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const v = q.get("keywordId");
+    return v ? Number(v) : null;
+  });
+
   const { data: keywords, isLoading } = useQuery<KwRecord[]>({
     queryKey: ["/api/keywords", { clientId: selectedClientId, businessId: selectedBusinessId, aeoPlanId: selectedCampaignId }],
     queryFn: async () => {
@@ -577,6 +651,23 @@ export default function Keywords() {
   const queryClient                   = useQueryClient();
 
   const clientsMap = new Map<number, string>((clients ?? []).map((c) => [c.id, c.businessName]));
+
+  useEffect(() => {
+    if (!targetKeywordId || !keywords) return;
+    const kw = keywords.find((k) => k.id === targetKeywordId);
+    if (!kw) return;
+    const bizId = kw.businessId ?? -1;
+    setExpanded((prev) => {
+      if (prev.has(bizId)) return prev;
+      const next = new Set(prev);
+      next.add(bizId);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`kw-${targetKeywordId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [targetKeywordId, keywords]);
 
   async function saveKeyword(id: number | null, data: KwRecord) {
     setSaving(true);
@@ -644,12 +735,34 @@ export default function Keywords() {
   }
 
   /* Filter */
-  const searchLower  = search.toLowerCase();
+  const searchLower  = search.trim().toLowerCase();
+  const planById     = new Map(allPlans.map((p) => [p.id, p]));
+  const bizById      = new Map(businesses.map((b) => [b.id, b]));
   const filteredKws  = ((keywords ?? []) as unknown as KwRecord[]).filter((k: KwRecord) => {
-    const matchText = (k.keywordText as string).toLowerCase().includes(searchLower);
     const matchType = typeFilter === "all" || String(k.keywordType) === typeFilter;
-    return matchText && matchType;
+    if (!matchType) return false;
+    if (!searchLower) return true;
+    const clientName   = clientsMap.get(k.clientId as number) ?? "";
+    const businessName = k.businessId != null ? bizById.get(k.businessId as number)?.name ?? "" : "";
+    const planRow      = k.aeoPlanId != null ? planById.get(k.aeoPlanId as number) : undefined;
+    const campaignName = planRow ? (planRow.name ?? planRow.planType ?? "") : "";
+    const haystack = `${k.keywordText ?? ""} ${clientName} ${businessName} ${campaignName}`.toLowerCase();
+    return haystack.includes(searchLower);
   });
+
+  // Auto-expand business cards that contain matches whenever the search has a query
+  useEffect(() => {
+    if (!searchLower) return;
+    const bids = new Set<number>();
+    for (const k of filteredKws) bids.add((k.businessId as number | null) ?? 0);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      bids.forEach((b) => { if (!next.has(b)) { next.add(b); changed = true; } });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchLower, keywords]);
 
   /* Group by business (null → "Unassigned" bucket keyed as 0) */
   const UNASSIGNED_BID = 0;
@@ -717,74 +830,47 @@ export default function Keywords() {
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3">
             <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1" />
 
-            <Select
-              value={selectedClientId !== null ? String(selectedClientId) : "all"}
-              onValueChange={(v) => {
-                const next = v === "all" ? null : Number(v);
+            <SearchableSelect
+              value={selectedClientId !== null ? String(selectedClientId) : null}
+              onChange={(v) => {
+                const next = v == null ? null : Number(v);
                 setSelectedClientId(next);
                 setSelectedBusinessId(null);
                 setSelectedCampaignId(null);
                 setExpanded(new Set());
               }}
-            >
-              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
-                <SelectValue placeholder="All Clients" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all"><span className="font-bold">All Clients</span></SelectItem>
-                {(clients ?? []).map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    <span className="font-bold">{c.businessName}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={(clients ?? []).map((c) => ({ value: String(c.id), label: c.businessName }))}
+              placeholder="All Clients"
+              allLabel="All Clients"
+            />
 
             <span className="text-slate-400">›</span>
 
-            <Select
-              value={selectedBusinessId !== null ? String(selectedBusinessId) : "all"}
-              onValueChange={(v) => {
-                const next = v === "all" ? null : Number(v);
+            <SearchableSelect
+              value={selectedBusinessId !== null ? String(selectedBusinessId) : null}
+              onChange={(v) => {
+                const next = v == null ? null : Number(v);
                 setSelectedBusinessId(next);
                 setSelectedCampaignId(null);
                 if (next !== null) setExpanded(new Set([next]));
               }}
+              options={bizInScope.map((b) => ({ value: String(b.id), label: b.name }))}
+              placeholder="All Businesses"
+              allLabel="All Businesses"
               disabled={bizInScope.length === 0}
-            >
-              <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
-                <SelectValue placeholder="All Businesses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all"><span className="font-bold">All Businesses</span></SelectItem>
-                {bizInScope.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>
-                    <span className="font-bold">{b.name}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
 
             <span className="text-slate-400">›</span>
 
-            <Select
-              value={selectedCampaignId !== null ? String(selectedCampaignId) : "all"}
-              onValueChange={(v) => setSelectedCampaignId(v === "all" ? null : Number(v))}
+            <SearchableSelect
+              value={selectedCampaignId !== null ? String(selectedCampaignId) : null}
+              onChange={(v) => setSelectedCampaignId(v == null ? null : Number(v))}
+              options={planInScope.map((p) => ({ value: String(p.id), label: p.name ?? p.planType, sublabel: p.planType }))}
+              placeholder="All Campaigns"
+              allLabel="All Campaigns"
               disabled={planInScope.length === 0}
-            >
-              <SelectTrigger className="w-64 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-11 text-sm font-bold">
-                <SelectValue placeholder="All Campaigns" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all"><span className="font-bold">All Campaigns</span></SelectItem>
-                {planInScope.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    <span className="font-bold">{p.name ?? p.planType}</span>
-                    <span className="text-slate-500 ml-1">· {p.planType}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              width="w-64"
+            />
 
             {(selectedClientId !== null || selectedBusinessId !== null || selectedCampaignId !== null) && (
               <button
@@ -947,7 +1033,6 @@ export default function Keywords() {
                         >
                           <span className="font-bold uppercase tracking-wide">Client:</span> {clientName}
                         </Link>
-                        {biz?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search:</span> {biz.searchAddress}</span>}
                         {biz?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB:</span> {biz.publishedAddress}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
@@ -1054,13 +1139,18 @@ export default function Keywords() {
                             </div>
                             <div className="p-4 space-y-4">
                               {planKws.map((kw) => (
-                                <KeywordCard
+                                <div
                                   key={kw.id as number}
-                                  kw={kw}
-                                  onEdit={() => setEditKw({ ...kw })}
-                                  onDelete={() => deleteKeyword(kw.id as number)}
-                                  onToggleActive={(v) => toggleActive(kw, v)}
-                                />
+                                  id={`kw-${kw.id}`}
+                                  className={targetKeywordId === kw.id ? "ring-2 ring-primary rounded-lg" : ""}
+                                >
+                                  <KeywordCard
+                                    kw={kw}
+                                    onEdit={() => setEditKw({ ...kw })}
+                                    onDelete={() => deleteKeyword(kw.id as number)}
+                                    onToggleActive={(v) => toggleActive(kw, v)}
+                                  />
+                                </div>
                               ))}
                             </div>
                           </div>

@@ -9,7 +9,7 @@ The frontend (`admin-panel`) is **not** deployed here — it runs locally or on 
 | Field | Value |
 |---|---|
 | Region | `us-east-1` |
-| API base URL | `https://xpyrm2xh4v.us-east-1.awsapprunner.com` |
+| API base URL | `https://jjm59vpn3y.us-east-1.awsapprunner.com` |
 | Health check | `GET /api/healthz` → `{"status":"ok"}` |
 | Admin credentials (seeded) | `admin@signalaeo.com` / `Admin123!` |
 | DB endpoint | `aeo-admin-db.cwvwsawae95c.us-east-1.rds.amazonaws.com:5432` |
@@ -302,7 +302,7 @@ aws apprunner describe-service --service-arn <ARN> \
 ### 9. Smoke test
 
 ```bash
-curl https://xpyrm2xh4v.us-east-1.awsapprunner.com/api/healthz
+curl https://jjm59vpn3y.us-east-1.awsapprunner.com/api/healthz
 # → {"status":"ok"}
 ```
 
@@ -339,7 +339,7 @@ pnpm --filter @workspace/db run push-force
 In `artifacts/admin-panel/.env.local`, set:
 
 ```
-VITE_API_URL=https://xpyrm2xh4v.us-east-1.awsapprunner.com
+VITE_API_URL=https://jjm59vpn3y.us-east-1.awsapprunner.com
 ```
 
 Then run the admin-panel normally:

@@ -17,7 +17,6 @@ export interface KeywordDialogBusiness {
   id: number;
   clientId: number;
   name: string;
-  searchAddress?: string | null;
   publishedAddress?: string | null;
 }
 export interface KeywordDialogPlan {
@@ -178,14 +177,9 @@ export function KeywordDialog({
                 </div>
               </div>
 
-              {selectedBusiness && (selectedBusiness.searchAddress || selectedBusiness.publishedAddress) && (
+              {selectedBusiness && selectedBusiness.publishedAddress && (
                 <div className="flex flex-wrap gap-x-6 gap-y-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
-                  {selectedBusiness.searchAddress && (
-                    <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">Search:</span> {selectedBusiness.searchAddress}</span>
-                  )}
-                  {selectedBusiness.publishedAddress && (
-                    <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">GMB:</span> {selectedBusiness.publishedAddress}</span>
-                  )}
+                  <span><span className="font-semibold uppercase tracking-wide text-xs text-slate-400">GMB:</span> {selectedBusiness.publishedAddress}</span>
                 </div>
               )}
             </>

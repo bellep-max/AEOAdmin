@@ -16,8 +16,12 @@ interface CampaignLike {
   name?: string | null;
   planType: string;
   serviceCategory?: string | null;
-  targetCityRadius?: string | null;
   schemaImplementor?: string | null;
+  searchAddress?: string | null;
+  subscriptionId?: string | null;
+  subscriptionStartDate?: string | null;
+  nextBillingDate?: string | null;
+  cardLast4?: string | null;
 }
 
 interface Props {
@@ -25,52 +29,68 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   clientId: number;
   businessId: number;
+  businessName?: string;
   campaign?: CampaignLike | null;
   onSaved?: () => void;
 }
 
-export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, campaign, onSaved }: Props) {
+export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, businessName, campaign, onSaved }: Props) {
   const { toast } = useToast();
   const allPlanNames = useAllPlanNames();
   const isEdit = !!campaign;
 
-  const [name, setName] = useState("");
   const [planType, setPlanType] = useState("");
   const [serviceCategory, setServiceCategory] = useState("");
-  const [targetCityRadius, setTargetCityRadius] = useState("");
+  const [searchAddress, setSearchAddress] = useState("");
   const [schemaImplementor, setSchemaImplementor] = useState("");
+  const [subscriptionId, setSubscriptionId] = useState("");
+  const [subscriptionStartDate, setSubscriptionStartDate] = useState("");
+  const [nextBillingDate, setNextBillingDate] = useState("");
+  const [cardLast4, setCardLast4] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     if (campaign) {
-      setName(campaign.name ?? "");
       setPlanType(campaign.planType ?? "");
       setServiceCategory(campaign.serviceCategory ?? "");
-      setTargetCityRadius(campaign.targetCityRadius ?? "");
+      setSearchAddress(campaign.searchAddress ?? "");
       setSchemaImplementor(campaign.schemaImplementor ?? "");
+      setSubscriptionId(campaign.subscriptionId ?? "");
+      setSubscriptionStartDate(campaign.subscriptionStartDate ?? "");
+      setNextBillingDate(campaign.nextBillingDate ?? "");
+      setCardLast4(campaign.cardLast4 ?? "");
     } else {
-      setName("");
       setPlanType("");
       setServiceCategory("");
-      setTargetCityRadius("");
+      setSearchAddress("");
       setSchemaImplementor("");
+      setSubscriptionId("");
+      setSubscriptionStartDate("");
+      setNextBillingDate("");
+      setCardLast4("");
     }
   }, [open, campaign]);
 
   async function handleSave() {
-    if (!planType.trim() || !serviceCategory.trim() || !targetCityRadius.trim() || !schemaImplementor.trim()) {
-      toast({ title: "Missing required fields", description: "Plan type, service category, target city and schema implementor are required.", variant: "destructive" });
+    if (!planType.trim() || !serviceCategory.trim() || !schemaImplementor.trim()) {
+      toast({ title: "Missing required fields", description: "Plan type, service category and schema implementor are required.", variant: "destructive" });
       return;
     }
     setSaving(true);
+    const autoName = [businessName, searchAddress.trim()].filter(Boolean).join(" — ");
     const payload = {
       businessId,
-      name: name.trim() || null,
+      businessName: businessName ?? null,
+      name: autoName || null,
       planType,
       serviceCategory,
-      targetCityRadius,
+      searchAddress: searchAddress.trim() || null,
       schemaImplementor,
+      subscriptionId: subscriptionId.trim() || null,
+      subscriptionStartDate: subscriptionStartDate || null,
+      nextBillingDate: nextBillingDate || null,
+      cardLast4: cardLast4.trim() || null,
     };
     try {
       const url = isEdit
@@ -104,11 +124,20 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, c
         <div className="space-y-4 mt-2">
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Campaign Name</Label>
+            <div className="h-10 px-3 flex items-center text-sm rounded-md bg-muted/20 border border-dashed border-border/60 text-muted-foreground">
+              {[businessName, searchAddress].filter(Boolean).join(" — ") || "Auto-generated from Business + Search Address"}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Search Address
+            </Label>
             <Input
               className="h-10 bg-muted/30"
-              placeholder="e.g. Downtown SF — Summer 2026"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="123 Main St, Austin, TX"
+              value={searchAddress}
+              onChange={(e) => setSearchAddress(e.target.value)}
             />
           </div>
 
@@ -143,18 +172,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, c
 
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Target City / Radius <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                className="h-10 bg-muted/30"
-                placeholder="e.g. San Francisco — 30 mi"
-                value={targetCityRadius}
-                onChange={(e) => setTargetCityRadius(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Schema By <span className="text-red-500">*</span>
               </Label>
               <Select value={schemaImplementor} onValueChange={setSchemaImplementor}>
@@ -167,6 +184,51 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, c
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="border-t border-border/40 pt-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Subscription</p>
+            <p className="text-[11px] text-muted-foreground -mt-1">Manual entry for now — will later auto-sync with Recurly.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription ID</Label>
+                <Input
+                  className="h-10 bg-muted/30"
+                  placeholder="sub_xxxxxxxxxxxx"
+                  value={subscriptionId}
+                  onChange={(e) => setSubscriptionId(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Card (last 4)</Label>
+                <Input
+                  className="h-10 bg-muted/30"
+                  placeholder="4242"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={cardLast4}
+                  onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start Date</Label>
+                <Input
+                  type="date"
+                  className="h-10 bg-muted/30"
+                  value={subscriptionStartDate}
+                  onChange={(e) => setSubscriptionStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next Billing Date</Label>
+                <Input
+                  type="date"
+                  className="h-10 bg-muted/30"
+                  value={nextBillingDate}
+                  onChange={(e) => setNextBillingDate(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

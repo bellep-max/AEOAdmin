@@ -15,7 +15,6 @@ const schema = z.object({
   gmbUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   websiteUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   publishedAddress: z.string().max(200).optional().or(z.literal("")),
-  searchAddress: z.string().max(200).optional().or(z.literal("")),
   city: z.string().max(100).optional().or(z.literal("")),
   state: z.string().max(100).optional().or(z.literal("")),
   country: z.string().max(100).optional().or(z.literal("")),
@@ -30,7 +29,6 @@ interface BusinessLike {
   gmbUrl?: string | null;
   websiteUrl?: string | null;
   publishedAddress?: string | null;
-  searchAddress?: string | null;
   city?: string | null;
   state?: string | null;
   country?: string | null;
@@ -60,7 +58,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: "",
       websiteUrl: "",
       publishedAddress: "",
-      searchAddress: "",
       city: "",
       state: "",
       country: "",
@@ -79,7 +76,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
         gmbUrl: business.gmbUrl ?? "",
         websiteUrl: business.websiteUrl ?? "",
         publishedAddress: business.publishedAddress ?? "",
-        searchAddress: business.searchAddress ?? "",
         city: business.city ?? "",
         state: business.state ?? "",
         country: business.country ?? "",
@@ -98,7 +94,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: values.gmbUrl || null,
       websiteUrl: values.websiteUrl || null,
       publishedAddress: values.publishedAddress || null,
-      searchAddress: values.searchAddress || null,
       city: values.city || null,
       state: values.state || null,
       country: values.country || null,
@@ -107,6 +102,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       const url = isEdit ? `${BASE}/api/businesses/${business!.id}` : `${BASE}/api/businesses`;
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -195,19 +191,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
                   <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Published (GMB) Address</FormLabel>
                   <FormControl>
                     <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="searchAddress"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Search Address</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Where we run rank checks from" className="h-11 text-base text-black bg-slate-50" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

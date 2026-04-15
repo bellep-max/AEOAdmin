@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable } from "@workspace/db/schema";
-import { and, eq, asc } from "drizzle-orm";
+import { clientAeoPlansTable, keywordsTable } from "@workspace/db/schema";
+import { and, eq, asc, inArray, sql } from "drizzle-orm";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -27,7 +27,21 @@ router.get("/", async (req, res) => {
       )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    res.json(plans.map((p) => ({ ...p, monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null })));
+    const ids = plans.map((p) => p.id);
+    const counts = new Map<number, number>();
+    for (const id of ids) counts.set(id, 0);
+    if (ids.length > 0) {
+      const kwRows = await db
+        .select({ aeoPlanId: keywordsTable.aeoPlanId, c: sql<number>`count(*)::int` })
+        .from(keywordsTable)
+        .where(and(inArray(keywordsTable.aeoPlanId, ids), eq(keywordsTable.isActive, true)))
+        .groupBy(keywordsTable.aeoPlanId);
+      for (const r of kwRows) {
+        if (r.aeoPlanId != null) counts.set(r.aeoPlanId, Number(r.c));
+      }
+    }
+
+    res.json(plans.map((p) => ({ ...p, keywordCount: counts.get(p.id) ?? 0, monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null })));
   } catch (err) {
     req.log.error({ err }, "Error fetching client AEO plans");
     res.status(500).json({ error: "Internal server error" });
@@ -75,7 +89,6 @@ router.post("/", async (req, res) => {
         businessName:          (body.businessName          as string)  ?? null,
         planType:              body.planType               as string,
         serviceCategory:       (body.serviceCategory       as string)  ?? null,
-        targetCityRadius:      (body.targetCityRadius      as string)  ?? null,
         sampleQuestion1:       (body.sampleQuestion1       as string)  ?? null,
         sampleQuestion2:       (body.sampleQuestion2       as string)  ?? null,
         sampleQuestion3:       (body.sampleQuestion3       as string)  ?? null,
@@ -90,6 +103,11 @@ router.post("/", async (req, res) => {
         searchBoostTarget:     body.searchBoostTarget != null ? Number(body.searchBoostTarget) : null,
         monthlyAeoBudget:      body.monthlyAeoBudget  != null ? String(body.monthlyAeoBudget)  : null,
         schemaImplementor:     (body.schemaImplementor     as string)  ?? null,
+        searchAddress:         (body.searchAddress         as string)  ?? null,
+        subscriptionId:        (body.subscriptionId        as string)  ?? null,
+        subscriptionStartDate: (body.subscriptionStartDate as string)  ?? null,
+        nextBillingDate:       (body.nextBillingDate       as string)  ?? null,
+        cardLast4:             (body.cardLast4             as string)  ?? null,
       })
       .returning();
 
@@ -116,11 +134,12 @@ router.patch("/:planId", async (req, res) => {
     if ("businessId" in body) update.businessId = body.businessId != null ? Number(body.businessId) : null;
 
     const fields = [
-      "name", "businessName", "planType", "serviceCategory", "targetCityRadius",
+      "name", "businessName", "planType", "serviceCategory",
       "sampleQuestion1", "sampleQuestion2", "sampleQuestion3", "sampleQuestion4",
       "sampleQuestion5", "sampleQuestion6", "sampleQuestion7", "sampleQuestion8",
       "sampleQuestion9", "sampleQuestion10", "currentAnswerPresence",
       "schemaImplementor",
+      "searchAddress", "subscriptionId", "subscriptionStartDate", "nextBillingDate", "cardLast4",
     ];
     for (const f of fields) {
       if (f in body) update[f] = body[f] ?? null;

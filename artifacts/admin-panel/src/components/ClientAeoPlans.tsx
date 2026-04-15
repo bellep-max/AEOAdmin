@@ -37,7 +37,6 @@ interface AeoPlan {
   businessName: string | null;
   planType: string;
   serviceCategory: string | null;
-  targetCityRadius: string | null;
   sampleQuestion1: string | null;
   sampleQuestion2: string | null;
   sampleQuestion3: string | null;
@@ -52,6 +51,11 @@ interface AeoPlan {
   searchBoostTarget: number | null;
   monthlyAeoBudget: number | null;
   schemaImplementor: string | null;
+  searchAddress: string | null;
+  subscriptionId: string | null;
+  subscriptionStartDate: string | null;
+  nextBillingDate: string | null;
+  cardLast4: string | null;
 }
 
 interface ClientInfo {
@@ -82,13 +86,12 @@ interface KeywordRow {
 type PlanFormData = Omit<AeoPlan, "id" | "clientId">;
 
 type ClientLocData = {
-  searchAddress: string;
   publishedAddress: string;
   gmbUrl: string;
   websitePublishedOnGmb: string;
   websiteLinkedOnGmb: string;
 };
-const EMPTY_LOC: ClientLocData = { searchAddress: "", publishedAddress: "", gmbUrl: "", websitePublishedOnGmb: "", websiteLinkedOnGmb: "" };
+const EMPTY_LOC: ClientLocData = { publishedAddress: "", gmbUrl: "", websitePublishedOnGmb: "", websiteLinkedOnGmb: "" };
 
 const EMPTY_FORM: PlanFormData = {
   businessId: null,
@@ -96,7 +99,6 @@ const EMPTY_FORM: PlanFormData = {
   businessName: "",
   planType: "",
   serviceCategory: "",
-  targetCityRadius: "",
   sampleQuestion1: "",
   sampleQuestion2: "",
   sampleQuestion3: "",
@@ -111,6 +113,11 @@ const EMPTY_FORM: PlanFormData = {
   searchBoostTarget: null,
   monthlyAeoBudget: null,
   schemaImplementor: "",
+  searchAddress: "",
+  subscriptionId: "",
+  subscriptionStartDate: "",
+  nextBillingDate: "",
+  cardLast4: "",
 };
 
 /* ── Plan form used for both Add and Edit ─────────────────── */
@@ -142,18 +149,21 @@ function PlanForm({
 
   return (
     <div className="space-y-6">
-      {/* Campaign Name */}
-      <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Campaign Name
-        </Label>
-        <Input
-          className="h-10 bg-muted/30 border-border/60"
-          placeholder="e.g. Downtown SF — Summer 2026"
-          value={values.name ?? ""}
-          onChange={(e) => onChange({ ...values, name: e.target.value })}
-        />
-      </div>
+      {/* Campaign Name preview (auto-generated from Business + Search Address) */}
+      {(() => {
+        const resolvedBizName = businesses.find((b) => b.id === values.businessId)?.name ?? values.businessName ?? "";
+        const preview = [resolvedBizName, values.searchAddress].filter((v) => v && String(v).trim()).join(" — ");
+        return (
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Campaign Name
+            </Label>
+            <div className="h-10 px-3 flex items-center text-sm rounded-md bg-muted/20 border border-dashed border-border/60 text-muted-foreground">
+              {preview || "Auto-generated from Business + Search Address"}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Business */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -221,21 +231,6 @@ function PlanForm({
           )}
         </div>
 
-        {/* Target City/Radius */}
-        <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Target City / Radius <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            className={`h-10 bg-muted/30 border-border/60 ${errors.targetCityRadius ? "border-red-500" : ""}`}
-            placeholder="e.g. Provo, UT — 30 mi radius"
-            value={values.targetCityRadius ?? ""}
-            onChange={(e) => set("targetCityRadius", e.target.value)}
-          />
-          {errors.targetCityRadius && (
-            <p className="text-xs text-red-500 mt-1">{errors.targetCityRadius}</p>
-          )}
-        </div>
       </div>
 
       {/* 10 Sample Questions */}
@@ -338,19 +333,71 @@ function PlanForm({
         </div>
       </div>
 
+      {/* Campaign Search Address */}
+      <div className="border-t border-border/40 pt-5 space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Campaign Search Address</p>
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search Address</Label>
+          <Input
+            className="h-10 bg-muted/30 border-border/60"
+            placeholder="123 Main St, Austin, TX"
+            value={values.searchAddress ?? ""}
+            onChange={(e) => set("searchAddress", e.target.value)}
+          />
+          <p className="text-[11px] text-muted-foreground">Where ranking checks will run from for this campaign.</p>
+        </div>
+      </div>
+
+      {/* Subscription */}
+      <div className="border-t border-border/40 pt-5 space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Subscription</p>
+        <p className="text-[11px] text-muted-foreground -mt-2">Manual entry for now — will later auto-sync with Recurly.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription ID</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="sub_xxxxxxxxxxxx"
+              value={values.subscriptionId ?? ""}
+              onChange={(e) => set("subscriptionId", e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Card (last 4)</Label>
+            <Input
+              className="h-10 bg-muted/30 border-border/60"
+              placeholder="4242"
+              inputMode="numeric"
+              maxLength={4}
+              value={values.cardLast4 ?? ""}
+              onChange={(e) => set("cardLast4", e.target.value.replace(/\D/g, "").slice(0, 4))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start Date</Label>
+            <Input
+              type="date"
+              className="h-10 bg-muted/30 border-border/60"
+              value={values.subscriptionStartDate ?? ""}
+              onChange={(e) => set("subscriptionStartDate", e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next Billing Date</Label>
+            <Input
+              type="date"
+              className="h-10 bg-muted/30 border-border/60"
+              value={values.nextBillingDate ?? ""}
+              onChange={(e) => set("nextBillingDate", e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Client Location & GMB */}
       <div className="border-t border-border/40 pt-5 space-y-4">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Client Location &amp; GMB</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search Address</Label>
-            <Input
-              className="h-10 bg-muted/30 border-border/60"
-              placeholder="123 Main St, Austin, TX"
-              value={locData.searchAddress}
-              onChange={(e) => onLocChange({ ...locData, searchAddress: e.target.value })}
-            />
-          </div>
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GMB Address</Label>
             <Input
@@ -517,7 +564,6 @@ export default function ClientAeoPlans({
       businessName:          plan.businessName,
       planType:              plan.planType,
       serviceCategory:       plan.serviceCategory,
-      targetCityRadius:      plan.targetCityRadius,
       sampleQuestion1:       plan.sampleQuestion1,
       sampleQuestion2:       plan.sampleQuestion2,
       sampleQuestion3:       plan.sampleQuestion3,
@@ -532,9 +578,13 @@ export default function ClientAeoPlans({
       searchBoostTarget:     plan.searchBoostTarget,
       monthlyAeoBudget:      plan.monthlyAeoBudget,
       schemaImplementor:     plan.schemaImplementor,
+      searchAddress:         plan.searchAddress ?? "",
+      subscriptionId:        plan.subscriptionId ?? "",
+      subscriptionStartDate: plan.subscriptionStartDate ?? "",
+      nextBillingDate:       plan.nextBillingDate ?? "",
+      cardLast4:             plan.cardLast4 ?? "",
     });
     setClientLocData({
-      searchAddress:         client?.searchAddress         ?? "",
       publishedAddress:      client?.publishedAddress      ?? "",
       gmbUrl:                client?.gmbUrl                ?? "",
       websitePublishedOnGmb: client?.websitePublishedOnGmb ?? "",
@@ -556,11 +606,6 @@ export default function ClientAeoPlans({
       errors.serviceCategory = "Service category is required (e.g. Airport Black Car Service)";
     } else if (formData.serviceCategory.length > 200) {
       errors.serviceCategory = "Service category cannot exceed 200 characters";
-    }
-    if (!formData.targetCityRadius?.trim()) {
-      errors.targetCityRadius = "Target city / radius is required (e.g. Provo, UT — 30 mi radius)";
-    } else if (formData.targetCityRadius.length > 200) {
-      errors.targetCityRadius = "Target city / radius cannot exceed 200 characters";
     }
     if (!formData.schemaImplementor?.trim()) {
       errors.schemaImplementor = "Please select who implements the schema";
@@ -598,21 +643,26 @@ export default function ClientAeoPlans({
         body: JSON.stringify(clientLocData),
       });
 
+      const resolvedBiz = businesses.find((b) => b.id === formData.businessId);
+      const bizName = resolvedBiz?.name || formData.businessName || clientBusinessName;
+      const addr = formData.searchAddress?.trim();
+      const autoName = [bizName, addr].filter(Boolean).join(" — ");
+
       if (editPlan) {
         await rawFetch(`/api/clients/${clientId}/aeo-plans/${editPlan.id}`, {
           method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({ ...formData, name: autoName }),
         });
-        toast({ title: "✅ Campaign updated!", description: `The campaign for ${formData.businessName || clientBusinessName} has been updated successfully.` });
+        toast({ title: "✅ Campaign updated!", description: `The campaign for ${bizName} has been updated successfully.` });
         setEditPlan(null);
       } else {
         await rawFetch(`/api/clients/${clientId}/aeo-plans`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...formData, businessName: formData.businessName || clientBusinessName }),
+          body: JSON.stringify({ ...formData, businessName: bizName, name: autoName }),
         });
         toast({ title: "✅ Campaign added!", description: `New campaign for ${formData.businessName || clientBusinessName} has been created successfully.` });
         setAddOpen(false);
@@ -626,7 +676,7 @@ export default function ClientAeoPlans({
   function handleCancelClick() {
     const hasData =
       (formData.serviceCategory?.trim()) ||
-      (formData.targetCityRadius?.trim()) ||
+      (formData.searchAddress?.trim()) ||
       (formData.schemaImplementor?.trim()) ||
       (formData.planType?.trim());
     if (hasData) {
@@ -696,7 +746,6 @@ export default function ClientAeoPlans({
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
-                    <TableHead>Target City / Radius</TableHead>
                     <TableHead>Answer Presence</TableHead>
                     <TableHead>Schema By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
@@ -754,7 +803,6 @@ export default function ClientAeoPlans({
                             </span>
                           </TableCell>
                           <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                          <TableCell className="text-sm">{plan.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -780,7 +828,7 @@ export default function ClientAeoPlans({
                         {/* ── Inline keywords for this campaign ── */}
                         {isOpen && (
                           <TableRow className="bg-muted/10 hover:bg-muted/10">
-                            <TableCell colSpan={10} className="py-3 px-6" onClick={(e) => e.stopPropagation()}>
+                            <TableCell colSpan={9} className="py-3 px-6" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                   <Key className="w-3.5 h-3.5 text-primary" />
