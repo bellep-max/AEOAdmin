@@ -947,8 +947,8 @@ export default function Keywords() {
                         >
                           <span className="font-bold uppercase tracking-wide">Client:</span> {clientName}
                         </Link>
-                        {biz?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search address:</span> {biz.searchAddress}</span>}
                         {biz?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB address:</span> {biz.publishedAddress}</span>}
+                        {biz?.searchAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">Search address:</span> {biz.searchAddress}</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
