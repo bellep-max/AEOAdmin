@@ -10,6 +10,10 @@ import { Badge }    from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch }   from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -347,7 +351,16 @@ function KeywordCard({
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
           {isPrimary && <Star className="w-3.5 h-3.5 text-amber-600 fill-amber-600 flex-shrink-0 mt-0.5" />}
           <div className="min-w-0">
-            <p className="font-bold text-lg text-black dark:text-white leading-snug break-words">{kw.keywordText as string}</p>
+            {kw.clientId != null && kw.businessId != null && kw.aeoPlanId != null ? (
+              <Link
+                href={`/clients/${kw.clientId}/businesses/${kw.businessId}/campaigns/${kw.aeoPlanId}`}
+                className="font-bold text-lg text-primary hover:underline leading-snug break-words"
+              >
+                {kw.keywordText as string}
+              </Link>
+            ) : (
+              <p className="font-bold text-lg text-black dark:text-white leading-snug break-words">{kw.keywordText as string}</p>
+            )}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline" className={`text-sm h-6 px-2.5 ${
                 showAsBacklinks ? "bg-emerald-100 text-emerald-700 border-emerald-300"
@@ -603,9 +616,11 @@ export default function Keywords() {
   const [expanded,         setExpanded]         = useState<Set<number>>(new Set());
   const [addOpen,          setAddOpen]          = useState(false);
   const [editKw,           setEditKw]           = useState<KwRecord | null>(null);
+  const [confirmDeleteKw,  setConfirmDeleteKw]  = useState<KwRecord | null>(null);
+  const [pendingCreate,    setPendingCreate]    = useState<KwRecord | null>(null);
   const [addForBusiness,   setAddForBusiness]   = useState<{ clientId: number; businessId: number } | null>(null);
   const [saving,           setSaving]           = useState(false);
-  const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; serviceCategory: string | null }[]>([]);
+  const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; serviceCategory: string | null; searchAddress: string | null }[]>([]);
   const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; publishedAddress: string | null; status: string }[]>([]);
 
   useEffect(() => {
@@ -714,6 +729,16 @@ export default function Keywords() {
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
       toast({ title: "Keyword deleted" });
     } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+  }
+
+  function requestCreate(data: KwRecord) {
+    setPendingCreate(data);
+  }
+  async function confirmCreate() {
+    const data = pendingCreate;
+    if (!data) return;
+    setPendingCreate(null);
+    await saveKeyword(null, data);
   }
 
   function toggleActive(kw: KwRecord, v: boolean) {
@@ -1034,6 +1059,19 @@ export default function Keywords() {
                           <span className="font-bold uppercase tracking-wide">Client:</span> {clientName}
                         </Link>
                         {biz?.publishedAddress && <span className="text-xs text-slate-500 dark:text-slate-400"><span className="font-bold uppercase tracking-wide">GMB address:</span> {biz.publishedAddress}</span>}
+                        {(() => {
+                          const addrs = Array.from(new Set(
+                            allPlans
+                              .filter((p) => p.businessId === businessId && p.searchAddress && p.searchAddress.trim())
+                              .map((p) => p.searchAddress as string)
+                          ));
+                          if (addrs.length === 0) return null;
+                          return (
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              <span className="font-bold uppercase tracking-wide">Search address:</span> {addrs.join(", ")}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-base text-slate-600 dark:text-slate-400">{displayedKws.length}{displayedKws.length !== kws.length ? `/${kws.length}` : ""} keyword{kws.length !== 1 ? "s" : ""}</span>
@@ -1147,7 +1185,7 @@ export default function Keywords() {
                                   <KeywordCard
                                     kw={kw}
                                     onEdit={() => setEditKw({ ...kw })}
-                                    onDelete={() => deleteKeyword(kw.id as number)}
+                                    onDelete={() => setConfirmDeleteKw(kw)}
                                     onToggleActive={(v) => toggleActive(kw, v)}
                                   />
                                 </div>
@@ -1175,7 +1213,7 @@ export default function Keywords() {
         businesses={businesses}
         plans={allPlans}
         defaultClientId={selectedClientId ?? undefined}
-        onSave={(data) => saveKeyword(null, data)}
+        onSave={(data) => requestCreate(data)}
       />
 
       {/* Edit keyword dialog */}
@@ -1201,9 +1239,52 @@ export default function Keywords() {
           plans={allPlans}
           defaultClientId={addForBusiness.clientId}
           defaultBusinessId={addForBusiness.businessId}
-          onSave={(data) => saveKeyword(null, data)}
+          onSave={(data) => requestCreate(data)}
         />
       )}
+
+      {/* Confirm create */}
+      <AlertDialog open={!!pendingCreate} onOpenChange={(o) => { if (!o) setPendingCreate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create this keyword?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Add <strong>"{pendingCreate?.keywordText as string}"</strong> as a new keyword? You can edit or delete it later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingCreate(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmCreate()}>Yes, create</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm delete */}
+      <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this keyword?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>"{confirmDeleteKw?.keywordText as string}"</strong> and any associated links. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeleteKw) {
+                  const id = confirmDeleteKw.id as number;
+                  setConfirmDeleteKw(null);
+                  deleteKeyword(id);
+                }
+              }}
+            >
+              Yes, delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
