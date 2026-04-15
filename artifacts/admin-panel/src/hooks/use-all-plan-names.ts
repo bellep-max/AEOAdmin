@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { PLAN_NAMES } from "@/lib/plan-meta";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
@@ -10,21 +9,25 @@ function rawFetch(path: string): Promise<Response> {
 }
 
 /**
- * Returns the merged list of standard plan names + custom package names
- * fetched from /api/packages. Falls back to standard names only on error.
+ * Returns plan names fetched from the DB only:
+ * standard plans from /api/plans + custom packages from /api/packages.
+ * Returns [] when no plans exist in the database.
  */
 export function useAllPlanNames(): string[] {
-  const [allNames, setAllNames] = useState<string[]>(PLAN_NAMES);
+  const [allNames, setAllNames] = useState<string[]>([]);
 
   useEffect(() => {
-    rawFetch("/api/packages")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((customs: { name: string }[]) => {
-        const customNames = customs.map((c) => c.name);
-        const merged = [...PLAN_NAMES, ...customNames.filter((n) => !PLAN_NAMES.includes(n))];
+    Promise.all([
+      rawFetch("/api/plans").then((r) => (r.ok ? r.json() : [])),
+      rawFetch("/api/packages").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([standardPlans, customPlans]: [{ planName: string }[], { name: string }[]]) => {
+        const standardNames = standardPlans.map((p) => p.planName).filter(Boolean);
+        const customNames = customPlans.map((p) => p.name).filter(Boolean);
+        const merged = [...standardNames, ...customNames.filter((n) => !standardNames.includes(n))];
         setAllNames(merged);
       })
-      .catch(() => {/* keep standard names */});
+      .catch(() => setAllNames([]));
   }, []);
 
   return allNames;
