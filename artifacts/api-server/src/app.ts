@@ -48,6 +48,10 @@ app.use(cors({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+const isProd = process.env.NODE_ENV === "production";
+
+app.set("trust proxy", 1);
+
 app.use(
   session({
     store: new PgSession({
@@ -59,10 +63,10 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: isProd,
       httpOnly: true,
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   }),
 );
