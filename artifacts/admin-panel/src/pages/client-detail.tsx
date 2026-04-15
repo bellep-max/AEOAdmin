@@ -296,22 +296,6 @@ export default function ClientDetail() {
       {/* ═══ BUSINESSES ═══ */}
       <BusinessesSection clientId={clientId} clientName={client.businessName} />
 
-      {/* ═══ RANKINGS ═══ */}
-      <PlatformAggregateStrip
-        clientId={clientId}
-        businessId={null}
-        aeoPlanId={null}
-        title={`Overall ranking — ${client.businessName}`}
-      />
-
-      <RankingsSection
-        mode="by-business"
-        clientId={clientId}
-        businessId={null}
-        aeoPlanId={null}
-        title={`Keyword breakdown — ${client.businessName}`}
-      />
-
       {/* ═══ AEO PLANS / CAMPAIGNS ═══ */}
       {/* <ClientAeoPlans clientId={clientId} client={client} /> */}
 
@@ -1219,6 +1203,7 @@ interface BusinessRow {
   websiteUrl?: string | null;
   status: "active" | "inactive";
   keywordCount?: number;
+  campaignCount?: number;
 }
 
 function BusinessesSection({ clientId, clientName }: { clientId: number; clientName: string }) {
@@ -1311,7 +1296,7 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
                           Website <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
-                      <span>{b.keywordCount ?? 0} keywords</span>
+                      <span>{b.campaignCount ?? 0} campaigns</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">

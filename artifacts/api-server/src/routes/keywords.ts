@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { keywordsTable, keywordLinksTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const router = Router();
 
@@ -20,7 +20,23 @@ router.get("/", async (req, res) => {
       .select()
       .from(keywordsTable)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
-    res.json(keywords);
+
+    const ids = keywords.map((k) => k.id);
+    const linksByKeyword = new Map<number, typeof keywordLinksTable.$inferSelect[]>();
+    if (ids.length > 0) {
+      const allLinks = await db
+        .select()
+        .from(keywordLinksTable)
+        .where(inArray(keywordLinksTable.keywordId, ids))
+        .orderBy(keywordLinksTable.createdAt);
+      for (const l of allLinks) {
+        const arr = linksByKeyword.get(l.keywordId) ?? [];
+        arr.push(l);
+        linksByKeyword.set(l.keywordId, arr);
+      }
+    }
+
+    res.json(keywords.map((k) => ({ ...k, links: linksByKeyword.get(k.id) ?? [] })));
   } catch (err) {
     req.log.error({ err }, "Error fetching keywords");
     res.status(500).json({ error: "Internal server error" });

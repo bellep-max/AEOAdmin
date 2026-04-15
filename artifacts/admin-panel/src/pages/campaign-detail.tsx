@@ -32,11 +32,15 @@ interface Campaign {
   businessName: string | null;
   planType: string;
   serviceCategory: string | null;
-  targetCityRadius: string | null;
+  searchAddress: string | null;
   currentAnswerPresence: string | null;
   searchBoostTarget: number | null;
   monthlyAeoBudget: number | null;
   schemaImplementor: string | null;
+  subscriptionId: string | null;
+  subscriptionStartDate: string | null;
+  nextBillingDate: string | null;
+  cardLast4: string | null;
 }
 
 interface Keyword {
@@ -243,7 +247,7 @@ export default function CampaignDetail() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {campaign.serviceCategory} · {campaign.targetCityRadius}
+            {campaign.serviceCategory}{campaign.searchAddress ? ` · ${campaign.searchAddress}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -266,6 +270,7 @@ export default function CampaignDetail() {
         onOpenChange={setEditOpen}
         clientId={clientId}
         businessId={businessId}
+        businessName={business?.name}
         campaign={campaign}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "aeo-plans", campaignId] });
@@ -304,11 +309,28 @@ export default function CampaignDetail() {
             <Field label="Plan Type" value={campaign.planType} />
             <Field label="Tier" value={meta.tier} />
             <Field label="Service Category" value={campaign.serviceCategory} />
-            <Field label="Target City / Radius" value={campaign.targetCityRadius} />
+            <Field label="Search Address" value={campaign.searchAddress} />
             <Field label="Answer Presence" value={campaign.currentAnswerPresence} />
             <Field label="Search Boost Target" value={campaign.searchBoostTarget} />
             <Field label="Monthly AEO Budget" value={campaign.monthlyAeoBudget} />
             <Field label="Schema Implementor" value={campaign.schemaImplementor} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/50">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-primary" />
+            Subscription
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <Field label="Subscription ID" value={campaign.subscriptionId} />
+            <Field label="Card (last 4)" value={campaign.cardLast4 ? `•••• ${campaign.cardLast4}` : null} />
+            <Field label="Start Date" value={campaign.subscriptionStartDate} />
+            <Field label="Next Billing Date" value={campaign.nextBillingDate} />
           </div>
         </CardContent>
       </Card>

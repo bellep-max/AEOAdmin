@@ -33,7 +33,6 @@ interface Business {
   gmbUrl?: string | null;
   websiteUrl?: string | null;
   publishedAddress?: string | null;
-  searchAddress?: string | null;
   city?: string | null;
   state?: string | null;
   country?: string | null;
@@ -53,8 +52,9 @@ interface CampaignRow {
   name: string | null;
   planType: string;
   serviceCategory: string | null;
-  targetCityRadius: string | null;
+  searchAddress: string | null;
   schemaImplementor: string | null;
+  keywordCount?: number;
 }
 
 function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
@@ -205,7 +205,6 @@ export default function BusinessDetail() {
             <Field label="Website" value={business.websiteUrl} href={business.websiteUrl ?? undefined} />
             <Field label="GMB URL" value={business.gmbUrl} href={business.gmbUrl ?? undefined} />
             <Field label="Published (GMB) Address" value={business.publishedAddress} />
-            <Field label="Search Address" value={business.searchAddress} />
             <Field label="City" value={business.city} />
             <Field label="State" value={business.state} />
             <Field label="Country" value={business.country} />
@@ -242,7 +241,6 @@ export default function BusinessDetail() {
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
-                    <TableHead>Target City / Radius</TableHead>
                     <TableHead>Schema By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
                   </TableRow>
@@ -256,8 +254,21 @@ export default function BusinessDetail() {
                         className="hover:bg-muted/30 cursor-pointer"
                         onClick={() => navigate(`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`)}
                       >
-                        <TableCell className="text-sm font-semibold text-foreground">
-                          {c.name ?? <span className="text-muted-foreground/40 font-normal">—</span>}
+                        <TableCell className="text-sm">
+                          <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+                            <Link
+                              href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
+                              className="font-semibold text-primary hover:underline"
+                            >
+                              {c.name ?? "(unnamed campaign)"}
+                            </Link>
+                            <Link
+                              href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
+                              className="text-[11px] text-primary hover:underline w-fit"
+                            >
+                              {c.keywordCount ?? 0} active keyword{(c.keywordCount ?? 0) === 1 ? "" : "s"}
+                            </Link>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
@@ -270,7 +281,6 @@ export default function BusinessDetail() {
                           </span>
                         </TableCell>
                         <TableCell className="text-sm">{c.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">{c.targetCityRadius ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-sm">{c.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
@@ -307,19 +317,12 @@ export default function BusinessDetail() {
         title={`Overall ranking — ${business?.name ?? "Business"}`}
       />
 
-      <RankingsSection
-        mode="compact"
-        clientId={clientId}
-        businessId={businessId}
-        aeoPlanId={null}
-        title={`Keyword breakdown — ${business?.name ?? "Business"}`}
-      />
-
       <CampaignFormDialog
         open={campaignDialogOpen}
         onOpenChange={(open) => { setCampaignDialogOpen(open); if (!open) setEditingCampaign(null); }}
         clientId={clientId}
         businessId={businessId}
+        businessName={business?.name}
         campaign={editingCampaign}
         onSaved={() => refetchCampaigns()}
       />
