@@ -101,7 +101,7 @@ export function PlatformAggregateStrip({
                   </p>
                   <div className="flex items-center gap-3 mt-2 text-[10px]">
                     <span className="text-muted-foreground">
-                      <strong className="text-foreground">{a.topTen}</strong> in top 10
+                      <strong className="text-foreground">{a.topRank}</strong> in top {a.topRankThreshold}
                     </span>
                     {a.improved > 0 && <span className="text-emerald-600 dark:text-emerald-400">↑ {a.improved}</span>}
                     {a.declined > 0 && <span className="text-red-600 dark:text-red-400">↓ {a.declined}</span>}

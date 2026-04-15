@@ -1,14 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Building2, X } from "lucide-react";
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
-import { PeriodByBusinessTab } from "@/components/PeriodByBusinessTab";
-import { PeriodByPlatformTab } from "@/components/PeriodByPlatformTab";
 import { rawFetch, periodLabel, type Period } from "@/lib/period-comparison";
 
 interface ClientRow {
@@ -213,39 +210,13 @@ export default function Rankings() {
         />
       )}
 
-      {/* Tabs */}
-      <Tabs defaultValue="by-client" className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-3 bg-card/60">
-          <TabsTrigger value="by-client">By Client</TabsTrigger>
-          <TabsTrigger value="by-business">By Business</TabsTrigger>
-          <TabsTrigger value="by-platform">By Platform</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="by-client" className="mt-4">
-          <PeriodByClientTab
-            period={effectivePeriod}
-            clientId={selectedClientId}
-            businessId={selectedBusinessId}
-            aeoPlanId={selectedCampaignId}
-          />
-        </TabsContent>
-        <TabsContent value="by-business" className="mt-4">
-          <PeriodByBusinessTab
-            period={effectivePeriod}
-            clientId={selectedClientId}
-            businessId={selectedBusinessId}
-            aeoPlanId={selectedCampaignId}
-          />
-        </TabsContent>
-        <TabsContent value="by-platform" className="mt-4">
-          <PeriodByPlatformTab
-            period={effectivePeriod}
-            clientId={selectedClientId}
-            businessId={selectedBusinessId}
-            aeoPlanId={selectedCampaignId}
-          />
-        </TabsContent>
-      </Tabs>
+      {/* Single view — grouped by Client with inline Business · Campaign context */}
+      <PeriodByClientTab
+        period={effectivePeriod}
+        clientId={selectedClientId}
+        businessId={selectedBusinessId}
+        aeoPlanId={selectedCampaignId}
+      />
     </div>
   );
 }

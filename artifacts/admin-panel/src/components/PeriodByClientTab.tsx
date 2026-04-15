@@ -215,13 +215,27 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
                                 <p className="text-sm font-semibold text-foreground truncate">{keyword.keywordText}</p>
                               )}
                               {keyword.businessName && keyword.businessId != null && (
-                                <Link
-                                  href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-[11px] text-muted-foreground truncate hover:text-primary hover:underline block"
-                                >
-                                  {keyword.businessName}
-                                </Link>
+                                <div className="flex items-center gap-1 text-[11px] truncate">
+                                  <Link
+                                    href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-primary hover:underline font-medium"
+                                  >
+                                    {keyword.businessName}
+                                  </Link>
+                                  {keyword.campaignName && keyword.aeoPlanId != null && (
+                                    <>
+                                      <span className="text-muted-foreground/60">·</span>
+                                      <Link
+                                        href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}/campaigns/${keyword.aeoPlanId}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-primary hover:underline font-medium truncate"
+                                      >
+                                        {keyword.campaignName}
+                                      </Link>
+                                    </>
+                                  )}
+                                </div>
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
