@@ -45,6 +45,7 @@ router.get("/", async (req, res) => {
         searchBoostTarget:      clientAeoPlansTable.searchBoostTarget,
         monthlyAeoBudget:       clientAeoPlansTable.monthlyAeoBudget,
         schemaImplementor:      clientAeoPlansTable.schemaImplementor,
+        searchAddress:          clientAeoPlansTable.searchAddress,
         createdAt:              clientAeoPlansTable.createdAt,
         updatedAt:              clientAeoPlansTable.updatedAt,
       })
