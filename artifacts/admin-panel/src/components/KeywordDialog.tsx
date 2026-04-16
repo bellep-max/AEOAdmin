@@ -62,11 +62,17 @@ export function KeywordDialog({
   useEffect(() => {
     if (!open) return;
     if (initial) {
+      const firstLink = Array.isArray(initial.links) && initial.links.length > 0 ? initial.links[0] as Record<string, unknown> : null;
       setVals({
         ...initial,
         clientId:   initial.clientId != null ? String(initial.clientId) : "",
         businessId: initial.businessId != null ? String(initial.businessId) : "",
         aeoPlanId:  initial.aeoPlanId != null ? String(initial.aeoPlanId) : "",
+        linkUrl:               firstLink?.linkUrl               ?? initial.linkUrl ?? "",
+        linkTypeLabel:         firstLink?.linkTypeLabel         ?? initial.linkTypeLabel ?? "",
+        linkActive:            firstLink?.linkActive            ?? initial.linkActive ?? true,
+        initialRankReportLink: firstLink?.initialRankReportLink ?? initial.initialRankReportLink ?? "",
+        currentRankReportLink: firstLink?.currentRankReportLink ?? initial.currentRankReportLink ?? "",
       });
     } else {
       setVals({
