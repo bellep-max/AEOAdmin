@@ -225,7 +225,6 @@ export default function ClientDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
               <Field label="Business Name"                    value={client.businessName} />
               <Field label="Plan"                             value={client.planName} />
-              <Field label="Search Address"                   value={client.searchAddress} />
               <Field label="GMB Address"                      value={client.publishedAddress} />
               <Field label="GMB Link"                         value={client.gmbUrl} href={client.gmbUrl ?? undefined} />
               <Field label="Website Published on GMB"         value={c.websitePublishedOnGmb as string} href={(c.websitePublishedOnGmb as string) ?? undefined} />
@@ -477,7 +476,6 @@ export default function ClientDetail() {
         values={{
           businessName:          client.businessName                    ?? "",
           planName:              client.planName                        ?? "",
-          searchAddress:         client.searchAddress                   ?? "",
           publishedAddress:      client.publishedAddress                ?? "",
           gmbUrl:                client.gmbUrl                          ?? "",
           websitePublishedOnGmb: (c.websitePublishedOnGmb as string)   ?? "",
@@ -504,7 +502,6 @@ export default function ClientDetail() {
           planName:        client.planName               ?? "",
           subscriptionId:  (c.subscriptionId  as string) ?? "",
           businessName:    client.businessName           ?? "",
-          searchAddress:   client.searchAddress          ?? "",
           lastFourCard:    (c.lastFourCard    as string) ?? "",
           nextBillDate:    (c.nextBillDate    as string) ?? "",
           startDate:       (c.startDate       as string) ?? "",
@@ -582,7 +579,6 @@ function FullScreenDialog({
 const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string; dropdown?: string[] }> = [
   { key: "businessName",          label: "Client Name", maxLength: 100 },
   { key: "planName",              label: "Plan" },
-  { key: "searchAddress",         label: "Search Address", maxLength: 200, wide: true },
   { key: "publishedAddress",      label: "GMB Address", maxLength: 200, wide: true },
   { key: "gmbUrl",                label: "GMB Link", placeholder: "https://maps.google.com/…", maxLength: 500, wide: true, type: "url" },
   { key: "websitePublishedOnGmb", label: "Website Published on GMB", placeholder: "https://…", maxLength: 200, wide: true },
@@ -641,13 +637,6 @@ function EditBizDialog({
     if (vals.planName && vals.planName.trim()) {
       if (vals.planName.length > 100) {
         newErrors.planName = "Plan name cannot exceed 100 characters";
-      }
-    }
-
-    // Search Address validation
-    if (vals.searchAddress && vals.searchAddress.trim()) {
-      if (vals.searchAddress.length > 200) {
-        newErrors.searchAddress = "Search address cannot exceed 200 characters";
       }
     }
 
@@ -905,7 +894,6 @@ const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxL
   { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true, maxLength: 100, type: "email" },
   { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true, maxLength: 100, type: "email" },
   { key: "businessName",    label: "Client Name",              maxLength: 100 },
-  { key: "searchAddress",   label: "Search Address",           wide: true, maxLength: 200 },
   { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle", maxLength: 50 },
 ];
 
@@ -977,13 +965,6 @@ function EditAccDialog({
         newErrors.businessName = "Client name must be at least 2 characters";
       } else if (vals.businessName.length > 100) {
         newErrors.businessName = "Client name cannot exceed 100 characters";
-      }
-    }
-
-    // Search Address validation
-    if (vals.searchAddress && vals.searchAddress.trim()) {
-      if (vals.searchAddress.length > 200) {
-        newErrors.searchAddress = "Address cannot exceed 200 characters";
       }
     }
 

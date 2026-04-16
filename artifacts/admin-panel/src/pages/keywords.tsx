@@ -318,11 +318,12 @@ function LinkDialog({
 }
 
 function KeywordCard({
-  kw, onEdit, onDelete, onToggleActive,
+  kw, onEdit, onDelete, onToggleActive, ranks,
 }: {
   kw: KwRecord;
   onEdit: () => void;
   onDelete: () => void;
+  ranks?: Partial<Record<string, RankCell>>;
   onToggleActive: (v: boolean) => void;
 }) {
   const { toast } = useToast();
@@ -464,7 +465,7 @@ function KeywordCard({
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors">
             <Pencil className="w-4 h-4" />
           </button>
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); console.log("[delete click] kw=", kw); onDelete(); }}
+          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-600 hover:bg-red-100 transition-colors">
             <Trash2 className="w-4 h-4" />
           </button>
@@ -481,18 +482,38 @@ function KeywordCard({
           </div>
         </div>
       ) : (
-      <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
-        {[
-          { label: "Initial Search Count",   value: kw.initialSearchCount30Days  ?? 0 },
-          { label: "Follow-up Search Count", value: kw.followupSearchCount30Days ?? 0 },
-          { label: "Initial Rank Report",    value: kw.initialRankReportCount    ?? 0 },
-          { label: "Current Rank Report",    value: kw.currentRankReportCount    ?? 0 },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
-            <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight mb-1.5">{label}</p>
-            <p className="text-2xl font-bold tabular-nums text-black dark:text-white leading-none">{(value as number).toLocaleString()}</p>
-          </div>
-        ))}
+      <div className="px-4 pb-3 border-t border-slate-200 pt-3 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: "Initial Search Count",   value: kw.initialSearchCount30Days  ?? 0 },
+            { label: "Follow-up Search Count", value: kw.followupSearchCount30Days ?? 0 },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
+              <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight mb-1.5">{label}</p>
+              <p className="text-2xl font-bold tabular-nums text-black dark:text-white leading-none">{(value as number).toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(["chatgpt", "gemini", "perplexity"] as const).map((platform) => {
+            const cell = ranks?.[platform];
+            return (
+              <div key={platform} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
+                <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-500 leading-tight mb-2 capitalize font-bold">{platform}</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">Initial</p>
+                    <p className="text-base font-bold tabular-nums text-black dark:text-white">{cell?.previous != null ? `#${cell.previous}` : "—"}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">Current</p>
+                    <p className="text-base font-bold tabular-nums text-black dark:text-white">{fmtRank(cell)}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
       )}
 
@@ -751,9 +772,27 @@ export default function Keywords() {
     setSaving(true);
     try {
       if (id) {
+        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, links, ...kwFields } = data;
         await new Promise<void>((res, rej) =>
-          updateKeyword.mutate({ id, data }, { onSuccess: () => res(), onError: (e) => rej(e) }),
+          updateKeyword.mutate({ id, data: kwFields }, { onSuccess: () => res(), onError: (e) => rej(e) }),
         );
+        if (Number(kwFields.keywordType) === 4) {
+          const existingLinks = Array.isArray(links) ? links as Array<{ id: number }> : [];
+          const linkPayload = { linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, linkActive: linkActive !== false, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null };
+          if (existingLinks.length > 0) {
+            await rawFetch(`/api/keywords/${id}/links/${existingLinks[0].id}`, {
+              method: "PATCH", credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(linkPayload),
+            });
+          } else {
+            await rawFetch(`/api/keywords/${id}/links`, {
+              method: "POST", credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(linkPayload),
+            });
+          }
+        }
       } else {
         const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
         const r = await rawFetch(`/api/keywords`, {
@@ -1247,6 +1286,7 @@ export default function Keywords() {
                                 >
                                   <KeywordCard
                                     kw={kw}
+                                    ranks={rankMap.get(kw.id as number)}
                                     onEdit={() => setEditKw({ ...kw })}
                                     onDelete={() => setConfirmDeleteKw(kw)}
                                     onToggleActive={(v) => toggleActive(kw, v)}
