@@ -122,6 +122,22 @@ router.patch("/:id/followup", async (req, res) => {
   }
 });
 
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [deleted] = await db
+      .delete(sessionsTable)
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Session not found" });
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting session");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/stress-test", async (req, res) => {
   try {
     const [deviceCount] = await db

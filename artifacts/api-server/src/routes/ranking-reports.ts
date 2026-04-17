@@ -155,6 +155,22 @@ router.patch("/:id", requireExecutorToken, async (req, res) => {
   }
 });
 
+router.delete("/:id", requireExecutorToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [deleted] = await db
+      .delete(rankingReportsTable)
+      .where(eq(rankingReportsTable.id, id))
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting ranking report");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* GET /api/ranking-reports/platform-summary
    Returns per-platform initial-vs-current comparison rows */
 router.get("/platform-summary", async (req, res) => {

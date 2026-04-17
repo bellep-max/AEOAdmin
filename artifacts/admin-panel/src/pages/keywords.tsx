@@ -94,8 +94,8 @@ function exportCSV(
   const headers = [
     "Client", "Business", "Campaign", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
     "ChatGPT Rank", "Gemini Rank", "Perplexity Rank",
-    "Initial Search (30d)", "Follow-up Search (30d)",
-    "Initial Search (Life)", "Follow-up Search (Life)",
+    "Search (30d)", "Follow-up Search (30d)",
+    "Search (Life)", "Follow-up Search (Life)",
     "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
   ];
   const lines = rows.map((kw) => {
@@ -485,7 +485,7 @@ function KeywordCard({
       <div className="px-4 pb-3 border-t border-slate-200 pt-3 space-y-2">
         <div className="grid grid-cols-2 gap-2">
           {[
-            { label: "Initial Search Count",   value: kw.initialSearchCount30Days  ?? 0 },
+            { label: "Search Count",           value: kw.initialSearchCount30Days  ?? 0 },
             { label: "Follow-up Search Count", value: kw.followupSearchCount30Days ?? 0 },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
