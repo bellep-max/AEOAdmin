@@ -192,6 +192,68 @@ Updatable fields: `mapsUrl`, `mapsPresence`, `rankingPosition`, `reasonRecommend
 
 ---
 
+### Search Counts
+
+Each keyword tracks how many times it was searched. These counts surface as **"INITIAL SEARCH COUNT"** and **"FOLLOW-UP SEARCH COUNT"** on the keyword card, and in the CSV/PDF exports.
+
+Four fields:
+
+| Field | UI label | Scope |
+|---|---|---|
+| `initialSearchCount30Days` | Initial Search Count (card) | Rolling 30 days |
+| `followupSearchCount30Days` | Follow-up Search Count (card) | Rolling 30 days |
+| `initialSearchCountLife` | Initial Search (Life) — CSV only | All time |
+| `followupSearchCountLife` | Follow-up Search (Life) — CSV only | All time |
+
+#### PATCH /api/keywords/:id
+
+Write the new absolute values (**not** an increment — the executor owns the math).
+
+```bash
+curl -X PATCH https://jjm59vpn3y.us-east-1.awsapprunner.com/api/keywords/5 \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "initialSearchCount30Days": 12,
+    "followupSearchCount30Days": 8,
+    "initialSearchCountLife": 45,
+    "followupSearchCountLife": 23
+  }'
+```
+
+All four fields are optional — only send the ones you want to update.
+
+#### Increment pattern
+
+To add N searches, read → add → write:
+
+```bash
+# 1. Read the current keyword
+KW=$(curl -s "https://jjm59vpn3y.us-east-1.awsapprunner.com/api/keywords?clientId=1" \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN" | jq '.[] | select(.id==5)')
+
+CURR_30D=$(echo "$KW" | jq '.initialSearchCount30Days // 0')
+CURR_LIFE=$(echo "$KW" | jq '.initialSearchCountLife // 0')
+
+# 2. PATCH with incremented values
+curl -X PATCH "https://jjm59vpn3y.us-east-1.awsapprunner.com/api/keywords/5" \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"initialSearchCount30Days\": $((CURR_30D + 1)),
+    \"initialSearchCountLife\": $((CURR_LIFE + 1))
+  }"
+```
+
+#### Typical usage
+
+- **Initial search**: when the executor runs a keyword for the **first time** in a session → increment both `initialSearchCount30Days` and `initialSearchCountLife` by 1
+- **Follow-up search**: re-ranking an existing keyword → increment both `followupSearchCount30Days` and `followupSearchCountLife` by 1
+
+Keep the 30-day and Life counters in sync — the 30-day counter should be recomputed by your executor based on sessions in the last 30 days; Life only ever grows.
+
+---
+
 ## Typical Executor Flow
 
 ```
@@ -200,8 +262,10 @@ Updatable fields: `mapsUrl`, `mapsPresence`, `rankingPosition`, `reasonRecommend
 3. POST /api/ranking-runs         → create run (status: "running")
 4. For each keyword × platform:
      POST /api/ranking-reports    → submit result
-5. PATCH /api/ranking-runs/:id    → update run (status: "completed")
+5. PATCH /api/ranking-runs/:id    → update run (status: "success")
 ```
+
+> ⚠️ **Step 5 is mandatory.** If you skip the final PATCH, the Rankings page will show a permanent "Run in progress" banner. Always wrap steps 3–5 in a try/finally so a crash mid-run still marks the run `failed` rather than leaving it stuck as `running`.
 
 ### Complete Example (bash)
 
