@@ -62,4 +62,20 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [deleted] = await db
+      .delete(auditLogsTable)
+      .where(eq(auditLogsTable.id, id))
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting audit log");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

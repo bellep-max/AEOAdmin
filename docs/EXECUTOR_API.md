@@ -192,6 +192,24 @@ Updatable fields: `mapsUrl`, `mapsPresence`, `rankingPosition`, `reasonRecommend
 
 ---
 
+### Delete Endpoints
+
+All delete endpoints return `{ ok: true, deleted: {...} }` on success, `404` if the id does not exist.
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `DELETE /api/ranking-reports/:id` | `X-Executor-Token` | Delete a single ranking report |
+| `DELETE /api/ranking-runs/:id` | `X-Executor-Token` | Delete a ranking run |
+| `DELETE /api/sessions/:id` | session | Delete a session |
+| `DELETE /api/audit-logs/:id` | session | Delete an audit log |
+
+```bash
+curl -X DELETE https://jjm59vpn3y.us-east-1.awsapprunner.com/api/ranking-reports/42 \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN"
+```
+
+---
+
 ### Search Counts
 
 Each keyword tracks how many times it was searched. These counts surface as **"INITIAL SEARCH COUNT"** and **"FOLLOW-UP SEARCH COUNT"** on the keyword card, and in the CSV/PDF exports.
@@ -200,9 +218,9 @@ Four fields:
 
 | Field | UI label | Scope |
 |---|---|---|
-| `initialSearchCount30Days` | Initial Search Count (card) | Rolling 30 days |
+| `initialSearchCount30Days` | Search Count (card) | Rolling 30 days |
 | `followupSearchCount30Days` | Follow-up Search Count (card) | Rolling 30 days |
-| `initialSearchCountLife` | Initial Search (Life) — CSV only | All time |
+| `initialSearchCountLife` | Search (Life) — CSV only | All time |
 | `followupSearchCountLife` | Follow-up Search (Life) — CSV only | All time |
 
 #### PATCH /api/keywords/:id
