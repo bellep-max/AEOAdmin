@@ -497,17 +497,30 @@ function KeywordCard({
         <div className="grid grid-cols-3 gap-2">
           {(["chatgpt", "gemini", "perplexity"] as const).map((platform) => {
             const cell = ranks?.[platform];
+            const hasPrev = cell?.previous != null;
+            const curr = cell?.current;
+            const prev = cell?.previous;
+            const improved = hasPrev && curr != null && prev != null && curr < prev;
+            const declined = hasPrev && curr != null && prev != null && curr > prev;
             return (
-              <div key={platform} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
-                <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-500 leading-tight mb-2 capitalize font-bold">{platform}</p>
-                <div className="flex items-center justify-between">
+              <div key={platform} className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50 overflow-hidden">
+                <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                  <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold capitalize">{platform}</p>
+                </div>
+                <div className="px-3 py-2.5 flex items-center justify-between">
                   <div>
-                    <p className="text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">Initial</p>
-                    <p className="text-base font-bold tabular-nums text-black dark:text-white">{cell?.previous != null ? `#${cell.previous}` : "—"}</p>
+                    <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">Current</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className={`text-xl font-extrabold tabular-nums leading-none ${curr != null ? "text-black dark:text-white" : "text-slate-300 dark:text-slate-600"}`}>
+                        {fmtRank(cell)}
+                      </p>
+                      {improved && <span className="text-emerald-500 text-xs font-bold">↑</span>}
+                      {declined && <span className="text-red-500 text-xs font-bold">↓</span>}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">Current</p>
-                    <p className="text-base font-bold tabular-nums text-black dark:text-white">{fmtRank(cell)}</p>
+                    <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">Initial</p>
+                    <p className="text-xs tabular-nums text-slate-400 font-medium">{hasPrev ? `#${prev}` : "—"}</p>
                   </div>
                 </div>
               </div>
@@ -707,9 +720,9 @@ export default function Keywords() {
   const businessesMap = new Map(businesses.map((b) => [b.id, b]));
 
   const { data: lifetimeRanks } = useQuery<{ rows: Array<{ keywordId: number; platform: string; currentPosition: number | null; previousPosition: number | null }> }>({
-    queryKey: ["/api/ranking-reports/period-comparison", "lifetime"],
+    queryKey: ["/api/ranking-reports/period-comparison", "weekly"],
     queryFn: async () => {
-      const r = await rawFetch("/api/ranking-reports/period-comparison?period=lifetime", { credentials: "include" });
+      const r = await rawFetch("/api/ranking-reports/period-comparison?period=weekly", { credentials: "include" });
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
