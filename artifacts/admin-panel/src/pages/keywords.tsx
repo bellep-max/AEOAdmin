@@ -502,16 +502,32 @@ function KeywordCard({
             const prev = cell?.previous;
             const improved = hasPrev && curr != null && prev != null && curr < prev;
             const declined = hasPrev && curr != null && prev != null && curr > prev;
+
+            const platformStyles: Record<string, { header: string; label: string }> = {
+              chatgpt:    { header: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60", label: "text-emerald-700 dark:text-emerald-400" },
+              gemini:     { header: "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60",           label: "text-blue-700 dark:text-blue-400" },
+              perplexity: { header: "bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-800/60",   label: "text-violet-700 dark:text-violet-400" },
+            };
+            const ps = platformStyles[platform];
+
+            const rankTierClass = (n: number | null | undefined): string => {
+              if (n == null) return "text-slate-300 dark:text-slate-600";
+              if (n <= 3)    return "text-emerald-600 dark:text-emerald-400";
+              if (n <= 10)   return "text-blue-600 dark:text-blue-400";
+              if (n <= 20)   return "text-amber-600 dark:text-amber-400";
+              return "text-red-600 dark:text-red-400";
+            };
+
             return (
               <div key={platform} className="rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50 overflow-hidden">
-                <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-                  <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold capitalize">{platform}</p>
+                <div className={`px-3 py-1.5 border-b ${ps.header}`}>
+                  <p className={`text-[10px] uppercase tracking-widest font-bold capitalize ${ps.label}`}>{platform}</p>
                 </div>
                 <div className="px-3 py-2.5 flex items-center justify-between">
                   <div>
                     <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">Current</p>
                     <div className="flex items-center gap-1.5">
-                      <p className={`text-xl font-extrabold tabular-nums leading-none ${curr != null ? "text-black dark:text-white" : "text-slate-300 dark:text-slate-600"}`}>
+                      <p className={`text-xl font-extrabold tabular-nums leading-none ${rankTierClass(curr)}`}>
                         {fmtRank(cell)}
                       </p>
                       {improved && <span className="text-emerald-500 text-xs font-bold">↑</span>}

@@ -76,6 +76,20 @@ export default function ClientDetail() {
 
   const [editBizOpen,  setEditBizOpen]  = useState(false);
   const [editAccOpen,  setEditAccOpen]  = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const edit = qs.get("edit");
+    if (edit === "biz") setEditBizOpen(true);
+    else if (edit === "acc") setEditAccOpen(true);
+    // Clear the param so a refresh doesn't re-open the dialog.
+    if (edit) {
+      qs.delete("edit");
+      const newUrl = window.location.pathname + (qs.toString() ? `?${qs}` : "");
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, []);
   const [notesOpen,    setNotesOpen]    = useState(false);
   const [notesDraft,   setNotesDraft]   = useState("");
   const [saving,       setSaving]       = useState(false);
@@ -475,16 +489,11 @@ export default function ClientDetail() {
         onSave={(vals) => patchClient(vals, () => setEditBizOpen(false))}
         values={{
           businessName:          client.businessName                    ?? "",
-          planName:              client.planName                        ?? "",
           publishedAddress:      client.publishedAddress                ?? "",
           gmbUrl:                client.gmbUrl                          ?? "",
           websitePublishedOnGmb: (c.websitePublishedOnGmb as string)   ?? "",
           websiteLinkedOnGmb:    (c.websiteLinkedOnGmb    as string)   ?? "",
           accountUser:           (c.accountUser           as string)   ?? "",
-          startDate:             (c.startDate             as string)   ?? "",
-          nextBillDate:          (c.nextBillDate          as string)   ?? "",
-          subscriptionId:        (c.subscriptionId        as string)   ?? "",
-          lastFourCard:          (c.lastFourCard          as string)   ?? "",
         }}
       />
 
@@ -499,12 +508,7 @@ export default function ClientDetail() {
           accountUserName: (c.accountUserName as string) ?? "",
           accountEmail:    (c.accountEmail    as string) ?? "",
           billingEmail:    (c.billingEmail    as string) ?? "",
-          planName:        client.planName               ?? "",
-          subscriptionId:  (c.subscriptionId  as string) ?? "",
           businessName:    client.businessName           ?? "",
-          lastFourCard:    (c.lastFourCard    as string) ?? "",
-          nextBillDate:    (c.nextBillDate    as string) ?? "",
-          startDate:       (c.startDate       as string) ?? "",
           createdBy:       (c.createdBy       as string) ?? "",
         }}
       />
@@ -578,16 +582,11 @@ function FullScreenDialog({
 /* ─────────────────────────────────────────────────────────── */
 const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string; dropdown?: string[] }> = [
   { key: "businessName",          label: "Client Name", maxLength: 100 },
-  { key: "planName",              label: "Plan" },
   { key: "publishedAddress",      label: "GMB Address", maxLength: 200, wide: true },
   { key: "gmbUrl",                label: "GMB Link", placeholder: "https://maps.google.com/…", maxLength: 500, wide: true, type: "url" },
   { key: "websitePublishedOnGmb", label: "Website Published on GMB", placeholder: "https://…", maxLength: 200, wide: true },
   { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…", maxLength: 200, wide: true },
   { key: "accountUser",           label: "Account User", maxLength: 50 },
-  { key: "startDate",             label: "Start Date", placeholder: "YYYY-MM-DD", type: "date" },
-  { key: "nextBillDate",          label: "Next Bill Date", placeholder: "YYYY-MM-DD", type: "date" },
-  { key: "subscriptionId",        label: "Subscription ID", maxLength: 50 },
-  { key: "lastFourCard",          label: "Last 4 of Billing Credit Card", placeholder: "e.g. 4242", maxLength: 4 },
 ];
 
 function EditBizDialog({
@@ -917,7 +916,10 @@ function EditAccDialog({
       setVals(initValues);
       setErrors({});
     }
-  }, [open, initValues]);
+    // Only reset when dialog opens — initValues is a new object each render,
+    // so depending on it here would wipe user edits on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function validateFields(): boolean {
     const newErrors: Record<string, string> = {};
