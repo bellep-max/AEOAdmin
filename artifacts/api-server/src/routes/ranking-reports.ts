@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { rankingReportsTable, clientsTable, keywordsTable, businessesTable, clientAeoPlansTable } from "@workspace/db/schema";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
@@ -28,6 +28,7 @@ router.get("/", async (req, res) => {
         screenshotUrl: rankingReportsTable.screenshotUrl,
         textRanking: rankingReportsTable.textRanking,
         isInitialRanking: rankingReportsTable.isInitialRanking,
+        platform: rankingReportsTable.platform,
         createdAt: rankingReportsTable.createdAt,
         clientName: clientsTable.businessName,
         businessName: businessesTable.name,
@@ -51,6 +52,37 @@ router.get("/", async (req, res) => {
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
+
+    // Upsert per (keywordId, platform, day): if a report already exists
+    // for this keyword+platform today, update it instead of inserting a new row.
+    // Prevents accidental duplicates from re-running the same batch.
+    const existing = await db
+      .select({ id: rankingReportsTable.id })
+      .from(rankingReportsTable)
+      .where(and(
+        eq(rankingReportsTable.keywordId, body.keywordId),
+        body.platform != null
+          ? eq(rankingReportsTable.platform, body.platform)
+          : sql`${rankingReportsTable.platform} IS NULL`,
+        sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(rankingReportsTable)
+        .set({
+          rankingPosition: body.rankingPosition ?? null,
+          reasonRecommended: body.reasonRecommended ?? null,
+          mapsPresence: body.mapsPresence ?? null,
+          mapsUrl: body.mapsUrl ?? null,
+          isInitialRanking: body.isInitialRanking ?? false,
+        })
+        .where(eq(rankingReportsTable.id, existing[0].id))
+        .returning();
+      return res.status(200).json({ ...updated, upserted: true });
+    }
+
     const [report] = await db
       .insert(rankingReportsTable)
       .values({
@@ -68,6 +100,30 @@ router.post("/", requireExecutorToken, async (req, res) => {
     res.status(201).json(report);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/ranking-reports/dedupe — one-time cleanup: for each
+   (keywordId, platform, day), keep only the latest row and delete older dupes. */
+router.post("/dedupe", requireExecutorToken, async (req, res) => {
+  try {
+    const result = await db.execute(sql`
+      DELETE FROM ranking_reports a
+      USING ranking_reports b
+      WHERE a.keyword_id = b.keyword_id
+        AND (
+          (a.platform = b.platform) OR
+          (a.platform IS NULL AND b.platform IS NULL)
+        )
+        AND DATE(a.created_at) = DATE(b.created_at)
+        AND a.id < b.id
+      RETURNING a.id;
+    `);
+    const deletedCount = Array.isArray(result) ? result.length : (result?.rowCount ?? 0);
+    res.json({ deletedRows: deletedCount });
+  } catch (err) {
+    req.log.error({ err }, "Error deduping ranking reports");
     res.status(500).json({ error: "Internal server error" });
   }
 });
