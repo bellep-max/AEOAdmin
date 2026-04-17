@@ -52,6 +52,7 @@ const businessFormSchema = z.object({
     .optional(),
   
   // Account Information
+  accountType: z.enum(["Agency", "Retail"]).optional().or(z.literal('')),
   accountUser: z.string()
     .max(50, "Username cannot exceed 50 characters")
     .optional(),
@@ -361,6 +362,27 @@ export default function Clients() {
                   <div className="space-y-4">
                     <FormField
                       control={form.control}
+                      name="accountType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Account Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                            <FormControl>
+                              <SelectTrigger className="h-11 text-base text-black bg-slate-50">
+                                <SelectValue placeholder="Select account type…" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="Agency">Agency</SelectItem>
+                              <SelectItem value="Retail">Retail</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
                       name="accountUser"
                       render={({ field }) => (
                         <FormItem>
@@ -603,12 +625,12 @@ export default function Clients() {
                       >
                         <Building2 className="h-4 w-4" />
                       </Button>
-                      <Link href={`/clients/${client.id}`}>
+                      <Link href={`/clients/${client.id}?edit=biz`}>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
-                          title="Edit / View Details"
+                          title="Edit Client"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
