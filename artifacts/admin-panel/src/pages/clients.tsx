@@ -69,6 +69,7 @@ const businessFormSchema = z.object({
     .max(100, "Email cannot exceed 100 characters")
     .optional()
     .or(z.literal('')),
+  createdBy: z.string().min(1, "Created By is required"),
 });
 
 export default function Clients() {
@@ -82,6 +83,7 @@ export default function Clients() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isCreatedByOther, setIsCreatedByOther] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [confirmReactivate, setConfirmReactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
@@ -178,6 +180,7 @@ export default function Clients() {
       accountUserName: "",
       accountEmail: "",
       billingEmail: "",
+      createdBy: "",
     },
   });
 
@@ -189,7 +192,7 @@ export default function Clients() {
   const handleConfirmAdd = () => {
     if (!confirmAddClient) return;
     
-    createClient.mutate({ data: confirmAddClient }, {
+    createClient.mutate({ data: confirmAddClient as any }, {
       onSuccess: (created: unknown) => {
         toast({
           title: "✅ Client added successfully!",
@@ -197,6 +200,7 @@ export default function Clients() {
         });
         const newClient = (created as { client?: { id: number; businessName: string } })?.client;
         setConfirmAddClient(null);
+        setIsCreatedByOther(false);
         setIsAddOpen(false);
         form.reset();
         refetch();
@@ -232,6 +236,7 @@ export default function Clients() {
 
   const handleConfirmCancel = () => {
     setConfirmCancel(false);
+    setIsCreatedByOther(false);
     setIsAddOpen(false);
     form.reset();
   };
@@ -429,6 +434,57 @@ export default function Clients() {
                           <FormControl>
                             <Input type="email" placeholder="billing@example.com" maxLength={100} className="h-11 text-base text-black bg-slate-50" {...field} />
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="createdBy"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Created By *</FormLabel>
+                          {!isCreatedByOther ? (
+                            <Select value={field.value} onValueChange={(v) => {
+                              if (v === "Other") {
+                                setIsCreatedByOther(true);
+                                field.onChange("Other");
+                              } else {
+                                field.onChange(v);
+                              }
+                            }}>
+                              <FormControl>
+                                <SelectTrigger className="h-11 text-base text-black bg-slate-50">
+                                  <SelectValue placeholder="Select role" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {["Admin", "Sales Representative", "Developer", "Other"].map((o) => (
+                                  <SelectItem key={o} value={o}>{o}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="flex gap-2">
+                              <FormControl>
+                                <Input
+                                  className="h-11 text-base text-black bg-slate-50"
+                                  placeholder="Enter name"
+                                  value={field.value === "Other" ? "" : field.value}
+                                  onChange={(e) => field.onChange(e.target.value)}
+                                />
+                              </FormControl>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs px-2 text-muted-foreground"
+                                onClick={() => { setIsCreatedByOther(false); field.onChange(""); }}
+                              >
+                                ← Back
+                              </Button>
+                            </div>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
