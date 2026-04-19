@@ -27,6 +27,7 @@ import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
+import { CreatedByField } from "@/components/CreatedByField";
 
 const businessFormSchema = z.object({
   // Business Information
@@ -83,7 +84,6 @@ export default function Clients() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isCreatedByOther, setIsCreatedByOther] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [confirmReactivate, setConfirmReactivate] = useState<{ id: number; name: string; keywordCount: number } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
@@ -200,7 +200,6 @@ export default function Clients() {
         });
         const newClient = (created as { client?: { id: number; businessName: string } })?.client;
         setConfirmAddClient(null);
-        setIsCreatedByOther(false);
         setIsAddOpen(false);
         form.reset();
         refetch();
@@ -236,7 +235,6 @@ export default function Clients() {
 
   const handleConfirmCancel = () => {
     setConfirmCancel(false);
-    setIsCreatedByOther(false);
     setIsAddOpen(false);
     form.reset();
   };
@@ -441,51 +439,17 @@ export default function Clients() {
                     <FormField
                       control={form.control}
                       name="createdBy"
-                      render={({ field }) => (
+                      render={({ field, fieldState }) => (
                         <FormItem>
-                          <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Created By *</FormLabel>
-                          {!isCreatedByOther ? (
-                            <Select value={field.value} onValueChange={(v) => {
-                              if (v === "Other") {
-                                setIsCreatedByOther(true);
-                                field.onChange("Other");
-                              } else {
-                                field.onChange(v);
-                              }
-                            }}>
-                              <FormControl>
-                                <SelectTrigger className="h-11 text-base text-black bg-slate-50">
-                                  <SelectValue placeholder="Select role" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {["Admin", "Sales Representative", "Developer", "Other"].map((o) => (
-                                  <SelectItem key={o} value={o}>{o}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <div className="flex gap-2">
-                              <FormControl>
-                                <Input
-                                  className="h-11 text-base text-black bg-slate-50"
-                                  placeholder="Enter name"
-                                  value={field.value === "Other" ? "" : field.value}
-                                  onChange={(e) => field.onChange(e.target.value)}
-                                />
-                              </FormControl>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs px-2 text-muted-foreground"
-                                onClick={() => { setIsCreatedByOther(false); field.onChange(""); }}
-                              >
-                                ← Back
-                              </Button>
-                            </div>
-                          )}
-                          <FormMessage />
+                          <FormControl>
+                            <CreatedByField
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              required
+                              error={fieldState.error?.message ?? null}
+                              labelClassName="text-sm uppercase tracking-widest text-black font-bold"
+                            />
+                          </FormControl>
                         </FormItem>
                       )}
                     />

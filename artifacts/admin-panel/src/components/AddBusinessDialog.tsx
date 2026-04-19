@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { CreatedByField } from "./CreatedByField";
 
 const schema = z.object({
   name: z.string().min(2, "Business name is required").max(150),
@@ -16,6 +17,7 @@ const schema = z.object({
   websiteUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   publishedAddress: z.string().max(200).optional().or(z.literal("")),
   zipCode: z.string().max(20).optional().or(z.literal("")),
+  createdBy: z.string().min(1, "Created By is required").max(50),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -28,6 +30,7 @@ interface BusinessLike {
   websiteUrl?: string | null;
   publishedAddress?: string | null;
   zipCode?: string | null;
+  createdBy?: string | null;
 }
 
 interface AddBusinessDialogProps {
@@ -55,6 +58,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       websiteUrl: "",
       publishedAddress: "",
       zipCode: "",
+      createdBy: "",
     },
   });
 
@@ -71,6 +75,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
         websiteUrl: business.websiteUrl ?? "",
         publishedAddress: business.publishedAddress ?? "",
         zipCode: business.zipCode ?? "",
+        createdBy: business.createdBy ?? "",
       });
     }
   }, [open, business, form]);
@@ -87,6 +92,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       websiteUrl: values.websiteUrl || null,
       publishedAddress: values.publishedAddress || null,
       zipCode: values.zipCode || null,
+      createdBy: values.createdBy || null,
     };
     try {
       const url = isEdit ? `${BASE}/api/businesses/${business!.id}` : `${BASE}/api/businesses`;
@@ -196,6 +202,23 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
                     <Input placeholder="78701" className="h-11 text-base text-black bg-slate-50" {...field} />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="createdBy"
+              render={({ field, fieldState }) => (
+                <FormItem>
+                  <FormControl>
+                    <CreatedByField
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      required
+                      error={fieldState.error?.message ?? null}
+                      labelClassName="text-sm uppercase tracking-widest text-black font-bold"
+                    />
+                  </FormControl>
                 </FormItem>
               )}
             />
