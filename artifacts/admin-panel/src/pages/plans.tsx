@@ -33,7 +33,6 @@ interface AeoPlan {
   clientBusinessName: string | null;
   businessName: string | null;
   planType: string;
-  serviceCategory: string | null;
   sampleQuestion1: string | null;
   sampleQuestion2: string | null;
   sampleQuestion3: string | null;
@@ -62,7 +61,6 @@ type PlanFormData = Omit<AeoPlan, "id" | "clientId" | "clientBusinessName">;
 const EMPTY_FORM: PlanFormData = {
   businessName: "",
   planType: "",
-  serviceCategory: "",
   sampleQuestion1: "",
   sampleQuestion2: "",
   sampleQuestion3: "",
@@ -181,17 +179,6 @@ function PlanForm({
               </Button>
             </div>
           )}
-        </div>
-
-        {/* Service Category */}
-        <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service Category</Label>
-          <Input
-            className="h-10 bg-muted/30 border-border/60"
-            placeholder="e.g. Airport Black Car Service"
-            value={values.serviceCategory ?? ""}
-            onChange={(e) => set("serviceCategory", e.target.value)}
-          />
         </div>
 
       </div>
@@ -353,7 +340,6 @@ export default function Plans() {
     setFormValues({
       businessName:          plan.businessName,
       planType:              plan.planType,
-      serviceCategory:       plan.serviceCategory,
       sampleQuestion1:       plan.sampleQuestion1,
       sampleQuestion2:       plan.sampleQuestion2,
       sampleQuestion3:       plan.sampleQuestion3,
@@ -444,8 +430,7 @@ export default function Plans() {
     return !q
       || (p.clientBusinessName ?? "").toLowerCase().includes(q)
       || (p.businessName ?? "").toLowerCase().includes(q)
-      || p.planType.toLowerCase().includes(q)
-      || (p.serviceCategory ?? "").toLowerCase().includes(q);
+      || p.planType.toLowerCase().includes(q);
   });
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -484,7 +469,6 @@ export default function Plans() {
               <TableHead>Client</TableHead>
               <TableHead>Plan Type</TableHead>
               <TableHead>Tier</TableHead>
-              <TableHead>Service Category</TableHead>
               <TableHead>Answer Presence</TableHead>
               <TableHead>3-Mo Target</TableHead>
               <TableHead>Monthly Budget</TableHead>
@@ -551,7 +535,6 @@ export default function Plans() {
                           );
                         })()}
                       </TableCell>
-                      <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                       <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                       <TableCell className="text-sm">
                         {plan.searchBoostTarget != null
@@ -656,8 +639,7 @@ export default function Plans() {
           <DialogHeader>
             <DialogTitle>Delete Plan?</DialogTitle>
             <DialogDescription>
-              This will permanently delete the <strong>{deleteConfirm?.planType}</strong> plan
-              {deleteConfirm?.serviceCategory ? ` (${deleteConfirm.serviceCategory})` : ""} for{" "}
+              This will permanently delete the <strong>{deleteConfirm?.planType}</strong> plan for{" "}
               <strong>{deleteConfirm?.clientBusinessName ?? `Client #${deleteConfirm?.clientId}`}</strong>.
               This cannot be undone.
             </DialogDescription>

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Key, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { Key, ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
@@ -23,6 +23,7 @@ interface Props {
   businessId: number | null;
   aeoPlanId: number | null;
   addButton?: ReactNode;
+  onEditKeyword?: (keywordId: number) => void;
   onDeleteKeyword?: (keywordId: number) => void;
   /** Keywords that exist but have no ranking data yet — still shown so the list is complete. */
   extraKeywords?: { id: number; keywordText: string }[];
@@ -45,6 +46,7 @@ export function KeywordsWithRankingsCard({
   businessId,
   aeoPlanId,
   addButton,
+  onEditKeyword,
   onDeleteKeyword,
   extraKeywords,
 }: Props) {
@@ -163,12 +165,23 @@ export function KeywordsWithRankingsCard({
                         <PlatformChip key={`chip-${p.keywordId}-${p.platform}`} row={p} />
                       ))}
                     </div>
+                    {onEditKeyword && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
+                        onClick={(e) => { e.stopPropagation(); onEditKeyword(keywordId); }}
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
                     {onDeleteKeyword && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={() => onDeleteKeyword(keywordId)}
+                        onClick={(e) => { e.stopPropagation(); onDeleteKeyword(keywordId); }}
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />

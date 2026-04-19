@@ -31,7 +31,6 @@ interface Campaign {
   name: string | null;
   businessName: string | null;
   planType: string;
-  serviceCategory: string | null;
   searchAddress: string | null;
   currentAnswerPresence: string | null;
   searchBoostTarget: number | null;
@@ -86,6 +85,7 @@ export default function CampaignDetail() {
   const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
   const [kwDialogOpen, setKwDialogOpen] = useState(false);
   const [savingKw, setSavingKw] = useState(false);
+  const [editingKw, setEditingKw] = useState<KwRecord | null>(null);
   const [confirmDeleteKw, setConfirmDeleteKw] = useState<Keyword | null>(null);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
@@ -131,9 +131,11 @@ export default function CampaignDetail() {
   async function handleSaveKeyword(data: KwRecord) {
     setSavingKw(true);
     try {
-      const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
-      const res = await rawFetch(`/api/keywords`, {
-        method: "POST",
+      const { id, linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
+      const isEdit = id != null;
+      const url = isEdit ? `/api/keywords/${id}` : `/api/keywords`;
+      const res = await rawFetch(url, {
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...kwData,
@@ -143,9 +145,10 @@ export default function CampaignDetail() {
         }),
       });
       if (!res.ok) throw new Error();
-      const newKw = await res.json();
+      const saved = await res.json();
+      const kwId = isEdit ? id : saved.id;
       if (Number(kwData.keywordType) === 4) {
-        await rawFetch(`/api/keywords/${newKw.id}/links`, {
+        await rawFetch(`/api/keywords/${kwId}/links`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -157,11 +160,12 @@ export default function CampaignDetail() {
           }),
         });
       }
-      toast({ title: "Keyword added" });
+      toast({ title: isEdit ? "Keyword updated" : "Keyword added" });
       setKwDialogOpen(false);
+      setEditingKw(null);
       refetchKeywords();
     } catch {
-      toast({ title: "Failed to add keyword", variant: "destructive" });
+      toast({ title: "Failed to save keyword", variant: "destructive" });
     } finally {
       setSavingKw(false);
     }
@@ -248,7 +252,7 @@ export default function CampaignDetail() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {campaign.serviceCategory}{campaign.searchAddress ? ` · ${campaign.searchAddress}` : ""}
+            {campaign.searchAddress ?? ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -309,7 +313,6 @@ export default function CampaignDetail() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Plan Type" value={campaign.planType} />
             <Field label="Tier" value={meta.tier} />
-            <Field label="Service Category" value={campaign.serviceCategory} />
             <Field label="Search Address" value={campaign.searchAddress} />
             <Field label="Answer Presence" value={campaign.currentAnswerPresence} />
             <Field label="Search Boost Target" value={campaign.searchBoostTarget} />
@@ -354,6 +357,17 @@ export default function CampaignDetail() {
             <Plus className="w-3.5 h-3.5" /> Add Keyword
           </Button>
         }
+        onEditKeyword={async (id) => {
+          // Fetch full keyword (including links) so the edit dialog can pre-populate backlink fields
+          try {
+            const res = await rawFetch(`/api/keywords/${id}`);
+            if (!res.ok) throw new Error();
+            const full = await res.json();
+            setEditingKw(full as KwRecord);
+          } catch {
+            toast({ title: "Failed to load keyword", variant: "destructive" });
+          }
+        }}
         onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
         extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
       />
@@ -375,10 +389,57 @@ export default function CampaignDetail() {
           businessId,
           name: campaign.name,
           planType: campaign.planType,
-          serviceCategory: campaign.serviceCategory,
         }] : []}
         onSave={handleSaveKeyword}
       />
+
+      {editingKw && (
+        <KeywordDialog
+          open
+          onOpenChange={(o) => { if (!o) setEditingKw(null); }}
+          title="Edit Keyword"
+          saving={savingKw}
+          lockContext
+          defaultClientId={clientId}
+          defaultBusinessId={businessId}
+          defaultCampaignId={campaignId}
+          clients={client ? [{ id: client.id, businessName: client.businessName }] : []}
+          businesses={business ? [{ id: business.id, clientId, name: business.name }] : []}
+          plans={campaign ? [{
+            id: campaign.id,
+            clientId,
+            businessId,
+            name: campaign.name,
+            planType: campaign.planType,
+          }] : []}
+          initial={editingKw}
+          onSave={handleSaveKeyword}
+        />
+      )}
+
+      <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this keyword?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>"{confirmDeleteKw?.keywordText ?? ""}"</strong> and any associated links. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const id = confirmDeleteKw?.id;
+                setConfirmDeleteKw(null);
+                if (id != null) deleteKeyword(id);
+              }}
+            >
+              Yes, delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

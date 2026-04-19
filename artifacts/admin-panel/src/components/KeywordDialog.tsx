@@ -25,7 +25,6 @@ export interface KeywordDialogPlan {
   businessId: number | null;
   name: string | null;
   planType: string;
-  serviceCategory: string | null;
 }
 
 interface Props {
@@ -175,7 +174,6 @@ export function KeywordDialog({
                         <SelectItem key={c.id} value={String(c.id)}>
                           <span className="font-semibold">{c.name ?? c.planType}</span>
                           <span className="text-slate-500 ml-1">· {c.planType}</span>
-                          {c.serviceCategory && <span className="text-slate-500 ml-1">· {c.serviceCategory}</span>}
                         </SelectItem>
                       ))}
                     </SelectContent>

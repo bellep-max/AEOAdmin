@@ -52,7 +52,6 @@ interface CampaignRow {
   id: number;
   name: string | null;
   planType: string;
-  serviceCategory: string | null;
   searchAddress: string | null;
   schemaImplementor: string | null;
   createdBy: string | null;
@@ -203,7 +202,7 @@ export default function BusinessDetail() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Name" value={business.name} />
-            <Field label="Category" value={business.category} />
+            <Field label="Service Category" value={business.category} />
             <Field label="Website" value={business.websiteUrl} href={business.websiteUrl ?? undefined} />
             <Field label="GMB URL" value={business.gmbUrl} href={business.gmbUrl ?? undefined} />
             <Field label="Published (GMB) Address" value={business.publishedAddress} />
@@ -243,7 +242,6 @@ export default function BusinessDetail() {
                     <TableHead>Name</TableHead>
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
-                    <TableHead>Service Category</TableHead>
                     <TableHead>Created By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
                   </TableRow>
@@ -283,7 +281,6 @@ export default function BusinessDetail() {
                             {meta.tier}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm">{c.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-sm">{c.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">

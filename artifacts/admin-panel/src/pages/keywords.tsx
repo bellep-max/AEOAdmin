@@ -718,7 +718,7 @@ export default function Keywords() {
   const [pendingCreate,    setPendingCreate]    = useState<KwRecord | null>(null);
   const [addForBusiness,   setAddForBusiness]   = useState<{ clientId: number; businessId: number } | null>(null);
   const [saving,           setSaving]           = useState(false);
-  const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; serviceCategory: string | null; searchAddress: string | null }[]>([]);
+  const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; searchAddress: string | null }[]>([]);
   const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; publishedAddress: string | null; status: string }[]>([]);
 
   useEffect(() => {
@@ -1297,9 +1297,6 @@ export default function Keywords() {
                                     {plan.name ?? plan.planType}
                                   </Link>
                                   <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.planType}</span>
-                                  {plan.serviceCategory && (
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">· {plan.serviceCategory}</span>
-                                  )}
                                 </>
                               ) : (
                                 <span className="text-sm text-slate-500 dark:text-slate-400 italic">No campaign assigned</span>
