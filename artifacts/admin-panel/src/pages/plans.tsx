@@ -488,7 +488,7 @@ export default function Plans() {
               <TableHead>Answer Presence</TableHead>
               <TableHead>3-Mo Target</TableHead>
               <TableHead>Monthly Budget</TableHead>
-              <TableHead>Schema By</TableHead>
+              <TableHead>Created By</TableHead>
               <TableHead className="w-20 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>

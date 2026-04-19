@@ -241,7 +241,7 @@ export default function BusinessDetail() {
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
-                    <TableHead>Schema By</TableHead>
+                    <TableHead>Created By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>

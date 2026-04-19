@@ -747,7 +747,7 @@ export default function ClientAeoPlans({
                     <TableHead>Tier</TableHead>
                     <TableHead>Service Category</TableHead>
                     <TableHead>Answer Presence</TableHead>
-                    <TableHead>Schema By</TableHead>
+                    <TableHead>Created By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
