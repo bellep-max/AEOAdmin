@@ -54,8 +54,9 @@ interface AuditResponse {
   limit: number;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 const ALL = "__all__";
+const POPOVER_MAX_H = "max-h-[320px]";
 
 export default function SessionsAudit() {
   const [clientId, setClientId] = useState<number | null>(null);
@@ -136,7 +137,7 @@ export default function SessionsAudit() {
                 onValueChange={(v) => { setClientId(v === ALL ? null : Number(v)); setBusinessId(null); setCampaignId(null); setPage(0); }}
               >
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All clients</SelectItem>
                   {(clients ?? []).map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.businessName}</SelectItem>)}
                 </SelectContent>
@@ -150,7 +151,7 @@ export default function SessionsAudit() {
                 disabled={clientId == null}
               >
                 <SelectTrigger><SelectValue placeholder={clientId == null ? "Pick client first" : "All"} /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All businesses</SelectItem>
                   {filteredBusinesses.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
                 </SelectContent>
@@ -164,7 +165,7 @@ export default function SessionsAudit() {
                 disabled={clientId == null}
               >
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All campaigns</SelectItem>
                   {filteredCampaigns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType}</SelectItem>)}
                 </SelectContent>
@@ -174,7 +175,7 @@ export default function SessionsAudit() {
               <Label className="text-xs">Platform</Label>
               <Select value={platform || ALL} onValueChange={(v) => { setPlatform(v === ALL ? "" : v); setPage(0); }}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="Gemini">Gemini</SelectItem>
                   <SelectItem value="ChatGPT">ChatGPT</SelectItem>
@@ -186,7 +187,7 @@ export default function SessionsAudit() {
               <Label className="text-xs">Mode</Label>
               <Select value={mode || ALL} onValueChange={(v) => { setMode(v === ALL ? "" : v); setPage(0); }}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="adb">adb</SelectItem>
                   <SelectItem value="appium">appium</SelectItem>
@@ -197,7 +198,7 @@ export default function SessionsAudit() {
               <Label className="text-xs">Status</Label>
               <Select value={status || ALL} onValueChange={(v) => { setStatus(v === ALL ? "" : v); setPage(0); }}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="error">Error</SelectItem>
