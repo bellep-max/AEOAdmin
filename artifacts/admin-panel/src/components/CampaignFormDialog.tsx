@@ -9,7 +9,6 @@ import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
 const CREATED_BY_OPTIONS = ["Admin", "Sales Representative", "Developer", "Other"];
 
 interface CampaignLike {
@@ -17,7 +16,6 @@ interface CampaignLike {
   name?: string | null;
   planType: string;
   serviceCategory?: string | null;
-  schemaImplementor?: string | null;
   createdBy?: string | null;
   searchAddress?: string | null;
   subscriptionId?: string | null;
@@ -44,7 +42,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   const [planType, setPlanType] = useState("");
   const [serviceCategory, setServiceCategory] = useState("");
   const [searchAddress, setSearchAddress] = useState("");
-  const [schemaImplementor, setSchemaImplementor] = useState("");
   const [createdBy, setCreatedBy] = useState("");
   const [createdByOther, setCreatedByOther] = useState("");
   const [isCreatedByOther, setIsCreatedByOther] = useState(false);
@@ -60,7 +57,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setPlanType(campaign.planType ?? "");
       setServiceCategory(campaign.serviceCategory ?? "");
       setSearchAddress(campaign.searchAddress ?? "");
-      setSchemaImplementor(campaign.schemaImplementor ?? "");
       const cbVal = campaign.createdBy ?? "";
       const isOther = cbVal !== "" && !CREATED_BY_OPTIONS.slice(0, -1).includes(cbVal);
       setIsCreatedByOther(isOther);
@@ -74,7 +70,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setPlanType("");
       setServiceCategory("");
       setSearchAddress("");
-      setSchemaImplementor("");
       setCreatedBy("");
       setCreatedByOther("");
       setIsCreatedByOther(false);
@@ -86,8 +81,8 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   }, [open, campaign]);
 
   async function handleSave() {
-    if (!planType.trim() || !serviceCategory.trim() || !schemaImplementor.trim()) {
-      toast({ title: "Missing required fields", description: "Plan type, service category and schema implementor are required.", variant: "destructive" });
+    if (!planType.trim() || !serviceCategory.trim()) {
+      toast({ title: "Missing required fields", description: "Plan type and service category are required.", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -99,7 +94,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       planType,
       serviceCategory,
       searchAddress: searchAddress.trim() || null,
-      schemaImplementor,
       createdBy: isCreatedByOther ? createdByOther.trim() || null : createdBy || null,
       subscriptionId: subscriptionId.trim() || null,
       subscriptionStartDate: subscriptionStartDate || null,
@@ -182,22 +176,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
                 value={serviceCategory}
                 onChange={(e) => setServiceCategory(e.target.value)}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Schema By <span className="text-red-500">*</span>
-              </Label>
-              <Select value={schemaImplementor} onValueChange={setSchemaImplementor}>
-                <SelectTrigger className="h-10 bg-muted/30">
-                  <SelectValue placeholder="Select implementor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SCHEMA_IMPLEMENTORS.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2">
