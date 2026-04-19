@@ -1,56 +1,130 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { sessionsTable, clientsTable, keywordsTable, devicesTable, proxiesTable } from "@workspace/db/schema";
-import { eq, and, desc, count, avg, sql } from "drizzle-orm";
+import {
+  sessionsTable,
+  clientsTable,
+  businessesTable,
+  clientAeoPlansTable,
+  keywordsTable,
+  devicesTable,
+  proxiesTable,
+} from "@workspace/db/schema";
+import { eq, and, desc, count, sql, gte, lte } from "drizzle-orm";
+import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
 
+/* ────────────────────────────────────────────────────────────
+   GET /api/sessions
+   Daily session log listing with filters + pagination.
+──────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   try {
-    const { clientId, deviceId, aiPlatform, limit = "50", offset = "0" } = req.query as Record<string, string>;
-    const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId) conditions.push(eq(sessionsTable.clientId, parseInt(clientId)));
-    if (deviceId) conditions.push(eq(sessionsTable.deviceId, parseInt(deviceId)));
-    if (aiPlatform) conditions.push(eq(sessionsTable.aiPlatform, aiPlatform));
+    const {
+      clientId,
+      businessId,
+      campaignId,
+      deviceId,
+      platform,
+      status,
+      from,
+      to,
+      limit = "50",
+      offset = "0",
+    } = req.query as Record<string, string>;
+
+    const conditions = [] as ReturnType<typeof eq>[];
+    if (clientId)   conditions.push(eq(sessionsTable.clientId,   parseInt(clientId)));
+    if (businessId) conditions.push(eq(sessionsTable.businessId, parseInt(businessId)));
+    if (campaignId) conditions.push(eq(sessionsTable.campaignId, parseInt(campaignId)));
+    if (deviceId)   conditions.push(eq(sessionsTable.deviceId,   parseInt(deviceId)));
+    if (platform)   conditions.push(eq(sessionsTable.aiPlatform, platform));
+    if (status)     conditions.push(eq(sessionsTable.status,     status));
+    if (from)       conditions.push(gte(sessionsTable.timestamp, new Date(from)));
+    if (to)         conditions.push(lte(sessionsTable.timestamp, new Date(to)));
 
     const lim = Math.min(parseInt(limit), 200);
     const off = parseInt(offset);
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [totalResult] = await db
       .select({ count: count() })
       .from(sessionsTable)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(where);
 
     const sessions = await db
       .select({
-        id: sessionsTable.id,
-        clientId: sessionsTable.clientId,
-        keywordId: sessionsTable.keywordId,
-        deviceId: sessionsTable.deviceId,
-        proxyId: sessionsTable.proxyId,
-        promptText: sessionsTable.promptText,
-        followupText: sessionsTable.followupText,
-        aiPlatform: sessionsTable.aiPlatform,
-        screenshotUrl: sessionsTable.screenshotUrl,
-        timestamp: sessionsTable.timestamp,
-        clientName: clientsTable.businessName,
-        keywordText: keywordsTable.keywordText,
-        deviceIdentifier: devicesTable.deviceIdentifier,
+        id:               sessionsTable.id,
+        clientId:         sessionsTable.clientId,
+        businessId:       sessionsTable.businessId,
+        campaignId:       sessionsTable.campaignId,
+        keywordId:        sessionsTable.keywordId,
+        deviceId:         sessionsTable.deviceId,
+        proxyId:          sessionsTable.proxyId,
+        clientName:       sessionsTable.clientName,
+        bizName:          sessionsTable.bizName,
+        campaignName:     sessionsTable.campaignName,
+        keywordText:      sessionsTable.keywordText,
+        city:             sessionsTable.city,
+        state:            sessionsTable.state,
+        date:             sessionsTable.date,
+        timestamp:        sessionsTable.timestamp,
+        durationSeconds:  sessionsTable.durationSeconds,
+        promptText:       sessionsTable.promptText,
+        followupText:     sessionsTable.followupText,
+        hasFollowUp:      sessionsTable.hasFollowUp,
+        status:           sessionsTable.status,
+        type:             sessionsTable.type,
+        errorClass:       sessionsTable.errorClass,
+        errorMessage:     sessionsTable.errorMessage,
+        aiPlatform:       sessionsTable.aiPlatform,
+        screenshotUrl:    sessionsTable.screenshotUrl,
+        deviceIdentifier: sessionsTable.deviceIdentifier,
+        proxyStatus:      sessionsTable.proxyStatus,
+        proxySessionId:   sessionsTable.proxySessionId,
+        proxyUsername:    sessionsTable.proxyUsername,
+        proxyHost:        sessionsTable.proxyHost,
+        proxyPort:        sessionsTable.proxyPort,
+        proxyIp:          sessionsTable.proxyIp,
+        proxyCity:        sessionsTable.proxyCity,
+        proxyRegion:      sessionsTable.proxyRegion,
+        proxyCountry:     sessionsTable.proxyCountry,
+        proxyZip:         sessionsTable.proxyZip,
+        baseLatitude:     sessionsTable.baseLatitude,
+        baseLongitude:    sessionsTable.baseLongitude,
+        mockedLatitude:   sessionsTable.mockedLatitude,
+        mockedLongitude:  sessionsTable.mockedLongitude,
+        mockedTimezone:   sessionsTable.mockedTimezone,
+        backlinksExpected: sessionsTable.backlinksExpected,
+        backlinkFound:     sessionsTable.backlinkFound,
+        backlinkUrl:       sessionsTable.backlinkUrl,
+        /* joins for denormalized fallback */
+        joinedClientName:    clientsTable.businessName,
+        joinedBusinessName:  businessesTable.name,
+        joinedCampaignName:  clientAeoPlansTable.name,
+        joinedKeywordText:   keywordsTable.keywordText,
       })
       .from(sessionsTable)
-      .leftJoin(clientsTable, eq(sessionsTable.clientId, clientsTable.id))
-      .leftJoin(keywordsTable, eq(sessionsTable.keywordId, keywordsTable.id))
-      .leftJoin(devicesTable, eq(sessionsTable.deviceId, devicesTable.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .leftJoin(clientsTable,        eq(sessionsTable.clientId,   clientsTable.id))
+      .leftJoin(businessesTable,     eq(sessionsTable.businessId, businessesTable.id))
+      .leftJoin(clientAeoPlansTable, eq(sessionsTable.campaignId, clientAeoPlansTable.id))
+      .leftJoin(keywordsTable,       eq(sessionsTable.keywordId,  keywordsTable.id))
+      .where(where)
       .orderBy(desc(sessionsTable.timestamp))
       .limit(lim)
       .offset(off);
 
     res.json({
-      sessions: sessions.map((s) => ({ ...s, durationSeconds: null })),
-      total: Number(totalResult.count),
+      sessions: sessions.map((s) => ({
+        ...s,
+        clientName:   s.clientName   ?? s.joinedClientName   ?? null,
+        bizName:      s.bizName      ?? s.joinedBusinessName ?? null,
+        campaignName: s.campaignName ?? s.joinedCampaignName ?? null,
+        keywordText:  s.keywordText  ?? s.joinedKeywordText  ?? null,
+      })),
+      total:  Number(totalResult.count),
       offset: off,
-      limit: lim,
+      limit:  lim,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching sessions");
@@ -58,24 +132,61 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+/* ────────────────────────────────────────────────────────────
+   POST /api/sessions
+   Accepts executor's payload (mix of FKs and name snapshots).
+──────────────────────────────────────────────────────────── */
+router.post("/", requireExecutorToken, async (req, res) => {
   try {
-    const body = req.body;
+    const body = req.body as Record<string, unknown>;
+    const clientId = body.clientId != null ? Number(body.clientId) : null;
+    if (clientId == null) return res.status(400).json({ error: "clientId is required" });
+
     const [session] = await db
       .insert(sessionsTable)
       .values({
-        clientId: body.clientId,
-        keywordId: body.keywordId ?? null,
-        deviceId: body.deviceId ?? null,
-        proxyId: body.proxyId ?? null,
-        promptText: body.promptText ?? null,
-        followupText: body.followupText ?? null,
-        aiPlatform: body.aiPlatform,
-        screenshotUrl: body.screenshotUrl ?? null,
-        type: body.type ?? "aeo",
-        status: body.status ?? "pending",
-        proxySessionId: body.proxySessionId ?? null,
-        proxyUsername: body.proxyUsername ?? null,
+        clientId,
+        businessId:       body.businessId  != null ? Number(body.businessId)  : null,
+        campaignId:       body.campaignId  != null ? Number(body.campaignId)  : null,
+        keywordId:        body.keywordId   != null ? Number(body.keywordId)   : null,
+        deviceId:         body.deviceId    != null ? Number(body.deviceId)    : null,
+        proxyId:          body.proxyId     != null ? Number(body.proxyId)     : null,
+        clientName:       (body.clientName       as string | null | undefined) ?? null,
+        bizName:          (body.bizName          as string | null | undefined) ?? null,
+        campaignName:     (body.campaignName     as string | null | undefined) ?? null,
+        keywordText:      (body.keywordText      as string | null | undefined) ?? null,
+        city:             (body.city             as string | null | undefined) ?? null,
+        state:            (body.state            as string | null | undefined) ?? null,
+        date:             (body.date             as string | null | undefined) ?? null,
+        durationSeconds:  body.durationSeconds != null ? Number(body.durationSeconds) : null,
+        promptText:       (body.promptText ?? body.prompt) as string | null ?? null,
+        followupText:     (body.followupText ?? body.followUp) as string | null ?? null,
+        hasFollowUp:      Boolean(body.hasFollowUp),
+        status:           (body.status as string) ?? "pending",
+        type:             (body.type   as string) ?? "aeo",
+        errorClass:       (body.errorClass       as string | null | undefined) ?? null,
+        errorMessage:     (body.errorMessage     as string | null | undefined) ?? null,
+        aiPlatform:       (body.aiPlatform ?? body.platform) as string ?? "gemini",
+        screenshotUrl:    (body.screenshotUrl    as string | null | undefined) ?? null,
+        deviceIdentifier: (body.deviceIdentifier as string | null | undefined) ?? null,
+        proxyStatus:      (body.proxyStatus      as string | null | undefined) ?? null,
+        proxySessionId:   (body.proxySessionId   as string | null | undefined) ?? null,
+        proxyUsername:    (body.proxyUsername    as string | null | undefined) ?? null,
+        proxyHost:        (body.proxyHost        as string | null | undefined) ?? null,
+        proxyPort:        body.proxyPort != null ? Number(body.proxyPort) : null,
+        proxyIp:          (body.proxyIp          as string | null | undefined) ?? null,
+        proxyCity:        (body.proxyCity        as string | null | undefined) ?? null,
+        proxyRegion:      (body.proxyRegion      as string | null | undefined) ?? null,
+        proxyCountry:     (body.proxyCountry     as string | null | undefined) ?? null,
+        proxyZip:         (body.proxyZip         as string | null | undefined) ?? null,
+        baseLatitude:     body.baseLatitude    != null ? Number(body.baseLatitude)    : null,
+        baseLongitude:    body.baseLongitude   != null ? Number(body.baseLongitude)   : null,
+        mockedLatitude:   body.mockedLatitude  != null ? Number(body.mockedLatitude)  : null,
+        mockedLongitude:  body.mockedLongitude != null ? Number(body.mockedLongitude) : null,
+        mockedTimezone:   (body.mockedTimezone as string | null | undefined) ?? null,
+        backlinksExpected: body.backlinksExpected != null ? Number(body.backlinksExpected) : null,
+        backlinkFound:     Boolean(body.backlinkFound),
+        backlinkUrl:       (body.backlinkUrl as string | null | undefined) ?? null,
       })
       .returning();
     res.status(201).json(session);
@@ -111,7 +222,7 @@ router.patch("/:id/followup", async (req, res) => {
     }
     const [updated] = await db
       .update(sessionsTable)
-      .set({ followupText: followupText.trim() || null })
+      .set({ followupText: followupText.trim() || null, hasFollowUp: followupText.trim().length > 0 })
       .where(eq(sessionsTable.id, id))
       .returning();
     if (!updated) return res.status(404).json({ error: "Session not found" });
@@ -162,8 +273,8 @@ router.get("/stress-test", async (req, res) => {
     const totalSessions = Number(sessionTotal.count);
     const availableDevices = Number(deviceCount.count);
     const availableProxies = Number(proxyCount.count);
-    const maxSessionsPerDay = availableDevices * 1; // 1 search per device per day per plan
-    const estimatedCapacityPerHour = maxSessionsPerDay / 16; // 16 operating hours
+    const maxSessionsPerDay = availableDevices * 1;
+    const estimatedCapacityPerHour = maxSessionsPerDay / 16;
     const followupRate = totalSessions > 0 ? Number(withFollowup.count) / totalSessions : 0.5;
 
     const platformDistribution = [

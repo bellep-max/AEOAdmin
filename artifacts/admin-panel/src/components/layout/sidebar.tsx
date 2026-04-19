@@ -2,7 +2,11 @@ import {
   Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
   SidebarMenuButton, SidebarRail, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarFooter,
+  SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
 } from "@/components/ui/sidebar";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,28 +17,56 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Key, Trophy, BarChart3, LogOut, Radio, Sun, Moon, ClipboardList, Box, Building2,
+  LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box,
+  Activity, ChevronRight, Calendar, Search,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
+import type { LucideIcon } from "lucide-react";
 
-const navGroups = [
+interface NavItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+interface NavGroupItem extends NavItem {
+  children?: NavItem[];
+}
+
+interface NavGroup {
+  label: string;
+  items: NavGroupItem[];
+}
+
+const navGroups: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { name: "Dashboard", href: "/",         icon: LayoutDashboard },
+      { name: "Dashboard", href: "/", icon: LayoutDashboard },
     ],
   },
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients",              href: "/clients",      icon: Users       },
-      // { name: "Organisation Details", href: "/organization", icon: Building2   },
-      // { name: "Campaigns",            href: "/plans",        icon: ClipboardList },
-      { name: "Keywords",             href: "/keywords",     icon: Key         },
-      { name: "Plans",                href: "/packages",     icon: Box         },
+      { name: "Clients", href: "/clients", icon: Users },
+      { name: "Plans",   href: "/packages", icon: Box   },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      {
+        name: "Sessions",
+        href: "/sessions",
+        icon: Activity,
+        children: [
+          { name: "Daily",          href: "/sessions/daily", icon: Calendar },
+          { name: "Audit Ranking",  href: "/sessions/audit", icon: Search   },
+        ],
+      },
     ],
   },
   {
@@ -87,6 +119,56 @@ export function AppSidebar() {
               <SidebarMenu>
                 {group.items.map((item) => {
                   const active = isActive(item.href);
+                  if (item.children && item.children.length > 0) {
+                    const childActive = item.children.some((c) => isActive(c.href));
+                    const groupOpen = active || childActive;
+                    return (
+                      <Collapsible
+                        key={item.name}
+                        asChild
+                        defaultOpen={groupOpen}
+                        className="group/collapsible"
+                      >
+                        <SidebarMenuItem>
+                          <CollapsibleTrigger asChild>
+                            <SidebarMenuButton
+                              tooltip={item.name}
+                              className={`mx-1 rounded-lg transition-all ${
+                                childActive
+                                  ? "bg-primary/15 text-primary font-medium"
+                                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                              }`}
+                            >
+                              <item.icon className={`w-4 h-4 flex-shrink-0 ${childActive ? "text-primary" : ""}`} />
+                              <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">{item.name}</span>
+                              <ChevronRight className="ml-auto w-4 h-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
+                            </SidebarMenuButton>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
+                            <SidebarMenuSub>
+                              {item.children.map((child) => {
+                                const cActive = isActive(child.href);
+                                return (
+                                  <SidebarMenuSubItem key={child.name}>
+                                    <SidebarMenuSubButton
+                                      asChild
+                                      isActive={cActive}
+                                      className={cActive ? "bg-primary/15 text-primary font-medium" : ""}
+                                    >
+                                      <Link href={child.href} className="flex items-center gap-2">
+                                        <child.icon className={`w-4 h-4 flex-shrink-0 ${cActive ? "text-primary" : ""}`} />
+                                        <span className="text-base font-semibold text-black dark:text-white">{child.name}</span>
+                                      </Link>
+                                    </SidebarMenuSubButton>
+                                  </SidebarMenuSubItem>
+                                );
+                              })}
+                            </SidebarMenuSub>
+                          </CollapsibleContent>
+                        </SidebarMenuItem>
+                      </Collapsible>
+                    );
+                  }
                   return (
                     <SidebarMenuItem key={item.name}>
                       <SidebarMenuButton

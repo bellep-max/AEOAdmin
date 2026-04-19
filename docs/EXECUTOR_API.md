@@ -192,6 +192,246 @@ Updatable fields: `mapsUrl`, `mapsPresence`, `rankingPosition`, `reasonRecommend
 
 ---
 
+### Sessions (Daily session log)
+
+One row per AI session executed by the executor. Surfaces in the admin panel under **Operations → Sessions → Daily**. Mirrors the `sessions_log.<client>.csv` shape from the executor.
+
+#### POST /api/sessions
+
+```bash
+curl -X POST https://jjm59vpn3y.us-east-1.awsapprunner.com/api/sessions \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId": 1,
+    "businessId": 1,
+    "campaignId": 1,
+    "keywordId": 1,
+    "clientName":   "Acme Dental Group",
+    "bizName":      "Acme Dental — Downtown",
+    "campaignName": "Downtown — Growth",
+    "keywordText":  "best dentist downtown san francisco",
+    "city":  "San Francisco",
+    "state": "CA",
+    "date":            "2026-04-20",
+    "durationSeconds": 38.4,
+    "promptText":      "Find a best dentist downtown san francisco",
+    "followupText":    "Are they accepting new patients?",
+    "hasFollowUp":     true,
+    "status":     "success",
+    "type":       "aeo",
+    "errorClass": null,
+    "errorMessage": null,
+    "aiPlatform":   "chatgpt",
+    "screenshotUrl": "https://...",
+    "deviceIdentifier": "device-102",
+    "proxyStatus":    "CONNECTED",
+    "proxySessionId": "decodo-94110-sess1",
+    "proxyUsername":  "decodo-94110-sess1",
+    "proxyHost":      "gate.decodo.com",
+    "proxyPort":      10001,
+    "proxyIp":        "73.231.45.12",
+    "proxyCity":      "San Francisco",
+    "proxyRegion":    "California",
+    "proxyCountry":   "United States",
+    "proxyZip":       "94110",
+    "baseLatitude":     37.7749,
+    "baseLongitude":   -122.4194,
+    "mockedLatitude":   37.7801,
+    "mockedLongitude": -122.4078,
+    "mockedTimezone":   "America/Los_Angeles",
+    "backlinksExpected": 1,
+    "backlinkFound":     true,
+    "backlinkUrl":       "https://acmedental.example/downtown"
+  }'
+```
+
+#### Body fields
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `clientId` | int | **yes** | FK to `clients.id` |
+| `businessId` | int \| null | no | FK to `businesses.id` |
+| `campaignId` | int \| null | no | FK to `client_aeo_plans.id` (the campaign) |
+| `keywordId` | int \| null | no | FK to `keywords.id` |
+| `deviceId` | int \| null | no | FK to `devices.id` (internal pool id, not the ADB serial) |
+| `proxyId` | int \| null | no | FK to `proxies.id` |
+| `clientName` | string \| null | no | Snapshot of client name. Stored alongside the FK so the row stays readable even if the client is renamed/deleted. |
+| `bizName` | string \| null | no | Snapshot of business name. |
+| `campaignName` | string \| null | no | Snapshot of campaign name. |
+| `keywordText` | string \| null | no | Snapshot of keyword text. |
+| `city` | string \| null | no | Business city at run time. |
+| `state` | string \| null | no | Business state at run time. |
+| `date` | string \| null | no | `YYYY-MM-DD` UTC. Defaults to NULL — UI falls back to `timestamp`. |
+| `timestamp` | — | (auto) | Server sets `now()` at insert time. |
+| `durationSeconds` | float \| null | no | Wall-clock seconds for the run. |
+| `promptText` | string \| null | no | First prompt sent to the AI (renamed `prompt` accepted as alias). |
+| `followupText` | string \| null | no | Follow-up prompt if any (renamed `followUp` accepted as alias). |
+| `hasFollowUp` | boolean | no | True if a follow-up was sent. |
+| `status` | string | no (default `pending`) | `success` \| `error` \| `pending`. **When `error`, populate `errorMessage`.** |
+| `type` | string | no (default `aeo`) | `aeo` \| `audit`. Use `aeo` for daily runs; the audit endpoint below is preferred for audit mode. |
+| `errorClass` | string \| null | no | Optional bucket: `captcha`, `timeout`, `geoblock`, etc. |
+| `errorMessage` | string \| null | conditional | Free-text error message. **Required when `status="error"`.** |
+| `aiPlatform` | string | no (default `gemini`) | `gemini` \| `chatgpt` \| `perplexity`. (Alias `platform` is also accepted.) |
+| `screenshotUrl` | string \| null | no | URL or relative path to the screenshot artifact. |
+| `deviceIdentifier` | string \| null | no | Your internal device pool id (e.g. `device-102`). Distinct from the device's ADB serial. |
+| `proxyStatus` | string \| null | no | `CONNECTED` \| `SKIPPED` \| `ERROR`. |
+| `proxySessionId` | string \| null | no | Decodo session token. |
+| `proxyUsername` | string \| null | no | Full Decodo username including session id + zip. |
+| `proxyHost` | string \| null | no | `gate.decodo.com` or gost LAN IP. |
+| `proxyPort` | int \| null | no | `10001` (direct) or `11001+` (via gost). |
+| `proxyIp` | string \| null | no | Exit IP (from `ipinfo.io`). |
+| `proxyCity` / `proxyRegion` / `proxyCountry` / `proxyZip` | string \| null | no | Exit-IP geo metadata. |
+| `baseLatitude` / `baseLongitude` | float \| null | no | Business coordinates pre-randomization. |
+| `mockedLatitude` / `mockedLongitude` | float \| null | no | Actual GPS mock sent to the device (±5 mi random). |
+| `mockedTimezone` | string \| null | no | IANA tz set on device (e.g. `America/Chicago`). |
+| `backlinksExpected` | int \| null | no | Number of backlinks passed to the flow. |
+| `backlinkFound` | boolean | no | True if a configured backlink appeared in the AI response. |
+| `backlinkUrl` | string \| null | no | URL that was clicked. |
+
+#### Response — 201 Created
+
+Returns the inserted row as JSON, including the new `id`. Example:
+
+```json
+{
+  "id": 7,
+  "clientId": 1,
+  "businessId": 1,
+  "campaignId": 1,
+  "keywordId": 1,
+  "status": "success",
+  "aiPlatform": "chatgpt",
+  "timestamp": "2026-04-20T03:21:42.123Z",
+  "...": "...all other fields..."
+}
+```
+
+#### Errors
+
+| Status | Body | Cause |
+|---|---|---|
+| `400` | `{"error":"clientId is required"}` | `clientId` missing |
+| `401` | `{"error":"missing executor token"}` / `{"error":"invalid executor token"}` | Header missing or wrong |
+| `503` | `{"error":"executor token not configured"}` | Server-side `EXECUTOR_TOKEN` env var unset |
+| `500` | `{"error":"Internal server error"}` | Server logged the cause; check `pino` output |
+
+#### GET /api/sessions
+
+Read endpoint used by the admin panel. Useful for executor self-checks too.
+
+Query params (all optional): `clientId`, `businessId`, `campaignId`, `deviceId`, `platform`, `status`, `from` (ISO date/datetime), `to` (ISO), `limit` (default 50, max 200), `offset`.
+
+```bash
+curl 'https://jjm59vpn3y.us-east-1.awsapprunner.com/api/sessions?clientId=1&platform=gemini&status=error&from=2026-04-01&limit=20' \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "sessions": [ /* array of session rows, newest first */ ],
+  "total": 1234,
+  "offset": 0,
+  "limit": 20
+}
+```
+
+---
+
+### Audit Logs (Audit ranking)
+
+One row per keyword × platform audit-mode run. Surfaces in the admin panel under **Operations → Sessions → Audit Ranking**. Mirrors the `audit_results/audit_log.csv` shape.
+
+#### POST /api/audit-logs
+
+```bash
+curl -X POST https://jjm59vpn3y.us-east-1.awsapprunner.com/api/audit-logs \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId":   1,
+    "businessId": 1,
+    "campaignId": 1,
+    "keywordId":  1,
+    "bizName":      "Acme Dental — Downtown",
+    "campaignName": "Downtown — Growth",
+    "keywordText":  "best dentist downtown san francisco",
+    "platform":        "Gemini",
+    "mode":            "adb",
+    "device":          "adb-14914555208W005-27c1FH",
+    "status":          "success",
+    "durationSeconds": 27.0,
+    "rankPosition": 2,
+    "rankTotal":    8,
+    "mentioned":    "yes",
+    "rankContext":  "Acme Dental Group ranked among the top emergency dentists",
+    "screenshotPath": "audit_results/Gemini/1_aud_20260420.png",
+    "responseText":   "audit_results/text/1_Gemini.txt",
+    "prompt":         "Find best dentist downtown san francisco; recommend the top providers in this area.",
+    "error":          null,
+    "proxyUsername": "decodo-94110-sess1",
+    "proxyIp":       "73.231.45.12",
+    "proxyCity":     "San Francisco",
+    "proxyRegion":   "California",
+    "proxyZip":      "94110"
+  }'
+```
+
+#### Body fields
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `clientId` | int \| null | recommended | FK to `clients.id` |
+| `businessId` | int \| null | no | FK to `businesses.id` |
+| `campaignId` | int \| null | no | FK to `client_aeo_plans.id` |
+| `keywordId` | int \| null | no | FK to `keywords.id` |
+| `deviceId` | int \| null | no | FK to `devices.id` |
+| `bizName` / `campaignName` / `keywordText` | string \| null | no | Snapshot strings (kept even if FKs go stale) |
+| `platform` | string | no | `Gemini` \| `ChatGPT` \| `Perplexity` (capitalised — matches CSV) |
+| `mode` | string | no | `adb` \| `appium` |
+| `device` | string \| null | no | ADB serial (truncated to 40 chars). The numeric pool id goes in `deviceId`. |
+| `status` | string \| null | no | `success` \| `error`. **When `error`, populate `error`.** |
+| `durationSeconds` | float \| null | no | Session wall time. |
+| `rankPosition` | int \| null | no | Parsed position from `[RANK: X/Y]`. |
+| `rankTotal` | int \| null | no | Parsed total from `[RANK: X/Y]`. |
+| `mentioned` | string \| null | no | `"yes"` if the business was mentioned, else `""`. |
+| `rankContext` | string \| null | no | Snippet around the ranking mention (max 100 chars). |
+| `screenshotPath` | string \| null | no | Relative path to the screenshot artifact (alias `screenshot` accepted). |
+| `responseText` | string \| null | no | Relative path to the saved response text. |
+| `prompt` | string \| null | no | Literal prompt sent to the AI (rendered from the template). |
+| `error` | string \| null | conditional | Error message. **Required when `status="error"`** (max ~200 chars). |
+| `proxyUsername` | string \| null | no | Decodo username. |
+| `proxyIp` | string \| null | no | Exit IP. |
+| `proxyCity` / `proxyRegion` / `proxyZip` | string \| null | no | Exit-IP geo metadata. |
+
+#### Response — 201 Created
+
+Returns the inserted row as JSON.
+
+#### GET /api/audit-logs
+
+Query params: `clientId`, `businessId`, `campaignId`, `keywordId`, `platform`, `mode`, `status`, `from`, `to`, `limit`, `offset`.
+
+```bash
+curl 'https://jjm59vpn3y.us-east-1.awsapprunner.com/api/audit-logs?clientId=1&platform=Gemini&status=error&from=2026-04-01' \
+  -H "X-Executor-Token: $EXECUTOR_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "logs": [ /* array of audit rows, newest first */ ],
+  "total": 248,
+  "offset": 0,
+  "limit": 50
+}
+```
+
+---
+
 ### Delete Endpoints
 
 All delete endpoints return `{ ok: true, deleted: {...} }` on success, `404` if the id does not exist.

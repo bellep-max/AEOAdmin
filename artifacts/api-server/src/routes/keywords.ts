@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { keywordsTable, keywordLinksTable } from "@workspace/db/schema";
+import { keywordsTable, keywordLinksTable, clientAeoPlansTable } from "@workspace/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
 const router = Router();
@@ -72,15 +72,32 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const body = req.body;
-    if (!body.clientId || !body.keywordText?.trim()) {
-      return res.status(400).json({ error: "clientId and keywordText are required" });
+    if (!body.keywordText?.trim()) {
+      return res.status(400).json({ error: "keywordText is required" });
     }
+    if (body.aeoPlanId == null) {
+      return res.status(400).json({ error: "aeoPlanId (campaign) is required — keywords must belong to a campaign" });
+    }
+
+    const [plan] = await db
+      .select()
+      .from(clientAeoPlansTable)
+      .where(eq(clientAeoPlansTable.id, Number(body.aeoPlanId)));
+    if (!plan) return res.status(400).json({ error: "aeoPlanId does not reference an existing campaign" });
+
+    if (body.clientId != null && Number(body.clientId) !== plan.clientId) {
+      return res.status(400).json({ error: "clientId does not match the campaign's client" });
+    }
+    if (body.businessId != null && plan.businessId != null && Number(body.businessId) !== plan.businessId) {
+      return res.status(400).json({ error: "businessId does not match the campaign's business" });
+    }
+
     const [keyword] = await db
       .insert(keywordsTable)
       .values({
-        clientId: Number(body.clientId),
-        businessId: body.businessId != null ? Number(body.businessId) : null,
-        aeoPlanId: body.aeoPlanId != null ? Number(body.aeoPlanId) : null,
+        clientId: plan.clientId,
+        businessId: plan.businessId,
+        aeoPlanId: plan.id,
         keywordText: body.keywordText.trim(),
         keywordType: body.keywordType ? Number(body.keywordType) : 3,
         isActive:   body.isActive !== false,
