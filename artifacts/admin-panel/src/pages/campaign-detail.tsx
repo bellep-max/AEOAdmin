@@ -48,6 +48,9 @@ interface Keyword {
   keywordText: string;
   isActive: boolean | null;
   keywordType: number | null;
+  isPrimary?: number | null;
+  links?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
 }
 
 interface Business {
@@ -357,16 +360,13 @@ export default function CampaignDetail() {
             <Plus className="w-3.5 h-3.5" /> Add Keyword
           </Button>
         }
-        onEditKeyword={async (id) => {
-          // Fetch full keyword (including links) so the edit dialog can pre-populate backlink fields
-          try {
-            const res = await rawFetch(`/api/keywords/${id}`);
-            if (!res.ok) throw new Error();
-            const full = await res.json();
-            setEditingKw(full as KwRecord);
-          } catch {
-            toast({ title: "Failed to load keyword", variant: "destructive" });
+        onEditKeyword={(id) => {
+          const kw = (keywords ?? []).find((k) => k.id === id);
+          if (!kw) {
+            toast({ title: "Keyword not found", variant: "destructive" });
+            return;
           }
+          setEditingKw(kw as unknown as KwRecord);
         }}
         onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
         extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
