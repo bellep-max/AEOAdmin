@@ -71,6 +71,7 @@ router.post("/", async (req, res) => {
         websiteUrl: body.websiteUrl ?? null,
         category: body.category ?? null,
         publishedAddress: body.publishedAddress ?? null,
+        zipCode: body.zipCode ?? null,
         city: body.city ?? null,
         state: body.state ?? null,
         country: body.country ?? null,

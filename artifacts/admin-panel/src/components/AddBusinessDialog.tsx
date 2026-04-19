@@ -15,6 +15,7 @@ const schema = z.object({
   gmbUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   websiteUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   publishedAddress: z.string().max(200).optional().or(z.literal("")),
+  zipCode: z.string().max(20).optional().or(z.literal("")),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -26,6 +27,7 @@ interface BusinessLike {
   gmbUrl?: string | null;
   websiteUrl?: string | null;
   publishedAddress?: string | null;
+  zipCode?: string | null;
 }
 
 interface AddBusinessDialogProps {
@@ -52,6 +54,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: "",
       websiteUrl: "",
       publishedAddress: "",
+      zipCode: "",
     },
   });
 
@@ -67,6 +70,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
         gmbUrl: business.gmbUrl ?? "",
         websiteUrl: business.websiteUrl ?? "",
         publishedAddress: business.publishedAddress ?? "",
+        zipCode: business.zipCode ?? "",
       });
     }
   }, [open, business, form]);
@@ -82,6 +86,7 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: values.gmbUrl || null,
       websiteUrl: values.websiteUrl || null,
       publishedAddress: values.publishedAddress || null,
+      zipCode: values.zipCode || null,
     };
     try {
       const url = isEdit ? `${BASE}/api/businesses/${business!.id}` : `${BASE}/api/businesses`;
@@ -176,6 +181,19 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
                   <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Published (GMB) Address</FormLabel>
                   <FormControl>
                     <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="zipCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Zip Code</FormLabel>
+                  <FormControl>
+                    <Input placeholder="78701" className="h-11 text-base text-black bg-slate-50" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

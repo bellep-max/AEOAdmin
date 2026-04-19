@@ -13,6 +13,7 @@ export const businessesTable = pgTable("businesses", {
   websiteUrl: text("website_url"),
   category: text("category"),
   publishedAddress: text("published_address"),
+  zipCode: text("zip_code"),
   city: text("city"),
   state: text("state"),
   country: text("country"),
