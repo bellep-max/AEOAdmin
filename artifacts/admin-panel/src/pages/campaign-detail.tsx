@@ -41,6 +41,7 @@ interface Campaign {
   subscriptionStartDate: string | null;
   nextBillingDate: string | null;
   cardLast4: string | null;
+  createdBy: string | null;
 }
 
 interface Keyword {
@@ -314,6 +315,7 @@ export default function CampaignDetail() {
             <Field label="Search Boost Target" value={campaign.searchBoostTarget} />
             <Field label="Monthly AEO Budget" value={campaign.monthlyAeoBudget} />
             <Field label="Schema Implementor" value={campaign.schemaImplementor} />
+            <Field label="Created By" value={campaign.createdBy} />
           </div>
         </CardContent>
       </Card>
