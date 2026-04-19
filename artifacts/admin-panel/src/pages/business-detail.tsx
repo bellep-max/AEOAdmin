@@ -39,6 +39,7 @@ interface Business {
   placeId?: string | null;
   status: "active" | "inactive";
   notes?: string | null;
+  createdBy?: string | null;
   createdAt?: string;
 }
 
@@ -54,6 +55,7 @@ interface CampaignRow {
   serviceCategory: string | null;
   searchAddress: string | null;
   schemaImplementor: string | null;
+  createdBy: string | null;
   keywordCount?: number;
 }
 
@@ -209,6 +211,7 @@ export default function BusinessDetail() {
             <Field label="State" value={business.state} />
             <Field label="Country" value={business.country} />
             <Field label="Place ID" value={business.placeId} />
+            <Field label="Created By" value={business.createdBy} />
           </div>
         </CardContent>
       </Card>
@@ -281,7 +284,7 @@ export default function BusinessDetail() {
                           </span>
                         </TableCell>
                         <TableCell className="text-sm">{c.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-sm">{c.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                        <TableCell className="text-sm">{c.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <Button
