@@ -145,9 +145,9 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="category"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Category</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Service Category</FormLabel>
                   <FormControl>
-                    <Input placeholder="Dentist, Plumber, etc." className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input placeholder="Airport Black Car Service, Dentist, Plumber, etc." className="h-11 text-base text-black bg-slate-50" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

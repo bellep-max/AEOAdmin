@@ -36,7 +36,6 @@ interface AeoPlan {
   name: string | null;
   businessName: string | null;
   planType: string;
-  serviceCategory: string | null;
   sampleQuestion1: string | null;
   sampleQuestion2: string | null;
   sampleQuestion3: string | null;
@@ -56,6 +55,7 @@ interface AeoPlan {
   subscriptionStartDate: string | null;
   nextBillingDate: string | null;
   cardLast4: string | null;
+  createdBy: string | null;
 }
 
 interface ClientInfo {
@@ -98,7 +98,6 @@ const EMPTY_FORM: PlanFormData = {
   name: "",
   businessName: "",
   planType: "",
-  serviceCategory: "",
   sampleQuestion1: "",
   sampleQuestion2: "",
   sampleQuestion3: "",
@@ -213,22 +212,6 @@ function PlanForm({
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        {/* Service Category */}
-        <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Service Category <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            className={`h-10 bg-muted/30 border-border/60 ${errors.serviceCategory ? "border-red-500" : ""}`}
-            placeholder="e.g. Airport Black Car Service"
-            value={values.serviceCategory ?? ""}
-            onChange={(e) => set("serviceCategory", e.target.value)}
-          />
-          {errors.serviceCategory && (
-            <p className="text-xs text-red-500 mt-1">{errors.serviceCategory}</p>
-          )}
         </div>
 
       </div>
@@ -563,7 +546,6 @@ export default function ClientAeoPlans({
       name:                  plan.name,
       businessName:          plan.businessName,
       planType:              plan.planType,
-      serviceCategory:       plan.serviceCategory,
       sampleQuestion1:       plan.sampleQuestion1,
       sampleQuestion2:       plan.sampleQuestion2,
       sampleQuestion3:       plan.sampleQuestion3,
@@ -601,11 +583,6 @@ export default function ClientAeoPlans({
     }
     if (!formData.planType?.trim()) {
       errors.planType = "Plan type is required";
-    }
-    if (!formData.serviceCategory?.trim()) {
-      errors.serviceCategory = "Service category is required (e.g. Airport Black Car Service)";
-    } else if (formData.serviceCategory.length > 200) {
-      errors.serviceCategory = "Service category cannot exceed 200 characters";
     }
     if (!formData.schemaImplementor?.trim()) {
       errors.schemaImplementor = "Please select who implements the schema";
@@ -675,7 +652,6 @@ export default function ClientAeoPlans({
 
   function handleCancelClick() {
     const hasData =
-      (formData.serviceCategory?.trim()) ||
       (formData.searchAddress?.trim()) ||
       (formData.schemaImplementor?.trim()) ||
       (formData.planType?.trim());
@@ -745,7 +721,6 @@ export default function ClientAeoPlans({
                     <TableHead>Business</TableHead>
                     <TableHead>Plan Type</TableHead>
                     <TableHead>Tier</TableHead>
-                    <TableHead>Service Category</TableHead>
                     <TableHead>Answer Presence</TableHead>
                     <TableHead>Created By</TableHead>
                     <TableHead className="w-20 text-right">Actions</TableHead>
@@ -802,9 +777,8 @@ export default function ClientAeoPlans({
                               {meta.tier}
                             </span>
                           </TableCell>
-                          <TableCell className="text-sm">{plan.serviceCategory ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                          <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
+                          <TableCell className="text-sm">{plan.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1">
                               <Button

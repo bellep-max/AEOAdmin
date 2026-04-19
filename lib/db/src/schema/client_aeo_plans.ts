@@ -11,7 +11,6 @@ export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   name:                   text("name"),
   businessName:           text("business_name"),
   planType:               text("plan_type").notNull(),          // e.g. "Starter", "Growth", "Pro", or custom
-  serviceCategory:        text("service_category"),
   sampleQuestion1:        text("sample_question_1"),
   sampleQuestion2:        text("sample_question_2"),
   sampleQuestion3:        text("sample_question_3"),

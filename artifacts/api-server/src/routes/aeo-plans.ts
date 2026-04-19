@@ -30,7 +30,6 @@ router.get("/", async (req, res) => {
         clientBusinessName:     clientsTable.businessName,
         businessName:           clientAeoPlansTable.businessName,
         planType:               clientAeoPlansTable.planType,
-        serviceCategory:        clientAeoPlansTable.serviceCategory,
         sampleQuestion1:        clientAeoPlansTable.sampleQuestion1,
         sampleQuestion2:        clientAeoPlansTable.sampleQuestion2,
         sampleQuestion3:        clientAeoPlansTable.sampleQuestion3,

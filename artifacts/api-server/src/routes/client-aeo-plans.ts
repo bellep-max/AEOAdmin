@@ -88,7 +88,6 @@ router.post("/", async (req, res) => {
         name:                  (body.name                  as string)  ?? null,
         businessName:          (body.businessName          as string)  ?? null,
         planType:              body.planType               as string,
-        serviceCategory:       (body.serviceCategory       as string)  ?? null,
         sampleQuestion1:       (body.sampleQuestion1       as string)  ?? null,
         sampleQuestion2:       (body.sampleQuestion2       as string)  ?? null,
         sampleQuestion3:       (body.sampleQuestion3       as string)  ?? null,
@@ -135,7 +134,7 @@ router.patch("/:planId", async (req, res) => {
     if ("businessId" in body) update.businessId = body.businessId != null ? Number(body.businessId) : null;
 
     const fields = [
-      "name", "businessName", "planType", "serviceCategory",
+      "name", "businessName", "planType",
       "sampleQuestion1", "sampleQuestion2", "sampleQuestion3", "sampleQuestion4",
       "sampleQuestion5", "sampleQuestion6", "sampleQuestion7", "sampleQuestion8",
       "sampleQuestion9", "sampleQuestion10", "currentAnswerPresence",
