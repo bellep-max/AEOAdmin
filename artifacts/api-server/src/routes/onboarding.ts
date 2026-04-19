@@ -18,7 +18,7 @@ interface OnboardingBody {
   gmbUrl?: string | null;
   businessAddress?: string | null;
   keywords: string[];
-  recurlySubscriptionId: string;
+  subscriptionId: string;
 }
 
 function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: false; error: string } {
@@ -31,7 +31,7 @@ function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: fals
     return { ok: false, error: "customerEmail is not a valid email" };
   }
   if (!isStr(r.businessName))           return { ok: false, error: "businessName is required" };
-  if (!isStr(r.recurlySubscriptionId))  return { ok: false, error: "recurlySubscriptionId is required" };
+  if (!isStr(r.subscriptionId))  return { ok: false, error: "subscriptionId is required" };
   if (!Array.isArray(r.keywords) || r.keywords.length === 0 || !r.keywords.every(isStr)) {
     return { ok: false, error: "keywords must be a non-empty array of strings" };
   }
@@ -50,7 +50,7 @@ function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: fals
       gmbUrl:                typeof r.gmbUrl === "string" && r.gmbUrl.trim() ? r.gmbUrl.trim() : null,
       businessAddress:       typeof r.businessAddress === "string" && r.businessAddress.trim() ? r.businessAddress.trim() : null,
       keywords:              (r.keywords as string[]).map((k) => k.trim()).filter((k) => k.length > 0),
-      recurlySubscriptionId: (r.recurlySubscriptionId as string).trim(),
+      subscriptionId: (r.subscriptionId as string).trim(),
     },
   };
 }
@@ -71,7 +71,7 @@ router.post("/", requireOnboardingToken, async (req, res) => {
         businessId: clientAeoPlansTable.businessId,
       })
       .from(clientAeoPlansTable)
-      .where(eq(clientAeoPlansTable.subscriptionId, body.recurlySubscriptionId))
+      .where(eq(clientAeoPlansTable.subscriptionId, body.subscriptionId))
       .limit(1);
 
     if (existingPlan.length > 0) {
@@ -122,7 +122,7 @@ router.post("/", requireOnboardingToken, async (req, res) => {
           businessId: business.id,
           name: "Onboarding",
           planType: "Onboarding",
-          subscriptionId: body.recurlySubscriptionId,
+          subscriptionId: body.subscriptionId,
           searchAddress: body.businessAddress || null,
         })
         .returning({ id: clientAeoPlansTable.id });
