@@ -15,7 +15,6 @@ interface CampaignLike {
   id: number;
   name?: string | null;
   planType: string;
-  serviceCategory?: string | null;
   createdBy?: string | null;
   searchAddress?: string | null;
   subscriptionId?: string | null;
@@ -40,7 +39,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   const isEdit = !!campaign;
 
   const [planType, setPlanType] = useState("");
-  const [serviceCategory, setServiceCategory] = useState("");
   const [searchAddress, setSearchAddress] = useState("");
   const [createdBy, setCreatedBy] = useState("");
   const [createdByOther, setCreatedByOther] = useState("");
@@ -55,7 +53,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
     if (!open) return;
     if (campaign) {
       setPlanType(campaign.planType ?? "");
-      setServiceCategory(campaign.serviceCategory ?? "");
       setSearchAddress(campaign.searchAddress ?? "");
       const cbVal = campaign.createdBy ?? "";
       const isOther = cbVal !== "" && !CREATED_BY_OPTIONS.slice(0, -1).includes(cbVal);
@@ -68,7 +65,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setCardLast4(campaign.cardLast4 ?? "");
     } else {
       setPlanType("");
-      setServiceCategory("");
       setSearchAddress("");
       setCreatedBy("");
       setCreatedByOther("");
@@ -81,8 +77,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   }, [open, campaign]);
 
   async function handleSave() {
-    if (!planType.trim() || !serviceCategory.trim()) {
-      toast({ title: "Missing required fields", description: "Plan type and service category are required.", variant: "destructive" });
+    const effectiveCreatedBy = isCreatedByOther ? createdByOther.trim() : createdBy;
+    if (!planType.trim() || !effectiveCreatedBy) {
+      toast({ title: "Missing required fields", description: "Plan type and created by are required.", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -92,7 +89,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       businessName: businessName ?? null,
       name: autoName || null,
       planType,
-      serviceCategory,
       searchAddress: searchAddress.trim() || null,
       createdBy: isCreatedByOther ? createdByOther.trim() || null : createdBy || null,
       subscriptionId: subscriptionId.trim() || null,
@@ -168,19 +164,7 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
 
             <div className="space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Service Category <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                className="h-10 bg-muted/30"
-                placeholder="e.g. Childcare"
-                value={serviceCategory}
-                onChange={(e) => setServiceCategory(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Created By
+                Created By <span className="text-red-500">*</span>
               </Label>
               {!isCreatedByOther ? (
                 <Select
