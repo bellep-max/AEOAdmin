@@ -15,9 +15,6 @@ const schema = z.object({
   gmbUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   websiteUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
   publishedAddress: z.string().max(200).optional().or(z.literal("")),
-  city: z.string().max(100).optional().or(z.literal("")),
-  state: z.string().max(100).optional().or(z.literal("")),
-  country: z.string().max(100).optional().or(z.literal("")),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -29,9 +26,6 @@ interface BusinessLike {
   gmbUrl?: string | null;
   websiteUrl?: string | null;
   publishedAddress?: string | null;
-  city?: string | null;
-  state?: string | null;
-  country?: string | null;
 }
 
 interface AddBusinessDialogProps {
@@ -58,9 +52,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: "",
       websiteUrl: "",
       publishedAddress: "",
-      city: "",
-      state: "",
-      country: "",
     },
   });
 
@@ -76,9 +67,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
         gmbUrl: business.gmbUrl ?? "",
         websiteUrl: business.websiteUrl ?? "",
         publishedAddress: business.publishedAddress ?? "",
-        city: business.city ?? "",
-        state: business.state ?? "",
-        country: business.country ?? "",
       });
     }
   }, [open, business, form]);
@@ -94,9 +82,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       gmbUrl: values.gmbUrl || null,
       websiteUrl: values.websiteUrl || null,
       publishedAddress: values.publishedAddress || null,
-      city: values.city || null,
-      state: values.state || null,
-      country: values.country || null,
     };
     try {
       const url = isEdit ? `${BASE}/api/businesses/${business!.id}` : `${BASE}/api/businesses`;
@@ -196,48 +181,6 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-3 gap-3">
-              <FormField
-                control={form.control}
-                name="city"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">City</FormLabel>
-                    <FormControl>
-                      <Input className="h-11 text-base text-black bg-slate-50" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="state"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">State</FormLabel>
-                    <FormControl>
-                      <Input className="h-11 text-base text-black bg-slate-50" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="country"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Country</FormLabel>
-                    <FormControl>
-                      <Input className="h-11 text-base text-black bg-slate-50" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
             <div className="pt-4 flex justify-end gap-2 sticky bottom-0 bg-white">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
