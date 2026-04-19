@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box,
+  LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box, Key,
   Activity, ChevronRight, Calendar, Search,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
@@ -51,8 +51,9 @@ const navGroups: NavGroup[] = [
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients", href: "/clients", icon: Users },
-      { name: "Plans",   href: "/packages", icon: Box   },
+      { name: "Clients",  href: "/clients",  icon: Users },
+      { name: "Keywords", href: "/keywords", icon: Key   },
+      { name: "Plans",    href: "/packages", icon: Box   },
     ],
   },
   {

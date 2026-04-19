@@ -68,8 +68,9 @@ interface SessionsResponse {
   limit: number;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 const ALL = "__all__";
+const POPOVER_MAX_H = "max-h-[320px]";
 
 export default function SessionsDaily() {
   const [clientId, setClientId] = useState<number | null>(null);
@@ -148,7 +149,7 @@ export default function SessionsDaily() {
                 onValueChange={(v) => { setClientId(v === ALL ? null : Number(v)); setBusinessId(null); setCampaignId(null); setPage(0); }}
               >
                 <SelectTrigger><SelectValue placeholder="All clients" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All clients</SelectItem>
                   {(clients ?? []).map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.businessName}</SelectItem>)}
                 </SelectContent>
@@ -162,7 +163,7 @@ export default function SessionsDaily() {
                 disabled={clientId == null}
               >
                 <SelectTrigger><SelectValue placeholder={clientId == null ? "Pick client first" : "All businesses"} /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All businesses</SelectItem>
                   {filteredBusinesses.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
                 </SelectContent>
@@ -176,7 +177,7 @@ export default function SessionsDaily() {
                 disabled={clientId == null}
               >
                 <SelectTrigger><SelectValue placeholder="All campaigns" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All campaigns</SelectItem>
                   {filteredCampaigns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType}</SelectItem>)}
                 </SelectContent>
@@ -186,7 +187,7 @@ export default function SessionsDaily() {
               <Label className="text-xs">Platform</Label>
               <Select value={platform || ALL} onValueChange={(v) => { setPlatform(v === ALL ? "" : v); setPage(0); }}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All platforms</SelectItem>
                   <SelectItem value="gemini">Gemini</SelectItem>
                   <SelectItem value="chatgpt">ChatGPT</SelectItem>
@@ -198,7 +199,7 @@ export default function SessionsDaily() {
               <Label className="text-xs">Status</Label>
               <Select value={status || ALL} onValueChange={(v) => { setStatus(v === ALL ? "" : v); setPage(0); }}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="error">Error</SelectItem>
@@ -250,13 +251,12 @@ export default function SessionsDaily() {
                     <TableHead>Platform</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Duration</TableHead>
-                    <TableHead>Proxy</TableHead>
                     <TableHead>Backlink</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(data?.sessions ?? []).length === 0 ? (
-                    <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No sessions match these filters.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No sessions match these filters.</TableCell></TableRow>
                   ) : (data?.sessions ?? []).map((s) => (
                     <TableRow key={s.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpen(s)}>
                       <TableCell className="whitespace-nowrap text-xs">{fmtDateTime(s.timestamp)}</TableCell>
@@ -267,8 +267,7 @@ export default function SessionsDaily() {
                       <TableCell><Badge variant="secondary">{s.aiPlatform}</Badge></TableCell>
                       <TableCell><Badge className={statusBadgeClass(s.status)}>{s.status}</Badge></TableCell>
                       <TableCell className="text-sm">{fmtDuration(s.durationSeconds)}</TableCell>
-                      <TableCell className="text-xs">{[s.proxyCity, s.proxyRegion].filter(Boolean).join(", ") || "—"}</TableCell>
-                      <TableCell><Badge variant={s.backlinkFound ? "default" : "outline"}>{fmtBool(s.backlinkFound)}</Badge></TableCell>
+                      <TableCell>{renderBacklink(s.backlinksExpected, s.backlinkFound)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -357,6 +356,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{title}</h3>
       <div className="space-y-1">{children}</div>
     </div>
+  );
+}
+
+function renderBacklink(expected: number | null, found: boolean) {
+  if (expected == null || expected === 0) {
+    return <span className="text-xs text-muted-foreground" title="No backlinks configured for this keyword">—</span>;
+  }
+  return (
+    <Badge
+      variant={found ? "default" : "outline"}
+      title={found ? "AI response contained a configured backlink URL" : "Backlink configured but not mentioned in the AI response"}
+    >
+      {found ? "Yes" : "No"}
+    </Badge>
   );
 }
 
