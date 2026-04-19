@@ -20,6 +20,8 @@ import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
 import Packages from "@/pages/packages";
+import SessionsDaily from "@/pages/sessions-daily";
+import SessionsAudit from "@/pages/sessions-audit";
 // import OrganizationDetails from "@/pages/organization-details";
 
 const queryClient = new QueryClient();
@@ -55,6 +57,8 @@ function ProtectedRoutes() {
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
         <Route path="/packages" component={Packages} />
+        <Route path="/sessions/daily" component={SessionsDaily} />
+        <Route path="/sessions/audit" component={SessionsAudit} />
         {/* <Route path="/organization" component={OrganizationDetails} /> */}
         <Route path="/profile" component={Profile} />
         <Route component={NotFound} />
