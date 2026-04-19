@@ -44,6 +44,28 @@ router.get("/", async (req, res) => {
 });
 
 /* ────────────────────────────────────────────────────────────
+   GET /api/keywords/:id
+   Returns a single keyword with its links inline
+──────────────────────────────────────────────────────────── */
+router.get("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [kw] = await db.select().from(keywordsTable).where(eq(keywordsTable.id, id));
+    if (!kw) return res.status(404).json({ error: "Not found" });
+    const links = await db
+      .select()
+      .from(keywordLinksTable)
+      .where(eq(keywordLinksTable.keywordId, id))
+      .orderBy(keywordLinksTable.createdAt);
+    res.json({ ...kw, links });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching keyword");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
    POST /api/keywords
    Create a new keyword for a business
 ──────────────────────────────────────────────────────────── */
