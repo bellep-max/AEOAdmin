@@ -4,7 +4,7 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://isobel-bendable-unpurely.ngrok-free.dev/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://jjm59vpn3y.us-east-1.awsapprunner.com/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
