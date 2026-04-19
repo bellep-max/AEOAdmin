@@ -83,6 +83,7 @@ router.post("/", async (req, res) => {
         websiteLinkedOnGmb: body.websiteLinkedOnGmb ?? null,
         status: body.status ?? "active",
         notes: body.notes ?? null,
+        createdBy: body.createdBy ?? null,
       })
       .returning();
     res.status(201).json(business);

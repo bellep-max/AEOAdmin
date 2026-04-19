@@ -26,6 +26,7 @@ export const businessesTable = pgTable("businesses", {
   websiteLinkedOnGmb: text("website_linked_on_gmb"),
   status: businessStatusEnum("status").notNull().default("active"),
   notes: text("notes"),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

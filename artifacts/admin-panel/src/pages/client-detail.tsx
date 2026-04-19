@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { CreatedByField } from "@/components/CreatedByField";
 import {
   ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
   Mail, User, CalendarDays,
@@ -1070,12 +1071,34 @@ function EditAccDialog({
               (key) => key !== 'createdBy' && vals[key] !== initValues[key]
             );
             
+            if (f.key === "createdBy") {
+              return (
+                <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+                  <CreatedByField
+                    value={vals.createdBy ?? ""}
+                    onChange={(v) => {
+                      setVals((p) => ({ ...p, createdBy: v }));
+                      if (errors.createdBy) {
+                        setErrors((p) => {
+                          const { createdBy: _, ...rest } = p;
+                          return rest;
+                        });
+                      }
+                    }}
+                    required={hasChanges}
+                    error={errors.createdBy ?? null}
+                    labelClassName="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                  />
+                  {!hasChanges && !errors.createdBy && (
+                    <p className="text-[11px] text-muted-foreground">Optional unless you changed something else.</p>
+                  )}
+                </div>
+              );
+            }
             return (
               <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {f.label}
-                  {f.key === "createdBy" && hasChanges && <span className="text-red-500 ml-1">*</span>}
-                  {f.key === "createdBy" && !hasChanges && <span className="text-muted-foreground ml-1 text-xs">(optional)</span>}
                 </Label>
               {f.dropdown ? (
                 <Select

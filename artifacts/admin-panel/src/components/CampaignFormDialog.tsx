@@ -6,10 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
+import { CreatedByField } from "./CreatedByField";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-
-const CREATED_BY_OPTIONS = ["Admin", "Sales Representative", "Developer", "Other"];
 
 interface CampaignLike {
   id: number;
@@ -41,8 +40,7 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   const [planType, setPlanType] = useState("");
   const [searchAddress, setSearchAddress] = useState("");
   const [createdBy, setCreatedBy] = useState("");
-  const [createdByOther, setCreatedByOther] = useState("");
-  const [isCreatedByOther, setIsCreatedByOther] = useState(false);
+  const [createdByError, setCreatedByError] = useState<string | null>(null);
   const [subscriptionId, setSubscriptionId] = useState("");
   const [subscriptionStartDate, setSubscriptionStartDate] = useState("");
   const [nextBillingDate, setNextBillingDate] = useState("");
@@ -51,14 +49,11 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
 
   useEffect(() => {
     if (!open) return;
+    setCreatedByError(null);
     if (campaign) {
       setPlanType(campaign.planType ?? "");
       setSearchAddress(campaign.searchAddress ?? "");
-      const cbVal = campaign.createdBy ?? "";
-      const isOther = cbVal !== "" && !CREATED_BY_OPTIONS.slice(0, -1).includes(cbVal);
-      setIsCreatedByOther(isOther);
-      setCreatedBy(isOther ? "Other" : cbVal);
-      setCreatedByOther(isOther ? cbVal : "");
+      setCreatedBy(campaign.createdBy ?? "");
       setSubscriptionId(campaign.subscriptionId ?? "");
       setSubscriptionStartDate(campaign.subscriptionStartDate ?? "");
       setNextBillingDate(campaign.nextBillingDate ?? "");
@@ -67,8 +62,6 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setPlanType("");
       setSearchAddress("");
       setCreatedBy("");
-      setCreatedByOther("");
-      setIsCreatedByOther(false);
       setSubscriptionId("");
       setSubscriptionStartDate("");
       setNextBillingDate("");
@@ -77,9 +70,15 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   }, [open, campaign]);
 
   async function handleSave() {
-    const effectiveCreatedBy = isCreatedByOther ? createdByOther.trim() : createdBy;
-    if (!planType.trim() || !effectiveCreatedBy) {
-      toast({ title: "Missing required fields", description: "Plan type and created by are required.", variant: "destructive" });
+    const trimmedCreatedBy = createdBy.trim();
+    setCreatedByError(null);
+    if (!trimmedCreatedBy) {
+      setCreatedByError("Created By is required");
+      toast({ title: "Created By is required", description: "Pick a role or enter a name before saving.", variant: "destructive" });
+      return;
+    }
+    if (!planType.trim()) {
+      toast({ title: "Plan type is required", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -90,7 +89,7 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       name: autoName || null,
       planType,
       searchAddress: searchAddress.trim() || null,
-      createdBy: isCreatedByOther ? createdByOther.trim() || null : createdBy || null,
+      createdBy: trimmedCreatedBy,
       subscriptionId: subscriptionId.trim() || null,
       subscriptionStartDate: subscriptionStartDate || null,
       nextBillingDate: nextBillingDate || null,
@@ -162,56 +161,17 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Created By <span className="text-red-500">*</span>
-              </Label>
-              {!isCreatedByOther ? (
-                <Select
-                  value={createdBy}
-                  onValueChange={(v) => {
-                    if (v === "Other") {
-                      setIsCreatedByOther(true);
-                      setCreatedBy("Other");
-                    } else {
-                      setCreatedBy(v);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-10 bg-muted/30">
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CREATED_BY_OPTIONS.map((o) => (
-                      <SelectItem key={o} value={o}>{o}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="flex gap-2">
-                  <Input
-                    className="h-10 bg-muted/30"
-                    placeholder="Enter name"
-                    value={createdByOther}
-                    onChange={(e) => setCreatedByOther(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs px-2 text-muted-foreground"
-                    onClick={() => { setIsCreatedByOther(false); setCreatedBy(""); setCreatedByOther(""); }}
-                  >
-                    ← Back
-                  </Button>
-                </div>
-              )}
-            </div>
+            <CreatedByField
+              value={createdBy}
+              onChange={(v) => { setCreatedBy(v); if (createdByError) setCreatedByError(null); }}
+              required
+              error={createdByError}
+            />
           </div>
 
           <div className="border-t border-border/40 pt-4 space-y-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Subscription</p>
-            <p className="text-[11px] text-muted-foreground -mt-1">Manual entry for now — will later auto-sync with Recurly.</p>
+            <p className="text-[11px] text-muted-foreground -mt-1">Manual entry — fill in if you have it.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription ID</Label>
