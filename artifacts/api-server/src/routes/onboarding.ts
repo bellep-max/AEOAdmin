@@ -16,6 +16,7 @@ interface OnboardingBody {
   customerEmail: string;
   businessName: string;
   gmbUrl?: string | null;
+  businessAddress?: string | null;
   keywords: string[];
   recurlySubscriptionId: string;
 }
@@ -37,6 +38,9 @@ function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: fals
   if (r.gmbUrl != null && typeof r.gmbUrl !== "string") {
     return { ok: false, error: "gmbUrl must be a string if provided" };
   }
+  if (r.businessAddress != null && typeof r.businessAddress !== "string") {
+    return { ok: false, error: "businessAddress must be a string if provided" };
+  }
   return {
     ok: true,
     body: {
@@ -44,6 +48,7 @@ function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: fals
       customerEmail:         (r.customerEmail as string).trim(),
       businessName:          (r.businessName as string).trim(),
       gmbUrl:                typeof r.gmbUrl === "string" && r.gmbUrl.trim() ? r.gmbUrl.trim() : null,
+      businessAddress:       typeof r.businessAddress === "string" && r.businessAddress.trim() ? r.businessAddress.trim() : null,
       keywords:              (r.keywords as string[]).map((k) => k.trim()).filter((k) => k.length > 0),
       recurlySubscriptionId: (r.recurlySubscriptionId as string).trim(),
     },
@@ -105,6 +110,7 @@ router.post("/", requireOnboardingToken, async (req, res) => {
           clientId: client.id,
           name: body.businessName,
           gmbUrl: body.gmbUrl || null,
+          publishedAddress: body.businessAddress || null,
           status: "active",
         })
         .returning({ id: businessesTable.id });
@@ -117,6 +123,7 @@ router.post("/", requireOnboardingToken, async (req, res) => {
           name: "Onboarding",
           planType: "Onboarding",
           subscriptionId: body.recurlySubscriptionId,
+          searchAddress: body.businessAddress || null,
         })
         .returning({ id: clientAeoPlansTable.id });
 

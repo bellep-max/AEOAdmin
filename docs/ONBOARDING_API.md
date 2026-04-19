@@ -34,6 +34,7 @@ curl -X POST https://jjm59vpn3y.us-east-1.awsapprunner.com/api/onboarding \
     "customerEmail": "jane@acme.com",
     "businessName": "Acme Plumbing",
     "gmbUrl": "https://maps.google.com/?cid=12345",
+    "businessAddress": "123 Main St, Austin, TX 78701",
     "keywords": [
       "emergency plumber austin",
       "drain cleaning austin",
@@ -52,7 +53,8 @@ curl -X POST https://jjm59vpn3y.us-east-1.awsapprunner.com/api/onboarding \
 | `businessName` | string | yes | Business being promoted. Used both as the client's display name and the business record's name. |
 | `keywords` | string[] | yes | At least one keyword. The first item is automatically marked **primary** (`isPrimary = 1`); all others are non-primary. |
 | `recurlySubscriptionId` | string | yes | The Recurly subscription identifier. Used as the idempotency key — repeat posts return the existing record. |
-| `gmbUrl` | string \| null | no | Google My Business URL. Stored on both the client and business records. |
+| `gmbUrl` | string \| null | no | Google My Business URL. Stored on the business record. Note: this is a *pointer*, not the address — see `businessAddress` below. |
+| `businessAddress` | string \| null | no (but **strongly recommended**) | Free-text business address (e.g. `"123 Main St, Austin, TX 78701"`). Copied into both `businesses.publishedAddress` and `client_aeo_plans.searchAddress`. **Without this, the executor cannot run geo-aware ranking searches** for this customer until an admin fills it in manually. |
 
 ### Response — 201 Created (new record)
 
@@ -144,6 +146,7 @@ curl -X POST "$BASE/api/onboarding" \
     "customerEmail": "jane@acme.com",
     "businessName": "Acme Plumbing",
     "gmbUrl": "https://maps.google.com/?cid=12345",
+    "businessAddress": "123 Main St, Austin, TX 78701",
     "keywords": ["plumber austin", "drain cleaning"],
     "recurlySubscriptionId": "sub_abc123"
   }'
