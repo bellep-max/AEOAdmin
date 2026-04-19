@@ -108,6 +108,7 @@ router.post("/", async (req, res) => {
         subscriptionStartDate: (body.subscriptionStartDate as string)  ?? null,
         nextBillingDate:       (body.nextBillingDate       as string)  ?? null,
         cardLast4:             (body.cardLast4             as string)  ?? null,
+        createdBy:             (body.createdBy             as string)  ?? null,
       })
       .returning();
 
@@ -139,7 +140,7 @@ router.patch("/:planId", async (req, res) => {
       "sampleQuestion5", "sampleQuestion6", "sampleQuestion7", "sampleQuestion8",
       "sampleQuestion9", "sampleQuestion10", "currentAnswerPresence",
       "schemaImplementor",
-      "searchAddress", "subscriptionId", "subscriptionStartDate", "nextBillingDate", "cardLast4",
+      "searchAddress", "subscriptionId", "subscriptionStartDate", "nextBillingDate", "cardLast4", "createdBy",
     ];
     for (const f of fields) {
       if (f in body) update[f] = body[f] ?? null;

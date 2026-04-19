@@ -31,6 +31,7 @@ export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   subscriptionStartDate:  date("subscription_start_date"),
   nextBillingDate:        date("next_billing_date"),
   cardLast4:              text("card_last4"),
+  createdBy:              text("created_by"),
   createdAt:              timestamp("created_at").notNull().defaultNow(),
   updatedAt:              timestamp("updated_at").notNull().defaultNow(),
 });

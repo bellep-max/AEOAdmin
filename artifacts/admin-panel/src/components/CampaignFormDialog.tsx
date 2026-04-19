@@ -10,6 +10,7 @@ import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
+const CREATED_BY_OPTIONS = ["Admin", "Sales Representative", "Developer", "Other"];
 
 interface CampaignLike {
   id: number;
@@ -17,6 +18,7 @@ interface CampaignLike {
   planType: string;
   serviceCategory?: string | null;
   schemaImplementor?: string | null;
+  createdBy?: string | null;
   searchAddress?: string | null;
   subscriptionId?: string | null;
   subscriptionStartDate?: string | null;
@@ -43,6 +45,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
   const [serviceCategory, setServiceCategory] = useState("");
   const [searchAddress, setSearchAddress] = useState("");
   const [schemaImplementor, setSchemaImplementor] = useState("");
+  const [createdBy, setCreatedBy] = useState("");
+  const [createdByOther, setCreatedByOther] = useState("");
+  const [isCreatedByOther, setIsCreatedByOther] = useState(false);
   const [subscriptionId, setSubscriptionId] = useState("");
   const [subscriptionStartDate, setSubscriptionStartDate] = useState("");
   const [nextBillingDate, setNextBillingDate] = useState("");
@@ -56,6 +61,11 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setServiceCategory(campaign.serviceCategory ?? "");
       setSearchAddress(campaign.searchAddress ?? "");
       setSchemaImplementor(campaign.schemaImplementor ?? "");
+      const cbVal = campaign.createdBy ?? "";
+      const isOther = cbVal !== "" && !CREATED_BY_OPTIONS.slice(0, -1).includes(cbVal);
+      setIsCreatedByOther(isOther);
+      setCreatedBy(isOther ? "Other" : cbVal);
+      setCreatedByOther(isOther ? cbVal : "");
       setSubscriptionId(campaign.subscriptionId ?? "");
       setSubscriptionStartDate(campaign.subscriptionStartDate ?? "");
       setNextBillingDate(campaign.nextBillingDate ?? "");
@@ -65,6 +75,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       setServiceCategory("");
       setSearchAddress("");
       setSchemaImplementor("");
+      setCreatedBy("");
+      setCreatedByOther("");
+      setIsCreatedByOther(false);
       setSubscriptionId("");
       setSubscriptionStartDate("");
       setNextBillingDate("");
@@ -87,6 +100,7 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       serviceCategory,
       searchAddress: searchAddress.trim() || null,
       schemaImplementor,
+      createdBy: isCreatedByOther ? createdByOther.trim() || null : createdBy || null,
       subscriptionId: subscriptionId.trim() || null,
       subscriptionStartDate: subscriptionStartDate || null,
       nextBillingDate: nextBillingDate || null,
@@ -184,6 +198,52 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Created By
+              </Label>
+              {!isCreatedByOther ? (
+                <Select
+                  value={createdBy}
+                  onValueChange={(v) => {
+                    if (v === "Other") {
+                      setIsCreatedByOther(true);
+                      setCreatedBy("Other");
+                    } else {
+                      setCreatedBy(v);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-10 bg-muted/30">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CREATED_BY_OPTIONS.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    className="h-10 bg-muted/30"
+                    placeholder="Enter name"
+                    value={createdByOther}
+                    onChange={(e) => setCreatedByOther(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs px-2 text-muted-foreground"
+                    onClick={() => { setIsCreatedByOther(false); setCreatedBy(""); setCreatedByOther(""); }}
+                  >
+                    ← Back
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
