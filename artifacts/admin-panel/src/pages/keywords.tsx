@@ -483,10 +483,11 @@ function KeywordCard({
         </div>
       ) : (
       <div className="px-4 pb-3 border-t border-slate-200 pt-3 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {[
             { label: "Search Count",           value: kw.initialSearchCount30Days  ?? 0 },
             { label: "Follow-up Search Count", value: kw.followupSearchCount30Days ?? 0 },
+            { label: "Backlinks Click",        value: (kw as { backlinkClickCount30Days?: number | null }).backlinkClickCount30Days ?? 0 },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg px-3.5 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800/50">
               <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 leading-tight mb-1.5">{label}</p>

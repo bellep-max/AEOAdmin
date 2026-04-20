@@ -107,6 +107,8 @@ router.post("/", async (req, res) => {
         followupSearchCount30Days: body.followupSearchCount30Days ?? null,
         initialSearchCountLife:    body.initialSearchCountLife    ?? null,
         followupSearchCountLife:   body.followupSearchCountLife   ?? null,
+        backlinkClickCount30Days:  body.backlinkClickCount30Days  ?? null,
+        backlinkClickCountLife:    body.backlinkClickCountLife    ?? null,
         initialRankReportCount:    body.initialRankReportCount    ?? null,
         currentRankReportCount:    body.currentRankReportCount    ?? null,
         linkTypeLabel:         body.linkTypeLabel         ?? null,
@@ -251,6 +253,8 @@ router.patch("/:id", async (req, res) => {
     if (body.followupSearchCount30Days !== undefined) allowed.followupSearchCount30Days = body.followupSearchCount30Days === null ? null : Number(body.followupSearchCount30Days);
     if (body.initialSearchCountLife    !== undefined) allowed.initialSearchCountLife    = body.initialSearchCountLife === null ? null : Number(body.initialSearchCountLife);
     if (body.followupSearchCountLife   !== undefined) allowed.followupSearchCountLife   = body.followupSearchCountLife === null ? null : Number(body.followupSearchCountLife);
+    if (body.backlinkClickCount30Days  !== undefined) allowed.backlinkClickCount30Days  = body.backlinkClickCount30Days === null ? null : Number(body.backlinkClickCount30Days);
+    if (body.backlinkClickCountLife    !== undefined) allowed.backlinkClickCountLife    = body.backlinkClickCountLife === null ? null : Number(body.backlinkClickCountLife);
     if (body.initialRankReportCount    !== undefined) allowed.initialRankReportCount    = body.initialRankReportCount === null ? null : Number(body.initialRankReportCount);
     if (body.currentRankReportCount    !== undefined) allowed.currentRankReportCount    = body.currentRankReportCount === null ? null : Number(body.currentRankReportCount);
 

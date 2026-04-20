@@ -20,6 +20,8 @@ export const keywordsTable = pgTable("keywords", {
   followupSearchCount30Days: integer("followup_search_count_30_days"),
   initialSearchCountLife: integer("initial_search_count_life"),
   followupSearchCountLife: integer("followup_search_count_life"),
+  backlinkClickCount30Days: integer("backlink_click_count_30_days"),
+  backlinkClickCountLife:   integer("backlink_click_count_life"),
   initialRankReportCount: integer("initial_rank_report_count"),
   currentRankReportCount: integer("current_rank_report_count"),
   linkTypeLabel: varchar("link_type_label", { length: 100 }),
