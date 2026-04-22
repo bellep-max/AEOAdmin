@@ -158,6 +158,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         city:             (body.city             as string | null | undefined) ?? null,
         state:            (body.state            as string | null | undefined) ?? null,
         date:             (body.date             as string | null | undefined) ?? null,
+        timestamp:        body.timestamp ? new Date(body.timestamp as string) : undefined,
         durationSeconds:  body.durationSeconds != null ? Number(body.durationSeconds) : null,
         promptText:       (body.promptText ?? body.prompt) as string | null ?? null,
         followupText:     (body.followupText ?? body.followUp) as string | null ?? null,
@@ -192,6 +193,29 @@ router.post("/", requireExecutorToken, async (req, res) => {
     res.status(201).json(session);
   } catch (err) {
     req.log.error({ err }, "Error creating session");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/:id/timestamp", requireExecutorToken, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const { timestamp } = req.body as { timestamp?: string };
+    if (!timestamp) return res.status(400).json({ error: "timestamp required" });
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      return res.status(400).json({ error: "timestamp must be a valid ISO 8601 string" });
+    }
+    const [row] = await db
+      .update(sessionsTable)
+      .set({ timestamp: parsed })
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Session not found" });
+    res.json(row);
+  } catch (err) {
+    req.log.error({ err }, "Error updating session timestamp");
     res.status(500).json({ error: "Internal server error" });
   }
 });
