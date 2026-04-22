@@ -228,6 +228,7 @@ export default function SessionsDaily() {
           <CardTitle className="text-base">
             Sessions
             <span className="ml-2 text-sm font-normal text-muted-foreground">{total.toLocaleString()} total</span>
+            <span className="ml-2 text-xs font-normal text-muted-foreground">· times in America/New_York (ET)</span>
           </CardTitle>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</Button>
@@ -243,7 +244,7 @@ export default function SessionsDaily() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Time</TableHead>
+                    <TableHead>Time <span className="text-xs font-normal text-muted-foreground">(ET)</span></TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Business</TableHead>
                     <TableHead>Campaign</TableHead>
