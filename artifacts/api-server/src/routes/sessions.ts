@@ -197,6 +197,75 @@ router.post("/", requireExecutorToken, async (req, res) => {
   }
 });
 
+/* ────────────────────────────────────────────────────────────
+   PATCH /api/sessions/:id
+   Generic field updater for backfills. Only whitelisted keys
+   are copied from the body. Auth-gated.
+──────────────────────────────────────────────────────────── */
+const PATCHABLE_SESSION_FIELDS = [
+  "clientId", "businessId", "campaignId", "keywordId", "deviceId", "proxyId",
+  "clientName", "bizName", "campaignName", "keywordText",
+  "city", "state", "date", "timestamp", "durationSeconds",
+  "promptText", "followupText", "hasFollowUp",
+  "status", "type", "errorClass", "errorMessage",
+  "aiPlatform", "screenshotUrl", "deviceIdentifier",
+  "proxyStatus", "proxySessionId", "proxyUsername", "proxyHost", "proxyPort",
+  "proxyIp", "proxyCity", "proxyRegion", "proxyCountry", "proxyZip",
+  "baseLatitude", "baseLongitude", "mockedLatitude", "mockedLongitude", "mockedTimezone",
+  "backlinksExpected", "backlinkFound", "backlinkUrl",
+] as const;
+
+const NUMERIC_FIELDS = new Set([
+  "clientId", "businessId", "campaignId", "keywordId", "deviceId", "proxyId",
+  "durationSeconds", "proxyPort", "backlinksExpected",
+  "baseLatitude", "baseLongitude", "mockedLatitude", "mockedLongitude",
+]);
+const BOOLEAN_FIELDS = new Set(["hasFollowUp", "backlinkFound"]);
+const DATE_FIELDS   = new Set(["timestamp"]);
+
+router.patch("/:id", requireExecutorToken, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const body = req.body as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    for (const key of PATCHABLE_SESSION_FIELDS) {
+      if (!(key in body)) continue;
+      const v = body[key];
+      if (v === null) { patch[key] = null; continue; }
+      if (NUMERIC_FIELDS.has(key)) {
+        const n = Number(v);
+        if (Number.isNaN(n)) return res.status(400).json({ error: `${key} must be a number` });
+        patch[key] = n;
+      } else if (BOOLEAN_FIELDS.has(key)) {
+        patch[key] = Boolean(v);
+      } else if (DATE_FIELDS.has(key)) {
+        const d = new Date(v as string);
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `${key} must be a valid ISO 8601 string` });
+        patch[key] = d;
+      } else {
+        patch[key] = v;
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "No updatable fields in body" });
+    }
+
+    const [row] = await db
+      .update(sessionsTable)
+      .set(patch)
+      .where(eq(sessionsTable.id, id))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Session not found" });
+    res.json(row);
+  } catch (err) {
+    req.log.error({ err }, "Error patching session");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.patch("/:id/timestamp", requireExecutorToken, async (req, res) => {
   try {
     const id = Number(req.params.id);

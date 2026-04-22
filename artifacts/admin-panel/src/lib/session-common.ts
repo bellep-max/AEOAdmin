@@ -45,7 +45,7 @@ export function fmtDateTime(v: string | Date | null | undefined): string {
   if (!v) return "—";
   const d = typeof v === "string" ? new Date(v) : v;
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
+  return d.toLocaleString("en-US", { timeZone: "America/New_York" });
 }
 
 export function fmtDuration(seconds: number | null | undefined): string {
