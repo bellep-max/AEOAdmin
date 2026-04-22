@@ -63,8 +63,8 @@ export default function Dashboard() {
   const newThisWeek    = clients?.filter((c) => new Date(c.createdAt) >= oneWeekAgo).length ?? 0;
 
   const now     = new Date();
-  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "America/New_York" });
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/New_York" });
 
   return (
     <div className="space-y-6 pb-4">
@@ -76,7 +76,7 @@ export default function Dashboard() {
         </div>
         <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2">
           <Clock className="w-3.5 h-3.5" />
-          <span>{timeStr} · {dateStr}</span>
+          <span>{timeStr} ET · {dateStr}</span>
         </div>
       </div>
 
