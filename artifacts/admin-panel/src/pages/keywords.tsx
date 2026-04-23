@@ -604,9 +604,7 @@ function KeywordCard({
                 {/* Link URLs */}
                 <div className="divide-y divide-slate-200 dark:divide-slate-700">
                   {[
-                    { label: "Link URL",                  url: link.linkUrl },
-                    { label: "Initial Rank Report Link",  url: link.initialRankReportLink },
-                    { label: "Current Rank Report Link",  url: link.currentRankReportLink },
+                    { label: "Link URL", url: link.linkUrl },
                   ].map(({ label, url }) => (
                     <div key={label} className="px-3 py-2.5">
                       <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
