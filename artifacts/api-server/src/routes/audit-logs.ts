@@ -12,6 +12,21 @@ import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
 
+function parseFilterDate(raw: string, kind: "start" | "end"): Date {
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  if (!isDateOnly) return new Date(raw);
+  const [y, m, d] = raw.split("-").map(Number);
+  const noon = new Date(Date.UTC(y, m - 1, d, 12));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", hour12: false,
+  }).formatToParts(noon);
+  const etHour = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
+  const offsetHours = 12 - (etHour === 24 ? 0 : etHour);
+  const startUtc = Date.UTC(y, m - 1, d, offsetHours);
+  if (kind === "start") return new Date(startUtc);
+  return new Date(startUtc + 24 * 60 * 60 * 1000);
+}
+
 /* ────────────────────────────────────────────────────────────
    GET /api/audit-logs
 ──────────────────────────────────────────────────────────── */
@@ -39,8 +54,8 @@ router.get("/", async (req, res) => {
     if (platform)   conditions.push(eq(auditLogsTable.platform,   platform));
     if (mode)       conditions.push(eq(auditLogsTable.mode,       mode));
     if (status)     conditions.push(eq(auditLogsTable.status,     status));
-    if (from)       conditions.push(gte(auditLogsTable.timestamp, new Date(from)));
-    if (to)         conditions.push(lte(auditLogsTable.timestamp, new Date(to)));
+    if (from)       conditions.push(gte(auditLogsTable.timestamp, parseFilterDate(from, "start")));
+    if (to)         conditions.push(lte(auditLogsTable.timestamp, parseFilterDate(to,   "end")));
 
     const lim = Math.min(parseInt(limit), 200);
     const off = parseInt(offset);

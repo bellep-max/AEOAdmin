@@ -72,14 +72,25 @@ const PAGE_SIZE = 25;
 const ALL = "__all__";
 const POPOVER_MAX_H = "max-h-[320px]";
 
+/* Last-7-days default in ET so date filters match the server-side ET-aware range. */
+function etDateString(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(d);
+  const m = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+  return `${m.year}-${m.month}-${m.day}`;
+}
+function defaultToET():   string { return etDateString(new Date()); }
+function defaultFromET(): string { return etDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)); }
+
 export default function SessionsDaily() {
   const [clientId, setClientId] = useState<number | null>(null);
   const [businessId, setBusinessId] = useState<number | null>(null);
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [platform, setPlatform] = useState<string>("");
   const [status, setStatus] = useState<string>("");
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [from, setFrom] = useState<string>(() => defaultFromET());
+  const [to, setTo]     = useState<string>(() => defaultToET());
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<SessionRow | null>(null);
 
@@ -124,7 +135,9 @@ export default function SessionsDaily() {
 
   function clearFilters() {
     setClientId(null); setBusinessId(null); setCampaignId(null);
-    setPlatform(""); setStatus(""); setFrom(""); setTo(""); setPage(0);
+    setPlatform(""); setStatus("");
+    setFrom(defaultFromET()); setTo(defaultToET());
+    setPage(0);
   }
 
   return (
@@ -202,7 +215,7 @@ export default function SessionsDaily() {
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="error">Error</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                 </SelectContent>
               </Select>
