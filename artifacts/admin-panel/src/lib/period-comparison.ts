@@ -169,7 +169,7 @@ export function countStatuses(rows: readonly PeriodRow[]): StatusCounts {
 
 export function periodLabel(p: Period): { short: string; long: string; previousLabel: string; currentLabel: string } {
   switch (p) {
-    case "weekly":    return { short: "Week",    long: "This week vs last week",     previousLabel: "Last week",       currentLabel: "Current rank" };
+    case "weekly":    return { short: "Biweekly", long: "Current 2 weeks vs previous 2 weeks (ET)", previousLabel: "Last 2 weeks", currentLabel: "Current rank" };
     case "monthly":   return { short: "Month",   long: "Current month vs last month", previousLabel: "Last month",      currentLabel: "Current rank" };
     case "quarterly": return { short: "Quarter", long: "Current quarter vs last quarter", previousLabel: "Last quarter", currentLabel: "Current rank" };
     case "lifetime":  return { short: "Lifetime", long: "First ever vs latest",      previousLabel: "Initial rank",    currentLabel: "Current rank" };

@@ -313,20 +313,40 @@ router.get("/per-keyword-platform", async (req, res) => {
    For lifetime, "previous" = first ever, "current" = latest ever. */
 type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
 
-function startOfIsoWeek(d: Date): Date {
-  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const day = out.getUTCDay(); // 0 Sun ... 6 Sat
-  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
-  out.setUTCDate(out.getUTCDate() + diff);
-  return out;
+/* America/New_York midnight for the calendar date that contains `d`.
+   Returns a UTC Date aligned to that ET midnight. EDT = UTC-4 (Mar–Nov),
+   EST = UTC-5 (Nov–Mar). Uses Intl to get the correct offset for the date. */
+function startOfDayET(d: Date): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const map: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  /* ET wall-clock for `d`. Compute the offset (UTC minus ET) from the
+     difference between ET wall-clock and UTC wall-clock of the same instant. */
+  const etWall = Date.UTC(
+    Number(map.year), Number(map.month) - 1, Number(map.day),
+    Number(map.hour) === 24 ? 0 : Number(map.hour),
+    Number(map.minute), Number(map.second),
+  );
+  const offsetMs = etWall - d.getTime();
+  /* ET midnight of that calendar date, expressed as a UTC instant. */
+  const etMidnight = Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day));
+  return new Date(etMidnight - offsetMs);
 }
 
 function windowsFor(period: PeriodKey, now: Date): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
   if (period === "weekly") {
-    const curStart = startOfIsoWeek(now);
-    const curEnd = new Date(curStart); curEnd.setUTCDate(curEnd.getUTCDate() + 7);
-    const prevStart = new Date(curStart); prevStart.setUTCDate(prevStart.getUTCDate() - 7);
-    const prevEnd = new Date(curStart);
+    /* Biweekly windows aligned to ET midnight. "weekly" key kept for
+       backwards-compat with the FE; semantically it's the last 14 days. */
+    const todayStart = startOfDayET(now);
+    const curStart = new Date(todayStart.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const curEnd   = new Date(todayStart.getTime() + 1  * 24 * 60 * 60 * 1000);
+    const prevStart = new Date(curStart.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const prevEnd   = curStart;
     return { curStart, curEnd, prevStart, prevEnd };
   }
   if (period === "monthly") {

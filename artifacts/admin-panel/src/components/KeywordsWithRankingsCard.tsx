@@ -98,7 +98,7 @@ export function KeywordsWithRankingsCard({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="weekly">Biweekly</SelectItem>
                 <SelectItem value="monthly">Monthly</SelectItem>
                 <SelectItem value="quarterly">Quarterly</SelectItem>
                 <SelectItem value="lifetime">Since start</SelectItem>
