@@ -213,7 +213,7 @@ export default function SessionsAudit() {
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
                 </SelectContent>
               </Select>
             </div>

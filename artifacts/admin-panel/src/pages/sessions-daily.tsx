@@ -215,7 +215,7 @@ export default function SessionsDaily() {
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                 </SelectContent>
               </Select>
