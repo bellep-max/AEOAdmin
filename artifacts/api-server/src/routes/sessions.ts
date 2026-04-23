@@ -14,6 +14,26 @@ import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
 
+/* Treat a bare YYYY-MM-DD filter as an America/New_York calendar day.
+   "start" → that date at 00:00 ET. "end" → next day 00:00 ET (inclusive of
+   everything on the given ET day). Anything with a time component is parsed
+   as-is. EDT = UTC-4, EST = UTC-5 — Intl handles the transition. */
+function parseFilterDate(raw: string, kind: "start" | "end"): Date {
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  if (!isDateOnly) return new Date(raw);
+  const [y, m, d] = raw.split("-").map(Number);
+  const noon = new Date(Date.UTC(y, m - 1, d, 12));
+  /* ET wall-clock for noon UTC of that date, to find the ET offset. */
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hour: "2-digit", hour12: false,
+  }).formatToParts(noon);
+  const etHour = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
+  const offsetHours = 12 - (etHour === 24 ? 0 : etHour); // UTC hours ahead of ET
+  const startUtc = Date.UTC(y, m - 1, d, offsetHours);
+  if (kind === "start") return new Date(startUtc);
+  return new Date(startUtc + 24 * 60 * 60 * 1000);
+}
+
 /* ────────────────────────────────────────────────────────────
    GET /api/sessions
    Daily session log listing with filters + pagination.
@@ -40,8 +60,8 @@ router.get("/", async (req, res) => {
     if (deviceId)   conditions.push(eq(sessionsTable.deviceId,   parseInt(deviceId)));
     if (platform)   conditions.push(eq(sessionsTable.aiPlatform, platform));
     if (status)     conditions.push(eq(sessionsTable.status,     status));
-    if (from)       conditions.push(gte(sessionsTable.timestamp, new Date(from)));
-    if (to)         conditions.push(lte(sessionsTable.timestamp, new Date(to)));
+    if (from)       conditions.push(gte(sessionsTable.timestamp, parseFilterDate(from, "start")));
+    if (to)         conditions.push(lte(sessionsTable.timestamp, parseFilterDate(to,   "end")));
 
     const lim = Math.min(parseInt(limit), 200);
     const off = parseInt(offset);
