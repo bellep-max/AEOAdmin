@@ -57,6 +57,7 @@ interface SessionRow {
   mockedLongitude: number | null;
   mockedTimezone: string | null;
   backlinksExpected: number | null;
+  backlinkInjected: boolean;
   backlinkFound: boolean;
   backlinkUrl: string | null;
 }
@@ -281,7 +282,7 @@ export default function SessionsDaily() {
                       <TableCell><Badge variant="secondary">{s.aiPlatform}</Badge></TableCell>
                       <TableCell><Badge className={statusBadgeClass(s.status)}>{s.status}</Badge></TableCell>
                       <TableCell className="text-sm">{fmtDuration(s.durationSeconds)}</TableCell>
-                      <TableCell>{renderBacklink(s.backlinksExpected, s.backlinkFound)}</TableCell>
+                      <TableCell>{renderBacklink(s.backlinksExpected, s.backlinkInjected, s.backlinkFound)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -339,7 +340,8 @@ export default function SessionsDaily() {
 
                 <Section title="Backlinks">
                   <Row label="Expected" value={open.backlinksExpected != null ? String(open.backlinksExpected) : "—"} />
-                  <Row label="Found"    value={fmtBool(open.backlinkFound)} />
+                  <Row label="Injected" value={fmtBool(open.backlinkInjected)} />
+                  <Row label="Found"    value={open.backlinkInjected ? fmtBool(open.backlinkFound) : "N/A (not injected)"} />
                   <Row label="URL"      value={open.backlinkUrl ?? "—"} />
                 </Section>
 
@@ -373,14 +375,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function renderBacklink(expected: number | null, found: boolean) {
+function renderBacklink(expected: number | null, injected: boolean, found: boolean) {
   if (expected == null || expected === 0) {
     return <span className="text-xs text-muted-foreground" title="No backlinks configured for this keyword">—</span>;
+  }
+  if (!injected) {
+    return <span className="text-xs text-muted-foreground" title="Backlink reference not seeded in this prompt (control group)">N/A</span>;
   }
   return (
     <Badge
       variant={found ? "default" : "outline"}
-      title={found ? "AI response contained a configured backlink URL" : "Backlink configured but not mentioned in the AI response"}
+      title={found ? "AI response contained the injected backlink URL" : "Backlink injected into prompt but not surfaced in the AI response"}
     >
       {found ? "Yes" : "No"}
     </Badge>

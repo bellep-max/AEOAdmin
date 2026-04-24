@@ -116,6 +116,7 @@ router.get("/", async (req, res) => {
         mockedLongitude:  sessionsTable.mockedLongitude,
         mockedTimezone:   sessionsTable.mockedTimezone,
         backlinksExpected: sessionsTable.backlinksExpected,
+        backlinkInjected:  sessionsTable.backlinkInjected,
         backlinkFound:     sessionsTable.backlinkFound,
         backlinkUrl:       sessionsTable.backlinkUrl,
         /* joins for denormalized fallback */
@@ -206,6 +207,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         mockedLongitude:  body.mockedLongitude != null ? Number(body.mockedLongitude) : null,
         mockedTimezone:   (body.mockedTimezone as string | null | undefined) ?? null,
         backlinksExpected: body.backlinksExpected != null ? Number(body.backlinksExpected) : null,
+        backlinkInjected:  Boolean(body.backlinkInjected),
         backlinkFound:     Boolean(body.backlinkFound),
         backlinkUrl:       (body.backlinkUrl as string | null | undefined) ?? null,
       })
@@ -232,7 +234,7 @@ const PATCHABLE_SESSION_FIELDS = [
   "proxyStatus", "proxySessionId", "proxyUsername", "proxyHost", "proxyPort",
   "proxyIp", "proxyCity", "proxyRegion", "proxyCountry", "proxyZip",
   "baseLatitude", "baseLongitude", "mockedLatitude", "mockedLongitude", "mockedTimezone",
-  "backlinksExpected", "backlinkFound", "backlinkUrl",
+  "backlinksExpected", "backlinkInjected", "backlinkFound", "backlinkUrl",
 ] as const;
 
 const NUMERIC_FIELDS = new Set([
@@ -240,7 +242,7 @@ const NUMERIC_FIELDS = new Set([
   "durationSeconds", "proxyPort", "backlinksExpected",
   "baseLatitude", "baseLongitude", "mockedLatitude", "mockedLongitude",
 ]);
-const BOOLEAN_FIELDS = new Set(["hasFollowUp", "backlinkFound"]);
+const BOOLEAN_FIELDS = new Set(["hasFollowUp", "backlinkInjected", "backlinkFound"]);
 const DATE_FIELDS   = new Set(["timestamp"]);
 
 router.patch("/:id", requireExecutorToken, async (req, res) => {

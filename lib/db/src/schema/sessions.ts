@@ -59,6 +59,7 @@ export const sessionsTable = pgTable("sessions", {
   mockedTimezone:  text("mocked_timezone"),
   /* ── Backlinks ── */
   backlinksExpected: integer("backlinks_expected"),
+  backlinkInjected:  boolean("backlink_injected").default(false),
   backlinkFound:     boolean("backlink_found").default(false),
   backlinkUrl:       text("backlink_url"),
 });
