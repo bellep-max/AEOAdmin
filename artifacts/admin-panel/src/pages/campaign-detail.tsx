@@ -16,6 +16,7 @@ import { ChevronLeft, ClipboardList, Key, Plus, Pencil, Trash2 } from "lucide-re
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -416,6 +417,8 @@ export default function CampaignDetail() {
           onSave={handleSaveKeyword}
         />
       )}
+
+      <CampaignSessionsCard campaignId={campaignId} />
 
       <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
         <AlertDialogContent>
