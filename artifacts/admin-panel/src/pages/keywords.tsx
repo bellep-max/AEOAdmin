@@ -72,7 +72,7 @@ interface KeywordLink {
 /* ═══════════════════════════════════════════════════════════
    RANKING HELPERS
 ═══════════════════════════════════════════════════════════ */
-interface RankCell { current: number | null; previous: number | null }
+interface RankCell { current: number | null; previous: number | null; first: number | null }
 type RankMap = Map<number, Partial<Record<string, RankCell>>>;
 
 function fmtRank(c: RankCell | undefined): string {
@@ -548,9 +548,15 @@ function KeywordCard({
                       {declined && <span className="text-red-500 text-xs font-bold">↓</span>}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">Initial</p>
-                    <p className="text-xs tabular-nums text-slate-400 font-medium">{hasPrev ? `#${prev}` : "—"}</p>
+                  <div className="text-right space-y-1.5">
+                    <div>
+                      <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">Initial</p>
+                      <p className="text-xs tabular-nums text-slate-400 font-medium">{hasPrev ? `#${prev}` : "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] uppercase tracking-wider text-slate-400 leading-tight mb-0.5">First</p>
+                      <p className="text-xs tabular-nums text-slate-400 font-medium">{cell?.first != null ? `#${cell.first}` : "—"}</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -748,7 +754,7 @@ export default function Keywords() {
   const plansMap = new Map(allPlans.map((p) => [p.id, p]));
   const businessesMap = new Map(businesses.map((b) => [b.id, b]));
 
-  const { data: lifetimeRanks } = useQuery<{ rows: Array<{ keywordId: number; platform: string; currentPosition: number | null; previousPosition: number | null }> }>({
+  const { data: lifetimeRanks } = useQuery<{ rows: Array<{ keywordId: number; platform: string; currentPosition: number | null; previousPosition: number | null; firstPosition: number | null }> }>({
     queryKey: ["/api/ranking-reports/period-comparison", "weekly"],
     queryFn: async () => {
       const r = await rawFetch("/api/ranking-reports/period-comparison?period=weekly", { credentials: "include" });
@@ -760,7 +766,7 @@ export default function Keywords() {
   for (const row of lifetimeRanks?.rows ?? []) {
     let bucket = rankMap.get(row.keywordId);
     if (!bucket) { bucket = {}; rankMap.set(row.keywordId, bucket); }
-    bucket[row.platform] = { current: row.currentPosition, previous: row.previousPosition };
+    bucket[row.platform] = { current: row.currentPosition, previous: row.previousPosition, first: row.firstPosition };
   }
 
   function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }

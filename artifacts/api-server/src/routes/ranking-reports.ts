@@ -453,6 +453,7 @@ router.get("/period-comparison", async (req, res) => {
     const ever = everLatest();
     const current = isLifetime ? ever : latestInWindow(curStart, curEnd);
     const previous = isLifetime ? firstEver() : latestInWindow(prevStart, prevEnd);
+    const first = firstEver();
 
     const allKeys = new Set<PairKey>([...current.keys(), ...previous.keys(), ...ever.keys()]);
 
@@ -465,6 +466,7 @@ router.get("/period-comparison", async (req, res) => {
       const plan = kw?.aeoPlanId != null ? planMap.get(kw.aeoPlanId) : null;
       const cur = current.get(key);
       const prev = previous.get(key);
+      const firstEverRow = first.get(key);
       const lastEver = ever.get(key);
       const change =
         cur?.rankingPosition != null && prev?.rankingPosition != null
@@ -502,6 +504,8 @@ router.get("/period-comparison", async (req, res) => {
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
         previousDate: prev?.createdAt ?? null,
+        firstPosition: firstEverRow?.rankingPosition ?? null,
+        firstDate: firstEverRow?.createdAt ?? null,
         change,
         status,
         freshness,
