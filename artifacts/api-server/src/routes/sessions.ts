@@ -9,7 +9,7 @@ import {
   devicesTable,
   proxiesTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, count, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, count, sql, gte, lte, inArray } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireSession } from "../middlewares/session-auth";
 import multer from "multer";
@@ -227,6 +227,18 @@ router.post("/", requireExecutorToken, async (req, res) => {
         backlinkUrl:       (body.backlinkUrl as string | null | undefined) ?? null,
       })
       .returning();
+
+    // Auto-increment keyword backlink click counts when backlink was actually found
+    const keywordId = body.keywordId != null ? Number(body.keywordId) : null;
+    if (Boolean(body.backlinkFound) && keywordId != null) {
+      await db.update(keywordsTable)
+        .set({
+          backlinkClickCount30Days: sql`COALESCE(${keywordsTable.backlinkClickCount30Days}, 0) + 1`,
+          backlinkClickCountLife: sql`COALESCE(${keywordsTable.backlinkClickCountLife}, 0) + 1`,
+        })
+        .where(eq(keywordsTable.id, keywordId));
+    }
+
     res.status(201).json(session);
   } catch (err) {
     req.log.error({ err }, "Error creating session");
@@ -590,6 +602,23 @@ router.post("/import", requireSession, upload.single("file"), async (req, res) =
           }
         }
       }
+    }
+
+    // Auto-increment keyword backlink click counts for inserted rows with backlinkFound
+    const backlinkKwIds = new Set<number>();
+    for (const row of toInsert) {
+      if (row.backlinkFound && row.keywordId != null) {
+        backlinkKwIds.add(row.keywordId);
+      }
+    }
+    if (backlinkKwIds.size > 0) {
+      const ids = [...backlinkKwIds];
+      await db.update(keywordsTable)
+        .set({
+          backlinkClickCount30Days: sql`COALESCE(${keywordsTable.backlinkClickCount30Days}, 0) + 1`,
+          backlinkClickCountLife: sql`COALESCE(${keywordsTable.backlinkClickCountLife}, 0) + 1`,
+        })
+        .where(inArray(keywordsTable.id, ids));
     }
 
     res.json({
