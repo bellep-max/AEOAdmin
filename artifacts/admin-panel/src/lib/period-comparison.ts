@@ -25,6 +25,8 @@ export interface PeriodRow {
   currentDate: string | null;
   previousPosition: number | null;
   previousDate: string | null;
+  firstPosition: number | null;
+  firstDate: string | null;
   change: number | null;
   status: Status;
   freshness: Freshness;

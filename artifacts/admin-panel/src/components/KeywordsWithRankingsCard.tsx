@@ -193,16 +193,18 @@ export function KeywordsWithRankingsCard({
                     <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
                       <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
                         <div className="col-span-2">Platform</div>
-                        <div className="col-span-3">{label.previousLabel}</div>
-                        <div className="col-span-3">{label.currentLabel}</div>
+                        <div className="col-span-2">First</div>
+                        <div className="col-span-2">{label.previousLabel}</div>
+                        <div className="col-span-2">{label.currentLabel}</div>
                         <div className="col-span-2">Change</div>
                         <div className="col-span-2">Status</div>
                       </div>
                       {sorted.map((p) => (
                         <div key={`${p.keywordId}-${p.platform}-detail`} className="grid grid-cols-12 gap-2 items-center text-sm px-1 py-1">
                           <div className="col-span-2 capitalize font-semibold">{p.platform}</div>
-                          <div className="col-span-3 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                          <div className="col-span-3 font-semibold">{fmtPos(p.currentPosition)}</div>
+                          <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
+                          <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
+                          <div className="col-span-2 font-semibold">{fmtPos(p.currentPosition)}</div>
                           <div className="col-span-2"><ChangeCell change={p.change} /></div>
                           <div className="col-span-2"><StatusBadge status={p.status} /></div>
                         </div>
