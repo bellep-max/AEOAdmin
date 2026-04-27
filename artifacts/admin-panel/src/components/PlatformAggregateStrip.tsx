@@ -99,6 +99,9 @@ export function PlatformAggregateStrip({
                   <p className="text-[10px] text-muted-foreground mt-1">
                     {label.previousLabel}: {a.avgPrevious != null ? `#${a.avgPrevious}` : "—"}
                   </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    First: {a.avgFirst != null ? `#${a.avgFirst}` : "—"}
+                  </p>
                   <div className="flex items-center gap-3 mt-2 text-[10px]">
                     <span className="text-muted-foreground">
                       <strong className="text-foreground">{a.topRank}</strong> in top {a.topRankThreshold}

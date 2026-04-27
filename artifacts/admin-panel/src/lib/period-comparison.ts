@@ -110,6 +110,7 @@ export interface PlatformAggregate {
   keywordCount: number;
   avgCurrent: number | null;
   avgPrevious: number | null;
+  avgFirst: number | null;
   change: number | null;
   topRank: number;
   topRankThreshold: number;
@@ -139,16 +140,20 @@ export function aggregatePlatforms(rows: readonly PeriodRow[]): PlatformAggregat
     const list = byPlatform.get(platform) ?? [];
     const cur = list.map((r) => r.currentPosition).filter((n): n is number => n != null);
     const prev = list.map((r) => r.previousPosition).filter((n): n is number => n != null);
+    const first = list.map((r) => r.firstPosition).filter((n): n is number => n != null);
     const avgCur = avg(cur);
     const avgPrev = avg(prev);
+    const avgFirstVal = avg(first);
     const avgCurRounded = avgCur != null ? Math.round(avgCur) : null;
     const avgPrevRounded = avgPrev != null ? Math.round(avgPrev) : null;
+    const avgFirstRounded = avgFirstVal != null ? Math.round(avgFirstVal) : null;
     const change = avgCurRounded != null && avgPrevRounded != null ? avgPrevRounded - avgCurRounded : null;
     return {
       platform,
       keywordCount: list.length,
       avgCurrent: avgCurRounded,
       avgPrevious: avgPrevRounded,
+      avgFirst: avgFirstRounded,
       change,
       topRank: cur.filter((n) => n <= TOP_RANK_THRESHOLD).length,
       topRankThreshold: TOP_RANK_THRESHOLD,
