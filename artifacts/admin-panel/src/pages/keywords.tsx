@@ -1323,7 +1323,7 @@ export default function Keywords() {
                               <span className="ml-auto text-xs font-bold text-slate-500 dark:text-slate-400">{planKws.length} keyword{planKws.length !== 1 ? "s" : ""}</span>
                             </div>
                             <div className="p-4 space-y-4">
-                              {planKws.map((kw) => (
+                              {[...planKws].sort((a, b) => ((a.keywordText as string) ?? "").localeCompare((b.keywordText as string) ?? "")).map((kw) => (
                                 <div
                                   key={kw.id as number}
                                   id={`kw-${kw.id}`}

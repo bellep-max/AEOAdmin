@@ -239,7 +239,8 @@ export default function Clients() {
     form.reset();
   };
 
-  const filteredClients = clients?.filter((c) => {
+  const filteredClients = (clients ?? [])
+    .filter((c) => {
     const nameMatch = !search || c.businessName.toLowerCase().includes(search.toLowerCase());
     const locMatch = !filterLocation ||
       (c.searchAddress ?? "").toLowerCase().includes(filterLocation.toLowerCase()) ||
@@ -248,7 +249,8 @@ export default function Clients() {
     const statusMatch = filterStatus === "all" || c.status === filterStatus;
     const planMatch = filterPlan === "all" || c.planName === filterPlan;
     return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
-  });
+  })
+    .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? ""));
 
   return (
     <div className="space-y-6">
