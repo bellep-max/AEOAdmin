@@ -51,7 +51,7 @@ export function KeywordDialog({
   const blank: KwRecord = {
     clientId: "", businessId: "", keywordText: "", keywordType: "3", isPrimary: "0", isActive: true,
     aeoPlanId: "",
-    linkUrl: "", linkTypeLabel: "", linkActive: true,
+    linkUrl: "", linkTypeLabel: "", embeddedUrl: "", linkActive: true,
     initialRankReportLink: "", currentRankReportLink: "",
   };
   const [vals, setVals] = useState<KwRecord>(blank);
@@ -69,6 +69,7 @@ export function KeywordDialog({
         aeoPlanId:  initial.aeoPlanId != null ? String(initial.aeoPlanId) : "",
         linkUrl:               firstLink?.linkUrl               ?? initial.linkUrl ?? "",
         linkTypeLabel:         firstLink?.linkTypeLabel         ?? initial.linkTypeLabel ?? "",
+        embeddedUrl:            firstLink?.embeddedUrl            ?? initial.embeddedUrl ?? "",
         linkActive:            firstLink?.linkActive            ?? initial.linkActive ?? true,
         initialRankReportLink: firstLink?.initialRankReportLink ?? initial.initialRankReportLink ?? "",
         currentRankReportLink: firstLink?.currentRankReportLink ?? initial.currentRankReportLink ?? "",
@@ -226,6 +227,18 @@ export function KeywordDialog({
                   onChange={(e) => set("linkUrl", e.target.value)}
                 />
               </div>
+
+              {(vals.linkTypeLabel as string) === "GBP snippet" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Real Link (inside GBP)</Label>
+                  <Input
+                    className="bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base text-black dark:text-white font-mono"
+                    placeholder="https://… — the actual URL the GBP points to"
+                    value={(vals.embeddedUrl as string) || ""}
+                    onChange={(e) => set("embeddedUrl", e.target.value)}
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-3 items-end">
                 <div className="col-span-2 space-y-1.5">

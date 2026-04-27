@@ -62,6 +62,7 @@ interface KeywordLink {
   id: number; keywordId: number;
   linkUrl: string | null;
   linkTypeLabel: string | null;
+  embeddedUrl: string | null;
   linkActive: boolean;
   initialRankReportLink: string | null;
   currentRankReportLink: string | null;
@@ -252,7 +253,7 @@ function LinkDialog({
   saving: boolean; initial?: Partial<KeywordLink>;
   onSave: (data: Partial<KeywordLink>) => void;
 }) {
-  const blank = { linkUrl: "", linkTypeLabel: "", linkActive: true, initialRankReportLink: "", currentRankReportLink: "" };
+  const blank = { linkUrl: "", linkTypeLabel: "", embeddedUrl: "", linkActive: true, initialRankReportLink: "", currentRankReportLink: "" };
   const [vals, setVals] = useState<Partial<KeywordLink>>(blank);
   function set(k: keyof KeywordLink, v: unknown) { setVals((p) => ({ ...p, [k]: v })); }
 
@@ -303,6 +304,18 @@ function LinkDialog({
               onChange={(e) => set("linkUrl", e.target.value)}
             />
           </div>
+
+          {(vals.linkTypeLabel as string) === "GBP snippet" && (
+            <div className="space-y-1.5">
+              <Label className="text-sm uppercase tracking-widest text-black dark:text-white font-bold">Real Link (inside GBP)</Label>
+              <Input
+                className="bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 h-11 text-base font-mono text-black dark:text-white"
+                placeholder="https://… — the actual URL the GBP points to"
+                value={(vals.embeddedUrl as string) || ""}
+                onChange={(e) => set("embeddedUrl", e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 pt-4">
@@ -605,6 +618,7 @@ function KeywordCard({
                 <div className="divide-y divide-slate-200 dark:divide-slate-700">
                   {[
                     { label: "Link URL", url: link.linkUrl },
+                    ...(link.linkTypeLabel === "GBP snippet" ? [{ label: "Real Link (inside GBP)", url: link.embeddedUrl }] : []),
                   ].map(({ label, url }) => (
                     <div key={label} className="px-3 py-2.5">
                       <p className="text-xs uppercase tracking-widest text-slate-700 dark:text-slate-400 mb-2">{label}</p>
@@ -800,13 +814,13 @@ export default function Keywords() {
     setSaving(true);
     try {
       if (id) {
-        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, links, ...kwFields } = data;
+        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, embeddedUrl, links, ...kwFields } = data;
         await new Promise<void>((res, rej) =>
           updateKeyword.mutate({ id, data: kwFields }, { onSuccess: () => res(), onError: (e) => rej(e) }),
         );
         if (Number(kwFields.keywordType) === 4) {
           const existingLinks = Array.isArray(links) ? links as Array<{ id: number }> : [];
-          const linkPayload = { linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, linkActive: linkActive !== false, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null };
+          const linkPayload = { linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, embeddedUrl: embeddedUrl || null, linkActive: linkActive !== false, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null };
           if (existingLinks.length > 0) {
             await rawFetch(`/api/keywords/${id}/links/${existingLinks[0].id}`, {
               method: "PATCH", credentials: "include",
@@ -822,7 +836,7 @@ export default function Keywords() {
           }
         }
       } else {
-        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
+        const { linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, embeddedUrl, ...kwData } = data;
         const r = await rawFetch(`/api/keywords`, {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -840,7 +854,7 @@ export default function Keywords() {
           const lr = await rawFetch(`/api/keywords/${newKw.id}/links`, {
             method: "POST", credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, linkActive, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null }),
+            body: JSON.stringify({ linkUrl: linkUrl || null, linkTypeLabel: linkTypeLabel || null, embeddedUrl: embeddedUrl || null, linkActive, initialRankReportLink: initialRankReportLink || null, currentRankReportLink: currentRankReportLink || null }),
           });
           if (!lr.ok) throw new Error((await lr.json()).error ?? "Failed to save link");
         }

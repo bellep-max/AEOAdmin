@@ -6,6 +6,7 @@ export const keywordLinksTable = pgTable("keyword_links", {
   keywordId:             integer("keyword_id").notNull().references(() => keywordsTable.id, { onDelete: "cascade" }),
   linkUrl:               text("link_url"),
   linkTypeLabel:         text("link_type_label"),
+  embeddedUrl:            text("embedded_url"),
   linkActive:            boolean("link_active").notNull().default(true),
   initialRankReportLink: text("initial_rank_report_link"),
   currentRankReportLink: text("current_rank_report_link"),

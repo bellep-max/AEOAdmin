@@ -157,6 +157,7 @@ router.post("/:id/links", async (req, res) => {
         keywordId,
         linkUrl:               body.linkUrl               ?? null,
         linkTypeLabel:         body.linkTypeLabel         ?? null,
+        embeddedUrl:            body.embeddedUrl            ?? null,
         linkActive:            body.linkActive !== false,
         initialRankReportLink: body.initialRankReportLink ?? null,
         currentRankReportLink: body.currentRankReportLink ?? null,
@@ -184,6 +185,7 @@ router.patch("/:id/links/:linkId", async (req, res) => {
     const allowed: Record<string, unknown> = {};
     if (body.linkUrl                !== undefined) allowed.linkUrl                = body.linkUrl ?? null;
     if (body.linkTypeLabel         !== undefined) allowed.linkTypeLabel         = body.linkTypeLabel ?? null;
+    if (body.embeddedUrl           !== undefined) allowed.embeddedUrl           = body.embeddedUrl ?? null;
     if (body.linkActive            !== undefined) allowed.linkActive            = Boolean(body.linkActive);
     if (body.initialRankReportLink !== undefined) allowed.initialRankReportLink = body.initialRankReportLink ?? null;
     if (body.currentRankReportLink !== undefined) allowed.currentRankReportLink = body.currentRankReportLink ?? null;
