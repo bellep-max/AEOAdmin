@@ -11,6 +11,21 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc, count, sql, gte, lte } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { requireSession } from "../middlewares/session-auth";
+import multer from "multer";
+import { parse } from "csv-parse/sync";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "text/csv" || file.originalname.endsWith(".csv")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only CSV files are allowed"));
+    }
+  },
+});
 
 const router = Router();
 
@@ -413,6 +428,179 @@ router.get("/stress-test", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching stress test stats");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/sessions/import
+   Upload a CSV file and import session rows.
+   Protected by session auth (admin panel login).
+──────────────────────────────────────────────────────────── */
+router.post("/import", requireSession, upload.single("file"), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No CSV file uploaded. Use form field 'file'." });
+    }
+
+    const csvText = file.buffer.toString("utf-8");
+
+    let rows: Record<string, string>[];
+    try {
+      rows = parse(csvText, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+        bom: true,
+      });
+    } catch (parseErr) {
+      req.log.error({ err: parseErr }, "CSV parse error");
+      return res.status(400).json({ error: "Failed to parse CSV. Ensure it's valid CSV with a header row." });
+    }
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "CSV file is empty (no data rows)." });
+    }
+
+    // Build keyword lookup: "keyword_text|aeo_plan_id" → { keywordId, businessId }
+    const allKeywords = await db
+      .select({
+        id: keywordsTable.id,
+        keywordText: keywordsTable.keywordText,
+        aeoPlanId: keywordsTable.aeoPlanId,
+        businessId: keywordsTable.businessId,
+      })
+      .from(keywordsTable);
+
+    const kwMap = new Map<string, { keywordId: number; businessId: number | null }>();
+    for (const kw of allKeywords) {
+      const key = `${(kw.keywordText ?? "").toLowerCase().trim()}|${kw.aeoPlanId}`;
+      kwMap.set(key, { keywordId: kw.id, businessId: kw.businessId });
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: { row: number; reason: string }[] = [];
+    const BATCH_SIZE = 100;
+
+    const toInsert: (typeof sessionsTable.$inferInsert)[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const csvRow = rows[i];
+      const rowNum = i + 2; // +2 because row 1 is the header
+
+      const keywordText = (csvRow.keyword ?? "").trim();
+      const campaignIdRaw = csvRow.campaign_id;
+      const campaignId = campaignIdRaw ? parseInt(campaignIdRaw, 10) : null;
+      const kwKey = `${keywordText.toLowerCase()}|${campaignId}`;
+      const lookup = kwMap.get(kwKey);
+
+      if (!lookup) {
+        skipped++;
+        if (errors.length < 100) {
+          errors.push({ row: rowNum, reason: `Keyword not found: "${keywordText}" for campaign_id=${campaignId}` });
+        }
+        continue;
+      }
+
+      const clientIdRaw = csvRow.client_id;
+      if (!clientIdRaw) {
+        skipped++;
+        if (errors.length < 100) {
+          errors.push({ row: rowNum, reason: "Missing client_id" });
+        }
+        continue;
+      }
+
+      const status = (csvRow.status ?? "pending").trim();
+      const duration = csvRow.duration_s ? parseFloat(csvRow.duration_s) : null;
+      const hasFollowUp = csvRow.has_follow_up === "True";
+      const backlinkInjected = csvRow.backlink_injected === "True";
+      const backlinkFound = csvRow.backlink_found === "True";
+      const backlinksExpected = csvRow.backlinks_expected ? parseInt(csvRow.backlinks_expected, 10) : 0;
+      const errorMsg = csvRow.error || null;
+      const failureStep = csvRow.failure_step || null;
+
+      const timestampRaw = csvRow.timestamp;
+      const timestamp = timestampRaw ? new Date(timestampRaw) : new Date();
+      if (timestampRaw && isNaN(timestamp.getTime())) {
+        errors.push({ row: rowNum, reason: `Invalid timestamp: "${timestampRaw}"` });
+        skipped++;
+        continue;
+      }
+
+      toInsert.push({
+        clientId: parseInt(clientIdRaw, 10),
+        businessId: lookup.businessId,
+        campaignId,
+        keywordId: lookup.keywordId,
+        clientName: csvRow.client_name || null,
+        bizName: csvRow.biz_name || null,
+        campaignName: csvRow.campaign_name || null,
+        keywordText,
+        timestamp,
+        date: csvRow.date || null,
+        durationSeconds: isNaN(duration as number) ? null : duration,
+        promptText: csvRow.prompt || null,
+        followupText: csvRow.follow_up || null,
+        hasFollowUp,
+        status,
+        type: "aeo",
+        aiPlatform: csvRow.platform || "unknown",
+        errorClass: status === "error" ? (failureStep || "unknown") : null,
+        errorMessage: status === "error" ? errorMsg : null,
+        proxyStatus: csvRow.proxy_status || null,
+        proxyUsername: csvRow.proxy_username || null,
+        proxyHost: csvRow.proxy_host || null,
+        proxyPort: csvRow.proxy_port ? parseInt(csvRow.proxy_port, 10) : null,
+        deviceIdentifier: csvRow.device_id || null,
+        baseLatitude: csvRow.base_latitude ? parseFloat(csvRow.base_latitude) : null,
+        baseLongitude: csvRow.base_longitude ? parseFloat(csvRow.base_longitude) : null,
+        mockedLatitude: csvRow.mocked_latitude ? parseFloat(csvRow.mocked_latitude) : null,
+        mockedLongitude: csvRow.mocked_longitude ? parseFloat(csvRow.mocked_longitude) : null,
+        mockedTimezone: csvRow.mocked_timezone || null,
+        backlinksExpected,
+        backlinkInjected,
+        backlinkFound,
+        backlinkUrl: csvRow.backlink_url || null,
+      });
+    }
+
+    // Batch insert with fallback to row-by-row on failure
+    if (toInsert.length > 0) {
+      for (let offset = 0; offset < toInsert.length; offset += BATCH_SIZE) {
+        const batch = toInsert.slice(offset, offset + BATCH_SIZE);
+        try {
+          await db.insert(sessionsTable).values(batch);
+          imported += batch.length;
+        } catch (batchErr: unknown) {
+          const msg = batchErr instanceof Error ? batchErr.message : String(batchErr);
+          req.log.error({ err: batchErr }, `Batch insert failed at offset ${offset}`);
+          for (let j = 0; j < batch.length; j++) {
+            try {
+              await db.insert(sessionsTable).values(batch[j]);
+              imported++;
+            } catch (singleErr: unknown) {
+              const singleMsg = singleErr instanceof Error ? singleErr.message : String(singleErr);
+              errors.push({ row: offset + j + 2, reason: `DB insert error: ${singleMsg}` });
+              skipped++;
+            }
+          }
+        }
+      }
+    }
+
+    res.json({
+      imported,
+      skipped,
+      totalRows: rows.length,
+      errors: errors.slice(0, 100),
+      ...(errors.length > 100 ? { errorsTruncated: errors.length - 100 } : {}),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error importing sessions CSV");
     res.status(500).json({ error: "Internal server error" });
   }
 });

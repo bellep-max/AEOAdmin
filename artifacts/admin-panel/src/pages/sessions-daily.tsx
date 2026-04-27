@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { rawFetch } from "@/lib/period-comparison";
+import { ImportSessionsDialog } from "@/components/ImportSessionsDialog";
+import { Upload } from "lucide-react";
 import {
   useClients, useBusinesses, useCampaigns,
   fmtDateTime, fmtDuration, fmtBool, statusBadgeClass,
@@ -94,6 +96,7 @@ export default function SessionsDaily() {
   const [to, setTo]     = useState<string>(() => defaultToET());
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<SessionRow | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data: clients } = useClients();
   const { data: businesses } = useBusinesses(clientId);
@@ -148,7 +151,13 @@ export default function SessionsDaily() {
           <h1 className="text-2xl font-bold">Daily Sessions</h1>
           <p className="text-sm text-muted-foreground">Per-run logs from the executor — one row per AI session.</p>
         </div>
-        <Button variant="outline" onClick={() => refetch()}>Refresh</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
+            <Upload className="w-4 h-4" />
+            Import CSV
+          </Button>
+          <Button variant="outline" onClick={() => refetch()}>Refresh</Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -362,6 +371,12 @@ export default function SessionsDaily() {
           )}
         </SheetContent>
       </Sheet>
+
+      <ImportSessionsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onSuccess={() => refetch()}
+      />
     </div>
   );
 }
