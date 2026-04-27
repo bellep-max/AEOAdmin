@@ -548,7 +548,7 @@ router.post("/import", requireSession, upload.single("file"), async (req, res) =
         hasFollowUp,
         status,
         type: "aeo",
-        aiPlatform: csvRow.platform || "unknown",
+        aiPlatform: (csvRow.platform || "unknown").toLowerCase(),
         errorClass: status === "error" ? (failureStep || "unknown") : null,
         errorMessage: status === "error" ? errorMsg : null,
         proxyStatus: csvRow.proxy_status || null,
