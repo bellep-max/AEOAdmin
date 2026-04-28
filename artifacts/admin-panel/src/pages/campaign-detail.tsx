@@ -135,7 +135,7 @@ export default function CampaignDetail() {
   async function handleSaveKeyword(data: KwRecord) {
     setSavingKw(true);
     try {
-      const { id, linkUrl, linkTypeLabel, linkActive, initialRankReportLink, currentRankReportLink, ...kwData } = data;
+      const { id, linkUrl, linkTypeLabel, linkActive, embeddedUrl, initialRankReportLink, currentRankReportLink, ...kwData } = data;
       const isEdit = id != null;
       const url = isEdit ? `/api/keywords/${id}` : `/api/keywords`;
       const res = await rawFetch(url, {
@@ -158,6 +158,7 @@ export default function CampaignDetail() {
           body: JSON.stringify({
             linkUrl: linkUrl || null,
             linkTypeLabel: linkTypeLabel || null,
+            embeddedUrl: embeddedUrl || null,
             linkActive,
             initialRankReportLink: initialRankReportLink || null,
             currentRankReportLink: currentRankReportLink || null,
