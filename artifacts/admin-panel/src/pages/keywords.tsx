@@ -739,6 +739,8 @@ export default function Keywords() {
   const [saving,           setSaving]           = useState(false);
   const [allPlans,         setAllPlans]         = useState<{ id: number; clientId: number; businessId: number | null; name: string | null; planType: string; searchAddress: string | null }[]>([]);
   const [businesses,       setBusinesses]       = useState<{ id: number; clientId: number; name: string; category: string | null; publishedAddress: string | null; status: string }[]>([]);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     rawFetch("/api/aeo-plans", { credentials: "include" })
@@ -1013,6 +1015,7 @@ export default function Keywords() {
                 setSelectedBusinessId(null);
                 setSelectedCampaignId(null);
                 setExpanded(new Set());
+                setPage(0);
               }}
               options={(clients ?? []).map((c) => ({ value: String(c.id), label: c.businessName }))}
               placeholder="All Clients"
@@ -1028,6 +1031,7 @@ export default function Keywords() {
                 setSelectedBusinessId(next);
                 setSelectedCampaignId(null);
                 if (next !== null) setExpanded(new Set([next]));
+                setPage(0);
               }}
               options={bizInScope.map((b) => ({ value: String(b.id), label: b.name }))}
               placeholder="All Businesses"
@@ -1039,7 +1043,7 @@ export default function Keywords() {
 
             <SearchableSelect
               value={selectedCampaignId !== null ? String(selectedCampaignId) : null}
-              onChange={(v) => setSelectedCampaignId(v == null ? null : Number(v))}
+              onChange={(v) => { setSelectedCampaignId(v == null ? null : Number(v)); setPage(0); }}
               options={planInScope.map((p) => ({ value: String(p.id), label: p.name ?? p.planType, sublabel: p.planType }))}
               placeholder="All Campaigns"
               allLabel="All Campaigns"
@@ -1049,7 +1053,7 @@ export default function Keywords() {
 
             {(selectedClientId !== null || selectedBusinessId !== null || selectedCampaignId !== null) && (
               <button
-                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setExpanded(new Set()); }}
+                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setExpanded(new Set()); setPage(0); }}
                 className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-bold"
               >
                 <X className="w-4 h-4" /> Clear filters
@@ -1083,7 +1087,7 @@ export default function Keywords() {
           <Search className="absolute left-3 top-3.5 h-5 w-5 text-slate-600 pointer-events-none" />
           <Input type="search" placeholder="Search keyword…"
             className="pl-11 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 h-12 text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-700 dark:placeholder:text-slate-500"
-            value={search} onChange={(e) => setSearch(e.target.value)} />
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
         </div>
         <div className="flex items-center gap-2">
           <Filter className="w-5 h-5 text-slate-700 dark:text-slate-300" />
@@ -1092,7 +1096,7 @@ export default function Keywords() {
             { id: "3",   label: "Keywords" },
             { id: "4",   label: "Keywords with Backlinks" },
           ].map((t) => (
-            <button key={t.id} onClick={() => setTypeFilter(t.id)}
+            <button key={t.id} onClick={() => { setTypeFilter(t.id); setPage(0); }}
               className={`px-4 py-2.5 rounded-full text-base font-bold border-2 transition-all ${
                 typeFilter === t.id
                   ? (t.id === "4" ? "bg-emerald-600 text-white border-emerald-600" : "bg-blue-600 text-white border-blue-600")
@@ -1103,7 +1107,7 @@ export default function Keywords() {
           ))}
         </div>
         {(search || typeFilter !== "all") && (
-          <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); setPage(0); }}
             className="flex items-center gap-1.5 text-base text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold">
             <X className="w-5 h-5" /> Clear
           </button>
@@ -1138,9 +1142,12 @@ export default function Keywords() {
               const bCName = clients?.find((c) => c.id === bCid)?.businessName ?? `Client #${bCid}`;
               return aCName.localeCompare(bCName) || (aBiz?.name ?? "").localeCompare(bBiz?.name ?? "");
             });
+            const totalBizGroups = sortedEntries.length;
+            const totalPages = Math.max(1, Math.ceil(totalBizGroups / PAGE_SIZE));
+            const pagedEntries = sortedEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
             const showClientDividers = selectedClientId === null && sortedEntries.length > 0;
             let lastClientId: number | null = null;
-            return sortedEntries.flatMap(([businessId, kws]) => {
+            const rendered = pagedEntries.flatMap(([businessId, kws]) => {
             const biz          = businessId === UNASSIGNED_BID ? null : businessesMap.get(businessId);
             const clientId     = biz?.clientId ?? (kws[0]?.clientId as number);
             const client       = clients?.find((c) => c.id === clientId);
@@ -1349,6 +1356,23 @@ export default function Keywords() {
             );
             return nodes;
           });
+          return (
+            <>
+              {rendered}
+              {totalBizGroups > PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-sm text-muted-foreground">
+                    {totalBizGroups} business group{totalBizGroups !== 1 ? "s" : ""}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</Button>
+                    <span className="text-sm text-muted-foreground">Page {page + 1} / {totalPages}</span>
+                    <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+                  </div>
+                </div>
+              )}
+            </>
+          );
           })()}
         </div>
       )}

@@ -80,6 +80,8 @@ export default function Clients() {
   const [filterAccountType, setFilterAccountType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPlan, setFilterPlan] = useState("all");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
   const { data: clients, isLoading, refetch } = useGetClients();
   const createClient = useCreateClient();
   const queryClient = useQueryClient();
@@ -254,6 +256,10 @@ export default function Clients() {
     return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
   })
     .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? ""));
+
+  const totalFiltered = filteredClients.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const pagedClients = filteredClients.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -483,7 +489,7 @@ export default function Clients() {
             placeholder="Client name…"
             className="pl-9 h-10 w-52 bg-white text-sm text-black placeholder:text-slate-500"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           />
         </div>
         {/* Location */}
@@ -494,11 +500,11 @@ export default function Clients() {
             placeholder="Location…"
             className="pl-9 h-10 w-44 bg-white text-sm text-black placeholder:text-slate-500"
             value={filterLocation}
-            onChange={(e) => setFilterLocation(e.target.value)}
+            onChange={(e) => { setFilterLocation(e.target.value); setPage(0); }}
           />
         </div>
         {/* Account Type */}
-        <Select value={filterAccountType} onValueChange={setFilterAccountType}>
+        <Select value={filterAccountType} onValueChange={(v) => { setFilterAccountType(v); setPage(0); }}>
           <SelectTrigger className="h-10 w-40 bg-white text-sm text-black">
             <SelectValue placeholder="Account Type" />
           </SelectTrigger>
@@ -509,7 +515,7 @@ export default function Clients() {
           </SelectContent>
         </Select>
         {/* Status */}
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(0); }}>
           <SelectTrigger className="h-10 w-36 bg-white text-sm text-black">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -520,7 +526,7 @@ export default function Clients() {
           </SelectContent>
         </Select>
         {/* Plan */}
-        <Select value={filterPlan} onValueChange={setFilterPlan}>
+        <Select value={filterPlan} onValueChange={(v) => { setFilterPlan(v); setPage(0); }}>
           <SelectTrigger className="h-10 w-52 bg-white text-sm text-black">
             <SelectValue placeholder="Plan" />
           </SelectTrigger>
@@ -535,7 +541,7 @@ export default function Clients() {
             variant="ghost"
             size="sm"
             className="h-10 text-sm text-slate-500 hover:text-slate-900"
-            onClick={() => { setSearch(""); setFilterLocation(""); setFilterAccountType("all"); setFilterStatus("all"); setFilterPlan("all"); }}
+            onClick={() => { setSearch(""); setFilterLocation(""); setFilterAccountType("all"); setFilterStatus("all"); setFilterPlan("all"); setPage(0); }}
           >
             Clear filters
           </Button>
@@ -564,14 +570,14 @@ export default function Clients() {
                   </div>
                 </TableCell>
               </TableRow>
-            ) : filteredClients?.length === 0 ? (
+            ) : pagedClients?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center text-slate-600 dark:text-slate-400 text-base">
                   No clients found.
                 </TableCell>
               </TableRow>
             ) : (
-              filteredClients?.map((client) => (
+              pagedClients?.map((client) => (
                 <TableRow key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer relative group border-b border-slate-200 dark:border-slate-800">
                   <TableCell className="font-bold text-base text-black dark:text-slate-100">
                     <Link href={`/clients/${client.id}`} className="relative z-10 hover:underline text-primary">
@@ -676,6 +682,18 @@ export default function Clients() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted-foreground">
+          {totalFiltered} client{totalFiltered !== 1 ? "s" : ""}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</Button>
+          <span className="text-sm text-muted-foreground">Page {page + 1} / {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+        </div>
       </div>
 
       {/* Reactivate confirmation dialog */}
