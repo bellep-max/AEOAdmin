@@ -27,6 +27,7 @@ import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
+import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { CreatedByField } from "@/components/CreatedByField";
 
 const businessFormSchema = z.object({
@@ -91,6 +92,8 @@ export default function Clients() {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [postCreatePrompt, setPostCreatePrompt] = useState<{ clientId: number; clientName: string } | null>(null);
   const [addBusinessFor, setAddBusinessFor] = useState<{ clientId: number; clientName: string } | null>(null);
+  const [postBusinessPrompt, setPostBusinessPrompt] = useState<{ clientId: number; clientName: string; businessId: number; businessName: string } | null>(null);
+  const [addCampaignFor, setAddCampaignFor] = useState<{ clientId: number; businessId: number; businessName: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const allPlanNames = useAllPlanNames();
@@ -807,13 +810,64 @@ export default function Clients() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Post-business: prompt to add first campaign */}
+      <AlertDialog open={!!postBusinessPrompt} onOpenChange={(open) => { if (!open) setPostBusinessPrompt(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add a campaign for {postBusinessPrompt?.businessName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Campaigns are how keywords are organized. Add one now or later from the business page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPostBusinessPrompt(null)}>Later</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => {
+                if (postBusinessPrompt) {
+                  setAddCampaignFor({
+                    clientId: postBusinessPrompt.clientId,
+                    businessId: postBusinessPrompt.businessId,
+                    businessName: postBusinessPrompt.businessName,
+                  });
+                  setPostBusinessPrompt(null);
+                }
+              }}
+            >
+              Yes, add campaign now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {addBusinessFor && (
         <AddBusinessDialog
           open={!!addBusinessFor}
           onOpenChange={(open) => { if (!open) setAddBusinessFor(null); }}
           clientId={addBusinessFor.clientId}
           clientName={addBusinessFor.clientName}
-          onCreated={() => { refetch(); setAddBusinessFor(null); }}
+          onCreated={(business) => {
+            refetch();
+            setAddBusinessFor(null);
+            setPostBusinessPrompt({
+              clientId: addBusinessFor.clientId,
+              clientName: addBusinessFor.clientName,
+              businessId: business.id,
+              businessName: business.name,
+            });
+          }}
+          onUpdated={() => refetch()}
+        />
+      )}
+
+      {addCampaignFor && (
+        <CampaignFormDialog
+          open={!!addCampaignFor}
+          onOpenChange={(open) => { if (!open) setAddCampaignFor(null); }}
+          clientId={addCampaignFor.clientId}
+          businessId={addCampaignFor.businessId}
+          businessName={addCampaignFor.businessName}
+          onSaved={() => { refetch(); setAddCampaignFor(null); }}
         />
       )}
 
