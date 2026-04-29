@@ -7,7 +7,8 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, count, gte, lte } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, sql } from "drizzle-orm";
+import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
@@ -171,6 +172,67 @@ router.post("/", requireExecutorToken, async (req, res) => {
     res.status(201).json(log);
   } catch (err) {
     req.log.error({ err }, "Error creating audit log");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/audit-logs/sync
+   Backfills audit_logs from ranking_reports for rows that
+   don't have a matching audit_log entry yet.
+──────────────────────────────────────────────────────────── */
+router.post("/sync", async (req, res) => {
+  try {
+    const { from, to, dryRun } = req.query as Record<string, string>;
+    const isDryRun = dryRun === "true" || dryRun === "1";
+
+    const result = await db.execute(sql`
+      WITH to_insert AS (
+        SELECT
+          k.client_id                                    AS client_id,
+          k.business_id                                  AS business_id,
+          k.aeo_plan_id                                  AS campaign_id,
+          rr.keyword_id                                  AS keyword_id,
+          rr.platform                                    AS platform,
+          'success'                                      AS status,
+          rr.ranking_position                            AS rank_position,
+          NULL::integer                                  AS rank_total,
+          rr.created_at                                  AS "timestamp",
+          k.keyword_text                                 AS keyword_text,
+          b.name                                         AS biz_name,
+          COALESCE(p.name, p.plan_type)                  AS campaign_name
+        FROM ranking_reports rr
+        JOIN keywords k        ON rr.keyword_id = k.id
+        LEFT JOIN businesses b ON k.business_id = b.id
+        LEFT JOIN client_aeo_plans p ON k.aeo_plan_id = p.id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM audit_logs al
+          WHERE al.keyword_id = rr.keyword_id
+            AND al.platform   = rr.platform
+            AND al."timestamp"::date = rr.created_at::date
+        )
+        ${from ? sql`AND rr.created_at >= ${new Date(from as string)}` : sql``}
+        ${to   ? sql`AND rr.created_at <  ${new Date(to as string)}` : sql``}
+      )
+      ${isDryRun
+        ? sql`SELECT count(*)::int AS inserted FROM to_insert`
+        : sql`
+          INSERT INTO audit_logs
+            (client_id, business_id, campaign_id, keyword_id, platform, status,
+             rank_position, rank_total, "timestamp",
+             keyword_text, biz_name, campaign_name)
+          SELECT * FROM to_insert
+          RETURNING id
+        `}
+    `);
+
+    const count_ = isDryRun
+      ? (result.rows[0] as Record<string, unknown>).inserted ?? 0
+      : result.rowCount ?? 0;
+
+    res.json({ synced: Number(count_), dryRun: isDryRun });
+  } catch (err) {
+    req.log.error({ err }, "Error syncing audit logs");
     res.status(500).json({ error: "Internal server error" });
   }
 });
