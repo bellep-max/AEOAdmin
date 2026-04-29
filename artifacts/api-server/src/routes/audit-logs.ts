@@ -189,17 +189,22 @@ router.post("/sync", async (req, res) => {
     const result = await db.execute(sql`
       WITH to_insert AS (
         SELECT
-          k.client_id                                    AS client_id,
-          k.business_id                                  AS business_id,
+          rr.client_id                                   AS client_id,
+          rr.business_id                                 AS business_id,
           k.aeo_plan_id                                  AS campaign_id,
           rr.keyword_id                                  AS keyword_id,
           rr.platform                                    AS platform,
-          'success'                                      AS status,
+          COALESCE(rr.status, 'success')                 AS status,
           rr.ranking_position                            AS rank_position,
-          NULL::integer                                  AS rank_total,
-          rr.created_at                                  AS "timestamp",
-          k.keyword_text                                 AS keyword_text,
-          b.name                                         AS biz_name,
+          CASE WHEN rr.ranking_total ~ '^[0-9]+$' THEN rr.ranking_total::integer ELSE NULL END AS rank_total,
+          COALESCE(rr.timestamp, rr.created_at)          AS "timestamp",
+          rr.duration_seconds                            AS duration_seconds,
+          rr.proxy_ip                                    AS proxy_ip,
+          rr.proxy_city                                  AS proxy_city,
+          rr.proxy_region                                AS proxy_region,
+          rr.proxy_zip                                   AS proxy_zip,
+          COALESCE(rr.keyword, k.keyword_text)           AS keyword_text,
+          COALESCE(rr.biz_name, b.name)                  AS biz_name,
           COALESCE(p.name, p.plan_type)                  AS campaign_name
         FROM ranking_reports rr
         JOIN keywords k        ON rr.keyword_id = k.id
@@ -209,10 +214,10 @@ router.post("/sync", async (req, res) => {
           SELECT 1 FROM audit_logs al
           WHERE al.keyword_id = rr.keyword_id
             AND al.platform   = rr.platform
-            AND al."timestamp"::date = rr.created_at::date
+            AND al."timestamp"::date = COALESCE(rr.timestamp, rr.created_at)::date
         )
-        ${from ? sql`AND rr.created_at >= ${new Date(from as string)}` : sql``}
-        ${to   ? sql`AND rr.created_at <  ${new Date(to as string)}` : sql``}
+        ${from ? sql`AND COALESCE(rr.timestamp, rr.created_at) >= ${new Date(from as string)}` : sql``}
+        ${to   ? sql`AND COALESCE(rr.timestamp, rr.created_at) <  ${new Date(to as string)}` : sql``}
       )
       ${isDryRun
         ? sql`SELECT count(*)::int AS inserted FROM to_insert`
@@ -220,6 +225,7 @@ router.post("/sync", async (req, res) => {
           INSERT INTO audit_logs
             (client_id, business_id, campaign_id, keyword_id, platform, status,
              rank_position, rank_total, "timestamp",
+             duration_seconds, proxy_ip, proxy_city, proxy_region, proxy_zip,
              keyword_text, biz_name, campaign_name)
           SELECT * FROM to_insert
           RETURNING id

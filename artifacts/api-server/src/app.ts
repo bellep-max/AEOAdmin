@@ -50,7 +50,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const isProd = process.env.NODE_ENV === "production";
 
-app.set("trust proxy", 1);
+app.set("trust proxy", true);
 
 app.use(
   session({

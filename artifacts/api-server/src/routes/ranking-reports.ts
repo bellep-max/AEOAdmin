@@ -21,18 +21,44 @@ router.get("/", async (req, res) => {
         clientId: rankingReportsTable.clientId,
         businessId: rankingReportsTable.businessId,
         keywordId: rankingReportsTable.keywordId,
+        clientName: rankingReportsTable.clientName,
+        bizName: rankingReportsTable.bizName,
+        searchAddress: rankingReportsTable.searchAddress,
+        keyword: rankingReportsTable.keyword,
+        timestamp: rankingReportsTable.timestamp,
+        date: rankingReportsTable.date,
+        platform: rankingReportsTable.platform,
+        deviceIdentifier: rankingReportsTable.deviceIdentifier,
+        status: rankingReportsTable.status,
+        durationSeconds: rankingReportsTable.durationSeconds,
         rankingPosition: rankingReportsTable.rankingPosition,
+        rankingTotal: rankingReportsTable.rankingTotal,
         reasonRecommended: rankingReportsTable.reasonRecommended,
         mapsPresence: rankingReportsTable.mapsPresence,
         mapsUrl: rankingReportsTable.mapsUrl,
         screenshotUrl: rankingReportsTable.screenshotUrl,
         textRanking: rankingReportsTable.textRanking,
         isInitialRanking: rankingReportsTable.isInitialRanking,
-        platform: rankingReportsTable.platform,
+        proxyStatus: rankingReportsTable.proxyStatus,
+        proxyUsername: rankingReportsTable.proxyUsername,
+        proxyHost: rankingReportsTable.proxyHost,
+        proxyPort: rankingReportsTable.proxyPort,
+        proxyIp: rankingReportsTable.proxyIp,
+        proxyCity: rankingReportsTable.proxyCity,
+        proxyRegion: rankingReportsTable.proxyRegion,
+        proxyCountry: rankingReportsTable.proxyCountry,
+        proxyZip: rankingReportsTable.proxyZip,
+        baseLatitude: rankingReportsTable.baseLatitude,
+        baseLongitude: rankingReportsTable.baseLongitude,
+        mockedLatitude: rankingReportsTable.mockedLatitude,
+        mockedLongitude: rankingReportsTable.mockedLongitude,
+        mockedTimezone: rankingReportsTable.mockedTimezone,
+        failureStep: rankingReportsTable.failureStep,
+        error: rankingReportsTable.error,
         createdAt: rankingReportsTable.createdAt,
-        clientName: clientsTable.businessName,
-        businessName: businessesTable.name,
-        keywordText: keywordsTable.keywordText,
+        joinedClientName: clientsTable.businessName,
+        joinedBusinessName: businessesTable.name,
+        joinedKeywordText: keywordsTable.keywordText,
         aeoPlanId: keywordsTable.aeoPlanId,
       })
       .from(rankingReportsTable)
@@ -42,7 +68,12 @@ router.get("/", async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(rankingReportsTable.createdAt));
 
-    res.json(reports);
+    res.json(reports.map((r) => ({
+      ...r,
+      clientName:   r.clientName   ?? r.joinedClientName ?? null,
+      bizName:      r.bizName      ?? r.joinedBusinessName ?? null,
+      keyword:      r.keyword      ?? r.joinedKeywordText ?? null,
+    })));
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
     res.status(500).json({ error: "Internal server error" });
@@ -72,11 +103,40 @@ router.post("/", requireExecutorToken, async (req, res) => {
       const [updated] = await db
         .update(rankingReportsTable)
         .set({
+          clientName: body.clientName ?? null,
+          bizName: body.bizName ?? null,
+          searchAddress: body.searchAddress ?? null,
+          keyword: body.keyword ?? null,
+          timestamp: body.timestamp ?? null,
+          date: body.date ?? null,
+          platform: body.platform ?? null,
+          deviceIdentifier: body.deviceIdentifier ?? null,
+          status: body.status ?? null,
+          durationSeconds: body.durationSeconds ?? null,
           rankingPosition: body.rankingPosition ?? null,
+          rankingTotal: body.rankingTotal ?? null,
           reasonRecommended: body.reasonRecommended ?? null,
           mapsPresence: body.mapsPresence ?? null,
           mapsUrl: body.mapsUrl ?? null,
           isInitialRanking: body.isInitialRanking ?? false,
+          screenshotUrl: body.screenshotUrl ?? null,
+          textRanking: body.textRanking ?? null,
+          proxyStatus: body.proxyStatus ?? null,
+          proxyUsername: body.proxyUsername ?? null,
+          proxyHost: body.proxyHost ?? null,
+          proxyPort: body.proxyPort ?? null,
+          proxyIp: body.proxyIp ?? null,
+          proxyCity: body.proxyCity ?? null,
+          proxyRegion: body.proxyRegion ?? null,
+          proxyCountry: body.proxyCountry ?? null,
+          proxyZip: body.proxyZip ?? null,
+          baseLatitude: body.baseLatitude ?? null,
+          baseLongitude: body.baseLongitude ?? null,
+          mockedLatitude: body.mockedLatitude ?? null,
+          mockedLongitude: body.mockedLongitude ?? null,
+          mockedTimezone: body.mockedTimezone ?? null,
+          failureStep: body.failureStep ?? null,
+          error: body.error ?? null,
         })
         .where(eq(rankingReportsTable.id, existing[0].id))
         .returning();
@@ -89,12 +149,40 @@ router.post("/", requireExecutorToken, async (req, res) => {
         clientId: body.clientId,
         businessId: body.businessId != null ? Number(body.businessId) : null,
         keywordId: body.keywordId,
+        clientName: body.clientName ?? null,
+        bizName: body.bizName ?? null,
+        searchAddress: body.searchAddress ?? null,
+        keyword: body.keyword ?? null,
+        timestamp: body.timestamp ?? null,
+        date: body.date ?? null,
+        platform: body.platform ?? null,
+        deviceIdentifier: body.deviceIdentifier ?? null,
+        status: body.status ?? null,
+        durationSeconds: body.durationSeconds ?? null,
         rankingPosition: body.rankingPosition ?? null,
+        rankingTotal: body.rankingTotal ?? null,
         reasonRecommended: body.reasonRecommended ?? null,
         mapsPresence: body.mapsPresence ?? null,
         mapsUrl: body.mapsUrl ?? null,
         isInitialRanking: body.isInitialRanking ?? false,
-        platform: body.platform ?? null,
+        screenshotUrl: body.screenshotUrl ?? null,
+        textRanking: body.textRanking ?? null,
+        proxyStatus: body.proxyStatus ?? null,
+        proxyUsername: body.proxyUsername ?? null,
+        proxyHost: body.proxyHost ?? null,
+        proxyPort: body.proxyPort ?? null,
+        proxyIp: body.proxyIp ?? null,
+        proxyCity: body.proxyCity ?? null,
+        proxyRegion: body.proxyRegion ?? null,
+        proxyCountry: body.proxyCountry ?? null,
+        proxyZip: body.proxyZip ?? null,
+        baseLatitude: body.baseLatitude ?? null,
+        baseLongitude: body.baseLongitude ?? null,
+        mockedLatitude: body.mockedLatitude ?? null,
+        mockedLongitude: body.mockedLongitude ?? null,
+        mockedTimezone: body.mockedTimezone ?? null,
+        failureStep: body.failureStep ?? null,
+        error: body.error ?? null,
       })
       .returning();
     res.status(201).json(report);
@@ -140,6 +228,32 @@ router.patch("/:id", requireExecutorToken, async (req, res) => {
     if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
     if (body.screenshotUrl    !== undefined) updates.screenshotUrl    = body.screenshotUrl ?? null;
     if (body.textRanking      !== undefined) updates.textRanking      = body.textRanking ?? null;
+    if (body.rankingTotal     !== undefined) updates.rankingTotal     = body.rankingTotal ?? null;
+    if (body.durationSeconds  !== undefined) updates.durationSeconds  = body.durationSeconds ?? null;
+    if (body.proxyIp          !== undefined) updates.proxyIp          = body.proxyIp ?? null;
+    if (body.proxyCity        !== undefined) updates.proxyCity        = body.proxyCity ?? null;
+    if (body.proxyRegion      !== undefined) updates.proxyRegion      = body.proxyRegion ?? null;
+    if (body.proxyCountry     !== undefined) updates.proxyCountry     = body.proxyCountry ?? null;
+    if (body.proxyZip         !== undefined) updates.proxyZip         = body.proxyZip ?? null;
+    if (body.baseLatitude     !== undefined) updates.baseLatitude     = body.baseLatitude ?? null;
+    if (body.baseLongitude    !== undefined) updates.baseLongitude    = body.baseLongitude ?? null;
+    if (body.mockedLatitude   !== undefined) updates.mockedLatitude   = body.mockedLatitude ?? null;
+    if (body.mockedLongitude  !== undefined) updates.mockedLongitude  = body.mockedLongitude ?? null;
+    if (body.deviceIdentifier !== undefined) updates.deviceIdentifier = body.deviceIdentifier ?? null;
+    if (body.clientName       !== undefined) updates.clientName       = body.clientName ?? null;
+    if (body.bizName          !== undefined) updates.bizName          = body.bizName ?? null;
+    if (body.searchAddress    !== undefined) updates.searchAddress    = body.searchAddress ?? null;
+    if (body.keyword          !== undefined) updates.keyword          = body.keyword ?? null;
+    if (body.timestamp        !== undefined) updates.timestamp        = body.timestamp ?? null;
+    if (body.date             !== undefined) updates.date             = body.date ?? null;
+    if (body.status           !== undefined) updates.status           = body.status ?? null;
+    if (body.proxyStatus      !== undefined) updates.proxyStatus      = body.proxyStatus ?? null;
+    if (body.proxyUsername    !== undefined) updates.proxyUsername    = body.proxyUsername ?? null;
+    if (body.proxyHost        !== undefined) updates.proxyHost        = body.proxyHost ?? null;
+    if (body.proxyPort        !== undefined) updates.proxyPort        = body.proxyPort ?? null;
+    if (body.mockedTimezone   !== undefined) updates.mockedTimezone   = body.mockedTimezone ?? null;
+    if (body.failureStep      !== undefined) updates.failureStep      = body.failureStep ?? null;
+    if (body.error            !== undefined) updates.error            = body.error ?? null;
 
     const [report] = await db
       .update(rankingReportsTable)
