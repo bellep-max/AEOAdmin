@@ -16,6 +16,7 @@ import BusinessDetail from "@/pages/business-detail";
 import CampaignDetail from "@/pages/campaign-detail";
 import Keywords from "@/pages/keywords";
 import KeywordsAll from "@/pages/keywords-all";
+import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
 import Metrics from "@/pages/metrics";
@@ -52,6 +53,7 @@ function ProtectedRoutes() {
         <Route path="/clients" component={Clients} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route path="/clients/:clientId/businesses/:businessId" component={BusinessDetail} />
+        <Route path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/keywords/:keywordId" component={KeywordDetail} />
         <Route path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId" component={CampaignDetail} />
         <Route path="/plans" component={Plans} />
         <Route path="/keywords" component={Keywords} />
