@@ -18,7 +18,7 @@ import {
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box, Key,
-  Activity, ChevronRight, Calendar, Search,
+  Activity, ChevronRight, Calendar, Search, List,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -52,7 +52,15 @@ const navGroups: NavGroup[] = [
     label: "Infrastructure",
     items: [
       { name: "Clients",  href: "/clients",  icon: Users },
-      { name: "Keywords", href: "/keywords", icon: Key   },
+      {
+        name: "Keywords",
+        href: "/keywords",
+        icon: Key,
+        children: [
+          { name: "Keywords by Business", href: "/keywords",     icon: Key   },
+          { name: "All Keywords",         href: "/keywords/all", icon: List  },
+        ],
+      },
       { name: "Plans",    href: "/packages", icon: Box   },
     ],
   },

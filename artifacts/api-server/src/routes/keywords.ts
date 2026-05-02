@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { keywordsTable, keywordLinksTable, clientAeoPlansTable } from "@workspace/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { keywordsTable, keywordLinksTable, clientAeoPlansTable, clientsTable, businessesTable, sessionsTable, auditLogsTable } from "@workspace/db/schema";
+import { eq, and, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -17,8 +17,47 @@ router.get("/", async (req, res) => {
     if (businessId) conditions.push(eq(keywordsTable.businessId, parseInt(businessId)));
     if (aeoPlanId)  conditions.push(eq(keywordsTable.aeoPlanId,  parseInt(aeoPlanId)));
     const keywords = await db
-      .select()
+      .select({
+        id: keywordsTable.id,
+        clientId: keywordsTable.clientId,
+        businessId: keywordsTable.businessId,
+        aeoPlanId: keywordsTable.aeoPlanId,
+        keywordText: keywordsTable.keywordText,
+        keywordType: keywordsTable.keywordType,
+        isActive: keywordsTable.isActive,
+        isPrimary: keywordsTable.isPrimary,
+        verificationStatus: keywordsTable.verificationStatus,
+        status: keywordsTable.status,
+        notes: keywordsTable.notes,
+        implementedBy: keywordsTable.implementedBy,
+        dateAdded: keywordsTable.dateAdded,
+        initialSearchCount30Days: keywordsTable.initialSearchCount30Days,
+        followupSearchCount30Days: keywordsTable.followupSearchCount30Days,
+        initialSearchCountLife: keywordsTable.initialSearchCountLife,
+        followupSearchCountLife: keywordsTable.followupSearchCountLife,
+        backlinkClickCount30Days: keywordsTable.backlinkClickCount30Days,
+        backlinkClickCountLife: keywordsTable.backlinkClickCountLife,
+        initialRankReportCount: keywordsTable.initialRankReportCount,
+        currentRankReportCount: keywordsTable.currentRankReportCount,
+        linkTypeLabel: keywordsTable.linkTypeLabel,
+        linkActive: keywordsTable.linkActive,
+        initialRankReportLink: keywordsTable.initialRankReportLink,
+        currentRankReportLink: keywordsTable.currentRankReportLink,
+        createdAt: keywordsTable.createdAt,
+        joinedClientName: clientsTable.businessName,
+        joinedBusinessName: businessesTable.name,
+        joinedCampaignName: clientAeoPlansTable.name,
+        lastRunAt: sql<string | null>`
+          (SELECT MAX(ts) FROM (
+            SELECT MAX(s.timestamp) AS ts FROM sessions s WHERE s.keyword_id = ${keywordsTable.id}
+            UNION ALL
+            SELECT MAX(al.timestamp) AS ts FROM audit_logs al WHERE al.keyword_id = ${keywordsTable.id}
+          ) sub)`.as("last_run_at"),
+      })
       .from(keywordsTable)
+      .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
+      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(clientAeoPlansTable, eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined);
 
     const ids = keywords.map((k) => k.id);
@@ -36,7 +75,14 @@ router.get("/", async (req, res) => {
       }
     }
 
-    res.json(keywords.map((k) => ({ ...k, links: linksByKeyword.get(k.id) ?? [] })));
+    res.json(keywords.map((k) => ({
+      ...k,
+      clientName:   k.joinedClientName   ?? null,
+      businessName: k.joinedBusinessName ?? null,
+      campaignName: k.joinedCampaignName ?? null,
+      lastRunAt:    k.lastRunAt ?? null,
+      links: linksByKeyword.get(k.id) ?? [],
+    })));
   } catch (err) {
     req.log.error({ err }, "Error fetching keywords");
     res.status(500).json({ error: "Internal server error" });
@@ -247,6 +293,9 @@ router.patch("/:id", async (req, res) => {
     if (body.businessId       !== undefined) allowed.businessId       = body.businessId === null ? null : Number(body.businessId);
     if (body.clientId         !== undefined) allowed.clientId         = Number(body.clientId);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
+    if (body.status            !== undefined) allowed.status            = body.status === null ? null : String(body.status);
+    if (body.notes             !== undefined) allowed.notes             = body.notes === null ? null : String(body.notes);
+    if (body.implementedBy     !== undefined) allowed.implementedBy     = body.implementedBy === null ? null : String(body.implementedBy);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
     if (body.linkActive       !== undefined) allowed.linkActive       = Boolean(body.linkActive);
     if (body.initialRankReportLink  !== undefined) allowed.initialRankReportLink  = body.initialRankReportLink  === null ? null : String(body.initialRankReportLink);
