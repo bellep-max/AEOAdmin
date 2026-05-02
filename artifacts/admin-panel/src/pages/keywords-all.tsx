@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -15,12 +14,14 @@ import { Key, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 import { format } from "date-fns";
 
-const STATUS_OPTIONS = [
-  { value: "active", label: "Active", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" },
-  { value: "inactive", label: "Inactive", cls: "bg-slate-500/10 text-slate-500 border-slate-500/30" },
-  { value: "needs_improved", label: "Needs improved", cls: "bg-amber-500/10 text-amber-600 border-amber-500/30" },
-  { value: "new", label: "New", cls: "bg-blue-500/10 text-blue-600 border-blue-500/30" },
-] as const;
+const STATUS_MAP: Record<string, { label: string; cls: string }> = {
+  active:          { label: "Active",          cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" },
+  inactive:        { label: "Inactive",        cls: "bg-slate-500/10 text-slate-500 border-slate-500/30" },
+  needs_improved:  { label: "Needs improved",  cls: "bg-amber-500/10 text-amber-600 border-amber-500/30" },
+  new:             { label: "New",             cls: "bg-blue-500/10 text-blue-600 border-blue-500/30" },
+};
+
+const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, { label }]) => ({ value, label }));
 
 interface KeywordRow {
   id: number;
@@ -44,82 +45,9 @@ interface PlanRow {
   planType: string;
 }
 
-function StatusBadge({ status }: { status: string | null }) {
-  const opt = STATUS_OPTIONS.find((o) => o.value === status);
-  const label = opt?.label ?? status ?? "—";
-  const cls = opt?.cls ?? "bg-slate-500/10 text-slate-500 border-slate-500/30";
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-semibold ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
-function EditableCell({
-  value,
-  onSave,
-  placeholder,
-  type = "text",
-}: {
-  value: string | null;
-  onSave: (v: string) => void;
-  placeholder?: string;
-  type?: "text" | "select";
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value ?? "");
-
-  const commit = () => {
-    setEditing(false);
-    if (draft !== (value ?? "")) onSave(draft);
-  };
-
-  if (editing) {
-    if (type === "select") {
-      return (
-        <select
-          value={draft}
-          onChange={(e) => { setDraft(e.target.value); }}
-          onBlur={commit}
-          className="w-full text-xs border rounded px-1 py-0.5 bg-background"
-          autoFocus
-        >
-          <option value="">—</option>
-          {STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      );
-    }
-    return (
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
-        placeholder={placeholder}
-        className="w-full text-xs border rounded px-1 py-0.5 bg-background"
-        autoFocus
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => { setDraft(value ?? ""); setEditing(true); }}
-      className="text-xs text-left w-full min-w-[60px] hover:bg-muted/50 rounded px-1 py-0.5 cursor-text"
-    >
-      {value || <span className="text-muted-foreground/40">{placeholder ?? "—"}</span>}
-    </button>
-  );
-}
-
 const PAGE_SIZE = 20;
 
 export default function KeywordsAll() {
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -167,21 +95,6 @@ export default function KeywordsAll() {
 
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-
-  const updateKeyword = async (id: number, field: string, value: string) => {
-    const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-    await fetch(`${BASE}/api/keywords/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ [field]: value || null }),
-    });
-    queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
-  };
-
-  const handlePageChange = (newPage: number) => {
-    setPage(newPage);
-  };
 
   if (isLoading) {
     return <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>;
@@ -262,49 +175,31 @@ export default function KeywordsAll() {
                   </TableCell>
                 </TableRow>
               ) : (
-                paged.map((kw) => (
-                  <TableRow key={kw.id}>
-                    <TableCell className="font-medium text-sm">
-                      {kw.clientId != null && kw.businessId != null && kw.aeoPlanId != null ? (
-                        <Link
-                          href={`/clients/${kw.clientId}/businesses/${kw.businessId}/campaigns/${kw.aeoPlanId}`}
-                          className="hover:text-primary hover:underline"
-                        >
-                          {kw.keywordText}
-                        </Link>
-                      ) : (
-                        kw.keywordText
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{kw.clientName ?? "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{kw.businessName ?? "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{kw.campaignName ?? "—"}</TableCell>
-                    <TableCell>
-                      <EditableCell
-                        type="select"
-                        value={kw.status ?? "new"}
-                        onSave={(v) => updateKeyword(kw.id, "status", v)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {kw.lastRunAt ? format(new Date(kw.lastRunAt), "MMM d, yyyy") : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={kw.implementedBy}
-                        onSave={(v) => updateKeyword(kw.id, "implementedBy", v)}
-                        placeholder="—"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={kw.notes}
-                        onSave={(v) => updateKeyword(kw.id, "notes", v)}
-                        placeholder="Add note…"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))
+                paged.map((kw) => {
+                  const s = STATUS_MAP[kw.status ?? "new"] ?? STATUS_MAP.new;
+                  return (
+                    <TableRow key={kw.id}>
+                      <TableCell className="font-medium text-sm">
+                        {kw.keywordText}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{kw.clientName ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{kw.businessName ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{kw.campaignName ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge className={`text-[11px] border ${s.cls}`} variant="outline">
+                          {s.label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {kw.lastRunAt ? format(new Date(kw.lastRunAt), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{kw.implementedBy ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={kw.notes ?? ""}>
+                        {kw.notes ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -321,7 +216,7 @@ export default function KeywordsAll() {
               variant="outline"
               size="sm"
               disabled={page === 0}
-              onClick={() => handlePageChange(page - 1)}
+              onClick={() => setPage(page - 1)}
             >
               <ChevronLeft className="w-4 h-4" /> Prev
             </Button>
@@ -330,7 +225,7 @@ export default function KeywordsAll() {
               variant="outline"
               size="sm"
               disabled={page >= totalPages - 1}
-              onClick={() => handlePageChange(page + 1)}
+              onClick={() => setPage(page + 1)}
             >
               Next <ChevronRight className="w-4 h-4" />
             </Button>
