@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ChevronDown, ChevronRight, Users, Search } from "lucide-react";
+import { Building2, Search } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
@@ -23,13 +23,17 @@ interface Props {
   aeoPlanId: number | null;
 }
 
-interface ClientGroup {
-  clientId: number;
-  clientName: string;
-  keywords: Map<number, { keyword: PeriodRow; platforms: PeriodRow[] }>;
+interface CampaignGroup {
+  aeoPlanId: number;
+  campaignName: string;
+  clientId: number | null;
+  clientName: string | null;
+  businessId: number | null;
+  businessName: string | null;
+  keywords: { keyword: PeriodRow; platforms: PeriodRow[] }[];
 }
 
-const UNASSIGNED = 0;
+const UNASSIGNED_PLAN = 0;
 
 function PlatformChip({ row }: { row: PeriodRow }) {
   const cls = PLATFORM_COLORS[row.platform] ?? "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
@@ -45,61 +49,41 @@ function PlatformChip({ row }: { row: PeriodRow }) {
 }
 
 export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: Props) {
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [expandedKeyword, setExpandedKeyword] = useState<Set<number>>(new Set());
   const [search, setSearch] = useState("");
 
   const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
   const label = periodLabel(period);
 
-  const groups = useMemo<ClientGroup[]>(() => {
-    const map = new Map<number, ClientGroup>();
+  const campaigns = useMemo<CampaignGroup[]>(() => {
+    const map = new Map<number, CampaignGroup>();
     for (const r of data?.rows ?? []) {
       if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase())) continue;
-      const cid = r.clientId ?? UNASSIGNED;
-      let group = map.get(cid);
+      const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
+      let group = map.get(pid);
       if (!group) {
         group = {
-          clientId: cid,
-          clientName: r.clientName ?? "Unassigned",
-          keywords: new Map(),
+          aeoPlanId: pid,
+          campaignName: r.campaignName ?? "Unassigned",
+          clientId: r.clientId,
+          clientName: r.clientName,
+          businessId: r.businessId,
+          businessName: r.businessName,
+          keywords: [],
         };
-        map.set(cid, group);
+        map.set(pid, group);
       }
-      const kw = group.keywords.get(r.keywordId);
-      if (kw) kw.platforms.push(r);
-      else group.keywords.set(r.keywordId, { keyword: r, platforms: [r] });
+      // Group by keyword within campaign
+      const existing = group.keywords.find((k) => k.keyword.keywordId === r.keywordId);
+      if (existing) {
+        existing.platforms.push(r);
+      } else {
+        group.keywords.push({ keyword: r, platforms: [r] });
+      }
     }
-    return [...map.values()].sort((a, b) => a.clientName.toLowerCase().localeCompare(b.clientName.toLowerCase()));
+    return [...map.values()].sort((a, b) =>
+      a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase())
+    );
   }, [data, search]);
-
-  // Auto-expand when a single client is filtered
-  const autoExpandedClientId =
-    clientId != null && groups.length === 1 ? groups[0].clientId : null;
-
-  function isClientOpen(cid: number): boolean {
-    if (autoExpandedClientId === cid) return true;
-    return expanded.has(cid);
-  }
-
-  function toggleClient(cid: number): void {
-    if (autoExpandedClientId === cid) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(cid)) next.delete(cid);
-      else next.add(cid);
-      return next;
-    });
-  }
-
-  function toggleKeyword(kid: number): void {
-    setExpandedKeyword((prev) => {
-      const next = new Set(prev);
-      if (next.has(kid)) next.delete(kid);
-      else next.add(kid);
-      return next;
-    });
-  }
 
   if (isLoading) {
     return <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>;
@@ -122,39 +106,33 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
       </div>
 
       <div className="space-y-3">
-        {groups.map((g) => {
-          const isOpen = isClientOpen(g.clientId);
-          const allRows: PeriodRow[] = [];
-          for (const kw of g.keywords.values()) allRows.push(...kw.platforms);
+        {campaigns.map((campaign) => {
+          const allRows = campaign.keywords.flatMap((k) => k.platforms);
           const counts = countStatuses(allRows);
-          const keywordCount = g.keywords.size;
+          const keywordCount = campaign.keywords.length;
 
           return (
-            <Card key={g.clientId} className="border-border/50 overflow-hidden">
-              <button type="button" onClick={() => toggleClient(g.clientId)} className="w-full text-left">
-                <CardHeader className="pb-3 flex flex-row items-center gap-3">
-                  {isOpen ? (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                  )}
+            <Card key={campaign.aeoPlanId} className="border-border/50 overflow-hidden">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center shrink-0">
-                    <Users className="w-5 h-5 text-primary" />
+                    <Building2 className="w-5 h-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    {g.clientId !== UNASSIGNED ? (
+                    {campaign.aeoPlanId !== UNASSIGNED_PLAN && campaign.clientId != null && campaign.businessId != null ? (
                       <Link
-                        href={`/clients/${g.clientId}`}
-                        onClick={(e) => e.stopPropagation()}
+                        href={`/clients/${campaign.clientId}/businesses/${campaign.businessId}/campaigns/${campaign.aeoPlanId}`}
                         className="text-base font-bold truncate hover:text-primary hover:underline inline-block"
                       >
-                        {g.clientName}
+                        {campaign.campaignName}
                       </Link>
                     ) : (
-                      <CardTitle className="text-base font-bold truncate">{g.clientName}</CardTitle>
+                      <CardTitle className="text-base font-bold truncate">{campaign.campaignName}</CardTitle>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      {keywordCount} keyword{keywordCount !== 1 ? "s" : ""} · {allRows.length} tracked across platforms
+                      {campaign.clientName && (
+                        <span>{campaign.clientName}{campaign.businessName ? ` · ${campaign.businessName}` : ""}</span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -175,38 +153,30 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
                       </Badge>
                     )}
                   </div>
-                </CardHeader>
-              </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {keywordCount} keyword{keywordCount !== 1 ? "s" : ""} · {allRows.length} tracked across platforms
+                </p>
+              </CardHeader>
 
-              {isOpen && (
-                <CardContent className="pt-0 pb-4 space-y-1">
-                  {[...g.keywords.values()]
-                    .sort((a, b) => a.keyword.keywordText.localeCompare(b.keyword.keywordText))
-                    .map(({ keyword, platforms }) => {
-                      const isKwOpen = expandedKeyword.has(keyword.keywordId);
-                      const sortedPlatforms = [...platforms].sort((a, b) => {
-                        const ai = PLATFORM_ORDER.indexOf(a.platform as typeof PLATFORM_ORDER[number]);
-                        const bi = PLATFORM_ORDER.indexOf(b.platform as typeof PLATFORM_ORDER[number]);
-                        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-                      });
+              <CardContent className="pt-0 pb-4 space-y-2">
+                {campaign.keywords
+                  .sort((a, b) => a.keyword.keywordText.localeCompare(b.keyword.keywordText))
+                  .map(({ keyword, platforms }) => {
+                    const sortedPlatforms = [...platforms].sort((a, b) => {
+                      const ai = PLATFORM_ORDER.indexOf(a.platform as typeof PLATFORM_ORDER[number]);
+                      const bi = PLATFORM_ORDER.indexOf(b.platform as typeof PLATFORM_ORDER[number]);
+                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                    });
 
-                      return (
-                        <div key={keyword.keywordId} className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => toggleKeyword(keyword.keywordId)}
-                            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left"
-                          >
-                            {isKwOpen ? (
-                              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            ) : (
-                              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                            )}
+                    return (
+                      <div key={keyword.keywordId} className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
+                        <div className="px-3 py-2.5">
+                          <div className="flex items-center gap-3">
                             <div className="flex-1 min-w-0">
                               {keyword.businessId != null && keyword.aeoPlanId != null ? (
                                 <Link
                                   href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}/campaigns/${keyword.aeoPlanId}`}
-                                  onClick={(e) => e.stopPropagation()}
                                   className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline inline-block"
                                 >
                                   {keyword.keywordText}
@@ -214,62 +184,37 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
                               ) : (
                                 <p className="text-sm font-semibold text-foreground truncate">{keyword.keywordText}</p>
                               )}
-                              {keyword.businessName && keyword.businessId != null && (
-                                <div className="flex items-center gap-1 text-[11px] truncate">
-                                  <Link
-                                    href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="text-primary hover:underline font-medium"
-                                  >
-                                    {keyword.businessName}
-                                  </Link>
-                                  {keyword.campaignName && keyword.aeoPlanId != null && (
-                                    <>
-                                      <span className="text-muted-foreground/60">·</span>
-                                      <Link
-                                        href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}/campaigns/${keyword.aeoPlanId}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="text-primary hover:underline font-medium truncate"
-                                      >
-                                        {keyword.campaignName}
-                                      </Link>
-                                    </>
-                                  )}
-                                </div>
-                              )}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                               {sortedPlatforms.map((p) => (
                                 <PlatformChip key={`chip-${p.keywordId}-${p.platform}`} row={p} />
                               ))}
                             </div>
-                          </button>
-
-                          {isKwOpen && (
-                            <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
-                              <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
-                                <div className="col-span-2">Platform</div>
-                                <div className="col-span-3">{label.previousLabel}</div>
-                                <div className="col-span-3">{label.currentLabel}</div>
-                                <div className="col-span-2">Change</div>
-                                <div className="col-span-2">Status</div>
-                              </div>
-                              {sortedPlatforms.map((p) => (
-                                <div key={`${p.keywordId}-${p.platform}-detail`} className="grid grid-cols-12 gap-2 items-center text-sm px-1 py-1">
-                                  <div className="col-span-2"><PlatformChip row={p} /></div>
-                                  <div className="col-span-3 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                                  <div className="col-span-3 font-semibold">{fmtPos(p.currentPosition)}</div>
-                                  <div className="col-span-2"><ChangeCell change={p.change} /></div>
-                                  <div className="col-span-2"><StatusBadge status={p.status} /></div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          </div>
                         </div>
-                      );
-                    })}
-                </CardContent>
-              )}
+
+                        <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
+                          <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
+                            <div className="col-span-2">Platform</div>
+                            <div className="col-span-3">{label.previousLabel}</div>
+                            <div className="col-span-3">{label.currentLabel}</div>
+                            <div className="col-span-2">Change</div>
+                            <div className="col-span-2">Status</div>
+                          </div>
+                          {sortedPlatforms.map((p) => (
+                            <div key={`${p.keywordId}-${p.platform}-detail`} className="grid grid-cols-12 gap-2 items-center text-sm px-1 py-1">
+                              <div className="col-span-2"><PlatformChip row={p} /></div>
+                              <div className="col-span-3 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
+                              <div className="col-span-3 font-semibold">{fmtPos(p.currentPosition)}</div>
+                              <div className="col-span-2"><ChangeCell change={p.change} /></div>
+                              <div className="col-span-2"><StatusBadge status={p.status} /></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </CardContent>
             </Card>
           );
         })}

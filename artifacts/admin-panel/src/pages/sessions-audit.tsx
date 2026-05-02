@@ -280,7 +280,7 @@ export default function SessionsAudit() {
                       <TableCell><Badge variant="secondary">{l.platform ?? "—"}</Badge></TableCell>
                       <TableCell className="text-xs">{l.mode ?? "—"}</TableCell>
                       <TableCell><Badge className={statusBadgeClass(l.status)}>{l.status ?? "—"}</Badge></TableCell>
-                      <TableCell className="text-sm">{l.rankPosition != null ? (l.rankTotal != null ? `${l.rankPosition}/${l.rankTotal}` : `#${l.rankPosition}`) : "—"}</TableCell>
+                      <TableCell className="text-sm">{l.rankPosition != null ? `#${l.rankPosition}` : "—"}</TableCell>
                       <TableCell className="text-sm">{l.mentioned === "yes" ? <Badge>Yes</Badge> : "—"}</TableCell>
                       <TableCell className="text-sm">{fmtDuration(l.durationSeconds)}</TableCell>
                     </TableRow>
@@ -317,7 +317,7 @@ export default function SessionsAudit() {
                 </Section>
 
                 <Section title="Ranking">
-                  <Row label="Position"  value={open.rankPosition != null ? `${open.rankPosition} / ${open.rankTotal ?? "?"}` : "—"} />
+                  <Row label="Position"  value={open.rankPosition != null ? `#${open.rankPosition}` : "—"} />
                   <Row label="Mentioned" value={open.mentioned ?? "—"} />
                   <Row label="Context"   value={open.rankContext ?? "—"} pre />
                 </Section>
