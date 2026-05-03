@@ -742,7 +742,7 @@ export default function Keywords() {
   const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
   const [bizTypeFilters,   setBizTypeFilters]   = useState<Map<number, string>>(new Map());
-  const [expanded,         setExpanded]         = useState<Set<number>>(new Set());
+  const [collapsed,        setCollapsed]        = useState<Set<number>>(new Set());
   const [addOpen,          setAddOpen]          = useState(false);
   const [editKw,           setEditKw]           = useState<KwRecord | null>(null);
   const [confirmDeleteKw,  setConfirmDeleteKw]  = useState<KwRecord | null>(null);
@@ -818,7 +818,7 @@ export default function Keywords() {
     const kw = keywords.find((k) => k.id === targetKeywordId);
     if (!kw) return;
     const bizId = (kw.businessId as number | null) ?? -1;
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       if (prev.has(bizId)) return prev;
       const next = new Set(prev);
       next.add(bizId);
@@ -944,7 +944,7 @@ export default function Keywords() {
     if (!searchLower) return;
     const bids = new Set<number>();
     for (const k of filteredKws) bids.add((k.businessId as number | null) ?? 0);
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       let changed = false;
       bids.forEach((b) => { if (!next.has(b)) { next.add(b); changed = true; } });
@@ -1026,7 +1026,7 @@ export default function Keywords() {
                 setSelectedClientId(next);
                 setSelectedBusinessId(null);
                 setSelectedCampaignId(null);
-                setExpanded(new Set());
+                setCollapsed(new Set());
                 setPage(0);
               }}
               options={(clients ?? []).map((c) => ({ value: String(c.id), label: c.businessName }))}
@@ -1042,7 +1042,7 @@ export default function Keywords() {
                 const next = v == null ? null : Number(v);
                 setSelectedBusinessId(next);
                 setSelectedCampaignId(null);
-                if (next !== null) setExpanded(new Set([next]));
+                if (next !== null) setCollapsed(new Set([next]));
                 setPage(0);
               }}
               options={bizInScope.map((b) => ({ value: String(b.id), label: b.name }))}
@@ -1065,7 +1065,7 @@ export default function Keywords() {
 
             {(selectedClientId !== null || selectedBusinessId !== null || selectedCampaignId !== null) && (
               <button
-                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setExpanded(new Set()); setPage(0); }}
+                onClick={() => { setSelectedClientId(null); setSelectedBusinessId(null); setSelectedCampaignId(null); setCollapsed(new Set()); setPage(0); }}
                 className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-bold"
               >
                 <X className="w-4 h-4" /> Clear filters
@@ -1171,7 +1171,7 @@ export default function Keywords() {
               const b = bid === UNASSIGNED_BID ? null : businessesMap.get(bid);
               return (b?.clientId ?? (bkws[0]?.clientId as number)) === clientId;
             }).length;
-            const isOpen       = expanded.has(businessId);
+            const isOpen       = !collapsed.has(businessId);
             const initials     = displayName.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase();
             const activeCount  = kws.filter((k) => k.isActive !== false).length;
             const bizFilter    = getBizTypeFilter(businessId);
@@ -1202,7 +1202,7 @@ export default function Keywords() {
                 {/* Business header */}
                 <div className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 dark:bg-slate-800 border-b border-blue-300 dark:border-blue-700" : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                   <button
-                    onClick={() => setExpanded((p) => { const n = new Set(p); n.has(businessId) ? n.delete(businessId) : n.add(businessId); return n; })}
+                    onClick={() => setCollapsed((p) => { const n = new Set(p); n.has(businessId) ? n.delete(businessId) : n.add(businessId); return n; })}
                     className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 dark:border-slate-700 transition-colors ${isOpen ? "text-blue-600 font-bold" : "text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white"}`}>
                     <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${isOpen ? "bg-blue-100 text-blue-600" : "bg-blue-50 text-blue-600"}`}>
                       {initials}

@@ -453,7 +453,7 @@ export default function ClientAeoPlans({
   /* keywords per plan: planId → rows */
   const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
   const [kwLoading,    setKwLoading]    = useState<Set<number>>(new Set());
-  const [expanded,     setExpanded]     = useState<Set<number>>(new Set());
+  const [collapsed,    setCollapsed]    = useState<Set<number>>(new Set());
   const [addingKwFor,  setAddingKwFor]  = useState<number | null>(null);
   const [newKwText,    setNewKwText]    = useState("");
   const [savingKw,     setSavingKw]     = useState(false);
@@ -521,7 +521,7 @@ export default function ClientAeoPlans({
   }
 
   function toggleExpand(planId: number) {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(planId)) {
         next.delete(planId);
@@ -729,7 +729,7 @@ export default function ClientAeoPlans({
                 <TableBody>
                   {plans.map((plan) => {
                     const meta    = getPlanMeta(plan.planType);
-                    const isOpen  = expanded.has(plan.id);
+                    const isOpen  = !collapsed.has(plan.id);
                     const kws     = planKeywords.get(plan.id) ?? [];
                     const isKwLoading = kwLoading.has(plan.id);
                     return (

@@ -51,7 +51,7 @@ export function KeywordsWithRankingsCard({
   extraKeywords,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
   const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
   const label = periodLabel(period);
@@ -75,7 +75,7 @@ export function KeywordsWithRankingsCard({
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
 
   function toggle(kid: number): void {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(kid)) next.delete(kid);
       else next.add(kid);
@@ -126,7 +126,7 @@ export function KeywordsWithRankingsCard({
         ) : (
           <div className="space-y-2">
             {grouped.map(({ keywordId, keywordText, platforms }) => {
-              const isOpen = expanded.has(keywordId);
+              const isOpen = !collapsed.has(keywordId);
               const sorted = [...platforms].sort((a, b) => {
                 const ai = PLATFORM_ORDER.indexOf(a.platform as typeof PLATFORM_ORDER[number]);
                 const bi = PLATFORM_ORDER.indexOf(b.platform as typeof PLATFORM_ORDER[number]);
