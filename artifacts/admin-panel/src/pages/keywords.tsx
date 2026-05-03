@@ -75,9 +75,11 @@ interface KeywordLink {
 interface RankCell { current: number | null; previous: number | null; first: number | null }
 type RankMap = Map<number, Partial<Record<string, RankCell>>>;
 
-function fmtRank(c: RankCell | undefined): string {
-  if (!c || c.current == null) return "—";
-  return `#${c.current}`;
+function fmtRank(c: RankCell | undefined, which: "first" | "previous" | "current" = "current"): string {
+  if (!c) return "—";
+  const v = c[which];
+  if (v == null) return "—";
+  return `#${v}`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -93,11 +95,11 @@ function exportCSV(
 ) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const headers = [
-    "Client", "Business", "Campaign", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Date Added",
-    "ChatGPT Rank", "Gemini Rank", "Perplexity Rank",
+    "Client", "Business", "Campaign", "Keyword", "Keyword Type", "Primary (1st)", "Active", "Status", "Date Added",
+    "ChatGPT First", "ChatGPT Current", "Gemini First", "Gemini Current", "Perplexity First", "Perplexity Current",
     "Search (30d)", "Follow-up Search (30d)",
     "Search (Life)", "Follow-up Search (Life)",
-    "Link Type", "Link Active", "Initial Rank Report", "Current Rank Report",
+    "Implemented By", "Notes",
   ];
   const lines = rows.map((kw) => {
     const type = getKeywordTypeLabel(kw.keywordType as number);
@@ -113,18 +115,20 @@ function exportCSV(
       esc(kw.keywordText), esc(type),
       esc(kw.isPrimary ? "Yes" : "No"),
       esc(kw.isActive  ? "Active" : "Inactive"),
+      esc((kw as any).status ?? "new"),
       esc(date),
-      esc(fmtRank(ranks.chatgpt)),
-      esc(fmtRank(ranks.gemini)),
-      esc(fmtRank(ranks.perplexity)),
-      kw.initialSearchCount30Days  ?? 0,
-      kw.followupSearchCount30Days ?? 0,
-      kw.initialSearchCountLife    ?? 0,
-      kw.followupSearchCountLife   ?? 0,
-      esc(kw.linkTypeLabel ?? ""),
-      esc((kw.linkActive as boolean) !== false ? "Active" : "Inactive"),
-      esc(kw.initialRankReportLink ?? ""),
-      esc(kw.currentRankReportLink ?? ""),
+      esc(fmtRank(ranks.chatgpt, "first")),
+      esc(fmtRank(ranks.chatgpt, "current")),
+      esc(fmtRank(ranks.gemini, "first")),
+      esc(fmtRank(ranks.gemini, "current")),
+      esc(fmtRank(ranks.perplexity, "first")),
+      esc(fmtRank(ranks.perplexity, "current")),
+      kw.initialSearchCount30Days  ?? "",
+      kw.followupSearchCount30Days ?? "",
+      kw.initialSearchCountLife    ?? "",
+      kw.followupSearchCountLife   ?? "",
+      esc((kw as any).implementedBy ?? ""),
+      esc((kw as any).notes ?? ""),
     ].join(",");
   });
   const csv  = [headers.join(","), ...lines].join("\n");
@@ -195,43 +199,51 @@ function exportPDF(
         kw.keywordText as string, type,
         kw.isPrimary ? "Yes" : "No",
         kw.isActive  ? "Active" : "Inactive",
+        ((kw as any).status ?? "new") as string,
         date,
-        fmtRank(ranks.chatgpt),
-        fmtRank(ranks.gemini),
-        fmtRank(ranks.perplexity),
-        String(kw.initialSearchCount30Days  ?? 0),
-        String(kw.followupSearchCount30Days ?? 0),
-        String(kw.initialSearchCountLife    ?? 0),
-        String(kw.followupSearchCountLife   ?? 0),
-        (kw.linkTypeLabel as string) || "—",
-        (kw.linkActive as boolean) !== false ? "Active" : "Inactive",
+        fmtRank(ranks.chatgpt, "first"),
+        fmtRank(ranks.chatgpt, "current"),
+        fmtRank(ranks.gemini, "first"),
+        fmtRank(ranks.gemini, "current"),
+        fmtRank(ranks.perplexity, "first"),
+        fmtRank(ranks.perplexity, "current"),
+        kw.initialSearchCount30Days  != null ? String(kw.initialSearchCount30Days)  : "—",
+        kw.followupSearchCount30Days != null ? String(kw.followupSearchCount30Days) : "—",
+        kw.initialSearchCountLife    != null ? String(kw.initialSearchCountLife)    : "—",
+        kw.followupSearchCountLife   != null ? String(kw.followupSearchCountLife)   : "—",
+        ((kw as any).implementedBy as string) || "—",
+        ((kw as any).notes as string) || "—",
       ];
     });
 
     autoTable(doc, {
       startY,
-      head: [["Campaign","Keyword","Type","1st","Active","Date","ChatGPT","Gemini","Perplexity","Init 30d","F/U 30d","Init Life","F/U Life","Link Type","Link Active"]],
+      head: [["Campaign","Keyword","Type","1st","Active","Status","Date","ChatGPT 1st","ChatGPT Curr","Gemini 1st","Gemini Curr","Perplexity 1st","Perplexity Curr","Search 30d","F/U 30d","Search Life","F/U Life","Implemented By","Notes"]],
       body: bodyRows,
       theme: "striped",
-      headStyles: { fillColor: [17, 24, 39], textColor: [180, 200, 230], fontSize: 7, fontStyle: "bold", cellPadding: 2.5 },
-      bodyStyles: { fontSize: 7, cellPadding: 2, textColor: [30, 30, 50] },
+      headStyles: { fillColor: [17, 24, 39], textColor: [180, 200, 230], fontSize: 6, fontStyle: "bold", cellPadding: 2 },
+      bodyStyles: { fontSize: 6, cellPadding: 1.5, textColor: [30, 30, 50] },
       alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0: { cellWidth: 32, overflow: "linebreak" },
-        1: { cellWidth: 42, overflow: "linebreak" },
-        2: { cellWidth: 18 },
-        3: { cellWidth: 9, halign: "center" },
-        4: { cellWidth: 13, halign: "center" },
-        5: { cellWidth: 17, halign: "center" },
-        6: { cellWidth: 13, halign: "center" },
-        7: { cellWidth: 13, halign: "center" },
-        8: { cellWidth: 15, halign: "center" },
-        9: { cellWidth: 11, halign: "right" },
-        10: { cellWidth: 11, halign: "right" },
-        11: { cellWidth: 11, halign: "right" },
-        12: { cellWidth: 11, halign: "right" },
-        13: { cellWidth: 22 },
-        14: { cellWidth: 13, halign: "center" },
+        0: { cellWidth: 26, overflow: "linebreak" },
+        1: { cellWidth: 34, overflow: "linebreak" },
+        2: { cellWidth: 14 },
+        3: { cellWidth: 8, halign: "center" },
+        4: { cellWidth: 10, halign: "center" },
+        5: { cellWidth: 12, halign: "center" },
+        6: { cellWidth: 14, halign: "center" },
+        7: { cellWidth: 11, halign: "center" },
+        8: { cellWidth: 11, halign: "center" },
+        9: { cellWidth: 11, halign: "center" },
+        10: { cellWidth: 11, halign: "center" },
+        11: { cellWidth: 11, halign: "center" },
+        12: { cellWidth: 11, halign: "center" },
+        13: { cellWidth: 10, halign: "right" },
+        14: { cellWidth: 10, halign: "right" },
+        15: { cellWidth: 10, halign: "right" },
+        16: { cellWidth: 10, halign: "right" },
+        17: { cellWidth: 16 },
+        18: { cellWidth: 20 },
       },
       margin: { left: 10, right: 10 },
       didDrawPage: footerFn,

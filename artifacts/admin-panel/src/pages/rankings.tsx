@@ -37,9 +37,9 @@ interface PivotRow {
   business: string;
   campaign: string;
   keyword: string;
-  chatgptPrev: string; chatgptCurr: string; chatgptChange: string; chatgptStatus: string;
-  geminiPrev: string; geminiCurr: string; geminiChange: string; geminiStatus: string;
-  perplexityPrev: string; perplexityCurr: string; perplexityChange: string; perplexityStatus: string;
+  chatgptFirst: string; chatgptPrev: string; chatgptCurr: string; chatgptChange: string; chatgptStatus: string;
+  geminiFirst: string; geminiPrev: string; geminiCurr: string; geminiChange: string; geminiStatus: string;
+  perplexityFirst: string; perplexityPrev: string; perplexityCurr: string; perplexityChange: string; perplexityStatus: string;
 }
 
 function pivotRows(rows: PeriodRow[]): PivotRow[] {
@@ -60,11 +60,11 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         business: base.businessName ?? "",
         campaign: base.campaignName ?? "",
         keyword: base.keywordText,
-        chatgptPrev: pos(g("chatgpt")?.previousPosition ?? null), chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
+        chatgptFirst: pos(g("chatgpt")?.firstPosition ?? null), chatgptPrev: pos(g("chatgpt")?.previousPosition ?? null), chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
         chatgptChange: chg(g("chatgpt")?.change ?? null), chatgptStatus: g("chatgpt")?.status ?? "—",
-        geminiPrev: pos(g("gemini")?.previousPosition ?? null), geminiCurr: pos(g("gemini")?.currentPosition ?? null),
+        geminiFirst: pos(g("gemini")?.firstPosition ?? null), geminiPrev: pos(g("gemini")?.previousPosition ?? null), geminiCurr: pos(g("gemini")?.currentPosition ?? null),
         geminiChange: chg(g("gemini")?.change ?? null), geminiStatus: g("gemini")?.status ?? "—",
-        perplexityPrev: pos(g("perplexity")?.previousPosition ?? null), perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
+        perplexityFirst: pos(g("perplexity")?.firstPosition ?? null), perplexityPrev: pos(g("perplexity")?.previousPosition ?? null), perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
         perplexityChange: chg(g("perplexity")?.change ?? null), perplexityStatus: g("perplexity")?.status ?? "—",
       };
     });
@@ -74,16 +74,16 @@ function exportRankingsCSV(rows: PeriodRow[], label: string) {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const headers = [
     "Client", "Business", "Campaign", "Keyword",
-    "ChatGPT Initial", "ChatGPT Current", "ChatGPT Change", "ChatGPT Status",
-    "Gemini Initial", "Gemini Current", "Gemini Change", "Gemini Status",
-    "Perplexity Initial", "Perplexity Current", "Perplexity Change", "Perplexity Status",
+    "ChatGPT First", "ChatGPT Previous", "ChatGPT Current", "ChatGPT Change", "ChatGPT Status",
+    "Gemini First", "Gemini Previous", "Gemini Current", "Gemini Change", "Gemini Status",
+    "Perplexity First", "Perplexity Previous", "Perplexity Current", "Perplexity Change", "Perplexity Status",
   ];
   const pivoted = pivotRows(rows);
   const lines = pivoted.map((r) => [
     esc(r.client), esc(r.business), esc(r.campaign), esc(r.keyword),
-    esc(r.chatgptPrev), esc(r.chatgptCurr), esc(r.chatgptChange), esc(r.chatgptStatus),
-    esc(r.geminiPrev), esc(r.geminiCurr), esc(r.geminiChange), esc(r.geminiStatus),
-    esc(r.perplexityPrev), esc(r.perplexityCurr), esc(r.perplexityChange), esc(r.perplexityStatus),
+    esc(r.chatgptFirst), esc(r.chatgptPrev), esc(r.chatgptCurr), esc(r.chatgptChange), esc(r.chatgptStatus),
+    esc(r.geminiFirst), esc(r.geminiPrev), esc(r.geminiCurr), esc(r.geminiChange), esc(r.geminiStatus),
+    esc(r.perplexityFirst), esc(r.perplexityPrev), esc(r.perplexityCurr), esc(r.perplexityChange), esc(r.perplexityStatus),
   ].join(","));
   const csv = [headers.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -132,24 +132,24 @@ function exportRankingsPDF(rows: PeriodRow[], label: string, periodTitle: string
 
     const body = clientRows.map((r) => [
       r.business, r.campaign, r.keyword,
-      r.chatgptPrev, r.chatgptCurr, r.chatgptStatus,
-      r.geminiPrev, r.geminiCurr, r.geminiStatus,
-      r.perplexityPrev, r.perplexityCurr, r.perplexityStatus,
+      r.chatgptFirst, r.chatgptPrev, r.chatgptCurr, r.chatgptStatus,
+      r.geminiFirst, r.geminiPrev, r.geminiCurr, r.geminiStatus,
+      r.perplexityFirst, r.perplexityPrev, r.perplexityCurr, r.perplexityStatus,
     ]);
 
     autoTable(doc, {
       startY,
-      head: [["Business", "Campaign", "Keyword", "ChatGPT Init", "ChatGPT Curr", "Status", "Gemini Init", "Gemini Curr", "Status", "Perplexity Init", "Perplexity Curr", "Status"]],
+      head: [["Business", "Campaign", "Keyword", "ChatGPT 1st", "ChatGPT Prev", "ChatGPT Curr", "Status", "Gemini 1st", "Gemini Prev", "Gemini Curr", "Status", "Perplexity 1st", "Perplexity Prev", "Perplexity Curr", "Status"]],
       body,
       theme: "striped",
-      headStyles: { fillColor: [17, 24, 39], textColor: [180, 200, 230], fontSize: 6.5, fontStyle: "bold", cellPadding: 2 },
-      bodyStyles: { fontSize: 6.5, cellPadding: 1.5, textColor: [30, 30, 50] },
+      headStyles: { fillColor: [17, 24, 39], textColor: [180, 200, 230], fontSize: 6, fontStyle: "bold", cellPadding: 2 },
+      bodyStyles: { fontSize: 6, cellPadding: 1.5, textColor: [30, 30, 50] },
       alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0: { cellWidth: 28 }, 1: { cellWidth: 28 }, 2: { cellWidth: 35, overflow: "linebreak" },
-        3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 16, halign: "center" }, 5: { cellWidth: 16, halign: "center" },
-        6: { cellWidth: 16, halign: "center" }, 7: { cellWidth: 16, halign: "center" }, 8: { cellWidth: 16, halign: "center" },
-        9: { cellWidth: 20, halign: "center" }, 10: { cellWidth: 20, halign: "center" }, 11: { cellWidth: 20, halign: "center" },
+        0: { cellWidth: 22 }, 1: { cellWidth: 22 }, 2: { cellWidth: 28, overflow: "linebreak" },
+        3: { cellWidth: 11, halign: "center" }, 4: { cellWidth: 11, halign: "center" }, 5: { cellWidth: 11, halign: "center" }, 6: { cellWidth: 12, halign: "center" },
+        7: { cellWidth: 11, halign: "center" }, 8: { cellWidth: 11, halign: "center" }, 9: { cellWidth: 11, halign: "center" }, 10: { cellWidth: 12, halign: "center" },
+        11: { cellWidth: 13, halign: "center" }, 12: { cellWidth: 13, halign: "center" }, 13: { cellWidth: 13, halign: "center" }, 14: { cellWidth: 13, halign: "center" },
       },
       margin: { left: 10, right: 10 },
       didDrawPage: footerFn,
