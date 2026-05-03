@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import {
   Activity, HeartPulse, ArrowUpRight, ArrowRight, Clock,
-  UserCheck, UserX, UserPlus,
+  UserCheck, UserX, UserPlus, Key, AlertTriangle, Link2, CheckCircle2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -134,6 +134,54 @@ export default function Dashboard() {
           iconColor={health?.score && health.score > 90 ? "text-emerald-400" : "text-amber-400"}
           iconBg={health?.score && health.score > 90 ? "bg-emerald-500/10" : "bg-amber-500/10"}
           barClass={health?.score && health.score > 90 ? "gradient-bar-green" : "gradient-bar-amber"}
+        />
+      </div>
+
+      {/* Keyword stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Total Keywords"
+          value={summary?.totalKeywords}
+          loading={isSummaryLoading}
+          subtext={`${summary?.activeKeywords ?? 0} active`}
+          icon={Key}
+          iconColor="text-primary"
+          iconBg="bg-primary/10"
+          barClass="gradient-bar-blue"
+          href="/keywords/all"
+        />
+        <StatCard
+          title="Keywords w/ Backlinks"
+          value={summary?.keywordsWithBacklinks}
+          loading={isSummaryLoading}
+          subtext={`${summary?.totalBacklinksFound ?? 0} total backlinks found`}
+          icon={Link2}
+          iconColor="text-emerald-400"
+          iconBg="bg-emerald-500/10"
+          barClass="gradient-bar-green"
+          href="/keywords/all"
+        />
+        <StatCard
+          title="Errors Today"
+          value={summary?.keywordsWithErrors}
+          loading={isSummaryLoading}
+          subtext="Keywords with errors"
+          icon={AlertTriangle}
+          iconColor="text-amber-400"
+          iconBg="bg-amber-500/10"
+          barClass="gradient-bar-amber"
+          href="/sessions/daily"
+        />
+        <StatCard
+          title="Keywords w/ Rank"
+          value={summary?.activeKeywords}
+          loading={isSummaryLoading}
+          subtext="Active & tracking"
+          icon={CheckCircle2}
+          iconColor="text-blue-400"
+          iconBg="bg-blue-500/10"
+          barClass="gradient-bar-blue"
+          href="/rankings"
         />
       </div>
 

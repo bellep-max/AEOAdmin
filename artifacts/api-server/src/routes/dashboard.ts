@@ -6,8 +6,9 @@ import {
   devicesTable,
   proxiesTable,
   rankingReportsTable,
+  keywordsTable,
 } from "@workspace/db/schema";
-import { eq, count, desc, sql, and, gte } from "drizzle-orm";
+import { eq, count, desc, sql, and, gte, ne } from "drizzle-orm";
 
 const router = Router();
 
@@ -85,6 +86,44 @@ router.get("/summary", async (req, res) => {
       avgPosition = 0;
     }
 
+    // Keyword stats
+    let totalKeywords = 0;
+    let activeKeywords = 0;
+    let keywordsWithErrors = 0;
+    let keywordsWithBacklinks = 0;
+    let totalBacklinksFound = 0;
+    try {
+      const [tk] = await db.select({ count: count() }).from(keywordsTable);
+      const [ak] = await db.select({ count: count() }).from(keywordsTable).where(eq(keywordsTable.isActive, true));
+      totalKeywords = Number(tk.count);
+      activeKeywords = Number(ak.count);
+
+      // Distinct keywords that had error sessions today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const errorKwResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT keyword_id)::int AS cnt FROM sessions
+        WHERE status = 'error' AND timestamp >= ${today}
+      `);
+      keywordsWithErrors = (errorKwResult.rows[0] as { cnt: number } | undefined)?.cnt ?? 0;
+
+      // Distinct keywords that had backlinks found
+      const backlinkKwResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT keyword_id)::int AS cnt FROM sessions
+        WHERE backlink_found = true
+      `);
+      keywordsWithBacklinks = (backlinkKwResult.rows[0] as { cnt: number } | undefined)?.cnt ?? 0;
+
+      // Total sessions where backlink was found
+      const [blCount] = await db
+        .select({ count: count() })
+        .from(sessionsTable)
+        .where(eq(sessionsTable.backlinkFound, true));
+      totalBacklinksFound = Number(blCount.count);
+    } catch (kwErr) {
+      req.log.warn({ kwErr }, "Failed to fetch keyword stats");
+    }
+
     const networkHealthScore = totalDevices > 0
       ? Math.min(100, Math.round((availableDevices / totalDevices) * 100 * 0.4 + 60))
       : 60;
@@ -102,6 +141,11 @@ router.get("/summary", async (req, res) => {
       sessionCapacityPerDay: availableDevices * 1,
       completedToday: sessionsTodayNum,
       pendingToday: Math.max(0, activeClientsNum * 3 - sessionsTodayNum),
+      totalKeywords,
+      activeKeywords,
+      keywordsWithErrors,
+      keywordsWithBacklinks,
+      totalBacklinksFound,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching dashboard summary");
@@ -119,6 +163,11 @@ router.get("/summary", async (req, res) => {
       sessionCapacityPerDay: 0,
       completedToday: 0,
       pendingToday: 0,
+      totalKeywords: 0,
+      activeKeywords: 0,
+      keywordsWithErrors: 0,
+      keywordsWithBacklinks: 0,
+      totalBacklinksFound: 0,
     });
   }
 });
