@@ -47,7 +47,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
   for (const r of rows) {
     let entry = byKeyword.get(r.keywordId);
     if (!entry) { entry = { base: r, platforms: new Map() }; byKeyword.set(r.keywordId, entry); }
-    entry.platforms.set(r.platform, r);
+    entry.platforms.set(r.platform.toLowerCase(), r);
   }
   const pos = (n: number | null) => n == null ? "—" : `#${n}`;
   const chg = (n: number | null) => n == null ? "—" : n > 0 ? `+${n}` : String(n);

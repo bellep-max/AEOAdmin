@@ -780,7 +780,7 @@ export default function Keywords() {
   for (const row of lifetimeRanks?.rows ?? []) {
     let bucket = rankMap.get(row.keywordId);
     if (!bucket) { bucket = {}; rankMap.set(row.keywordId, bucket); }
-    bucket[row.platform] = { current: row.currentPosition, previous: row.previousPosition, first: row.firstPosition };
+    bucket[row.platform.toLowerCase()] = { current: row.currentPosition, previous: row.previousPosition, first: row.firstPosition };
   }
 
   function getBizTypeFilter(cid: number) { return bizTypeFilters.get(cid) ?? "all"; }
