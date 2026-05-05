@@ -31,7 +31,7 @@ router.get("/latest", async (_req, res) => {
       .limit(1);
 
     // Get latest from ranking_reports — the real source of truth
-    const [reportRow] = await db.execute(sql`
+    const reportResult = await db.execute(sql`
       SELECT
         MAX(date) as latest_date,
         COUNT(DISTINCT keyword_id)::int as keyword_count,
@@ -42,7 +42,7 @@ router.get("/latest", async (_req, res) => {
       WHERE date = (SELECT MAX(date) FROM ranking_reports)
     `);
 
-    const report = reportRow as Record<string, unknown> | undefined;
+    const report = reportResult.rows[0] as Record<string, unknown> | undefined;
     const reportDate = report?.latest_date as string | null;
 
     // If ranking_reports has newer data, use it
@@ -70,7 +70,7 @@ router.get("/latest", async (_req, res) => {
 
 router.get("/latest-detail", async (_req, res) => {
   try {
-    const [row] = await db.execute(sql`
+    const detailResult = await db.execute(sql`
       SELECT
         date,
         platform,
@@ -83,7 +83,7 @@ router.get("/latest-detail", async (_req, res) => {
       ORDER BY platform
     `);
 
-    const rows = row as Record<string, unknown>[];
+    const rows = detailResult.rows as Record<string, unknown>[];
     const date = rows[0]?.date as string ?? "";
     res.json({
       date,
@@ -101,7 +101,7 @@ router.get("/latest-detail", async (_req, res) => {
 
 router.get("/latest-records", async (_req, res) => {
   try {
-    const [row] = await db.execute(sql`
+    const recordsResult = await db.execute(sql`
       SELECT
         rr.keyword_id,
         COALESCE(rr.keyword, k.keyword_text) as keyword_text,
@@ -117,7 +117,7 @@ router.get("/latest-records", async (_req, res) => {
       ORDER BY cl.business_name, k.keyword_text, rr.platform
     `);
 
-    const rows = row as Record<string, unknown>[];
+    const rows = recordsResult.rows as Record<string, unknown>[];
     res.json(rows.map(r => ({
       keywordId: r.keyword_id as number,
       keywordText: r.keyword_text as string,
