@@ -1,13 +1,11 @@
 import { useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Loader2, XCircle, ChevronDown, ChevronRight } from "lucide-react";
-
-const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-function rawFetch(path: string): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { headers });
-}
+import { Badge } from "@/components/ui/badge";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { rawFetch } from "@/lib/period-comparison";
 
 interface RankingRun {
   id: number;
@@ -25,9 +23,13 @@ function fmtDate(s: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-interface LatestDetail {
-  date: string;
-  platforms: { platform: string; keywords: number; succeeded: number; failed: number }[];
+interface LatestRecord {
+  keywordId: number;
+  keywordText: string;
+  platform: string;
+  rankPosition: number | null;
+  clientName: string | null;
+  campaignName: string | null;
 }
 
 export function RankingRunBanner() {
@@ -43,11 +45,11 @@ export function RankingRunBanner() {
     refetchInterval: 60_000,
   });
 
-  const { data: detail } = useQuery<LatestDetail>({
-    queryKey: ["/api/ranking-runs/latest-detail"],
+  const { data: records, isLoading } = useQuery<LatestRecord[]>({
+    queryKey: ["/api/ranking-runs/latest-records"],
     queryFn: async () => {
-      const res = await rawFetch("/api/ranking-runs/latest-detail");
-      if (!res.ok) return null;
+      const res = await rawFetch("/api/ranking-runs/latest-records");
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: expanded,
@@ -106,20 +108,40 @@ export function RankingRunBanner() {
         {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
       </button>
 
-      {expanded && detail && (
-        <div className="mt-2 rounded-xl border border-border/50 bg-card/60 px-4 py-3">
-          <p className="text-xs font-semibold text-muted-foreground mb-2">Latest run details — {detail.date}</p>
-          <div className="grid grid-cols-3 gap-3">
-            {detail.platforms.map((pl) => (
-              <div key={pl.platform} className="rounded-lg border border-border/40 bg-muted/20 p-2">
-                <p className="text-xs font-semibold capitalize mb-1">{pl.platform}</p>
-                <p className="text-2xl font-bold">{pl.keywords}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {pl.succeeded} succeeded{pl.failed > 0 ? `, ${pl.failed} failed` : ""}
-                </p>
-              </div>
-            ))}
-          </div>
+      {expanded && (
+        <div className="mt-2 rounded-xl border border-border/50 bg-card/60 overflow-hidden">
+          {isLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : !records || records.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">No records</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Keyword</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Rank</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {records.map((r, i) => (
+                  <TableRow key={`${r.keywordId}-${r.platform}-${i}`}>
+                    <TableCell className="text-sm font-medium">{r.keywordText}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{r.clientName ?? "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.campaignName ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px] capitalize">{r.platform}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm font-semibold">
+                      {r.rankPosition != null ? `#${r.rankPosition}` : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
       )}
     </div>

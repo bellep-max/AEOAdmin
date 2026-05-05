@@ -99,6 +99,38 @@ router.get("/latest-detail", async (_req, res) => {
   }
 });
 
+router.get("/latest-records", async (_req, res) => {
+  try {
+    const [row] = await db.execute(sql`
+      SELECT
+        rr.keyword_id,
+        COALESCE(rr.keyword, k.keyword_text) as keyword_text,
+        rr.platform,
+        rr.ranking_position,
+        COALESCE(rr.client_name, cl.business_name) as client_name,
+        COALESCE(p.name, p.plan_type) as campaign_name
+      FROM ranking_reports rr
+      JOIN keywords k ON rr.keyword_id = k.id
+      LEFT JOIN clients cl ON rr.client_id = cl.id
+      LEFT JOIN client_aeo_plans p ON k.aeo_plan_id = p.id
+      WHERE rr.date = (SELECT MAX(date) FROM ranking_reports)
+      ORDER BY cl.business_name, k.keyword_text, rr.platform
+    `);
+
+    const rows = row as Record<string, unknown>[];
+    res.json(rows.map(r => ({
+      keywordId: r.keyword_id as number,
+      keywordText: r.keyword_text as string,
+      platform: r.platform as string,
+      rankPosition: r.ranking_position as number | null,
+      clientName: r.client_name as string | null,
+      campaignName: r.campaign_name as string | null,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body ?? {};
