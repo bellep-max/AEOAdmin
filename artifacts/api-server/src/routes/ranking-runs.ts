@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rankingRunsTable } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { rankingRunsTable, rankingReportsTable } from "@workspace/db/schema";
+import { eq, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 
 const router = Router();
@@ -23,12 +23,77 @@ router.get("/", async (req, res) => {
 
 router.get("/latest", async (_req, res) => {
   try {
-    const [row] = await db
+    // Get latest from ranking_runs
+    const [runRow] = await db
       .select()
       .from(rankingRunsTable)
       .orderBy(desc(rankingRunsTable.startedAt))
       .limit(1);
-    res.json(row ?? null);
+
+    // Get latest from ranking_reports — the real source of truth
+    const [reportRow] = await db.execute(sql`
+      SELECT
+        MAX(date) as latest_date,
+        COUNT(DISTINCT keyword_id)::int as keyword_count,
+        COUNT(*)::int as total_rows,
+        COUNT(*) FILTER (WHERE status = 'success')::int as succeeded,
+        COUNT(*) FILTER (WHERE status = 'error')::int as failed
+      FROM ranking_reports
+      WHERE date = (SELECT MAX(date) FROM ranking_reports)
+    `);
+
+    const report = reportRow as Record<string, unknown> | undefined;
+    const reportDate = report?.latest_date as string | null;
+
+    // If ranking_reports has newer data, use it
+    const runDate = runRow?.startedAt ? new Date(runRow.startedAt).toISOString().split("T")[0] : null;
+    const useReport = reportDate && (!runDate || reportDate >= runDate);
+
+    if (useReport && report) {
+      res.json({
+        id: 0,
+        startedAt: reportDate ? `${reportDate}T00:00:00Z` : new Date().toISOString(),
+        finishedAt: reportDate ? `${reportDate}T23:59:59Z` : null,
+        status: (Number(report.failed) > 0) ? "partial" : "success",
+        keywordsAttempted: Number(report.keyword_count) || 0,
+        keywordsSucceeded: Number(report.succeeded) || 0,
+        keywordsFailed: Number(report.failed) || 0,
+        notes: `Latest audit push — ${report.total_rows} reports from ranking_reports (${reportDate})`,
+      });
+    } else {
+      res.json(runRow ?? null);
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/latest-detail", async (_req, res) => {
+  try {
+    const [row] = await db.execute(sql`
+      SELECT
+        date,
+        platform,
+        COUNT(DISTINCT keyword_id)::int as keywords,
+        COUNT(*) FILTER (WHERE status = 'success')::int as succeeded,
+        COUNT(*) FILTER (WHERE status = 'error')::int as failed
+      FROM ranking_reports
+      WHERE date = (SELECT MAX(date) FROM ranking_reports)
+      GROUP BY date, platform
+      ORDER BY platform
+    `);
+
+    const rows = row as Record<string, unknown>[];
+    const date = rows[0]?.date as string ?? "";
+    res.json({
+      date,
+      platforms: rows.map(r => ({
+        platform: r.platform as string,
+        keywords: r.keywords as number,
+        succeeded: r.succeeded as number,
+        failed: r.failed as number,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }
