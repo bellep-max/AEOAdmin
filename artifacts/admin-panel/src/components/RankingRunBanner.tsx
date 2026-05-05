@@ -22,7 +22,7 @@ interface RankingRun {
 
 function fmtDate(s: string): string {
   const d = new Date(s);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
 }
 
 export function RankingRunBanner() {

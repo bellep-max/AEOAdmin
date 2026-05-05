@@ -52,8 +52,8 @@ router.get("/latest", async (_req, res) => {
     if (useReport && report) {
       res.json({
         id: 0,
-        startedAt: reportDate ? `${reportDate}T00:00:00Z` : new Date().toISOString(),
-        finishedAt: reportDate ? `${reportDate}T23:59:59Z` : null,
+        startedAt: reportDate ? `${reportDate}T16:00:00Z` : new Date().toISOString(),
+        finishedAt: reportDate ? `${reportDate}T16:00:00Z` : null,
         status: (Number(report.failed) > 0) ? "partial" : "success",
         keywordsAttempted: Number(report.total_rows) || 0,
         keywordsSucceeded: Number(report.succeeded) || 0,
