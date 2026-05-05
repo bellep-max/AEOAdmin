@@ -203,13 +203,22 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
                             <div className="col-span-2">Status</div>
                           </div>
                           {sortedPlatforms.map((p) => (
-                            <div key={`${p.keywordId}-${p.platform}-detail`} className="grid grid-cols-12 gap-2 items-center text-sm px-1 py-1">
-                              <div className="col-span-2"><PlatformChip row={p} /></div>
-                              <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
-                              <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                              <div className="col-span-2 font-semibold">{fmtPos(p.currentPosition)}</div>
-                              <div className="col-span-2"><ChangeCell change={p.change} /></div>
-                              <div className="col-span-2"><StatusBadge status={p.status} /></div>
+                            <div key={`${p.keywordId}-${p.platform}-detail`} className="px-1 py-1">
+                              <div className="grid grid-cols-12 gap-2 items-center text-sm">
+                                <div className="col-span-2"><PlatformChip row={p} /></div>
+                                <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
+                                <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
+                                <div className="col-span-2 font-semibold">{fmtPos(p.currentPosition)}</div>
+                                <div className="col-span-2"><ChangeCell change={p.change} /></div>
+                                <div className="col-span-2"><StatusBadge status={p.status} /></div>
+                              </div>
+                              <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
+                                <div className="col-span-2" />
+                                <div className="col-span-2">{p.firstDate ? format(new Date(p.firstDate), "MMM d") : ""}</div>
+                                <div className="col-span-2">{p.previousDate ? format(new Date(p.previousDate), "MMM d") : ""}</div>
+                                <div className="col-span-2">{p.currentDate ? format(new Date(p.currentDate), "MMM d") : ""}</div>
+                                <div className="col-span-4" />
+                              </div>
                             </div>
                           ))}
                         </div>
