@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
-import { Building2, Search } from "lucide-react";
+import { Building2, Search, Clock } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
@@ -51,14 +52,25 @@ function PlatformChip({ row }: { row: PeriodRow }) {
 
 export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: Props) {
   const [search, setSearch] = useState("");
+  const [latestOnly, setLatestOnly] = useState(false);
 
   const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
   const label = periodLabel(period);
+
+  const latestDate = useMemo(() => {
+    if (!data?.rows) return null;
+    let max: string | null = null;
+    for (const r of data.rows) {
+      if (r.currentDate && (!max || r.currentDate > max)) max = r.currentDate;
+    }
+    return max;
+  }, [data]);
 
   const campaigns = useMemo<CampaignGroup[]>(() => {
     const map = new Map<number, CampaignGroup>();
     for (const r of data?.rows ?? []) {
       if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase())) continue;
+      if (latestOnly && latestDate && r.currentDate !== latestDate) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
       if (!group) {
@@ -84,7 +96,7 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase())
     );
-  }, [data, search]);
+  }, [data, search, latestOnly, latestDate]);
 
   if (isLoading) {
     return <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>;
@@ -101,9 +113,22 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Search keywords…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Search keywords…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        {latestDate && (
+          <Button
+            variant={latestOnly ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5 h-9"
+            onClick={() => setLatestOnly(!latestOnly)}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            Latest run ({format(new Date(latestDate), "MMM d")})
+          </Button>
+        )}
       </div>
 
       <div className="space-y-3">

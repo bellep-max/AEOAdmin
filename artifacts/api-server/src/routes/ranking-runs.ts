@@ -55,10 +55,10 @@ router.get("/latest", async (_req, res) => {
         startedAt: reportDate ? `${reportDate}T00:00:00Z` : new Date().toISOString(),
         finishedAt: reportDate ? `${reportDate}T23:59:59Z` : null,
         status: (Number(report.failed) > 0) ? "partial" : "success",
-        keywordsAttempted: Number(report.keyword_count) || 0,
+        keywordsAttempted: Number(report.total_rows) || 0,
         keywordsSucceeded: Number(report.succeeded) || 0,
         keywordsFailed: Number(report.failed) || 0,
-        notes: `Latest audit push — ${report.total_rows} reports from ranking_reports (${reportDate})`,
+        notes: `Latest audit push — ${report.keyword_count} keywords, ${report.total_rows} reports (${reportDate})`,
       });
     } else {
       res.json(runRow ?? null);
