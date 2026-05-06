@@ -37,17 +37,30 @@ const PROMPT_TEMPLATE = `You generate high-intent local search-query variants fo
 
 Core keyword: "{{keyword}}"
 Search location: {{location}}
-Business: {{business}}
+Business (context only — NEVER mention by name): {{business}}
 
-Produce {{count}} natural-sounding variants a real customer might type. Rules:
-- Bury or rewrite the core keyword inside a longer phrase. Do NOT just append a city.
-- Use "near me", neighborhood names, or local cues — but never the raw zip code.
-- Mix intents: best, top rated, affordable, reviews, open now, hours, etc.
-- Vary length and word order. Lowercase. No punctuation except apostrophes.
-- One phrase per line. No numbering, no bullets, no extra commentary.
+Produce {{count}} natural-sounding variants a real customer might type into Google or an AI assistant.
+
+LOCATION DISTRIBUTION (this is the most important rule — count carefully):
+- About 30% of variants: NO location at all (just intent + keyword, e.g. "best mommy makeover for moms")
+- About 30% of variants: use "near me" (e.g. "mommy makeover near me with reviews")
+- About 25% of variants: reference a NEIGHBORHOOD, district, or street name nearby — never the city itself
+- About 15% of variants: mention the city, but BURIED in the middle of the phrase, never as a trailing tag
+- 0% of variants: append "{{city_name}}" or "{{state_code}}" at the end like a SEO tag — this is forbidden
+
+PHRASING RULES:
+- Bury or rewrite the core keyword inside a longer phrase. Do NOT just append a city or state.
+- Vary intents: best, top rated, affordable, reviews, before and after, open now, cost, financing, recovery, consultation, who does, where to get, what is, recommendations
+- Vary length: some 3-5 words, some full sentences (~10-12 words), a few questions
+- Lowercase. No punctuation except apostrophes. Occasional missing apostrophe is fine (5%).
+- NEVER include the business name "{{business}}" or any obvious identifying detail (doctor names, brand names from the business).
+- NEVER include the raw zip code.
+- Do NOT use these words: amazing, excellent, professional, highly recommend, outstanding, premier, world-class.
 - Do not output the core keyword by itself.
 
-Output format: {{count}} lines, one variant per line.`;
+OUTPUT:
+- {{count}} lines, one variant per line.
+- No numbering, no bullets, no quotes, no commentary, no blank lines.`;
 
 function buildPrompt(input: VariantGenerationInput): string {
   const count = input.count ?? DEFAULT_COUNT;
@@ -56,12 +69,16 @@ function buildPrompt(input: VariantGenerationInput): string {
   if (input.state) locationParts.push(input.state);
   const location = locationParts.length > 0 ? locationParts.join(", ") : "(no city — use generic 'near me' phrasing)";
   const business = input.businessName ?? "(unspecified)";
+  const cityName = input.city ?? "the city";
+  const stateCode = input.state ?? "the state";
 
   return PROMPT_TEMPLATE
-    .replace("{{keyword}}", input.keyword)
-    .replace("{{location}}", location)
-    .replace("{{business}}", business)
-    .replace(/\{\{count\}\}/g, String(count));
+    .replaceAll("{{keyword}}", input.keyword)
+    .replaceAll("{{location}}", location)
+    .replaceAll("{{business}}", business)
+    .replaceAll("{{city_name}}", cityName)
+    .replaceAll("{{state_code}}", stateCode)
+    .replaceAll("{{count}}", String(count));
 }
 
 function parseVariants(raw: string, keyword: string): string[] {

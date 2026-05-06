@@ -205,7 +205,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         type:             (body.type   as string) ?? "aeo",
         errorClass:       (body.errorClass       as string | null | undefined) ?? null,
         errorMessage:     (body.errorMessage     as string | null | undefined) ?? null,
-        aiPlatform:       (body.aiPlatform ?? body.platform) as string ?? "gemini",
+        aiPlatform:       String(body.aiPlatform ?? body.platform ?? "gemini").toLowerCase(),
         screenshotUrl:    (body.screenshotUrl    as string | null | undefined) ?? null,
         deviceIdentifier: (body.deviceIdentifier as string | null | undefined) ?? null,
         proxyStatus:      (body.proxyStatus      as string | null | undefined) ?? null,
@@ -295,6 +295,8 @@ router.patch("/:id", requireExecutorToken, async (req, res) => {
         const d = new Date(v as string);
         if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `${key} must be a valid ISO 8601 string` });
         patch[key] = d;
+      } else if (key === "aiPlatform" && typeof v === "string") {
+        patch[key] = v.toLowerCase();
       } else {
         patch[key] = v;
       }

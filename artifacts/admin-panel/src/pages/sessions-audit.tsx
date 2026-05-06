@@ -189,9 +189,9 @@ export default function SessionsAudit() {
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
-                  <SelectItem value="Gemini">Gemini</SelectItem>
-                  <SelectItem value="ChatGPT">ChatGPT</SelectItem>
-                  <SelectItem value="Perplexity">Perplexity</SelectItem>
+                  <SelectItem value="gemini">Gemini</SelectItem>
+                  <SelectItem value="chatgpt">ChatGPT</SelectItem>
+                  <SelectItem value="perplexity">Perplexity</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -52,7 +52,7 @@ router.get("/", async (req, res) => {
     if (businessId) conditions.push(eq(auditLogsTable.businessId, parseInt(businessId)));
     if (campaignId) conditions.push(eq(auditLogsTable.campaignId, parseInt(campaignId)));
     if (keywordId)  conditions.push(eq(auditLogsTable.keywordId,  parseInt(keywordId)));
-    if (platform)   conditions.push(eq(auditLogsTable.platform,   platform));
+    if (platform)   conditions.push(eq(auditLogsTable.platform,   platform.toLowerCase()));
     if (mode)       conditions.push(eq(auditLogsTable.mode,       mode));
     if (status)     conditions.push(eq(auditLogsTable.status,     status));
     if (from)       conditions.push(gte(auditLogsTable.timestamp, parseFilterDate(from, "start")));
@@ -149,7 +149,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         bizName:         (body.bizName        as string | null | undefined) ?? null,
         campaignName:    (body.campaignName   as string | null | undefined) ?? null,
         keywordText:     (body.keywordText ?? body.keyword) as string | null ?? null,
-        platform:        (body.platform       as string | null | undefined) ?? null,
+        platform:        body.platform != null ? String(body.platform).toLowerCase() : null,
         mode:            (body.mode           as string | null | undefined) ?? null,
         device:          (body.device         as string | null | undefined) ?? null,
         status:          (body.status         as string | null | undefined) ?? null,

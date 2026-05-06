@@ -44,7 +44,7 @@ export interface RankChangeRow {
   prev_rank: number | null;
   prev_date: string | null;
   delta_position: number | null;
-  movement: "improved" | "declined" | "flat" | "new";
+  movement: "improved" | "declined" | "flat" | "gained_ranking" | "lost_ranking" | "not_ranked";
 }
 
 export interface RankHistoryRow {
@@ -121,7 +121,7 @@ async function runSessionSummary(reportDate: string, scope: AnalystScope): Promi
       k.keyword_text                                    AS keyword,
       s.biz_name                                        AS business,
       s.campaign_name                                   AS campaign,
-      s.ai_platform                                     AS platform,
+      LOWER(s.ai_platform)                              AS platform,
       COUNT(*)::int                                     AS runs,
       SUM(CASE WHEN s.status = 'success' THEN 1 ELSE 0 END)::int AS passes,
       SUM(CASE WHEN s.status = 'fail'    THEN 1 ELSE 0 END)::int AS fails,
@@ -140,7 +140,7 @@ async function runSessionSummary(reportDate: string, scope: AnalystScope): Promi
       AND (${clientId}::int IS NULL OR s.client_id = ${clientId}::int)
       AND (${businessId}::int IS NULL OR s.business_id = ${businessId}::int)
       AND (${campaignId}::int IS NULL OR s.campaign_id = ${campaignId}::int)
-    GROUP BY k.id, k.keyword_text, s.biz_name, s.campaign_name, s.ai_platform
+    GROUP BY k.id, k.keyword_text, s.biz_name, s.campaign_name, LOWER(s.ai_platform)
     ORDER BY business, keyword, platform
   `);
   return result.rows as unknown as SessionSummaryRow[];
@@ -148,17 +148,26 @@ async function runSessionSummary(reportDate: string, scope: AnalystScope): Promi
 
 async function runRankChanges(reportDate: string, scope: AnalystScope): Promise<RankChangeRow[]> {
   const { clientId, businessId } = scopeParams(scope);
+  // Ranking semantics:
+  //   - Positions > 50 are treated as "not in top 50" (NULL).
+  //   - Sentinel values like 150000 and bot-detection junk like 1242, 8400 are
+  //     all collapsed into the same "not_ranked" bucket so deltas stay meaningful.
+  //   - movement = 'lost_ranking' when previously ranked but now off the list,
+  //                'gained_ranking' when newly on the list,
+  //                'improved' / 'declined' / 'flat' for in-list moves.
   const result = await db.execute(sql`
     WITH ranked AS (
       SELECT
         rr.keyword_id,
-        rr.platform,
+        LOWER(rr.platform) AS platform,
         rr.biz_name,
         rr.keyword,
-        rr.ranking_position,
+        CASE WHEN rr.ranking_position BETWEEN 1 AND 50 THEN rr.ranking_position ELSE NULL END
+          AS rank_capped,
+        rr.ranking_position AS rank_raw,
         rr.date::date AS rank_date,
         ROW_NUMBER() OVER (
-          PARTITION BY rr.keyword_id, rr.platform
+          PARTITION BY rr.keyword_id, LOWER(rr.platform)
           ORDER BY rr.date::date DESC, rr.timestamp DESC
         ) AS rn
       FROM ranking_reports rr
@@ -172,15 +181,17 @@ async function runRankChanges(reportDate: string, scope: AnalystScope): Promise<
       curr.keyword,
       curr.biz_name AS business,
       curr.platform,
-      curr.ranking_position AS current_rank,
+      curr.rank_capped      AS current_rank,
       curr.rank_date::text  AS current_date,
-      prev.ranking_position AS prev_rank,
+      prev.rank_capped      AS prev_rank,
       prev.rank_date::text  AS prev_date,
-      (curr.ranking_position - prev.ranking_position) AS delta_position,
+      (curr.rank_capped - prev.rank_capped) AS delta_position,
       CASE
-        WHEN prev.ranking_position IS NULL THEN 'new'
-        WHEN curr.ranking_position < prev.ranking_position THEN 'improved'
-        WHEN curr.ranking_position > prev.ranking_position THEN 'declined'
+        WHEN prev.rank_capped IS NULL AND curr.rank_capped IS NULL THEN 'not_ranked'
+        WHEN prev.rank_capped IS NULL AND curr.rank_capped IS NOT NULL THEN 'gained_ranking'
+        WHEN prev.rank_capped IS NOT NULL AND curr.rank_capped IS NULL THEN 'lost_ranking'
+        WHEN curr.rank_capped < prev.rank_capped THEN 'improved'
+        WHEN curr.rank_capped > prev.rank_capped THEN 'declined'
         ELSE 'flat'
       END AS movement
     FROM ranked curr
@@ -189,29 +200,31 @@ async function runRankChanges(reportDate: string, scope: AnalystScope): Promise<
      AND prev.platform   = curr.platform
      AND prev.rn         = 2
     WHERE curr.rn = 1
-    ORDER BY ABS(COALESCE(curr.ranking_position - prev.ranking_position, 0)) DESC
+    ORDER BY ABS(COALESCE(curr.rank_capped - prev.rank_capped, 0)) DESC
   `);
   return result.rows as unknown as RankChangeRow[];
 }
 
 async function runRankHistory(reportDate: string, scope: AnalystScope): Promise<RankHistoryRow[]> {
   const { clientId, businessId } = scopeParams(scope);
+  // Only include in-top-50 positions; sentinel values like 150000 are filtered out
+  // so the trajectory the LLM sees reflects real ranking changes, not noise.
   const result = await db.execute(sql`
     SELECT
       rr.keyword_id,
       rr.keyword,
       rr.biz_name AS business,
-      rr.platform,
+      LOWER(rr.platform) AS platform,
       rr.date::date::text AS rank_date,
       MIN(rr.ranking_position)::int AS rank
     FROM ranking_reports rr
-    WHERE rr.ranking_position IS NOT NULL
+    WHERE rr.ranking_position BETWEEN 1 AND 50
       AND rr.date::date >= (${reportDate}::date - INTERVAL '30 days')
       AND rr.date::date <= ${reportDate}::date
       AND (${clientId}::int IS NULL OR rr.client_id = ${clientId}::int)
       AND (${businessId}::int IS NULL OR rr.business_id = ${businessId}::int)
-    GROUP BY rr.keyword_id, rr.keyword, rr.biz_name, rr.platform, rr.date::date
-    ORDER BY rr.biz_name, rr.keyword, rr.platform, rank_date
+    GROUP BY rr.keyword_id, rr.keyword, rr.biz_name, LOWER(rr.platform), rr.date::date
+    ORDER BY rr.biz_name, rr.keyword, platform, rank_date
   `);
   return result.rows as unknown as RankHistoryRow[];
 }
@@ -244,14 +257,14 @@ async function runTimeOfDay(reportDate: string, scope: AnalystScope): Promise<Ti
   const result = await db.execute(sql`
     SELECT
       EXTRACT(HOUR FROM s.timestamp)::int AS hour_utc,
-      s.ai_platform AS platform,
+      LOWER(s.ai_platform) AS platform,
       COUNT(*)::int AS runs
     FROM sessions s
     WHERE s.date = ${reportDate}
       AND (${clientId}::int IS NULL OR s.client_id = ${clientId}::int)
       AND (${businessId}::int IS NULL OR s.business_id = ${businessId}::int)
       AND (${campaignId}::int IS NULL OR s.campaign_id = ${campaignId}::int)
-    GROUP BY hour_utc, platform
+    GROUP BY hour_utc, LOWER(s.ai_platform)
     ORDER BY hour_utc, platform
   `);
   return result.rows as unknown as TimeOfDayRow[];
@@ -262,7 +275,7 @@ async function runPlatformSkew(reportDate: string, scope: AnalystScope): Promise
   const result = await db.execute(sql`
     SELECT
       s.date::text AS date,
-      s.ai_platform AS platform,
+      LOWER(s.ai_platform) AS platform,
       COUNT(*)::int AS runs
     FROM sessions s
     WHERE s.date >= (${reportDate}::date - INTERVAL '7 days')
@@ -270,7 +283,7 @@ async function runPlatformSkew(reportDate: string, scope: AnalystScope): Promise
       AND (${clientId}::int IS NULL OR s.client_id = ${clientId}::int)
       AND (${businessId}::int IS NULL OR s.business_id = ${businessId}::int)
       AND (${campaignId}::int IS NULL OR s.campaign_id = ${campaignId}::int)
-    GROUP BY s.date, s.ai_platform
+    GROUP BY s.date, LOWER(s.ai_platform)
     ORDER BY s.date, platform
   `);
   return result.rows as unknown as PlatformSkewRow[];

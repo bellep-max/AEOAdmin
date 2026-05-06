@@ -83,6 +83,7 @@ router.get("/", async (req, res) => {
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
+    const platform = typeof body.platform === "string" ? body.platform.toLowerCase() : null;
 
     // Upsert per (keywordId, platform, day): if a report already exists
     // for this keyword+platform today, update it instead of inserting a new row.
@@ -92,8 +93,8 @@ router.post("/", requireExecutorToken, async (req, res) => {
       .from(rankingReportsTable)
       .where(and(
         eq(rankingReportsTable.keywordId, body.keywordId),
-        body.platform != null
-          ? eq(rankingReportsTable.platform, body.platform)
+        platform != null
+          ? eq(rankingReportsTable.platform, platform)
           : sql`${rankingReportsTable.platform} IS NULL`,
         sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
       ))
@@ -109,7 +110,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
           keyword: body.keyword ?? null,
           timestamp: body.timestamp ?? null,
           date: body.date ?? null,
-          platform: body.platform ?? null,
+          platform: platform,
           deviceIdentifier: body.deviceIdentifier ?? null,
           status: body.status ?? null,
           durationSeconds: body.durationSeconds ?? null,
