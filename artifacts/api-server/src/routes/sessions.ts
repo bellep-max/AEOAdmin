@@ -100,6 +100,7 @@ router.get("/", async (req, res) => {
         bizName:          sessionsTable.bizName,
         campaignName:     sessionsTable.campaignName,
         keywordText:      sessionsTable.keywordText,
+        keywordVariant:   sessionsTable.keywordVariant,
         city:             sessionsTable.city,
         state:            sessionsTable.state,
         date:             sessionsTable.date,
@@ -191,6 +192,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         bizName:          (body.bizName          as string | null | undefined) ?? null,
         campaignName:     (body.campaignName     as string | null | undefined) ?? null,
         keywordText:      (body.keywordText      as string | null | undefined) ?? null,
+        keywordVariant:   (body.keywordVariant   as string | null | undefined) ?? null,
         city:             (body.city             as string | null | undefined) ?? null,
         state:            (body.state            as string | null | undefined) ?? null,
         date:             (body.date             as string | null | undefined) ?? null,
@@ -253,7 +255,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 const PATCHABLE_SESSION_FIELDS = [
   "clientId", "businessId", "campaignId", "keywordId", "deviceId", "proxyId",
-  "clientName", "bizName", "campaignName", "keywordText",
+  "clientName", "bizName", "campaignName", "keywordText", "keywordVariant",
   "city", "state", "date", "timestamp", "durationSeconds",
   "promptText", "followupText", "hasFollowUp",
   "status", "type", "errorClass", "errorMessage",
@@ -552,6 +554,7 @@ router.post("/import", requireSession, upload.single("file"), async (req, res) =
         bizName: csvRow.biz_name || null,
         campaignName: csvRow.campaign_name || null,
         keywordText,
+        keywordVariant: csvRow.keyword_variant || null,
         timestamp,
         date: csvRow.date || null,
         durationSeconds: isNaN(duration as number) ? null : duration,

@@ -24,6 +24,7 @@ interface SessionRow {
   bizName: string | null;
   campaignName: string | null;
   keywordText: string | null;
+  keywordVariant: string | null;
   city: string | null;
   state: string | null;
   date: string | null;
@@ -207,7 +208,16 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                   ) : (data?.sessions ?? []).map((s) => (
                     <TableRow key={s.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpen(s)}>
                       <TableCell className="whitespace-nowrap text-xs">{fmtDateTime(s.timestamp)}</TableCell>
-                      <TableCell className="text-sm font-medium">{s.keywordText ?? "—"}</TableCell>
+                      <TableCell className="text-sm">
+                        {s.keywordVariant ? (
+                          <div>
+                            <span className="font-medium">{s.keywordVariant}</span>
+                            <div className="text-xs text-muted-foreground">↳ {s.keywordText ?? "—"}</div>
+                          </div>
+                        ) : (
+                          <span className="font-medium">{s.keywordText ?? "—"}</span>
+                        )}
+                      </TableCell>
                       <TableCell><Badge variant="secondary">{s.aiPlatform}</Badge></TableCell>
                       <TableCell><Badge className={statusBadgeClass(s.status)}>{s.status}</Badge></TableCell>
                       <TableCell className="text-sm">{fmtDuration(s.durationSeconds)}</TableCell>
@@ -235,6 +245,9 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                   <Row label="Client"   value={`${open.clientName ?? "—"}${open.clientId ? ` (#${open.clientId})` : ""}`} />
                   <Row label="Business" value={`${open.bizName ?? "—"}${open.businessId ? ` (#${open.businessId})` : ""}`} />
                   <Row label="Campaign" value={`${open.campaignName ?? "—"}${open.campaignId ? ` (#${open.campaignId})` : ""}`} />
+                  {open.keywordVariant ? (
+                    <Row label="Variant" value={open.keywordVariant} />
+                  ) : null}
                   <Row label="Keyword"  value={`${open.keywordText ?? "—"}${open.keywordId ? ` (#${open.keywordId})` : ""}`} />
                   <Row label="City/State" value={[open.city, open.state].filter(Boolean).join(", ") || "—"} />
                 </Section>

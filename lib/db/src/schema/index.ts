@@ -3,6 +3,7 @@ export * from "./businesses";
 export * from "./client_aeo_plans";
 export * from "./keywords";
 export * from "./keyword_links";
+export * from "./keyword_variants";
 export * from "./client_backlinks";
 export * from "./custom_packages";
 export * from "./sessions";

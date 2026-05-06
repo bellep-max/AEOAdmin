@@ -21,7 +21,8 @@ export const sessionsTable = pgTable("sessions", {
   clientName:    text("client_name"),
   bizName:       text("biz_name"),
   campaignName:  text("campaign_name"),
-  keywordText:   text("keyword_text"),
+  keywordText:    text("keyword_text"),
+  keywordVariant: text("keyword_variant"),
   city:          text("city"),
   state:         text("state"),
   /* ── Run identity / time ── */
