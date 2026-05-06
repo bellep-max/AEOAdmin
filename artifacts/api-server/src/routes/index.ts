@@ -20,6 +20,8 @@ import farmMetricsRouter from "./farm-metrics";
 import auditLogsRouter from "./audit-logs";
 import packagesRouter from "./packages";
 import onboardingRouter from "./onboarding";
+import keywordVariantsRouter from "./keyword-variants";
+import analyticsRouter from "./analytics";
 
 const router: IRouter = Router();
 
@@ -44,5 +46,7 @@ router.use("/farm-metrics", farmMetricsRouter);
 router.use("/audit-logs", auditLogsRouter);
 router.use("/packages", packagesRouter);
 router.use("/onboarding", onboardingRouter);
+router.use(keywordVariantsRouter);
+router.use("/analytics", analyticsRouter);
 
 export default router;

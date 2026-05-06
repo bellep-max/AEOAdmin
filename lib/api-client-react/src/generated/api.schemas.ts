@@ -22,11 +22,6 @@ export interface DashboardSummary {
   sessionCapacityPerDay: number;
   completedToday: number;
   pendingToday: number;
-  totalKeywords: number;
-  activeKeywords: number;
-  keywordsWithErrors: number;
-  keywordsWithBacklinks: number;
-  totalBacklinksFound: number;
 }
 
 export interface SessionActivityPoint {
@@ -644,6 +639,90 @@ export interface ScalingMilestone {
   notes?: string | null;
 }
 
+export interface KeywordVariant {
+  id: number;
+  keywordId: number;
+  variantText: string;
+  isActive: boolean;
+  weekOf?: string | null;
+  sourceModel?: string | null;
+  timesUsed: number;
+  lastUsedAt?: string | null;
+  generatedAt?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface KeywordVariantsList {
+  variants: KeywordVariant[];
+  total: number;
+}
+
+export interface RegenerateVariantsBody {
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  count?: number;
+}
+
+export interface RegenerateVariantsResult {
+  variants: KeywordVariant[];
+  count: number;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  description: string;
+  variables: string[];
+  template: string;
+}
+
+export interface PromptTemplateList {
+  templates: PromptTemplate[];
+}
+
+export type DailyAnalystContextScope = {
+  clientId?: number | null;
+  businessId?: number | null;
+  campaignId?: number | null;
+};
+
+export type DailyAnalystContextSessionSummaryItem = { [key: string]: unknown };
+
+export type DailyAnalystContextRankChangesItem = { [key: string]: unknown };
+
+export type DailyAnalystContextRankHistoryItem = { [key: string]: unknown };
+
+export type DailyAnalystContextSimilarityFlagsItem = { [key: string]: unknown };
+
+export type DailyAnalystContextTimeOfDayItem = { [key: string]: unknown };
+
+export type DailyAnalystContextPlatformSkewItem = { [key: string]: unknown };
+
+export type DailyAnalystContextGmbMismatchesItem = { [key: string]: unknown };
+
+export type DailyAnalystContextInputSummary = {
+  sessionCount?: number;
+  declineCount?: number;
+  improvementCount?: number;
+  similarPairs?: number;
+  gmbMismatches?: number;
+};
+
+export interface DailyAnalystContext {
+  reportDate: string;
+  scope: DailyAnalystContextScope;
+  sessionSummary: DailyAnalystContextSessionSummaryItem[];
+  rankChanges: DailyAnalystContextRankChangesItem[];
+  rankHistory: DailyAnalystContextRankHistoryItem[];
+  similarityFlags: DailyAnalystContextSimilarityFlagsItem[];
+  timeOfDay: DailyAnalystContextTimeOfDayItem[];
+  platformSkew: DailyAnalystContextPlatformSkewItem[];
+  gmbMismatches: DailyAnalystContextGmbMismatchesItem[];
+  inputSummary: DailyAnalystContextInputSummary;
+}
+
 export type GetClientsParams = {
   status?: GetClientsStatus;
   search?: string;
@@ -731,3 +810,14 @@ export const GetTasksPriority = {
   medium: "medium",
   low: "low",
 } as const;
+
+export type GetKeywordVariantsParams = {
+  includeInactive?: boolean;
+};
+
+export type GetDailyAnalystContextParams = {
+  date: string;
+  clientId?: number;
+  businessId?: number;
+  campaignId?: number;
+};

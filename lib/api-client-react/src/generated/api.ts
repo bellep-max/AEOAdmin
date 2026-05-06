@@ -28,12 +28,15 @@ import type {
   CreateSessionBody,
   CreateSubtaskBody,
   CreateTaskBody,
+  DailyAnalystContext,
   DashboardSummary,
   Device,
   DeviceFarmStatus,
   GbpSnippet,
   GetClientsParams,
+  GetDailyAnalystContextParams,
   GetDevicesParams,
+  GetKeywordVariantsParams,
   GetKeywordsParams,
   GetProxiesParams,
   GetRankingReportsParams,
@@ -42,12 +45,16 @@ import type {
   HealthStatus,
   Keyword,
   KeywordLink,
+  KeywordVariantsList,
   NetworkHealth,
   Plan,
   PlatformBreakdownItem,
+  PromptTemplateList,
   Proxy,
   RankingComparison,
   RankingReport,
+  RegenerateVariantsBody,
+  RegenerateVariantsResult,
   ScalingMilestone,
   Session,
   SessionActivityPoint,
@@ -3382,6 +3389,472 @@ export const useUpdateSubtask = <
 > => {
   return useMutation(getUpdateSubtaskMutationOptions(options));
 };
+
+/**
+ * @summary List variants for a keyword
+ */
+export const getGetKeywordVariantsUrl = (
+  id: number,
+  params?: GetKeywordVariantsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/keywords/${id}/variants?${stringifiedParams}`
+    : `/api/keywords/${id}/variants`;
+};
+
+export const getKeywordVariants = async (
+  id: number,
+  params?: GetKeywordVariantsParams,
+  options?: RequestInit,
+): Promise<KeywordVariantsList> => {
+  return customFetch<KeywordVariantsList>(
+    getGetKeywordVariantsUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetKeywordVariantsQueryKey = (
+  id: number,
+  params?: GetKeywordVariantsParams,
+) => {
+  return [`/api/keywords/${id}/variants`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetKeywordVariantsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getKeywordVariants>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: GetKeywordVariantsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getKeywordVariants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetKeywordVariantsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getKeywordVariants>>
+  > = ({ signal }) =>
+    getKeywordVariants(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getKeywordVariants>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetKeywordVariantsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getKeywordVariants>>
+>;
+export type GetKeywordVariantsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List variants for a keyword
+ */
+
+export function useGetKeywordVariants<
+  TData = Awaited<ReturnType<typeof getKeywordVariants>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: GetKeywordVariantsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getKeywordVariants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetKeywordVariantsQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Generate fresh variants for one keyword (deactivates prior batch)
+ */
+export const getRegenerateKeywordVariantsUrl = (id: number) => {
+  return `/api/keywords/${id}/variants/regenerate`;
+};
+
+export const regenerateKeywordVariants = async (
+  id: number,
+  regenerateVariantsBody?: RegenerateVariantsBody,
+  options?: RequestInit,
+): Promise<RegenerateVariantsResult> => {
+  return customFetch<RegenerateVariantsResult>(
+    getRegenerateKeywordVariantsUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(regenerateVariantsBody),
+    },
+  );
+};
+
+export const getRegenerateKeywordVariantsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateKeywordVariants>>,
+    TError,
+    { id: number; data: BodyType<RegenerateVariantsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regenerateKeywordVariants>>,
+  TError,
+  { id: number; data: BodyType<RegenerateVariantsBody> },
+  TContext
+> => {
+  const mutationKey = ["regenerateKeywordVariants"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regenerateKeywordVariants>>,
+    { id: number; data: BodyType<RegenerateVariantsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return regenerateKeywordVariants(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegenerateKeywordVariantsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regenerateKeywordVariants>>
+>;
+export type RegenerateKeywordVariantsMutationBody =
+  BodyType<RegenerateVariantsBody>;
+export type RegenerateKeywordVariantsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate fresh variants for one keyword (deactivates prior batch)
+ */
+export const useRegenerateKeywordVariants = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateKeywordVariants>>,
+    TError,
+    { id: number; data: BodyType<RegenerateVariantsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regenerateKeywordVariants>>,
+  TError,
+  { id: number; data: BodyType<RegenerateVariantsBody> },
+  TContext
+> => {
+  return useMutation(getRegenerateKeywordVariantsMutationOptions(options));
+};
+
+/**
+ * @summary Delete a variant
+ */
+export const getDeleteKeywordVariantUrl = (id: number) => {
+  return `/api/keyword-variants/${id}`;
+};
+
+export const deleteKeywordVariant = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteKeywordVariantUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteKeywordVariantMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteKeywordVariant>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteKeywordVariant>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteKeywordVariant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteKeywordVariant>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteKeywordVariant(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteKeywordVariantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteKeywordVariant>>
+>;
+
+export type DeleteKeywordVariantMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a variant
+ */
+export const useDeleteKeywordVariant = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteKeywordVariant>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteKeywordVariant>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteKeywordVariantMutationOptions(options));
+};
+
+/**
+ * @summary List the prompt templates that drive variant + search + followup
+ */
+export const getGetPromptTemplatesUrl = () => {
+  return `/api/prompt-templates`;
+};
+
+export const getPromptTemplates = async (
+  options?: RequestInit,
+): Promise<PromptTemplateList> => {
+  return customFetch<PromptTemplateList>(getGetPromptTemplatesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPromptTemplatesQueryKey = () => {
+  return [`/api/prompt-templates`] as const;
+};
+
+export const getGetPromptTemplatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPromptTemplates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPromptTemplates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPromptTemplatesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPromptTemplates>>
+  > = ({ signal }) => getPromptTemplates({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPromptTemplates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPromptTemplatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPromptTemplates>>
+>;
+export type GetPromptTemplatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the prompt templates that drive variant + search + followup
+ */
+
+export function useGetPromptTemplates<
+  TData = Awaited<ReturnType<typeof getPromptTemplates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPromptTemplates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPromptTemplatesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ */
+export const getGetDailyAnalystContextUrl = (
+  params: GetDailyAnalystContextParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/daily-context?${stringifiedParams}`
+    : `/api/analytics/daily-context`;
+};
+
+export const getDailyAnalystContext = async (
+  params: GetDailyAnalystContextParams,
+  options?: RequestInit,
+): Promise<DailyAnalystContext> => {
+  return customFetch<DailyAnalystContext>(
+    getGetDailyAnalystContextUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetDailyAnalystContextQueryKey = (
+  params?: GetDailyAnalystContextParams,
+) => {
+  return [`/api/analytics/daily-context`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDailyAnalystContextQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDailyAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetDailyAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDailyAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDailyAnalystContextQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDailyAnalystContext>>
+  > = ({ signal }) =>
+    getDailyAnalystContext(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDailyAnalystContext>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDailyAnalystContextQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDailyAnalystContext>>
+>;
+export type GetDailyAnalystContextQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ */
+
+export function useGetDailyAnalystContext<
+  TData = Awaited<ReturnType<typeof getDailyAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetDailyAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDailyAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDailyAnalystContextQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get the hardware and company scaling plan with dates

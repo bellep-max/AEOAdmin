@@ -90,6 +90,7 @@ export const GetClientsResponseItem = zod.object({
   state: zod.string().nullish(),
   status: zod.enum(["active", "inactive"]),
   planName: zod.string().nullish(),
+  accountType: zod.string().nullish(),
   addressType: zod.number().nullish(),
   placeId: zod.string().nullish(),
   locationRef: zod.string().nullish(),
@@ -155,6 +156,7 @@ export const GetClientResponse = zod.object({
   state: zod.string().nullish(),
   status: zod.enum(["active", "inactive"]),
   planName: zod.string().nullish(),
+  accountType: zod.string().nullish(),
   addressType: zod.number().nullish(),
   placeId: zod.string().nullish(),
   locationRef: zod.string().nullish(),
@@ -209,6 +211,7 @@ export const UpdateClientResponse = zod.object({
   state: zod.string().nullish(),
   status: zod.enum(["active", "inactive"]),
   planName: zod.string().nullish(),
+  accountType: zod.string().nullish(),
   addressType: zod.number().nullish(),
   placeId: zod.string().nullish(),
   locationRef: zod.string().nullish(),
@@ -803,6 +806,125 @@ export const UpdateSubtaskResponse = zod.object({
   taskId: zod.number(),
   title: zod.string(),
   done: zod.boolean(),
+});
+
+/**
+ * @summary List variants for a keyword
+ */
+export const GetKeywordVariantsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetKeywordVariantsQueryParams = zod.object({
+  includeInactive: zod.coerce.boolean().optional(),
+});
+
+export const GetKeywordVariantsResponse = zod.object({
+  variants: zod.array(
+    zod.object({
+      id: zod.number(),
+      keywordId: zod.number(),
+      variantText: zod.string(),
+      isActive: zod.boolean(),
+      weekOf: zod.coerce.date().nullish(),
+      sourceModel: zod.string().nullish(),
+      timesUsed: zod.number(),
+      lastUsedAt: zod.coerce.date().nullish(),
+      generatedAt: zod.coerce.date().nullish(),
+      expiresAt: zod.coerce.date().nullish(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Generate fresh variants for one keyword (deactivates prior batch)
+ */
+export const RegenerateKeywordVariantsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const regenerateKeywordVariantsBodyCountMax = 100;
+
+export const RegenerateKeywordVariantsBody = zod.object({
+  count: zod
+    .number()
+    .min(1)
+    .max(regenerateKeywordVariantsBodyCountMax)
+    .optional(),
+});
+
+export const RegenerateKeywordVariantsResponse = zod.object({
+  variants: zod.array(
+    zod.object({
+      id: zod.number(),
+      keywordId: zod.number(),
+      variantText: zod.string(),
+      isActive: zod.boolean(),
+      weekOf: zod.coerce.date().nullish(),
+      sourceModel: zod.string().nullish(),
+      timesUsed: zod.number(),
+      lastUsedAt: zod.coerce.date().nullish(),
+      generatedAt: zod.coerce.date().nullish(),
+      expiresAt: zod.coerce.date().nullish(),
+    }),
+  ),
+  count: zod.number(),
+});
+
+/**
+ * @summary Delete a variant
+ */
+export const DeleteKeywordVariantParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List the prompt templates that drive variant + search + followup
+ */
+export const GetPromptTemplatesResponse = zod.object({
+  templates: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      description: zod.string(),
+      variables: zod.array(zod.string()),
+      template: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ */
+export const GetDailyAnalystContextQueryParams = zod.object({
+  date: zod.date(),
+  clientId: zod.coerce.number().optional(),
+  businessId: zod.coerce.number().optional(),
+  campaignId: zod.coerce.number().optional(),
+});
+
+export const GetDailyAnalystContextResponse = zod.object({
+  reportDate: zod.coerce.date(),
+  scope: zod.object({
+    clientId: zod.number().nullish(),
+    businessId: zod.number().nullish(),
+    campaignId: zod.number().nullish(),
+  }),
+  sessionSummary: zod.array(zod.record(zod.string(), zod.unknown())),
+  rankChanges: zod.array(zod.record(zod.string(), zod.unknown())),
+  rankHistory: zod.array(zod.record(zod.string(), zod.unknown())),
+  similarityFlags: zod.array(zod.record(zod.string(), zod.unknown())),
+  timeOfDay: zod.array(zod.record(zod.string(), zod.unknown())),
+  platformSkew: zod.array(zod.record(zod.string(), zod.unknown())),
+  gmbMismatches: zod.array(zod.record(zod.string(), zod.unknown())),
+  inputSummary: zod.object({
+    sessionCount: zod.number().optional(),
+    declineCount: zod.number().optional(),
+    improvementCount: zod.number().optional(),
+    similarPairs: zod.number().optional(),
+    gmbMismatches: zod.number().optional(),
+  }),
 });
 
 /**

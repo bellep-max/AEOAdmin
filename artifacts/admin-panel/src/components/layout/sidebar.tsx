@@ -18,7 +18,7 @@ import {
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box, Key,
-  Activity, ChevronRight, Calendar, Search, List,
+  Activity, ChevronRight, Calendar, Search, List, FileText,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -83,6 +83,12 @@ const navGroups: NavGroup[] = [
     items: [
       { name: "Rankings", href: "/rankings", icon: Trophy    },
       { name: "Metrics",  href: "/metrics",  icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { name: "Prompts", href: "/admin/prompts", icon: FileText },
     ],
   },
 ];

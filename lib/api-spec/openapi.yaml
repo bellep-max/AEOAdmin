@@ -29,6 +29,12 @@ tags:
     description: Dashboard summary data
   - name: scaling
     description: Hardware scaling plan
+  - name: keyword-variants
+    description: Generated keyword variants for AEO search prompt randomization
+  - name: prompts
+    description: Prompt templates that drive the AEO pipeline
+  - name: analytics
+    description: Daily AEO analyst data layer
 paths:
   /healthz:
     get:
@@ -792,6 +798,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Subtask"
+
+  /keywords/{id}/variants:
+    get:
+      operationId: getKeywordVariants
+      tags: [keyword-variants]
+      summary: List variants for a keyword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: includeInactive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Variants for the keyword
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeywordVariantsList"
+
+  /keywords/{id}/variants/regenerate:
+    post:
+      operationId: regenerateKeywordVariants
+      tags: [keyword-variants]
+      summary: Generate fresh variants for one keyword (deactivates prior batch)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegenerateVariantsBody"
+      responses:
+        "200":
+          description: Regeneration result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegenerateVariantsResult"
+
+  /keyword-variants/{id}:
+    delete:
+      operationId: deleteKeywordVariant
+      tags: [keyword-variants]
+      summary: Delete a variant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
+  /prompt-templates:
+    get:
+      operationId: getPromptTemplates
+      tags: [prompts]
+      summary: List the prompt templates that drive variant + search + followup
+      responses:
+        "200":
+          description: Prompt templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateList"
+
+  /analytics/daily-context:
+    get:
+      operationId: getDailyAnalystContext
+      tags: [analytics]
+      summary: Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: businessId
+          in: query
+          schema:
+            type: integer
+        - name: campaignId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Daily analyst context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyAnalystContext"
 
   /scaling/plan:
     get:
@@ -1830,3 +1944,161 @@ components:
           type: string
           nullable: true
       required: [id, phase, targetDate, targetCompanies, currentCompanies, devicesNeeded, devicesAvailable, status]
+
+    KeywordVariant:
+      type: object
+      properties:
+        id:
+          type: integer
+        keywordId:
+          type: integer
+        variantText:
+          type: string
+        isActive:
+          type: boolean
+        weekOf:
+          type: string
+          format: date
+          nullable: true
+        sourceModel:
+          type: string
+          nullable: true
+        timesUsed:
+          type: integer
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        generatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, keywordId, variantText, isActive, timesUsed]
+
+    KeywordVariantsList:
+      type: object
+      properties:
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeywordVariant"
+        total:
+          type: integer
+      required: [variants, total]
+
+    RegenerateVariantsBody:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 100
+
+    RegenerateVariantsResult:
+      type: object
+      properties:
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeywordVariant"
+        count:
+          type: integer
+      required: [variants, count]
+
+    PromptTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        variables:
+          type: array
+          items:
+            type: string
+        template:
+          type: string
+      required: [id, name, description, variables, template]
+
+    PromptTemplateList:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptTemplate"
+      required: [templates]
+
+    DailyAnalystContext:
+      type: object
+      properties:
+        reportDate:
+          type: string
+          format: date
+        scope:
+          type: object
+          properties:
+            clientId:
+              type: integer
+              nullable: true
+            businessId:
+              type: integer
+              nullable: true
+            campaignId:
+              type: integer
+              nullable: true
+        sessionSummary:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rankChanges:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rankHistory:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        similarityFlags:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        timeOfDay:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        platformSkew:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        gmbMismatches:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        inputSummary:
+          type: object
+          properties:
+            sessionCount:
+              type: integer
+            declineCount:
+              type: integer
+            improvementCount:
+              type: integer
+            similarPairs:
+              type: integer
+            gmbMismatches:
+              type: integer
+      required: [reportDate, scope, sessionSummary, rankChanges, rankHistory, similarityFlags, timeOfDay, platformSkew, gmbMismatches, inputSummary]

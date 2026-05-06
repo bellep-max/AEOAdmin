@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Key, ChevronRight, ExternalLink, Pencil, Check, X } from "lucide-react";
+import { Key, ChevronRight, ExternalLink, Pencil, Check, X, Sparkles, Trash2, Loader2 } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 import { format } from "date-fns";
 
@@ -45,6 +45,19 @@ interface KeywordLink {
   linkTypeLabel: string | null;
   linkActive: boolean;
   embeddedUrl: string | null;
+}
+
+interface KeywordVariant {
+  id: number;
+  keywordId: number;
+  variantText: string;
+  isActive: boolean;
+  weekOf: string | null;
+  sourceModel: string | null;
+  timesUsed: number;
+  lastUsedAt: string | null;
+  generatedAt: string | null;
+  expiresAt: string | null;
 }
 
 interface KeywordData {
@@ -103,6 +116,52 @@ export default function KeywordDetail({ params }: { params: { clientId: string; 
     },
     enabled: !isLoading,
   });
+
+  const { data: variants, isLoading: isVariantsLoading } = useQuery<KeywordVariant[]>({
+    queryKey: [`/api/keywords/${keywordId}/variants`],
+    queryFn: async () => {
+      const res = await rawFetch(`/api/keywords/${keywordId}/variants`);
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      return data.variants ?? [];
+    },
+    enabled: !isLoading,
+  });
+
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [variantError, setVariantError] = useState<string | null>(null);
+
+  const regenerateVariants = async () => {
+    setIsRegenerating(true);
+    setVariantError(null);
+    try {
+      const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+      const res = await fetch(`${BASE}/api/keywords/${keywordId}/variants/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      queryClient.invalidateQueries({ queryKey: [`/api/keywords/${keywordId}/variants`] });
+    } catch (err) {
+      setVariantError(err instanceof Error ? err.message : "Failed to regenerate");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const deleteVariant = async (variantId: number) => {
+    const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+    await fetch(`${BASE}/api/keyword-variants/${variantId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    queryClient.invalidateQueries({ queryKey: [`/api/keywords/${keywordId}/variants`] });
+  };
 
   const { data: sessions } = useQuery<Session[]>({
     queryKey: [`/api/sessions?keywordId=${keywordId}&limit=10`],
@@ -372,6 +431,68 @@ export default function KeywordDetail({ params }: { params: { clientId: string; 
               </Table>
             ) : (
               <div className="p-4 text-sm text-muted-foreground">No sessions yet</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Variants card — spans both columns */}
+        <Card className="border-border/50 lg:col-span-2">
+          <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Search Variants
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-generated phrases that get randomly substituted into the search prompt during daily runs.
+              </p>
+            </div>
+            <Button size="sm" onClick={regenerateVariants} disabled={isRegenerating}>
+              {isRegenerating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+              {variants && variants.length > 0 ? "Regenerate" : "Generate"}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            {variantError ? (
+              <div className="px-4 py-2 text-xs text-destructive border-b">{variantError}</div>
+            ) : null}
+            {isVariantsLoading ? (
+              <div className="p-4 text-sm text-muted-foreground">Loading…</div>
+            ) : variants && variants.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Variant</TableHead>
+                    <TableHead className="w-20">Used</TableHead>
+                    <TableHead className="w-32">Last Used</TableHead>
+                    <TableHead className="w-32">Expires</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {variants.map((v) => (
+                    <TableRow key={v.id}>
+                      <TableCell className="text-sm">{v.variantText}</TableCell>
+                      <TableCell className="text-xs">{v.timesUsed}x</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {v.lastUsedAt ? format(new Date(v.lastUsedAt), "MMM d, h:mm a") : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {v.expiresAt ? format(new Date(v.expiresAt), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => deleteVariant(v.id)}>
+                          <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="p-4 text-sm text-muted-foreground">
+                No variants yet. Click <span className="font-semibold">Generate</span> to create them via DeepSeek.
+              </div>
             )}
           </CardContent>
         </Card>
