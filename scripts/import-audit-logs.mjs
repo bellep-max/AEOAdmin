@@ -190,6 +190,7 @@ for (let i = 1; i < allRows.length; i++) {
     biz_name:          bizName || kw.biz_name || null,
     search_address:    null,
     keyword:           keyword,
+    keyword_variant:   variantText,
     timestamp,
     date:              dateOnly,
     platform,

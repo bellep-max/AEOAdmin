@@ -147,6 +147,8 @@ router.post("/", requireExecutorToken, async (req, res) => {
         campaignId:      body.campaignId != null ? Number(body.campaignId) : null,
         keywordId:       body.keywordId  != null ? Number(body.keywordId)  : null,
         deviceId:        body.deviceId   != null ? Number(body.deviceId)   : null,
+        ...(body.timestamp ? { timestamp: new Date(body.timestamp as string) } : {}),
+        ...(body.createdAt ? { createdAt: new Date(body.createdAt as string) } : {}),
         bizName:         (body.bizName        as string | null | undefined) ?? null,
         campaignName:    (body.campaignName   as string | null | undefined) ?? null,
         keywordText:     (body.keywordText ?? body.keyword) as string | null ?? null,

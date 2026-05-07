@@ -23,6 +23,7 @@ export interface PeriodRow {
   campaignName: string | null;
   currentPosition: number | null;
   currentDate: string | null;
+  currentVariant: string | null;
   previousPosition: number | null;
   previousDate: string | null;
   firstPosition: number | null;

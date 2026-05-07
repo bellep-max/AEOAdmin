@@ -245,6 +245,14 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
                                 <div className="col-span-2">{p.currentDate ? format(new Date(p.currentDate), "MMM d") : ""}</div>
                                 <div className="col-span-4" />
                               </div>
+                              {p.currentVariant ? (
+                                <div className="grid grid-cols-12 gap-2 text-[10px] text-muted-foreground mt-0.5 italic">
+                                  <div className="col-span-2" />
+                                  <div className="col-span-10 truncate" title={p.currentVariant}>
+                                    variant: {p.currentVariant}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>

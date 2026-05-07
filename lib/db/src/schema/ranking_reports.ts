@@ -17,6 +17,7 @@ export const rankingReportsTable = pgTable("ranking_reports", {
   bizName: text("biz_name"),
   searchAddress: text("search_address"),
   keyword: text("keyword"),
+  keywordVariant: text("keyword_variant"),
   /* ── Identity ── */
   timestamp: timestamp("timestamp"),
   date: text("date"),

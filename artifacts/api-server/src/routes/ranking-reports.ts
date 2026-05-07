@@ -85,9 +85,12 @@ router.post("/", requireExecutorToken, async (req, res) => {
     const body = req.body;
     const platform = typeof body.platform === "string" ? body.platform.toLowerCase() : null;
 
-    // Upsert per (keywordId, platform, day): if a report already exists
-    // for this keyword+platform today, update it instead of inserting a new row.
-    // Prevents accidental duplicates from re-running the same batch.
+    /* Upsert key: prefer body.date for backfills (so re-running an import for
+       a past day finds yesterday's row), else fall back to today's date. */
+    const upsertDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+      ? body.date
+      : null;
+
     const existing = await db
       .select({ id: rankingReportsTable.id })
       .from(rankingReportsTable)
@@ -96,7 +99,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
         platform != null
           ? eq(rankingReportsTable.platform, platform)
           : sql`${rankingReportsTable.platform} IS NULL`,
-        sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
+        upsertDate
+          ? eq(rankingReportsTable.date, upsertDate)
+          : sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
       ))
       .limit(1);
 
@@ -108,6 +113,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
           bizName: body.bizName ?? null,
           searchAddress: body.searchAddress ?? null,
           keyword: body.keyword ?? null,
+          keywordVariant: body.keywordVariant ?? null,
           timestamp: body.timestamp ?? null,
           date: body.date ?? null,
           platform: platform,
@@ -117,6 +123,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
           rankingPosition: body.rankingPosition ?? null,
           rankingTotal: body.rankingTotal ?? null,
           reasonRecommended: body.reasonRecommended ?? null,
+          ...(body.createdAt ? { createdAt: new Date(body.createdAt) } : {}),
           mapsPresence: body.mapsPresence ?? null,
           mapsUrl: body.mapsUrl ?? null,
           isInitialRanking: body.isInitialRanking ?? false,
@@ -154,9 +161,11 @@ router.post("/", requireExecutorToken, async (req, res) => {
         bizName: body.bizName ?? null,
         searchAddress: body.searchAddress ?? null,
         keyword: body.keyword ?? null,
+        keywordVariant: body.keywordVariant ?? null,
         timestamp: body.timestamp ?? null,
         date: body.date ?? null,
-        platform: body.platform ?? null,
+        platform: platform,
+        ...(body.createdAt ? { createdAt: new Date(body.createdAt) } : {}),
         deviceIdentifier: body.deviceIdentifier ?? null,
         status: body.status ?? null,
         durationSeconds: body.durationSeconds ?? null,
@@ -509,6 +518,7 @@ router.get("/period-comparison", async (req, res) => {
           rankingPosition: rankingReportsTable.rankingPosition,
           platform: rankingReportsTable.platform,
           createdAt: rankingReportsTable.createdAt,
+          keywordVariant: rankingReportsTable.keywordVariant,
         })
         .from(rankingReportsTable)
         .orderBy(asc(rankingReportsTable.createdAt)),
@@ -616,6 +626,7 @@ router.get("/period-comparison", async (req, res) => {
         currentReportId: cur?.id ?? null,
         currentPosition: cur?.rankingPosition ?? null,
         currentDate: cur?.createdAt ?? null,
+        currentVariant: cur?.keywordVariant ?? null,
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
         previousDate: prev?.createdAt ?? null,
@@ -656,6 +667,7 @@ router.get("/initial-vs-current", async (req, res) => {
         screenshotUrl: rankingReportsTable.screenshotUrl,
         textRanking: rankingReportsTable.textRanking,
         createdAt: rankingReportsTable.createdAt,
+        keywordVariant: rankingReportsTable.keywordVariant,
       })
       .from(rankingReportsTable)
       .orderBy(asc(rankingReportsTable.createdAt));
@@ -716,6 +728,7 @@ router.get("/initial-vs-current", async (req, res) => {
         initialPosition: initialReport?.rankingPosition ?? null,
         currentDate:     currentReport?.createdAt ?? null,
         currentPosition: currentReport?.rankingPosition ?? null,
+        currentVariant:  currentReport?.keywordVariant ?? null,
         positionChange:  posChange,
         isInTopTen:      currentReport?.rankingPosition != null && currentReport.rankingPosition <= 10,
         mapsPresence:    currentReport?.mapsPresence ?? null,
