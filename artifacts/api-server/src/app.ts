@@ -57,7 +57,10 @@ app.use(
     store: new PgSession({
       pool,
       tableName: "user_sessions",
-      createTableIfMissing: true,
+      // table is created out-of-band; the bundled docker image strips the
+      // package's table.sql, so leaving this true causes session writes to
+      // fail silently with ENOENT.
+      createTableIfMissing: false,
     }),
     secret: process.env.SESSION_SECRET ?? "signal-aeo-dev-secret",
     resave: false,
