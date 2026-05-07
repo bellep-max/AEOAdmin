@@ -575,9 +575,33 @@ router.get("/period-comparison", async (req, res) => {
       return map;
     };
 
+    /* Per (kw, plat), pick the SECOND-most-recent report (the audit before
+       the latest one). Used by weekly/biweekly so "previous" is always the
+       prior audit run, regardless of date — matches how rank trackers work
+       and is what Mary expects. */
+    const secondLatestPerPair = () => {
+      const buckets = new Map<PairKey, typeof reports>();
+      for (const r of reports) {
+        if (!r.platform) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const key = `${r.keywordId}|${r.platform}`;
+        const arr = buckets.get(key) ?? [];
+        arr.push(r);
+        buckets.set(key, arr);
+      }
+      const map = new Map<PairKey, typeof reports[number]>();
+      for (const [key, arr] of buckets) {
+        if (arr.length >= 2) map.set(key, arr[arr.length - 2]); // arr is asc-ordered
+      }
+      return map;
+    };
+
     const ever = everLatest();
-    const current = isLifetime ? ever : latestInWindow(curStart, curEnd);
-    const previous = isLifetime ? firstEver() : latestInWindow(prevStart, prevEnd);
+    const isWeekly = period === "weekly";
+    const current  = isWeekly ? ever : (isLifetime ? ever : latestInWindow(curStart, curEnd));
+    const previous = isWeekly
+      ? secondLatestPerPair()
+      : (isLifetime ? firstEver() : latestInWindow(prevStart, prevEnd));
     const first = firstEver();
 
     const allKeys = new Set<PairKey>([...current.keys(), ...previous.keys(), ...ever.keys()]);
