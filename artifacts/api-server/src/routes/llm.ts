@@ -31,8 +31,12 @@ import {
   runAuditReport,
   type AnalystScope,
 } from "../services/daily-analyst";
+import { buildSession, type VoiceKey } from "../services/session-prompt-builder";
 
 const router = Router();
+
+const VALID_VOICES: ReadonlyArray<VoiceKey> = ["observer", "researcher", "rec_seeker", "local", "quick_asker"];
+const VALID_PLATFORMS = new Set(["chatgpt", "gemini", "perplexity"]);
 
 /* ════════════════════════════════════════════════════════════════════════
    /api/llm/prompt-templates
@@ -177,6 +181,55 @@ router.post("/variants/regenerate-all", requireExecutorToken, async (req, res) =
   } catch (err) {
     req.log.error({ err }, "Error in regenerate-all");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+   /api/llm/build-session — single-call session prompt builder
+   ════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * POST /api/llm/build-session
+ *
+ * Single call returns everything a runner needs to dispatch one session
+ * to a phone: prompt, follow-up, voice, variant_id, backlink decision,
+ * business GPS context. Replaces the executor-side prompt_generator.py.
+ *
+ * Body:
+ *   keyword_id (required, int)
+ *   platform   (required, one of chatgpt|gemini|perplexity)
+ *   voice      (optional, one of the 5 archetypes; auto-picks if absent)
+ */
+router.post("/build-session", requireExecutorToken, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    const keywordId = Number(body.keyword_id ?? body.keywordId);
+    if (!Number.isFinite(keywordId) || keywordId <= 0) {
+      return res.status(400).json({ error: "keyword_id is required and must be a positive integer" });
+    }
+
+    const platformRaw = (body.platform ?? "").toString().toLowerCase();
+    if (!VALID_PLATFORMS.has(platformRaw)) {
+      return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+    }
+
+    const voiceRaw = body.voice;
+    let voice: VoiceKey | undefined;
+    if (voiceRaw != null && voiceRaw !== "") {
+      if (typeof voiceRaw !== "string" || !VALID_VOICES.includes(voiceRaw as VoiceKey)) {
+        return res.status(400).json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
+      }
+      voice = voiceRaw as VoiceKey;
+    }
+
+    const start = Date.now();
+    const out = await buildSession({ keywordId, platform: platformRaw, voice });
+    res.json({ ...out, _elapsedMs: Date.now() - start });
+  } catch (err) {
+    req.log.error({ err }, "Error building session");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
   }
 });
 
