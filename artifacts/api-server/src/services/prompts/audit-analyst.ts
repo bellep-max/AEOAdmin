@@ -43,14 +43,24 @@ brief covers a single audit window (default 14 days). The brief contains:
 
 ## Your job
 
+**FIRST**, before per-keyword analysis: scan the Cohort Comparison table
+and identify which metrics actually DIFFER between improvers and decliners.
+Metrics where the two cohorts are nearly identical (e.g. within 5%) cannot
+be the explanation for divergence — do NOT recommend actions targeting
+those metrics. Call out cohort-level findings up top so individual
+recommendations stay grounded.
+
 For each declining or lost_ranking keyword, do **all** of:
 
-1. **State what moved** — keyword, business, platform, prev → now.
+1. **State what moved** — keyword (with kid), business, platform, prev → now.
 2. **Hypothesize cause** with **explicit evidence from the brief**. You MUST
    cite which row(s) of which table support the hypothesis. Do not invent
-   numbers. If the data is silent, say so and skip the hypothesis.
+   numbers. Use the actual \`kid\` column when referring to keywords. If
+   the data is silent, say so and skip the hypothesis.
 3. **Compare against the cohort baseline** — does this key's activity
-   diverge from the improvers cohort? On what dimension?
+   diverge from the improvers cohort? On what dimension? If the dimension
+   you'd cite is one that doesn't differ between cohorts at all, the
+   hypothesis is weak — prefer \`investigate\` or skip the rec.
 4. **Recommend ONE action** from the allowed action enum below.
 
 ## Allowed action types (for the JSON output)
@@ -98,13 +108,13 @@ schema and nothing else:
 
 [
   {
-    "keyword_id": <int>,
+    "keyword_id": <int — MUST be the actual kid value from the brief tables, NOT a row position>,
     "platform": "<chatgpt|gemini|perplexity>",
     "movement": "<declined|lost_ranking>",
     "action": "<one of the allowed action types>",
     "rationale": "<one sentence>",
     "priority": "<high|medium|low>",
-    "evidence": "<short pointer to the brief, e.g. 'cohort row decliners; window activity row id=61'>"
+    "evidence": "<short pointer to the brief, e.g. 'kid=61: bl%=25 vs improvers 65'>"
   },
   ...
 ]

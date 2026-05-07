@@ -75,8 +75,9 @@ function renderRankAndActivityTable(
   rows: { rc: RankChangeRow; wa: WindowActivityRow | undefined }[],
 ): string {
   return table(
-    ["keyword", "business", "platform", "prev", "now", "Δ", "movement", "sessions", "bl%", "pass%", "variants", "hour σ"],
+    ["kid", "keyword", "business", "platform", "prev", "now", "Δ", "movement", "sessions", "bl%", "pass%", "variants", "hour σ"],
     rows.map(({ rc, wa }) => [
+      rc.keyword_id,
       rc.keyword,
       rc.business,
       rc.platform,
@@ -109,16 +110,23 @@ function renderCohort(rows: MovementCohortRow[]): string {
 
 function renderSimilarity(rows: SimilarityRow[]): string {
   return table(
-    ["keyword A", "keyword B", "similarity"],
-    trim(rows, MAX_SIMILARITY_PAIRS).map((r) => [r.keyword_a, r.keyword_b, r.sim]),
+    ["kid_a", "keyword A", "kid_b", "keyword B", "similarity"],
+    trim(rows, MAX_SIMILARITY_PAIRS).map((r) => [
+      r.keyword_a_id,
+      r.keyword_a,
+      r.keyword_b_id,
+      r.keyword_b,
+      r.sim,
+    ]),
   );
 }
 
 function renderGmbMismatches(rows: GmbMismatchRow[]): string {
   const mismatches = rows.filter((r) => r.gmb_match === "mismatch");
   return table(
-    ["keyword", "business", "GMB address", "search address"],
+    ["kid", "keyword", "business", "GMB address", "search address"],
     trim(mismatches, MAX_GMB_MISMATCHES).map((r) => [
+      r.keyword_id,
       r.keyword,
       r.business,
       r.gmb_address,
