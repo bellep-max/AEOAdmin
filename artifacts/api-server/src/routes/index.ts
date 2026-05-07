@@ -22,6 +22,7 @@ import packagesRouter from "./packages";
 import onboardingRouter from "./onboarding";
 import keywordVariantsRouter from "./keyword-variants";
 import analyticsRouter from "./analytics";
+import llmRouter from "./llm";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use("/packages", packagesRouter);
 router.use("/onboarding", onboardingRouter);
 router.use(keywordVariantsRouter);
 router.use("/analytics", analyticsRouter);
+router.use("/llm", llmRouter);
 
 export default router;
