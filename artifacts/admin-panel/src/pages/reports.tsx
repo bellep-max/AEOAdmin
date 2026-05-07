@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +58,9 @@ function recsCount(input: Record<string, unknown> | null): number | null {
 export default function Reports() {
   const qc = useQueryClient();
   const [runOpen, setRunOpen] = useState(false);
+  const [generatingUntil, setGeneratingUntil] = useState<number | null>(null);
+
+  const isGenerating = generatingUntil != null && Date.now() < generatingUntil;
 
   const { data, isLoading, error } = useQuery<AuditReportListResponse>({
     queryKey: ["/api/llm/audit-reports"],
@@ -66,7 +69,27 @@ export default function Reports() {
       if (!res.ok) throw new Error(`Failed to load reports (${res.status})`);
       return res.json();
     },
+    // Poll every 10s while a report is being generated server-side.
+    refetchInterval: isGenerating ? 10_000 : false,
   });
+
+  // Stop the polling banner once it expires or once a new report appears.
+  const newestId = data?.reports?.[0]?.id ?? null;
+  useEffect(() => {
+    if (generatingUntil == null) return;
+    const triggeredAtNewestId = (window as unknown as { __reportsBaselineId?: number | null }).__reportsBaselineId;
+    if (newestId != null && triggeredAtNewestId != null && newestId !== triggeredAtNewestId) {
+      setGeneratingUntil(null);
+    }
+  }, [newestId, generatingUntil]);
+
+  useEffect(() => {
+    if (generatingUntil == null) return;
+    const remaining = generatingUntil - Date.now();
+    if (remaining <= 0) { setGeneratingUntil(null); return; }
+    const t = window.setTimeout(() => setGeneratingUntil(null), remaining);
+    return () => window.clearTimeout(t);
+  }, [generatingUntil]);
 
   return (
     <div className="space-y-5">
@@ -87,11 +110,26 @@ export default function Reports() {
             onOpenChange={setRunOpen}
             onScheduled={() => {
               setRunOpen(false);
-              setTimeout(() => qc.invalidateQueries({ queryKey: ["/api/llm/audit-reports"] }), 5000);
+              // Remember the newest id at trigger time so we can stop the
+              // banner when a new report appears in the list.
+              (window as unknown as { __reportsBaselineId?: number | null }).__reportsBaselineId = newestId;
+              // Poll for up to 3 minutes — R1 typically finishes in 50-90s
+              // but can occasionally take longer.
+              setGeneratingUntil(Date.now() + 3 * 60 * 1000);
+              qc.invalidateQueries({ queryKey: ["/api/llm/audit-reports"] });
             }}
           />
         </div>
       </div>
+
+      {isGenerating ? (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
+          <span className="text-foreground">
+            Generating audit report (DeepSeek-R1)… typically 50–90 seconds. The list refreshes automatically when it lands.
+          </span>
+        </div>
+      ) : null}
 
       {/* List */}
       <Card className="border-border/50">
