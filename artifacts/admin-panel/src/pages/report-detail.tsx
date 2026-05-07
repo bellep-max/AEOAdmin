@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  ArrowLeft, ScrollText, AlertTriangle, Sparkles, ArrowUpDown,
+  ArrowLeft, ScrollText, AlertTriangle, Sparkles, ArrowUpDown, Trash2, Loader2,
 } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 import { Markdown } from "@/lib/markdown";
@@ -46,11 +46,39 @@ const PRIORITY_CLS: Record<AuditRec["priority"], string> = {
 
 const PRIORITY_RANK = { high: 0, medium: 1, low: 2 } as const;
 
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+function dateOnly(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  return raw.length >= 10 ? raw.slice(0, 10) : raw;
+}
+
 export default function ReportDetail() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
+  const [, navigate] = useLocation();
 
   const [sortKey, setSortKey] = useState<"priority" | "kid" | "movement">("priority");
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete report #${id}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${BASE}/api/llm/audit-reports/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status} ${txt.slice(0, 200)}`);
+      }
+      navigate("/reports");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
+      setDeleting(false);
+    }
+  };
 
   const { data, isLoading, error } = useQuery<AuditReportDetail>({
     queryKey: [`/api/llm/audit-reports/${id}`],
@@ -89,7 +117,7 @@ export default function ReportDetail() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-foreground">
-            {data?.reportDate ?? "—"} <span className="text-sm font-normal text-muted-foreground">·</span> <span className="text-sm font-normal text-muted-foreground">audit report</span>
+            {dateOnly(data?.reportDate)} <span className="text-sm font-normal text-muted-foreground">·</span> <span className="text-sm font-normal text-muted-foreground">audit report</span>
           </h1>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge variant="outline" className="text-[10px]">
@@ -105,6 +133,16 @@ export default function ReportDetail() {
             ) : null}
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDelete}
+          disabled={deleting || !data}
+          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+        >
+          {deleting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1.5" />}
+          Delete
+        </Button>
       </div>
 
       {error ? (

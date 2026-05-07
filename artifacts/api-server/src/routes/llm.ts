@@ -443,6 +443,24 @@ router.get("/audit-reports/:id", requireOwner, async (req, res) => {
   }
 });
 
+/* DELETE /api/llm/audit-reports/:id — remove a report (owner only) */
+router.delete("/audit-reports/:id", requireOwner, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const [deleted] = await db
+      .delete(dailyReportsTable)
+      .where(eq(dailyReportsTable.id, id))
+      .returning({ id: dailyReportsTable.id });
+    if (!deleted) return res.status(404).json({ error: "Report not found" });
+    res.json({ ok: true, deletedId: deleted.id });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting audit report");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
 /* POST /api/llm/audit-context — raw context (no LLM call). Same as legacy
    /api/analytics/audit-context but lives under the LLM namespace because
    it's the input the LLM agent reads from. Useful for prompt iteration. */

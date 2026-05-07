@@ -16,7 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  ScrollText, ChevronRight, Loader2, PlayCircle, AlertTriangle,
+  ScrollText, ChevronRight, Loader2, PlayCircle, AlertTriangle, Trash2,
 } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 import { format } from "date-fns";
@@ -55,6 +55,11 @@ function recsCount(input: Record<string, unknown> | null): number | null {
   return typeof inferred === "number" ? inferred : null;
 }
 
+function dateOnly(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  return raw.length >= 10 ? raw.slice(0, 10) : raw;
+}
+
 export default function Reports() {
   const qc = useQueryClient();
   const [runOpen, setRunOpen] = useState(false);
@@ -75,6 +80,28 @@ export default function Reports() {
 
   // Stop the polling banner once it expires or once a new report appears.
   const newestId = data?.reports?.[0]?.id ?? null;
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const deleteReport = async (id: number) => {
+    if (!confirm(`Delete report #${id}? This cannot be undone.`)) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${BASE}/api/llm/audit-reports/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status} ${txt.slice(0, 200)}`);
+      }
+      qc.invalidateQueries({ queryKey: ["/api/llm/audit-reports"] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   useEffect(() => {
     if (generatingUntil == null) return;
     const triggeredAtNewestId = (window as unknown as { __reportsBaselineId?: number | null }).__reportsBaselineId;
@@ -108,6 +135,7 @@ export default function Reports() {
           <RunReportDialog
             open={runOpen}
             onOpenChange={setRunOpen}
+            disabled={isGenerating}
             onScheduled={() => {
               setRunOpen(false);
               // Remember the newest id at trigger time so we can stop the
@@ -171,7 +199,7 @@ export default function Reports() {
                       : r.scope;
                   return (
                     <TableRow key={r.id}>
-                      <TableCell className="text-sm font-mono">{r.reportDate}</TableCell>
+                      <TableCell className="text-sm font-mono">{dateOnly(r.reportDate)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-[10px]">{scope}</Badge>
                       </TableCell>
@@ -184,11 +212,26 @@ export default function Reports() {
                         {r.generatedAt ? format(new Date(r.generatedAt), "MMM d, h:mm a") : "—"}
                       </TableCell>
                       <TableCell>
-                        <Link href={`/reports/${r.id}`}>
-                          <Button size="icon" variant="ghost" className="h-7 w-7">
-                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => deleteReport(r.id)}
+                            disabled={deletingId === r.id}
+                          >
+                            {deletingId === r.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                            )}
                           </Button>
-                        </Link>
+                          <Link href={`/reports/${r.id}`}>
+                            <Button size="icon" variant="ghost" className="h-7 w-7">
+                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                            </Button>
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -206,9 +249,10 @@ interface RunReportDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onScheduled: () => void;
+  disabled?: boolean;
 }
 
-function RunReportDialog({ open, onOpenChange, onScheduled }: RunReportDialogProps) {
+function RunReportDialog({ open, onOpenChange, onScheduled, disabled }: RunReportDialogProps) {
   const [date, setDate] = useState(todayIsoLocal());
   const [scopeKind, setScopeKind] = useState<"all" | "client" | "business" | "campaign">("all");
   const [scopeId, setScopeId] = useState("");
@@ -256,9 +300,9 @@ function RunReportDialog({ open, onOpenChange, onScheduled }: RunReportDialogPro
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button size="sm" disabled={disabled}>
           <PlayCircle className="w-4 h-4 mr-1.5" />
-          Run report
+          {disabled ? "Generating…" : "Run report"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
