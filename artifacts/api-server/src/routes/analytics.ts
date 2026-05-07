@@ -1,6 +1,14 @@
 import { Router } from "express";
+import { db } from "@workspace/db";
+import { dailyReportsTable } from "@workspace/db/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { assembleContext, type AnalystScope, type AnalystContext } from "../services/daily-analyst";
+import {
+  assembleContext,
+  runAuditReport,
+  type AnalystScope,
+  type AnalystContext,
+} from "../services/daily-analyst";
 
 const router = Router();
 
@@ -135,6 +143,100 @@ router.get("/audit-context", requireExecutorToken, async (req, res) => {
     res.json({ ...auditContext, _elapsedMs: Date.now() - start });
   } catch (err) {
     req.log.error({ err }, "Error assembling audit context");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+   Phase 2 — LLM-driven audit reports
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/analytics/audit-report/run
+   Runs the audit-context assembly + DeepSeek-R1 + parse +
+   persist. Synchronous; returns the saved report row.
+   Body / query: date (required), clientId/businessId/campaignId
+   (optional scope), lookbackDays (default 14), dryRun (bool —
+   if true, skip DB insert).
+   Auth: executor token (will be re-gated when UI ships).
+──────────────────────────────────────────────────────────── */
+router.post("/audit-report/run", requireExecutorToken, async (req, res) => {
+  try {
+    // Accept either body or query for ergonomics during iteration.
+    const src = { ...(req.query as Record<string, string>), ...(req.body as Record<string, string>) };
+    const parsed = parseQuery(src as Record<string, string>);
+    if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+
+    const dryRun = src.dryRun === "true" || src.dryRun === true as unknown as string;
+    const result = await runAuditReport({
+      reportDate: parsed.date,
+      scope: parsed.scope,
+      lookbackDays: parsed.lookbackDays,
+      dryRun,
+    });
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error running audit report");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   GET /api/analytics/audit-reports
+   Lists stored audit reports (most recent first). Filterable by
+   scope kind + scopeId + reportDate range.
+──────────────────────────────────────────────────────────── */
+router.get("/audit-reports", async (req, res) => {
+  try {
+    const { scope: scopeKind, scopeId, from, to, limit = "50" } = req.query as Record<string, string>;
+    const conditions = [] as ReturnType<typeof eq>[];
+    if (scopeKind)                conditions.push(eq(dailyReportsTable.scope, scopeKind));
+    if (scopeId   && !Number.isNaN(Number(scopeId))) conditions.push(eq(dailyReportsTable.scopeId, Number(scopeId)));
+    if (from)                     conditions.push(sql`${dailyReportsTable.reportDate} >= ${from}` as ReturnType<typeof eq>);
+    if (to)                       conditions.push(sql`${dailyReportsTable.reportDate} <= ${to}` as ReturnType<typeof eq>);
+
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+    const rows = await db
+      .select({
+        id:              dailyReportsTable.id,
+        reportDate:      dailyReportsTable.reportDate,
+        scope:           dailyReportsTable.scope,
+        scopeId:         dailyReportsTable.scopeId,
+        modelUsed:       dailyReportsTable.modelUsed,
+        inputSummary:    dailyReportsTable.inputSummary,
+        generatedAt:     dailyReportsTable.generatedAt,
+        durationMs:      dailyReportsTable.durationMs,
+        costUsd:         dailyReportsTable.costUsd,
+      })
+      .from(dailyReportsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(dailyReportsTable.generatedAt))
+      .limit(lim);
+    res.json({ reports: rows, total: rows.length });
+  } catch (err) {
+    req.log.error({ err }, "Error listing audit reports");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   GET /api/analytics/audit-reports/:id
+   Returns a single report including markdown + recommendations.
+──────────────────────────────────────────────────────────── */
+router.get("/audit-reports/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const [row] = await db
+      .select()
+      .from(dailyReportsTable)
+      .where(eq(dailyReportsTable.id, id))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: "Report not found" });
+    res.json(row);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching audit report");
     res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
 });

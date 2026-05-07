@@ -10,7 +10,11 @@
  * - businesses uses publishedAddress for the GMB address (no `address` column).
  */
 import { db } from "@workspace/db";
+import { dailyReportsTable } from "@workspace/db/schema";
 import { sql } from "drizzle-orm";
+import { chatCompletion } from "./llm-client";
+import { formatAuditContext } from "./llm-analyst-formatter";
+import { AUDIT_ANALYST_SYSTEM_PROMPT } from "./prompts/audit-analyst";
 
 export interface AnalystScope {
   clientId?: number;
@@ -532,5 +536,163 @@ export async function assembleContext(
       gmbMismatches:      gmbMismatches.filter((r) => r.gmb_match === "mismatch").length,
       windowSessionCount: windowActivity.reduce((acc, r) => acc + Number(r.sessions_in_window ?? 0), 0),
     },
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Phase 2 — LLM analyst orchestration
+   ════════════════════════════════════════════════════════════════════════ */
+
+export interface AuditReportRecommendation {
+  keyword_id: number;
+  platform: string;
+  movement: string;
+  action: string;
+  rationale: string;
+  priority: "high" | "medium" | "low";
+  evidence: string;
+}
+
+export interface AuditReportResult {
+  id: number;
+  reportDate: string;
+  scope: string;
+  scopeId: number | null;
+  modelUsed: string;
+  reportMarkdown: string;
+  recommendations: AuditReportRecommendation[];
+  inputSummary: AnalystContext["inputSummary"];
+  generatedAt: Date;
+  durationMs: number;
+  costUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+const SECTION_SEPARATOR = "---RECS---";
+
+function describeScope(scope: AnalystScope): { kind: string; id: number | null } {
+  if (scope.campaignId != null) return { kind: "campaign", id: scope.campaignId };
+  if (scope.businessId != null) return { kind: "business", id: scope.businessId };
+  if (scope.clientId   != null) return { kind: "client",   id: scope.clientId };
+  return { kind: "all", id: null };
+}
+
+/**
+ * Splits the LLM response into the markdown report and the JSON
+ * recommendations array. Tolerant of small formatting drift — the model
+ * sometimes wraps the JSON in a fenced block.
+ */
+function parseAnalystOutput(raw: string): { markdown: string; recs: AuditReportRecommendation[] } {
+  const idx = raw.indexOf(SECTION_SEPARATOR);
+  if (idx === -1) {
+    // Model didn't emit the separator. Treat whole response as markdown
+    // and return empty recs — caller logs a warning.
+    return { markdown: raw.trim(), recs: [] };
+  }
+  const markdownPart = raw.slice(0, idx).trim();
+  let jsonPart = raw.slice(idx + SECTION_SEPARATOR.length).trim();
+
+  // Strip markdown fences if the model wrapped JSON in ```json ... ```.
+  jsonPart = jsonPart
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  let recs: AuditReportRecommendation[] = [];
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (Array.isArray(parsed)) recs = parsed as AuditReportRecommendation[];
+  } catch {
+    // Leave recs empty; markdown is still useful.
+  }
+  return { markdown: markdownPart, recs };
+}
+
+/** Strip the report's leading "## Summary" sentence for storage as a teaser. */
+export interface RunAuditReportOptions {
+  reportDate: string;
+  scope?: AnalystScope;
+  lookbackDays?: number;
+  /** If true, do not insert into daily_reports; useful for prompt iteration. */
+  dryRun?: boolean;
+}
+
+/**
+ * End-to-end audit report run:
+ *   1. Assemble the audit context (SQL only)
+ *   2. Format it into a markdown brief
+ *   3. Send to DeepSeek-R1 with the audit-analyst system prompt
+ *   4. Parse the response into markdown + structured recommendations
+ *   5. Store in daily_reports unless dryRun
+ */
+export async function runAuditReport(opts: RunAuditReportOptions): Promise<AuditReportResult> {
+  const scope = opts.scope ?? {};
+  const lookbackDays = opts.lookbackDays ?? 14;
+  const start = Date.now();
+
+  const ctx = await assembleContext(opts.reportDate, scope, lookbackDays);
+  const brief = formatAuditContext(ctx);
+
+  const completion = await chatCompletion({
+    model: "deepseek-reasoner",
+    messages: [
+      { role: "system", content: AUDIT_ANALYST_SYSTEM_PROMPT },
+      { role: "user",   content: brief },
+    ],
+    temperature: 0.3,
+  });
+
+  const { markdown, recs } = parseAnalystOutput(completion.content);
+  const durationMs = Date.now() - start;
+  const { kind: scopeKind, id: scopeId } = describeScope(scope);
+
+  if (opts.dryRun) {
+    return {
+      id: -1,
+      reportDate: opts.reportDate,
+      scope: scopeKind,
+      scopeId,
+      modelUsed: completion.model,
+      reportMarkdown: markdown,
+      recommendations: recs,
+      inputSummary: ctx.inputSummary,
+      generatedAt: new Date(),
+      durationMs,
+      costUsd: completion.costUsd,
+      promptTokens: completion.promptTokens,
+      completionTokens: completion.completionTokens,
+    };
+  }
+
+  const [row] = await db
+    .insert(dailyReportsTable)
+    .values({
+      reportDate:      opts.reportDate,
+      scope:           scopeKind,
+      scopeId:         scopeId,
+      modelUsed:       completion.model,
+      inputSummary:    ctx.inputSummary,
+      reportMarkdown:  markdown,
+      recommendations: recs,
+      durationMs,
+      costUsd:         completion.costUsd.toFixed(4),
+    })
+    .returning();
+
+  return {
+    id: row.id,
+    reportDate: row.reportDate,
+    scope: row.scope,
+    scopeId: row.scopeId,
+    modelUsed: row.modelUsed ?? completion.model,
+    reportMarkdown: row.reportMarkdown ?? markdown,
+    recommendations: (row.recommendations as AuditReportRecommendation[] | null) ?? recs,
+    inputSummary: ctx.inputSummary,
+    generatedAt: row.generatedAt ?? new Date(),
+    durationMs: row.durationMs ?? durationMs,
+    costUsd: completion.costUsd,
+    promptTokens: completion.promptTokens,
+    completionTokens: completion.completionTokens,
   };
 }
