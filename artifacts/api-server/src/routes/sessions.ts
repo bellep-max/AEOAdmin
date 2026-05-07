@@ -59,6 +59,7 @@ router.get("/", async (req, res) => {
       clientId,
       businessId,
       campaignId,
+      keywordId,
       deviceId,
       platform,
       status,
@@ -72,6 +73,7 @@ router.get("/", async (req, res) => {
     if (clientId)   conditions.push(eq(sessionsTable.clientId,   parseInt(clientId)));
     if (businessId) conditions.push(eq(sessionsTable.businessId, parseInt(businessId)));
     if (campaignId) conditions.push(eq(sessionsTable.campaignId, parseInt(campaignId)));
+    if (keywordId)  conditions.push(eq(sessionsTable.keywordId,  parseInt(keywordId)));
     if (deviceId)   conditions.push(eq(sessionsTable.deviceId,   parseInt(deviceId)));
     if (platform)   conditions.push(eq(sessionsTable.aiPlatform, platform));
     if (status)     conditions.push(eq(sessionsTable.status,     status));

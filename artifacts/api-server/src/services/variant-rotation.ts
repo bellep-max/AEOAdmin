@@ -10,7 +10,7 @@ import {
   keywordsTable,
   businessesTable,
 } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { generateVariants } from "./variant-generator";
 
 const VARIANT_TTL_DAYS = 7;
@@ -53,9 +53,14 @@ export function variantExpiresAtFromNow(): Date {
 }
 
 /**
- * Generates fresh variants for one keyword, marks the previous batch
- * inactive, and returns the new rows. Used by both the legacy variant
- * routes and the /api/llm/* namespace.
+ * Generates fresh variants for one keyword and adds them to the active pool.
+ *
+ * Preservation rule: variants that have actually been used (times_used > 0)
+ * stay active — they carry real usage history we don't want to lose. Only
+ * unused variants from prior regenerations get deactivated. Used variants
+ * keep rotating alongside the new batch.
+ *
+ * Used by both the legacy variant routes and the /api/llm/* namespace.
  */
 export async function regenerateForKeyword(keywordId: number, count?: number) {
   const ctx = await loadKeywordContext(keywordId);
@@ -73,12 +78,32 @@ export async function regenerateForKeyword(keywordId: number, count?: number) {
   const weekOf = thisMondayUTC();
   const expiresAt = variantExpiresAtFromNow();
 
+  // Only deactivate UNUSED variants. Anything with times_used > 0 stays
+  // active alongside the new batch.
   await db.update(keywordVariantsTable)
     .set({ isActive: false })
+    .where(and(
+      eq(keywordVariantsTable.keywordId, keywordId),
+      eq(keywordVariantsTable.timesUsed, 0),
+    ));
+
+  // Dedup: skip any newly-generated variant whose text is already present
+  // (case-insensitive). Avoids growing the table with no-op duplicates
+  // when regen is run repeatedly.
+  const existingRows = await db
+    .select({ variantText: keywordVariantsTable.variantText })
+    .from(keywordVariantsTable)
     .where(eq(keywordVariantsTable.keywordId, keywordId));
+  const existingNorm = new Set(existingRows.map((r) => r.variantText.trim().toLowerCase()));
+
+  const fresh = result.variants.filter((v) => !existingNorm.has(v.trim().toLowerCase()));
+
+  if (fresh.length === 0) {
+    return { variants: [], count: 0, skipped: result.variants.length };
+  }
 
   const inserted = await db.insert(keywordVariantsTable).values(
-    result.variants.map((variant) => ({
+    fresh.map((variant) => ({
       keywordId,
       variantText: variant,
       isActive: true,
@@ -89,5 +114,5 @@ export async function regenerateForKeyword(keywordId: number, count?: number) {
     })),
   ).returning();
 
-  return { variants: inserted, count: inserted.length };
+  return { variants: inserted, count: inserted.length, skipped: result.variants.length - fresh.length };
 }

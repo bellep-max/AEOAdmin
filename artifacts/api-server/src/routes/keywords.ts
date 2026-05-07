@@ -97,14 +97,31 @@ router.get("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-    const [kw] = await db.select().from(keywordsTable).where(eq(keywordsTable.id, id));
-    if (!kw) return res.status(404).json({ error: "Not found" });
+    const [row] = await db
+      .select({
+        kw:           keywordsTable,
+        clientName:   clientsTable.businessName,
+        businessName: businessesTable.name,
+        campaignName: clientAeoPlansTable.name,
+      })
+      .from(keywordsTable)
+      .leftJoin(clientsTable,        eq(keywordsTable.clientId,   clientsTable.id))
+      .leftJoin(businessesTable,     eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(clientAeoPlansTable, eq(keywordsTable.aeoPlanId,  clientAeoPlansTable.id))
+      .where(eq(keywordsTable.id, id));
+    if (!row) return res.status(404).json({ error: "Not found" });
     const links = await db
       .select()
       .from(keywordLinksTable)
       .where(eq(keywordLinksTable.keywordId, id))
       .orderBy(keywordLinksTable.createdAt);
-    res.json({ ...kw, links });
+    res.json({
+      ...row.kw,
+      clientName:   row.clientName   ?? null,
+      businessName: row.businessName ?? null,
+      campaignName: row.campaignName ?? null,
+      links,
+    });
   } catch (err) {
     req.log.error({ err }, "Error fetching keyword");
     res.status(500).json({ error: "Internal server error" });
