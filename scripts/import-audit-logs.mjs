@@ -203,6 +203,10 @@ for (let i = 1; i < allRows.length; i++) {
     proxy_region:      v(row, "proxy_region") || null,
     proxy_zip:         v(row, "proxy_zip") || null,
     is_initial_ranking: false,
+    // Set created_at to the actual run time (not import time) — the Rankings
+    // page uses createdAt as "currentDate" for the latest-run filter, so a
+    // default of NOW() makes today look like the latest run.
+    created_at:        timestamp,
   };
 
   batch.push({ audit: auditRecord, ranking: rankingRecord });
