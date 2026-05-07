@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetDailyAnalystContextParams = {
+export type GetAuditAnalystContextParams = {
   date: Date;
   clientId?: number;
   businessId?: number;

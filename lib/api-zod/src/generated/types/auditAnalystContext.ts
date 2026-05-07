@@ -7,20 +7,17 @@
  */
 import type { AnalystRowList } from "./analystRowList";
 import type { AnalystScope } from "./analystScope";
-import type { DailyAnalystContextInputSummary } from "./dailyAnalystContextInputSummary";
+import type { AuditAnalystContextInputSummary } from "./auditAnalystContextInputSummary";
 
-export interface DailyAnalystContext {
+export interface AuditAnalystContext {
   reportDate: Date;
   lookbackDays?: number;
   scope: AnalystScope;
-  sessionSummary: AnalystRowList;
   rankChanges: AnalystRowList;
   rankHistory: AnalystRowList;
   similarityFlags: AnalystRowList;
-  timeOfDay: AnalystRowList;
-  platformSkew: AnalystRowList;
   gmbMismatches: AnalystRowList;
   windowActivity: AnalystRowList;
   movementCohort: AnalystRowList;
-  inputSummary: DailyAnalystContextInputSummary;
+  inputSummary: AuditAnalystContextInputSummary;
 }

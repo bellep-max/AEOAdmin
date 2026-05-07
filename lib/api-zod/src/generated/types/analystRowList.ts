@@ -5,5 +5,6 @@
  * Signal AEO Admin Panel API
  * OpenAPI spec version: 0.1.0
  */
+import type { AnalystRowListItem } from "./analystRowListItem";
 
-export type DailyAnalystContextSessionSummaryItem = { [key: string]: unknown };
+export type AnalystRowList = AnalystRowListItem[];

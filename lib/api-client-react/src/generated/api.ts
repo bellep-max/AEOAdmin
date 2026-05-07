@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AuditAnalystContext,
   Client,
   ClientAeoSummary,
   CreateClientBody,
@@ -33,6 +34,7 @@ import type {
   Device,
   DeviceFarmStatus,
   GbpSnippet,
+  GetAuditAnalystContextParams,
   GetClientsParams,
   GetDailyAnalystContextParams,
   GetDevicesParams,
@@ -40,6 +42,7 @@ import type {
   GetKeywordsParams,
   GetProxiesParams,
   GetRankingReportsParams,
+  GetSessionAnalystContextParams,
   GetSessionsParams,
   GetTasksParams,
   HealthStatus,
@@ -58,6 +61,7 @@ import type {
   ScalingMilestone,
   Session,
   SessionActivityPoint,
+  SessionAnalystContext,
   SessionsPage,
   StressTestStats,
   Subtask,
@@ -3754,7 +3758,7 @@ export function useGetPromptTemplates<
 }
 
 /**
- * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ * @summary Combined analyst context (all datasets — kept for backward compat)
  */
 export const getGetDailyAnalystContextUrl = (
   params: GetDailyAnalystContextParams,
@@ -3830,7 +3834,7 @@ export type GetDailyAnalystContextQueryResult = NonNullable<
 export type GetDailyAnalystContextQueryError = ErrorType<unknown>;
 
 /**
- * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ * @summary Combined analyst context (all datasets — kept for backward compat)
  */
 
 export function useGetDailyAnalystContext<
@@ -3848,6 +3852,215 @@ export function useGetDailyAnalystContext<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDailyAnalystContextQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Subset of analyst context for the daily session-ops report
+ */
+export const getGetSessionAnalystContextUrl = (
+  params: GetSessionAnalystContextParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/session-context?${stringifiedParams}`
+    : `/api/analytics/session-context`;
+};
+
+export const getSessionAnalystContext = async (
+  params: GetSessionAnalystContextParams,
+  options?: RequestInit,
+): Promise<SessionAnalystContext> => {
+  return customFetch<SessionAnalystContext>(
+    getGetSessionAnalystContextUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetSessionAnalystContextQueryKey = (
+  params?: GetSessionAnalystContextParams,
+) => {
+  return [
+    `/api/analytics/session-context`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetSessionAnalystContextQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSessionAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetSessionAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSessionAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSessionAnalystContextQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSessionAnalystContext>>
+  > = ({ signal }) =>
+    getSessionAnalystContext(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSessionAnalystContext>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSessionAnalystContextQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSessionAnalystContext>>
+>;
+export type GetSessionAnalystContextQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Subset of analyst context for the daily session-ops report
+ */
+
+export function useGetSessionAnalystContext<
+  TData = Awaited<ReturnType<typeof getSessionAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetSessionAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSessionAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSessionAnalystContextQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Subset of analyst context for the bi-weekly ranking/audit report
+ */
+export const getGetAuditAnalystContextUrl = (
+  params: GetAuditAnalystContextParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/audit-context?${stringifiedParams}`
+    : `/api/analytics/audit-context`;
+};
+
+export const getAuditAnalystContext = async (
+  params: GetAuditAnalystContextParams,
+  options?: RequestInit,
+): Promise<AuditAnalystContext> => {
+  return customFetch<AuditAnalystContext>(
+    getGetAuditAnalystContextUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAuditAnalystContextQueryKey = (
+  params?: GetAuditAnalystContextParams,
+) => {
+  return [`/api/analytics/audit-context`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAuditAnalystContextQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuditAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetAuditAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAuditAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAuditAnalystContextQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAuditAnalystContext>>
+  > = ({ signal }) =>
+    getAuditAnalystContext(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuditAnalystContext>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAuditAnalystContextQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAuditAnalystContext>>
+>;
+export type GetAuditAnalystContextQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Subset of analyst context for the bi-weekly ranking/audit report
+ */
+
+export function useGetAuditAnalystContext<
+  TData = Awaited<ReturnType<typeof getAuditAnalystContext>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetAuditAnalystContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAuditAnalystContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAuditAnalystContextQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

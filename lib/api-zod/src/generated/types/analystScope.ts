@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type DailyAnalystContextScope = {
+export interface AnalystScope {
   clientId?: number | null;
   businessId?: number | null;
   campaignId?: number | null;
-};
+}

@@ -879,7 +879,7 @@ paths:
     get:
       operationId: getDailyAnalystContext
       tags: [analytics]
-      summary: Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+      summary: Combined analyst context (all datasets — kept for backward compat)
       parameters:
         - name: date
           in: query
@@ -899,6 +899,12 @@ paths:
           in: query
           schema:
             type: integer
+        - name: lookbackDays
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
       responses:
         "200":
           description: Daily analyst context
@@ -906,6 +912,82 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DailyAnalystContext"
+
+  /analytics/session-context:
+    get:
+      operationId: getSessionAnalystContext
+      tags: [analytics]
+      summary: Subset of analyst context for the daily session-ops report
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: businessId
+          in: query
+          schema:
+            type: integer
+        - name: campaignId
+          in: query
+          schema:
+            type: integer
+        - name: lookbackDays
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        "200":
+          description: Session analyst context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionAnalystContext"
+
+  /analytics/audit-context:
+    get:
+      operationId: getAuditAnalystContext
+      tags: [analytics]
+      summary: Subset of analyst context for the bi-weekly ranking/audit report
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: clientId
+          in: query
+          schema:
+            type: integer
+        - name: businessId
+          in: query
+          schema:
+            type: integer
+        - name: campaignId
+          in: query
+          schema:
+            type: integer
+        - name: lookbackDays
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        "200":
+          description: Audit analyst context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditAnalystContext"
 
   /scaling/plan:
     get:
@@ -2035,70 +2117,94 @@ components:
             $ref: "#/components/schemas/PromptTemplate"
       required: [templates]
 
+    AnalystScope:
+      type: object
+      properties:
+        clientId:
+          type: integer
+          nullable: true
+        businessId:
+          type: integer
+          nullable: true
+        campaignId:
+          type: integer
+          nullable: true
+
+    AnalystRowList:
+      type: array
+      items:
+        type: object
+        additionalProperties: true
+
     DailyAnalystContext:
       type: object
       properties:
         reportDate:
           type: string
           format: date
+        lookbackDays:
+          type: integer
         scope:
-          type: object
-          properties:
-            clientId:
-              type: integer
-              nullable: true
-            businessId:
-              type: integer
-              nullable: true
-            campaignId:
-              type: integer
-              nullable: true
-        sessionSummary:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        rankChanges:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        rankHistory:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        similarityFlags:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        timeOfDay:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        platformSkew:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        gmbMismatches:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
+          $ref: "#/components/schemas/AnalystScope"
+        sessionSummary:    { $ref: "#/components/schemas/AnalystRowList" }
+        rankChanges:       { $ref: "#/components/schemas/AnalystRowList" }
+        rankHistory:       { $ref: "#/components/schemas/AnalystRowList" }
+        similarityFlags:   { $ref: "#/components/schemas/AnalystRowList" }
+        timeOfDay:         { $ref: "#/components/schemas/AnalystRowList" }
+        platformSkew:      { $ref: "#/components/schemas/AnalystRowList" }
+        gmbMismatches:     { $ref: "#/components/schemas/AnalystRowList" }
+        windowActivity:    { $ref: "#/components/schemas/AnalystRowList" }
+        movementCohort:    { $ref: "#/components/schemas/AnalystRowList" }
         inputSummary:
           type: object
           properties:
-            sessionCount:
-              type: integer
-            declineCount:
-              type: integer
-            improvementCount:
-              type: integer
-            similarPairs:
-              type: integer
-            gmbMismatches:
-              type: integer
-      required: [reportDate, scope, sessionSummary, rankChanges, rankHistory, similarityFlags, timeOfDay, platformSkew, gmbMismatches, inputSummary]
+            sessionCount:       { type: integer }
+            declineCount:       { type: integer }
+            improvementCount:   { type: integer }
+            similarPairs:       { type: integer }
+            gmbMismatches:      { type: integer }
+            windowSessionCount: { type: integer }
+      required: [reportDate, scope, sessionSummary, rankChanges, rankHistory, similarityFlags, timeOfDay, platformSkew, gmbMismatches, windowActivity, movementCohort, inputSummary]
+
+    SessionAnalystContext:
+      type: object
+      properties:
+        reportDate:
+          type: string
+          format: date
+        scope:
+          $ref: "#/components/schemas/AnalystScope"
+        sessionSummary: { $ref: "#/components/schemas/AnalystRowList" }
+        timeOfDay:      { $ref: "#/components/schemas/AnalystRowList" }
+        platformSkew:   { $ref: "#/components/schemas/AnalystRowList" }
+        inputSummary:
+          type: object
+          properties:
+            sessionCount: { type: integer }
+      required: [reportDate, scope, sessionSummary, timeOfDay, platformSkew, inputSummary]
+
+    AuditAnalystContext:
+      type: object
+      properties:
+        reportDate:
+          type: string
+          format: date
+        lookbackDays:
+          type: integer
+        scope:
+          $ref: "#/components/schemas/AnalystScope"
+        rankChanges:     { $ref: "#/components/schemas/AnalystRowList" }
+        rankHistory:     { $ref: "#/components/schemas/AnalystRowList" }
+        similarityFlags: { $ref: "#/components/schemas/AnalystRowList" }
+        gmbMismatches:   { $ref: "#/components/schemas/AnalystRowList" }
+        windowActivity:  { $ref: "#/components/schemas/AnalystRowList" }
+        movementCohort:  { $ref: "#/components/schemas/AnalystRowList" }
+        inputSummary:
+          type: object
+          properties:
+            declineCount:       { type: integer }
+            improvementCount:   { type: integer }
+            similarPairs:       { type: integer }
+            gmbMismatches:      { type: integer }
+            windowSessionCount: { type: integer }
+      required: [reportDate, scope, rankChanges, rankHistory, similarityFlags, gmbMismatches, windowActivity, movementCohort, inputSummary]

@@ -895,17 +895,25 @@ export const GetPromptTemplatesResponse = zod.object({
 });
 
 /**
- * @summary Smoke-test endpoint returning the 7 datasets the analyst LLM reads from
+ * @summary Combined analyst context (all datasets — kept for backward compat)
  */
+export const getDailyAnalystContextQueryLookbackDaysMax = 90;
+
 export const GetDailyAnalystContextQueryParams = zod.object({
   date: zod.date(),
   clientId: zod.coerce.number().optional(),
   businessId: zod.coerce.number().optional(),
   campaignId: zod.coerce.number().optional(),
+  lookbackDays: zod.coerce
+    .number()
+    .min(1)
+    .max(getDailyAnalystContextQueryLookbackDaysMax)
+    .optional(),
 });
 
 export const GetDailyAnalystContextResponse = zod.object({
   reportDate: zod.coerce.date(),
+  lookbackDays: zod.number().optional(),
   scope: zod.object({
     clientId: zod.number().nullish(),
     businessId: zod.number().nullish(),
@@ -918,12 +926,87 @@ export const GetDailyAnalystContextResponse = zod.object({
   timeOfDay: zod.array(zod.record(zod.string(), zod.unknown())),
   platformSkew: zod.array(zod.record(zod.string(), zod.unknown())),
   gmbMismatches: zod.array(zod.record(zod.string(), zod.unknown())),
+  windowActivity: zod.array(zod.record(zod.string(), zod.unknown())),
+  movementCohort: zod.array(zod.record(zod.string(), zod.unknown())),
   inputSummary: zod.object({
     sessionCount: zod.number().optional(),
     declineCount: zod.number().optional(),
     improvementCount: zod.number().optional(),
     similarPairs: zod.number().optional(),
     gmbMismatches: zod.number().optional(),
+    windowSessionCount: zod.number().optional(),
+  }),
+});
+
+/**
+ * @summary Subset of analyst context for the daily session-ops report
+ */
+export const getSessionAnalystContextQueryLookbackDaysMax = 90;
+
+export const GetSessionAnalystContextQueryParams = zod.object({
+  date: zod.date(),
+  clientId: zod.coerce.number().optional(),
+  businessId: zod.coerce.number().optional(),
+  campaignId: zod.coerce.number().optional(),
+  lookbackDays: zod.coerce
+    .number()
+    .min(1)
+    .max(getSessionAnalystContextQueryLookbackDaysMax)
+    .optional(),
+});
+
+export const GetSessionAnalystContextResponse = zod.object({
+  reportDate: zod.coerce.date(),
+  scope: zod.object({
+    clientId: zod.number().nullish(),
+    businessId: zod.number().nullish(),
+    campaignId: zod.number().nullish(),
+  }),
+  sessionSummary: zod.array(zod.record(zod.string(), zod.unknown())),
+  timeOfDay: zod.array(zod.record(zod.string(), zod.unknown())),
+  platformSkew: zod.array(zod.record(zod.string(), zod.unknown())),
+  inputSummary: zod.object({
+    sessionCount: zod.number().optional(),
+  }),
+});
+
+/**
+ * @summary Subset of analyst context for the bi-weekly ranking/audit report
+ */
+export const getAuditAnalystContextQueryLookbackDaysMax = 90;
+
+export const GetAuditAnalystContextQueryParams = zod.object({
+  date: zod.date(),
+  clientId: zod.coerce.number().optional(),
+  businessId: zod.coerce.number().optional(),
+  campaignId: zod.coerce.number().optional(),
+  lookbackDays: zod.coerce
+    .number()
+    .min(1)
+    .max(getAuditAnalystContextQueryLookbackDaysMax)
+    .optional(),
+});
+
+export const GetAuditAnalystContextResponse = zod.object({
+  reportDate: zod.coerce.date(),
+  lookbackDays: zod.number().optional(),
+  scope: zod.object({
+    clientId: zod.number().nullish(),
+    businessId: zod.number().nullish(),
+    campaignId: zod.number().nullish(),
+  }),
+  rankChanges: zod.array(zod.record(zod.string(), zod.unknown())),
+  rankHistory: zod.array(zod.record(zod.string(), zod.unknown())),
+  similarityFlags: zod.array(zod.record(zod.string(), zod.unknown())),
+  gmbMismatches: zod.array(zod.record(zod.string(), zod.unknown())),
+  windowActivity: zod.array(zod.record(zod.string(), zod.unknown())),
+  movementCohort: zod.array(zod.record(zod.string(), zod.unknown())),
+  inputSummary: zod.object({
+    declineCount: zod.number().optional(),
+    improvementCount: zod.number().optional(),
+    similarPairs: zod.number().optional(),
+    gmbMismatches: zod.number().optional(),
+    windowSessionCount: zod.number().optional(),
   }),
 });
 

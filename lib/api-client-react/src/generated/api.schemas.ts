@@ -682,25 +682,15 @@ export interface PromptTemplateList {
   templates: PromptTemplate[];
 }
 
-export type DailyAnalystContextScope = {
+export interface AnalystScope {
   clientId?: number | null;
   businessId?: number | null;
   campaignId?: number | null;
-};
+}
 
-export type DailyAnalystContextSessionSummaryItem = { [key: string]: unknown };
+export type AnalystRowListItem = { [key: string]: unknown };
 
-export type DailyAnalystContextRankChangesItem = { [key: string]: unknown };
-
-export type DailyAnalystContextRankHistoryItem = { [key: string]: unknown };
-
-export type DailyAnalystContextSimilarityFlagsItem = { [key: string]: unknown };
-
-export type DailyAnalystContextTimeOfDayItem = { [key: string]: unknown };
-
-export type DailyAnalystContextPlatformSkewItem = { [key: string]: unknown };
-
-export type DailyAnalystContextGmbMismatchesItem = { [key: string]: unknown };
+export type AnalystRowList = AnalystRowListItem[];
 
 export type DailyAnalystContextInputSummary = {
   sessionCount?: number;
@@ -708,19 +698,57 @@ export type DailyAnalystContextInputSummary = {
   improvementCount?: number;
   similarPairs?: number;
   gmbMismatches?: number;
+  windowSessionCount?: number;
 };
 
 export interface DailyAnalystContext {
   reportDate: string;
-  scope: DailyAnalystContextScope;
-  sessionSummary: DailyAnalystContextSessionSummaryItem[];
-  rankChanges: DailyAnalystContextRankChangesItem[];
-  rankHistory: DailyAnalystContextRankHistoryItem[];
-  similarityFlags: DailyAnalystContextSimilarityFlagsItem[];
-  timeOfDay: DailyAnalystContextTimeOfDayItem[];
-  platformSkew: DailyAnalystContextPlatformSkewItem[];
-  gmbMismatches: DailyAnalystContextGmbMismatchesItem[];
+  lookbackDays?: number;
+  scope: AnalystScope;
+  sessionSummary: AnalystRowList;
+  rankChanges: AnalystRowList;
+  rankHistory: AnalystRowList;
+  similarityFlags: AnalystRowList;
+  timeOfDay: AnalystRowList;
+  platformSkew: AnalystRowList;
+  gmbMismatches: AnalystRowList;
+  windowActivity: AnalystRowList;
+  movementCohort: AnalystRowList;
   inputSummary: DailyAnalystContextInputSummary;
+}
+
+export type SessionAnalystContextInputSummary = {
+  sessionCount?: number;
+};
+
+export interface SessionAnalystContext {
+  reportDate: string;
+  scope: AnalystScope;
+  sessionSummary: AnalystRowList;
+  timeOfDay: AnalystRowList;
+  platformSkew: AnalystRowList;
+  inputSummary: SessionAnalystContextInputSummary;
+}
+
+export type AuditAnalystContextInputSummary = {
+  declineCount?: number;
+  improvementCount?: number;
+  similarPairs?: number;
+  gmbMismatches?: number;
+  windowSessionCount?: number;
+};
+
+export interface AuditAnalystContext {
+  reportDate: string;
+  lookbackDays?: number;
+  scope: AnalystScope;
+  rankChanges: AnalystRowList;
+  rankHistory: AnalystRowList;
+  similarityFlags: AnalystRowList;
+  gmbMismatches: AnalystRowList;
+  windowActivity: AnalystRowList;
+  movementCohort: AnalystRowList;
+  inputSummary: AuditAnalystContextInputSummary;
 }
 
 export type GetClientsParams = {
@@ -820,4 +848,33 @@ export type GetDailyAnalystContextParams = {
   clientId?: number;
   businessId?: number;
   campaignId?: number;
+  /**
+   * @minimum 1
+   * @maximum 90
+   */
+  lookbackDays?: number;
+};
+
+export type GetSessionAnalystContextParams = {
+  date: string;
+  clientId?: number;
+  businessId?: number;
+  campaignId?: number;
+  /**
+   * @minimum 1
+   * @maximum 90
+   */
+  lookbackDays?: number;
+};
+
+export type GetAuditAnalystContextParams = {
+  date: string;
+  clientId?: number;
+  businessId?: number;
+  campaignId?: number;
+  /**
+   * @minimum 1
+   * @maximum 90
+   */
+  lookbackDays?: number;
 };

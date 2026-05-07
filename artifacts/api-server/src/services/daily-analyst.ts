@@ -86,9 +86,35 @@ export interface GmbMismatchRow {
   gmb_match: "match" | "mismatch" | "no_search_addr" | "no_gmb_addr";
 }
 
+/** Per (keyword × platform) session activity in the audit lookback window. */
+export interface WindowActivityRow {
+  keyword_id: number;
+  keyword: string | null;
+  business: string | null;
+  platform: string | null;
+  sessions_in_window: number;
+  pass_pct: string | null;
+  backlink_inject_pct: string | null;
+  backlink_found_pct: string | null;
+  distinct_variants: number;
+  hour_stddev: string | null;       // null if <2 sessions in window
+  distinct_errors: number;
+}
+
+/** Aggregated session-activity metrics per movement bucket. Improver vs decliner cohort. */
+export interface MovementCohortRow {
+  movement: "improved" | "declined" | "flat" | "gained_ranking" | "lost_ranking" | "not_ranked";
+  keyword_count: number;
+  total_sessions: number;
+  avg_backlink_inject_pct: string | null;
+  avg_pass_pct: string | null;
+  avg_hour_stddev: string | null;
+}
+
 export interface AnalystContext {
   reportDate: string;
   scope: AnalystScope;
+  lookbackDays: number;
   sessionSummary: SessionSummaryRow[];
   rankChanges: RankChangeRow[];
   rankHistory: RankHistoryRow[];
@@ -96,12 +122,15 @@ export interface AnalystContext {
   timeOfDay: TimeOfDayRow[];
   platformSkew: PlatformSkewRow[];
   gmbMismatches: GmbMismatchRow[];
+  windowActivity: WindowActivityRow[];
+  movementCohort: MovementCohortRow[];
   inputSummary: {
     sessionCount: number;
     declineCount: number;
     improvementCount: number;
     similarPairs: number;
     gmbMismatches: number;
+    windowSessionCount: number;
   };
 }
 
@@ -314,7 +343,152 @@ async function runGmbMismatches(scope: AnalystScope): Promise<GmbMismatchRow[]> 
   return result.rows as unknown as GmbMismatchRow[];
 }
 
-export async function assembleContext(reportDate: string, scope: AnalystScope = {}): Promise<AnalystContext> {
+/**
+ * Per-keyword session activity in the audit-window lookback (default 14 days).
+ * Lets the LLM correlate session behavior with rank movement on the same key.
+ * Joined to rankChanges by (keyword_id, platform) at prompt-render time.
+ */
+async function runWindowActivity(
+  reportDate: string,
+  scope: AnalystScope,
+  lookbackDays: number,
+): Promise<WindowActivityRow[]> {
+  const { clientId, businessId, campaignId } = scopeParams(scope);
+  const result = await db.execute(sql`
+    SELECT
+      s.keyword_id,
+      k.keyword_text                     AS keyword,
+      s.biz_name                         AS business,
+      LOWER(s.ai_platform)               AS platform,
+      COUNT(*)::int                      AS sessions_in_window,
+      ROUND(
+        100.0 * SUM(CASE WHEN s.status = 'success' THEN 1 ELSE 0 END)
+              / NULLIF(COUNT(*), 0),
+        1
+      ) AS pass_pct,
+      ROUND(
+        100.0 * SUM(CASE WHEN s.backlink_injected THEN 1 ELSE 0 END)
+              / NULLIF(COUNT(*), 0),
+        1
+      ) AS backlink_inject_pct,
+      ROUND(
+        100.0 * SUM(CASE WHEN s.backlink_found THEN 1 ELSE 0 END)
+              / NULLIF(COUNT(*), 0),
+        1
+      ) AS backlink_found_pct,
+      COUNT(DISTINCT s.keyword_variant)::int AS distinct_variants,
+      ROUND(STDDEV(EXTRACT(HOUR FROM s.timestamp))::numeric, 1) AS hour_stddev,
+      COUNT(DISTINCT s.error_class)::int AS distinct_errors
+    FROM sessions s
+    LEFT JOIN keywords k ON k.id = s.keyword_id
+    WHERE s.date >= (${reportDate}::date - (${lookbackDays}::int * INTERVAL '1 day'))
+      AND s.date <= ${reportDate}::date
+      AND s.keyword_id IS NOT NULL
+      AND (${clientId}::int   IS NULL OR s.client_id   = ${clientId}::int)
+      AND (${businessId}::int IS NULL OR s.business_id = ${businessId}::int)
+      AND (${campaignId}::int IS NULL OR s.campaign_id = ${campaignId}::int)
+    GROUP BY s.keyword_id, k.keyword_text, s.biz_name, LOWER(s.ai_platform)
+    HAVING COUNT(*) > 0
+    ORDER BY business, keyword, platform
+  `);
+  return result.rows as unknown as WindowActivityRow[];
+}
+
+/**
+ * Cohort comparison: for each movement bucket, average session-activity metrics
+ * across all keywords in that bucket. Lets the LLM say things like
+ * "decliners ran with 28% backlink rate vs improvers at 60%."
+ */
+async function runMovementCohort(
+  reportDate: string,
+  scope: AnalystScope,
+  lookbackDays: number,
+): Promise<MovementCohortRow[]> {
+  const { clientId, businessId, campaignId } = scopeParams(scope);
+  const result = await db.execute(sql`
+    WITH ranked AS (
+      SELECT
+        rr.keyword_id,
+        LOWER(rr.platform) AS platform,
+        CASE WHEN rr.ranking_position BETWEEN 1 AND 50 THEN rr.ranking_position ELSE NULL END
+          AS rank_capped,
+        ROW_NUMBER() OVER (
+          PARTITION BY rr.keyword_id, LOWER(rr.platform)
+          ORDER BY rr.date::date DESC, rr.timestamp DESC
+        ) AS rn
+      FROM ranking_reports rr
+      WHERE rr.ranking_position IS NOT NULL
+        AND rr.date::date <= ${reportDate}::date
+        AND (${clientId}::int   IS NULL OR rr.client_id   = ${clientId}::int)
+        AND (${businessId}::int IS NULL OR rr.business_id = ${businessId}::int)
+    ),
+    movements AS (
+      SELECT
+        curr.keyword_id,
+        curr.platform,
+        CASE
+          WHEN prev.rank_capped IS NULL AND curr.rank_capped IS NULL THEN 'not_ranked'
+          WHEN prev.rank_capped IS NULL AND curr.rank_capped IS NOT NULL THEN 'gained_ranking'
+          WHEN prev.rank_capped IS NOT NULL AND curr.rank_capped IS NULL THEN 'lost_ranking'
+          WHEN curr.rank_capped < prev.rank_capped THEN 'improved'
+          WHEN curr.rank_capped > prev.rank_capped THEN 'declined'
+          ELSE 'flat'
+        END AS movement
+      FROM ranked curr
+      LEFT JOIN ranked prev
+        ON prev.keyword_id = curr.keyword_id
+       AND prev.platform   = curr.platform
+       AND prev.rn         = 2
+      WHERE curr.rn = 1
+    ),
+    activity AS (
+      SELECT
+        s.keyword_id,
+        LOWER(s.ai_platform) AS platform,
+        COUNT(*)::int AS sessions,
+        100.0 * SUM(CASE WHEN s.backlink_injected THEN 1 ELSE 0 END)
+              / NULLIF(COUNT(*), 0) AS bl_pct,
+        100.0 * SUM(CASE WHEN s.status = 'success' THEN 1 ELSE 0 END)
+              / NULLIF(COUNT(*), 0) AS pass_pct,
+        STDDEV(EXTRACT(HOUR FROM s.timestamp)) AS hour_sd
+      FROM sessions s
+      WHERE s.date >= (${reportDate}::date - (${lookbackDays}::int * INTERVAL '1 day'))
+        AND s.date <= ${reportDate}::date
+        AND s.keyword_id IS NOT NULL
+        AND (${clientId}::int   IS NULL OR s.client_id   = ${clientId}::int)
+        AND (${businessId}::int IS NULL OR s.business_id = ${businessId}::int)
+        AND (${campaignId}::int IS NULL OR s.campaign_id = ${campaignId}::int)
+      GROUP BY s.keyword_id, LOWER(s.ai_platform)
+    )
+    SELECT
+      m.movement,
+      COUNT(*)::int                                    AS keyword_count,
+      COALESCE(SUM(a.sessions), 0)::int                AS total_sessions,
+      ROUND(AVG(a.bl_pct)::numeric, 1)                 AS avg_backlink_inject_pct,
+      ROUND(AVG(a.pass_pct)::numeric, 1)               AS avg_pass_pct,
+      ROUND(AVG(a.hour_sd)::numeric, 1)                AS avg_hour_stddev
+    FROM movements m
+    LEFT JOIN activity a
+      ON a.keyword_id = m.keyword_id
+     AND a.platform   = m.platform
+    GROUP BY m.movement
+    ORDER BY m.movement
+  `);
+  return result.rows as unknown as MovementCohortRow[];
+}
+
+/**
+ * Default audit-window lookback. Audits run every 14 days, so 14 is the
+ * natural window for "what happened between audits." Override via
+ * GET /api/analytics/...?lookbackDays=N when iterating.
+ */
+const DEFAULT_LOOKBACK_DAYS = 14;
+
+export async function assembleContext(
+  reportDate: string,
+  scope: AnalystScope = {},
+  lookbackDays: number = DEFAULT_LOOKBACK_DAYS,
+): Promise<AnalystContext> {
   const [
     sessionSummary,
     rankChanges,
@@ -323,6 +497,8 @@ export async function assembleContext(reportDate: string, scope: AnalystScope = 
     timeOfDay,
     platformSkew,
     gmbMismatches,
+    windowActivity,
+    movementCohort,
   ] = await Promise.all([
     runSessionSummary(reportDate, scope),
     runRankChanges(reportDate, scope),
@@ -331,11 +507,14 @@ export async function assembleContext(reportDate: string, scope: AnalystScope = 
     runTimeOfDay(reportDate, scope),
     runPlatformSkew(reportDate, scope),
     runGmbMismatches(scope),
+    runWindowActivity(reportDate, scope, lookbackDays),
+    runMovementCohort(reportDate, scope, lookbackDays),
   ]);
 
   return {
     reportDate,
     scope,
+    lookbackDays,
     sessionSummary,
     rankChanges,
     rankHistory,
@@ -343,12 +522,15 @@ export async function assembleContext(reportDate: string, scope: AnalystScope = 
     timeOfDay,
     platformSkew,
     gmbMismatches,
+    windowActivity,
+    movementCohort,
     inputSummary: {
-      sessionCount:     sessionSummary.reduce((acc, r) => acc + Number(r.runs ?? 0), 0),
-      declineCount:     rankChanges.filter((r) => r.movement === "declined").length,
-      improvementCount: rankChanges.filter((r) => r.movement === "improved").length,
-      similarPairs:     similarityFlags.length,
-      gmbMismatches:    gmbMismatches.filter((r) => r.gmb_match === "mismatch").length,
+      sessionCount:       sessionSummary.reduce((acc, r) => acc + Number(r.runs ?? 0), 0),
+      declineCount:       rankChanges.filter((r) => r.movement === "declined").length,
+      improvementCount:   rankChanges.filter((r) => r.movement === "improved").length,
+      similarPairs:       similarityFlags.length,
+      gmbMismatches:      gmbMismatches.filter((r) => r.gmb_match === "mismatch").length,
+      windowSessionCount: windowActivity.reduce((acc, r) => acc + Number(r.sessions_in_window ?? 0), 0),
     },
   };
 }
