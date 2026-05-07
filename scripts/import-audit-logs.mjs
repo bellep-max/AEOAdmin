@@ -149,7 +149,7 @@ for (let i = 1; i < allRows.length; i++) {
   const rank        = v(row, "rank_position");
   const rankTot     = v(row, "rank_total");
 
-  const record = {
+  const auditRecord = {
     client_id:        kw.client_id,
     business_id:      kw.business_id,
     campaign_id:      kw.aeo_plan_id,
@@ -178,23 +178,55 @@ for (let i = 1; i < allRows.length; i++) {
     proxy_zip:        v(row, "proxy_zip") || null,
   };
 
-  batch.push(record);
+  // ranking_reports row: same data, mapped to that schema. This is what the
+  // Rankings page reads to compute "current vs initial" — must be written for
+  // the comparison to surface the audit run.
+  const dateOnly = ts ? ts.slice(0, 10) : null;
+  const rankingRecord = {
+    client_id:         kw.client_id,
+    business_id:       kw.business_id,
+    keyword_id:        kw.keyword_id,
+    client_name:       null,
+    biz_name:          bizName || kw.biz_name || null,
+    search_address:    null,
+    keyword:           keyword,
+    timestamp,
+    date:              dateOnly,
+    platform,
+    device_identifier: v(row, "device") || null,
+    status,
+    duration_seconds:  durSec ? parseFloat(durSec) : null,
+    ranking_position:  rank && /^\d+$/.test(rank) ? parseInt(rank, 10) : null,
+    ranking_total:     rankTot || null,
+    proxy_ip:          v(row, "proxy_ip") || null,
+    proxy_city:        v(row, "proxy_city") || null,
+    proxy_region:      v(row, "proxy_region") || null,
+    proxy_zip:         v(row, "proxy_zip") || null,
+    is_initial_ranking: false,
+  };
+
+  batch.push({ audit: auditRecord, ranking: rankingRecord });
   if (batch.length >= BATCH) { await flush(); }
 }
 if (batch.length > 0) await flush();
 
-async function flush() {
-  const cols = Object.keys(batch[0]);
+async function flushTable(table, records) {
+  const cols = Object.keys(records[0]);
   const values = [];
-  const placeholders = batch.map((r, ri) => {
+  const placeholders = records.map((r, ri) => {
     const vs = cols.map((c, ci) => `$${ri * cols.length + ci + 1}`);
     cols.forEach((c) => values.push(r[c]));
     return `(${vs.join(",")})`;
   });
   await client.query(
-    `INSERT INTO audit_logs (${cols.join(",")}) VALUES ${placeholders.join(",")}`,
+    `INSERT INTO ${table} (${cols.join(",")}) VALUES ${placeholders.join(",")}`,
     values,
   );
+}
+
+async function flush() {
+  await flushTable("audit_logs",      batch.map((b) => b.audit));
+  await flushTable("ranking_reports", batch.map((b) => b.ranking));
   inserted += batch.length;
   batch = [];
 }
