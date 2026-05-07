@@ -117,7 +117,7 @@ for (let i = 1; i < lines.length; i++) {
     has_follow_up: hasFollowUp,
     status,
     type: "aeo",
-    ai_platform: v(row, "platform") || "unknown",
+    ai_platform: (v(row, "platform") || "unknown").toLowerCase(),
     error_class: status === "error" ? (v(row, "failure_step") || "unknown") : null,
     error_message: status === "error" ? errorMsg : null,
     proxy_status: v(row, "proxy_status") || null,

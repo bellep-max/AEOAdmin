@@ -24,6 +24,7 @@ interface AuditRow {
   bizName: string | null;
   campaignName: string | null;
   keywordText: string | null;
+  keywordVariant: string | null;
   clientName: string | null;
   timestamp: string;
   createdAt: string;
@@ -276,7 +277,16 @@ export default function SessionsAudit() {
                       <TableCell className="text-sm">{l.clientName ?? (l.clientId ? `#${l.clientId}` : "—")}</TableCell>
                       <TableCell className="text-sm">{l.bizName ?? "—"}</TableCell>
                       <TableCell className="text-sm">{l.campaignName ?? "—"}</TableCell>
-                      <TableCell className="text-sm font-medium">{l.keywordText ?? "—"}</TableCell>
+                      <TableCell className="text-sm">
+                        {l.keywordVariant ? (
+                          <div>
+                            <span className="font-medium">{l.keywordVariant}</span>
+                            <div className="text-xs text-muted-foreground">↳ {l.keywordText ?? "—"}</div>
+                          </div>
+                        ) : (
+                          <span className="font-medium">{l.keywordText ?? "—"}</span>
+                        )}
+                      </TableCell>
                       <TableCell><Badge variant="secondary">{l.platform ?? "—"}</Badge></TableCell>
                       <TableCell className="text-xs">{l.mode ?? "—"}</TableCell>
                       <TableCell><Badge className={statusBadgeClass(l.status)}>{l.status ?? "—"}</Badge></TableCell>
@@ -306,6 +316,9 @@ export default function SessionsAudit() {
                   <Row label="Client"   value={`${open.clientName ?? "—"}${open.clientId ? ` (#${open.clientId})` : ""}`} />
                   <Row label="Business" value={`${open.bizName ?? "—"}${open.businessId ? ` (#${open.businessId})` : ""}`} />
                   <Row label="Campaign" value={`${open.campaignName ?? "—"}${open.campaignId ? ` (#${open.campaignId})` : ""}`} />
+                  {open.keywordVariant ? (
+                    <Row label="Variant" value={open.keywordVariant} />
+                  ) : null}
                   <Row label="Keyword"  value={`${open.keywordText ?? "—"}${open.keywordId ? ` (#${open.keywordId})` : ""}`} />
                 </Section>
 

@@ -19,6 +19,7 @@ export const auditLogsTable = pgTable("audit_logs", {
   bizName:        text("biz_name"),
   campaignName:   text("campaign_name"),
   keywordText:    text("keyword_text"),
+  keywordVariant: text("keyword_variant"),
   /* ── Run identity ── */
   timestamp:      timestamp("timestamp").notNull().defaultNow(),
   platform:       text("platform"),
