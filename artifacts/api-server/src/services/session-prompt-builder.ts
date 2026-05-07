@@ -212,6 +212,9 @@ interface BacklinkRow {
   embeddedUrl:   string | null;
 }
 
+export type { SessionContext };
+export { loadSessionContext, pickRandomVariant };
+
 async function loadSessionContext(keywordId: number): Promise<SessionContext | null> {
   const [row] = await db
     .select({

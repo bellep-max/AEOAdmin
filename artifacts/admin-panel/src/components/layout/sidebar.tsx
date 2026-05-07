@@ -18,7 +18,7 @@ import {
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box, Key,
-  Activity, ChevronRight, Calendar, Search, List, FileText,
+  Activity, ChevronRight, Calendar, Search, List, FileText, ScrollText, Sparkles,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -30,6 +30,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: LucideIcon;
+  ownerOnly?: boolean;
 }
 
 interface NavGroupItem extends NavItem {
@@ -39,6 +40,7 @@ interface NavGroupItem extends NavItem {
 interface NavGroup {
   label: string;
   items: NavGroupItem[];
+  ownerOnly?: boolean;
 }
 
 const navGroups: NavGroup[] = [
@@ -81,14 +83,16 @@ const navGroups: NavGroup[] = [
   {
     label: "Analytics",
     items: [
-      { name: "Rankings", href: "/rankings", icon: Trophy    },
-      { name: "Metrics",  href: "/metrics",  icon: BarChart3 },
+      { name: "Rankings", href: "/rankings", icon: Trophy     },
+      { name: "Metrics",  href: "/metrics",  icon: BarChart3  },
+      { name: "Reports",  href: "/reports",  icon: ScrollText, ownerOnly: true },
     ],
   },
   {
     label: "Admin",
     items: [
-      { name: "Prompts", href: "/admin/prompts", icon: FileText },
+      { name: "Prompts",  href: "/admin/prompts",  icon: FileText },
+      { name: "Variants", href: "/admin/variants", icon: Sparkles, ownerOnly: true },
     ],
   },
 ];
@@ -96,8 +100,20 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout } = useAuth();
+  const { user, logout, isOwner } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  const visibleGroups = navGroups
+    .map((g) => ({
+      ...g,
+      items: g.items
+        .filter((it) => isOwner || !it.ownerOnly)
+        .map((it) => ({
+          ...it,
+          children: it.children?.filter((c) => isOwner || !c.ownerOnly),
+        })),
+    }))
+    .filter((g) => (isOwner || !g.ownerOnly) && g.items.length > 0);
 
   const isActive = (href: string) =>
     href === "/" ? location === "/" : location.startsWith(href);
@@ -125,7 +141,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <SidebarContent className="py-2">
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <SidebarGroup key={group.label} className="py-0">
             <SidebarGroupLabel className="text-sm uppercase tracking-widest text-black dark:text-white font-bold px-3 py-1.5 group-data-[collapsible=icon]:hidden">
               {group.label}

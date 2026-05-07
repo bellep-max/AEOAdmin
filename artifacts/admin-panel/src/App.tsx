@@ -25,6 +25,18 @@ import Packages from "@/pages/packages";
 import SessionsDaily from "@/pages/sessions-daily";
 import SessionsAudit from "@/pages/sessions-audit";
 import Prompts from "@/pages/prompts";
+import Reports from "@/pages/reports";
+import ReportDetail from "@/pages/report-detail";
+import AdminVariants from "@/pages/admin-variants";
+
+import type { ComponentType } from "react";
+
+function OwnerGate({ component: Component }: { component: ComponentType<unknown> }) {
+  const { isOwner, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isOwner) return <Redirect to="/" />;
+  return <Component />;
+}
 // import OrganizationDetails from "@/pages/organization-details";
 
 const queryClient = new QueryClient();
@@ -64,7 +76,16 @@ function ProtectedRoutes() {
         <Route path="/packages" component={Packages} />
         <Route path="/sessions/daily" component={SessionsDaily} />
         <Route path="/sessions/audit" component={SessionsAudit} />
+        <Route path="/reports/:id">
+          <OwnerGate component={ReportDetail} />
+        </Route>
+        <Route path="/reports">
+          <OwnerGate component={Reports} />
+        </Route>
         <Route path="/admin/prompts" component={Prompts} />
+        <Route path="/admin/variants">
+          <OwnerGate component={AdminVariants} />
+        </Route>
         {/* <Route path="/organization" component={OrganizationDetails} /> */}
         <Route path="/profile" component={Profile} />
         <Route component={NotFound} />

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { dailyReportsTable } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { requireOwner, requireExecutorOrOwner } from "../middlewares/role-auth";
 import {
   assembleContext,
   runAuditReport,
@@ -103,7 +104,7 @@ router.get("/session-context", requireExecutorToken, async (req, res) => {
      rankChanges, rankHistory, similarityFlags, gmbMismatches,
      windowActivity, movementCohort.
 ──────────────────────────────────────────────────────────── */
-router.get("/audit-context", requireExecutorToken, async (req, res) => {
+router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
   try {
     const parsed = parseQuery(req.query as Record<string, string>);
     if ("error" in parsed) return res.status(400).json({ error: parsed.error });
@@ -160,7 +161,7 @@ router.get("/audit-context", requireExecutorToken, async (req, res) => {
    if true, skip DB insert).
    Auth: executor token (will be re-gated when UI ships).
 ──────────────────────────────────────────────────────────── */
-router.post("/audit-report/run", requireExecutorToken, async (req, res) => {
+router.post("/audit-report/run", requireExecutorOrOwner, async (req, res) => {
   try {
     // Accept either body or query for ergonomics during iteration.
     const src = { ...(req.query as Record<string, string>), ...(req.body as Record<string, string>) };
@@ -186,7 +187,7 @@ router.post("/audit-report/run", requireExecutorToken, async (req, res) => {
    Lists stored audit reports (most recent first). Filterable by
    scope kind + scopeId + reportDate range.
 ──────────────────────────────────────────────────────────── */
-router.get("/audit-reports", async (req, res) => {
+router.get("/audit-reports", requireOwner, async (req, res) => {
   try {
     const { scope: scopeKind, scopeId, from, to, limit = "50" } = req.query as Record<string, string>;
     const conditions = [] as ReturnType<typeof eq>[];
@@ -223,7 +224,7 @@ router.get("/audit-reports", async (req, res) => {
    GET /api/analytics/audit-reports/:id
    Returns a single report including markdown + recommendations.
 ──────────────────────────────────────────────────────────── */
-router.get("/audit-reports/:id", async (req, res) => {
+router.get("/audit-reports/:id", requireOwner, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

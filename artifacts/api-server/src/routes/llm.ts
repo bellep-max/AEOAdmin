@@ -21,9 +21,13 @@ import {
   keywordVariantsTable,
   keywordsTable,
   dailyReportsTable,
+  clientsTable,
+  businessesTable,
+  clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { requireOwner, requireExecutorOrOwner } from "../middlewares/role-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
 import {
@@ -32,6 +36,7 @@ import {
   type AnalystScope,
 } from "../services/daily-analyst";
 import { buildSession, type VoiceKey } from "../services/session-prompt-builder";
+import { buildAuditPrompt } from "../services/audit-prompt-builder";
 
 const router = Router();
 
@@ -48,6 +53,51 @@ router.get("/prompt-templates", async (_req, res) => {
 /* ════════════════════════════════════════════════════════════════════════
    /api/llm/variants/*
    ════════════════════════════════════════════════════════════════════════ */
+
+/* GET /api/llm/variants-overview — one row per active keyword with
+   variant count and last-generated time. Powers the admin variants page. */
+router.get("/variants-overview", requireOwner, async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        keywordId:    keywordsTable.id,
+        keywordText:  keywordsTable.keywordText,
+        clientId:     keywordsTable.clientId,
+        clientName:   clientsTable.businessName,
+        businessId:   keywordsTable.businessId,
+        businessName: businessesTable.name,
+        aeoPlanId:    keywordsTable.aeoPlanId,
+        campaignName: clientAeoPlansTable.name,
+        isActive:     keywordsTable.isActive,
+        activeVariants: sql<number>`(
+          SELECT COUNT(*)::int FROM keyword_variants kv
+          WHERE kv.keyword_id = ${keywordsTable.id} AND kv.is_active = true
+        )`.as("active_variants"),
+        totalVariants: sql<number>`(
+          SELECT COUNT(*)::int FROM keyword_variants kv
+          WHERE kv.keyword_id = ${keywordsTable.id}
+        )`.as("total_variants"),
+        lastGeneratedAt: sql<string | null>`(
+          SELECT MAX(kv.generated_at) FROM keyword_variants kv
+          WHERE kv.keyword_id = ${keywordsTable.id}
+        )`.as("last_generated_at"),
+        lastUsedAt: sql<string | null>`(
+          SELECT MAX(kv.last_used_at) FROM keyword_variants kv
+          WHERE kv.keyword_id = ${keywordsTable.id}
+        )`.as("last_used_at"),
+      })
+      .from(keywordsTable)
+      .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
+      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(clientAeoPlansTable, eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id))
+      .where(eq(keywordsTable.isActive, true))
+      .orderBy(keywordsTable.id);
+    res.json({ rows, total: rows.length });
+  } catch (err) {
+    req.log.error({ err }, "Error building variants overview");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /* GET /api/llm/variants/:keywordId — list variants for one keyword */
 router.get("/variants/:keywordId", async (req, res) => {
@@ -143,8 +193,8 @@ router.delete("/variants/by-id/:id", async (req, res) => {
   }
 });
 
-/* POST /api/llm/variants/regenerate-all — weekly cron entry */
-router.post("/variants/regenerate-all", requireExecutorToken, async (req, res) => {
+/* POST /api/llm/variants/regenerate-all — weekly cron entry. Owner UI also calls. */
+router.post("/variants/regenerate-all", requireExecutorOrOwner, async (req, res) => {
   try {
     const body = (req.body ?? {}) as { campaignId?: number; count?: number };
     const campaignId = body.campaignId != null ? Number(body.campaignId) : null;
@@ -234,6 +284,56 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
 });
 
 /* ════════════════════════════════════════════════════════════════════════
+   /api/llm/build-audit — render audit-ranking prompt with variant rotation
+   ════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * POST /api/llm/build-audit
+ *
+ * Returns the rendered audit prompt + business context for one (keyword
+ * × platform) audit run. Rotates a keyword variant into the lead question
+ * so consecutive audits don't send identical text. The [RANK: X/Y]
+ * contract that the runner's parser depends on is preserved.
+ *
+ * Body:
+ *   keyword_id (required, int)
+ *   platform   (optional, one of chatgpt|gemini|perplexity — informational)
+ *   variant_id (optional, int — pin a specific variant; ignores rotation)
+ */
+router.post("/build-audit", requireExecutorToken, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    const keywordId = Number(body.keyword_id ?? body.keywordId);
+    if (!Number.isFinite(keywordId) || keywordId <= 0) {
+      return res.status(400).json({ error: "keyword_id is required and must be a positive integer" });
+    }
+
+    let platform: string | null = null;
+    if (body.platform != null && body.platform !== "") {
+      platform = String(body.platform).toLowerCase();
+      if (!VALID_PLATFORMS.has(platform)) {
+        return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+      }
+    }
+
+    const variantIdRaw = body.variant_id ?? body.variantId;
+    const variantId = variantIdRaw != null && variantIdRaw !== "" ? Number(variantIdRaw) : null;
+    if (variantId != null && (!Number.isFinite(variantId) || variantId <= 0)) {
+      return res.status(400).json({ error: "variant_id must be a positive integer" });
+    }
+
+    const start = Date.now();
+    const out = await buildAuditPrompt({ keywordId, platform, variantId });
+    res.json({ ...out, _elapsedMs: Date.now() - start });
+  } catch (err) {
+    req.log.error({ err }, "Error building audit prompt");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
    /api/llm/audit-report/* and /api/llm/audit-reports
    ════════════════════════════════════════════════════════════════════════ */
 
@@ -269,8 +369,8 @@ function parseQuery(q: Record<string, string>): ParsedQuery | { error: string } 
   return { date, scope, lookbackDays: lb };
 }
 
-/* POST /api/llm/audit-report/run — run analyst, persist (or dryRun) */
-router.post("/audit-report/run", requireExecutorToken, async (req, res) => {
+/* POST /api/llm/audit-report/run — run analyst, persist (or dryRun). Owner UI + executor. */
+router.post("/audit-report/run", requireExecutorOrOwner, async (req, res) => {
   try {
     const src = { ...(req.query as Record<string, string>), ...(req.body as Record<string, string>) };
     const parsed = parseQuery(src);
@@ -290,8 +390,8 @@ router.post("/audit-report/run", requireExecutorToken, async (req, res) => {
   }
 });
 
-/* GET /api/llm/audit-reports — list */
-router.get("/audit-reports", async (req, res) => {
+/* GET /api/llm/audit-reports — list (owner only) */
+router.get("/audit-reports", requireOwner, async (req, res) => {
   try {
     const { scope: scopeKind, scopeId, from, to, limit = "50" } = req.query as Record<string, string>;
     const conditions = [] as ReturnType<typeof eq>[];
@@ -324,8 +424,8 @@ router.get("/audit-reports", async (req, res) => {
   }
 });
 
-/* GET /api/llm/audit-reports/:id — full report including markdown + recs */
-router.get("/audit-reports/:id", async (req, res) => {
+/* GET /api/llm/audit-reports/:id — full report including markdown + recs (owner only) */
+router.get("/audit-reports/:id", requireOwner, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -346,7 +446,7 @@ router.get("/audit-reports/:id", async (req, res) => {
 /* POST /api/llm/audit-context — raw context (no LLM call). Same as legacy
    /api/analytics/audit-context but lives under the LLM namespace because
    it's the input the LLM agent reads from. Useful for prompt iteration. */
-router.get("/audit-context", requireExecutorToken, async (req, res) => {
+router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
   try {
     const parsed = parseQuery(req.query as Record<string, string>);
     if ("error" in parsed) return res.status(400).json({ error: parsed.error });

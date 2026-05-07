@@ -10,6 +10,7 @@ interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
+  isOwner: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -83,7 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, isLoading, login, logout }}>{children}</AuthContext.Provider>;
+  const isOwner = user?.role === "owner";
+
+  return <AuthContext.Provider value={{ user, isLoading, isOwner, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

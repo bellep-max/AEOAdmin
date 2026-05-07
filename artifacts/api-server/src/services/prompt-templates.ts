@@ -3,6 +3,7 @@ import {
   SEEDING_SYSTEM_PROMPT_V1,
   FOLLOWUP_SYSTEM_PROMPT_V1,
 } from "./session-prompt-builder";
+import { AUDIT_PROMPT_V2 } from "./audit-prompt-builder";
 
 /**
  * Read-only registry of the prompt templates that drive the AEO pipeline.
@@ -40,5 +41,12 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     description: "Follow-up system prompt — optional second turn, timeless phrasing, motivation-driven. Source: services/session-prompt-builder.ts.",
     variables: ["business", "city", "keyword (variant)", "motivation_hint", "platform_phrasing_hint", "original_message"],
     template: FOLLOWUP_SYSTEM_PROMPT_V1,
+  },
+  {
+    id: "audit_ranking_prompt",
+    name: "Audit Ranking Prompt",
+    description: "Sent to ChatGPT / Gemini / Perplexity during ranking audits. Rotates a keyword variant into the lead question; the [RANK: X/Y] contract is preserved so the runner's parser still works. Source: services/audit-prompt-builder.ts.",
+    variables: ["keyword_phrase (variant)", "city", "state", "biz_name", "biz_url"],
+    template: AUDIT_PROMPT_V2,
   },
 ];
