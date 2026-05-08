@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
-import { Building2, Search, Clock } from "lucide-react";
+import { Building2, Search, Clock, GitCompare } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
@@ -53,6 +53,7 @@ function PlatformChip({ row }: { row: PeriodRow }) {
 export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: Props) {
   const [search, setSearch] = useState("");
   const [latestOnly, setLatestOnly] = useState(false);
+  const [comparisonOnly, setComparisonOnly] = useState(false);
 
   const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
   const label = periodLabel(period);
@@ -66,11 +67,24 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
     return max;
   }, [data]);
 
+  const filterCounts = useMemo(() => {
+    let comparable = 0;
+    let newOnly = 0;
+    for (const r of data?.rows ?? []) {
+      if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase())) continue;
+      if (latestOnly && latestDate && r.currentDate !== latestDate) continue;
+      if (r.previousPosition == null) newOnly++;
+      else comparable++;
+    }
+    return { comparable, newOnly, total: comparable + newOnly };
+  }, [data, search, latestOnly, latestDate]);
+
   const campaigns = useMemo<CampaignGroup[]>(() => {
     const map = new Map<number, CampaignGroup>();
     for (const r of data?.rows ?? []) {
       if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase())) continue;
       if (latestOnly && latestDate && r.currentDate !== latestDate) continue;
+      if (comparisonOnly && r.previousPosition == null) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
       if (!group) {
@@ -96,7 +110,7 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase())
     );
-  }, [data, search, latestOnly, latestDate]);
+  }, [data, search, latestOnly, latestDate, comparisonOnly]);
 
   if (isLoading) {
     return <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>;
@@ -128,6 +142,22 @@ export function PeriodByClientTab({ period, clientId, businessId, aeoPlanId }: P
             <Clock className="w-3.5 h-3.5" />
             Latest run ({format(new Date(latestDate), "MMM d")})
           </Button>
+        )}
+        <Button
+          variant={comparisonOnly ? "default" : "outline"}
+          size="sm"
+          className="gap-1.5 h-9"
+          onClick={() => setComparisonOnly(!comparisonOnly)}
+          title="Show only keywords with a prior audit to compare against"
+        >
+          <GitCompare className="w-3.5 h-3.5" />
+          Comparison only
+        </Button>
+        {comparisonOnly && filterCounts.total > 0 && (
+          <span className="text-xs text-muted-foreground">
+            Showing {filterCounts.comparable} of {filterCounts.total}
+            {filterCounts.newOnly > 0 ? ` · ${filterCounts.newOnly} new hidden` : ""}
+          </span>
         )}
       </div>
 
