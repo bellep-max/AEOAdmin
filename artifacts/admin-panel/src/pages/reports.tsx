@@ -260,6 +260,23 @@ function RunReportDialog({ open, onOpenChange, onScheduled, disabled }: RunRepor
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const lookbackNum = Number(lookbackDays);
+  const lookbackInvalid = !Number.isFinite(lookbackNum) || lookbackNum < 1;
+  const tooShort = !lookbackInvalid && lookbackNum < 3;
+  const noisy = !lookbackInvalid && lookbackNum >= 3 && lookbackNum < 7;
+
+  const windowStart = ((): string | null => {
+    if (lookbackInvalid || !date) return null;
+    const end = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(end.getTime())) return null;
+    const start = new Date(end);
+    start.setDate(start.getDate() - lookbackNum);
+    const y = start.getFullYear();
+    const m = `${start.getMonth() + 1}`.padStart(2, "0");
+    const d = `${start.getDate()}`.padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  })();
+
   const submit = async () => {
     setPending(true);
     setErrorMsg(null);
@@ -311,36 +328,44 @@ function RunReportDialog({ open, onOpenChange, onScheduled, disabled }: RunRepor
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="date">Report date</Label>
+            <Label htmlFor="date">Window end</Label>
             <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              Last day included. Stored on the report as its label — the data window is set by Lookback below.
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label>Scope</Label>
-              <Select value={scopeKind} onValueChange={(v) => setScopeKind(v as typeof scopeKind)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                  <SelectItem value="business">Business</SelectItem>
-                  <SelectItem value="campaign">Campaign</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {scopeKind !== "all" ? (
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
-                <Label htmlFor="scopeId">{scopeKind} ID</Label>
-                <Input
-                  id="scopeId"
-                  type="number"
-                  value={scopeId}
-                  onChange={(e) => setScopeId(e.target.value)}
-                  placeholder="e.g. 12"
-                />
+                <Label>Scope</Label>
+                <Select value={scopeKind} onValueChange={(v) => setScopeKind(v as typeof scopeKind)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="client">Client</SelectItem>
+                    <SelectItem value="business">Business</SelectItem>
+                    <SelectItem value="campaign">Campaign</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ) : null}
+              {scopeKind !== "all" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="scopeId">{scopeKind} ID</Label>
+                  <Input
+                    id="scopeId"
+                    type="number"
+                    value={scopeId}
+                    onChange={(e) => setScopeId(e.target.value)}
+                    placeholder="e.g. 12"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">All</span> = every campaign. Pick Client / Business / Campaign to focus the analysis on that subset's keywords only.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="lookback">Lookback days</Label>
@@ -352,10 +377,30 @@ function RunReportDialog({ open, onOpenChange, onScheduled, disabled }: RunRepor
               value={lookbackDays}
               onChange={(e) => setLookbackDays(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Window for movement + activity correlation. Default 14 days.
-            </p>
+            {!lookbackInvalid && windowStart ? (
+              <p className="text-xs text-muted-foreground">
+                Analyzing <span className="font-mono">{windowStart}</span> → <span className="font-mono">{date}</span> ({lookbackNum} day{lookbackNum === 1 ? "" : "s"})
+              </p>
+            ) : null}
+            {tooShort ? (
+              <p className="text-xs text-destructive flex items-start gap-1">
+                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                Under 3 days produces unusable output (almost no rank movement to analyze). Use 7 (weekly) or 14 (bi-weekly).
+              </p>
+            ) : noisy ? (
+              <p className="text-xs text-amber-600 dark:text-amber-500 flex items-start gap-1">
+                <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                Shorter than 7 days produces narrow, noisy reports. Recommended: 14 (bi-weekly) or 7 (weekly).
+              </p>
+            ) : !lookbackInvalid ? (
+              <p className="text-xs text-muted-foreground">
+                Default 14 (bi-weekly cadence). Movement, similarity, and session activity are correlated within this window.
+              </p>
+            ) : null}
           </div>
+          <p className="text-xs text-muted-foreground border-l-2 border-border pl-2">
+            Same scope + same window = near-identical R1 output (input data is identical). Vary scope or shift the window to compare.
+          </p>
           {errorMsg ? (
             <div className="text-xs text-destructive">{errorMsg}</div>
           ) : null}
@@ -365,7 +410,7 @@ function RunReportDialog({ open, onOpenChange, onScheduled, disabled }: RunRepor
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
-          <Button onClick={submit} disabled={pending}>
+          <Button onClick={submit} disabled={pending || tooShort || lookbackInvalid}>
             {pending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
             Start
           </Button>

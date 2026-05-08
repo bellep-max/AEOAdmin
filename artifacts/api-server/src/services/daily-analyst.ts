@@ -647,6 +647,24 @@ export async function runAuditReport(opts: RunAuditReportOptions): Promise<Audit
   const durationMs = Date.now() - start;
   const { kind: scopeKind, id: scopeId } = describeScope(scope);
 
+  // Pack chart-ready data into inputSummary alongside the existing counts.
+  // The detail page renders donut + cohort bars + top-declines table from these.
+  // We slice to keep the jsonb payload small (~3-5KB per report).
+  const declineMovements: ReadonlyArray<RankChangeRow["movement"]> = ["declined", "lost_ranking"];
+  const improveMovements: ReadonlyArray<RankChangeRow["movement"]> = ["improved", "gained_ranking"];
+  const enrichedInputSummary = {
+    ...ctx.inputSummary,
+    lookbackDays: ctx.lookbackDays,
+    cohort: ctx.movementCohort,
+    topDeclines: ctx.rankChanges
+      .filter((r) => declineMovements.includes(r.movement))
+      .slice(0, 15),
+    topImprovements: ctx.rankChanges
+      .filter((r) => improveMovements.includes(r.movement))
+      .slice(0, 15),
+    recommendationsCount: recs.length,
+  };
+
   if (opts.dryRun) {
     return {
       id: -1,
@@ -672,7 +690,7 @@ export async function runAuditReport(opts: RunAuditReportOptions): Promise<Audit
       scope:           scopeKind,
       scopeId:         scopeId,
       modelUsed:       completion.model,
-      inputSummary:    ctx.inputSummary,
+      inputSummary:    enrichedInputSummary,
       reportMarkdown:  markdown,
       recommendations: recs,
       durationMs,
