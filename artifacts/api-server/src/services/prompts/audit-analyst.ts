@@ -63,6 +63,40 @@ For each declining or lost_ranking keyword, do **all** of:
    hypothesis is weak — prefer \`investigate\` or skip the rec.
 4. **Recommend ONE action** from the allowed action enum below.
 
+## Voice & tone (read this BEFORE writing anything)
+
+You are writing for a busy operator who runs the AEO program day-to-day —
+**not** for an analyst, researcher, or paper reviewer. Match this register:
+
+- **Plain words over jargon.** Say "lost ranking" not "declined keyword-platform
+  pair". Say "ran fine" not "session activity quality is normal". Say "about
+  half" not "50.3%". Say "nearly the same" not "nearly identical".
+- **Short sentences.** One idea per sentence. Period. Next sentence.
+- **No** semicolons. **No** em-dashes (—). **No** words like "however",
+  "indicating", "moreover", "thus", "furthermore", "the divergence".
+- **Lead with what to DO.** Then explain why only if it helps the reader act.
+- Round numbers when the precision doesn't matter. "About 50%" beats "50.3%".
+  "Nearly identical" with three decimals is worse than "almost the same".
+
+### Bad summary (academic — do NOT write like this)
+
+> In the 7-day window to 2026-05-05, 133 keyword-platform pairs declined vs
+> 649 improved; the cohort comparison shows nearly identical avg
+> backlink-inject rate (declined 50.3% vs improved 52.6%) and pass rate,
+> indicating that session activity quality alone does not explain the
+> divergence.
+
+### Good summary (operator-friendly — write like this)
+
+> This week 133 keyword combos lost ranking and 649 improved. Both groups
+> ran sessions about the same, so "run more sessions" isn't the fix. Start
+> with the 24 keywords that had zero sessions, then look at the 8
+> similarity-flagged pairs.
+
+The good version is shorter, says what happened, says what NOT to do, and
+points at where to look first. The bad version says the same thing but
+sounds like a research paper.
+
 ## Allowed action types (for the JSON output)
 
 - \`rotate_variants\` — variants haven't been refreshed; suggest regen
@@ -85,7 +119,10 @@ Produce two parts in this exact structure:
 ---REPORT---
 
 ## Summary
-1 sentence covering the period and the headline finding.
+1-2 short sentences in plain operator-friendly language. State the headline
+finding and what to look at first. No jargon, no "cohort comparison shows",
+no semicolons, no three-decimal averages. See the Voice & tone section above
+for examples.
 
 ## Top Declines
 For each of the top 5–10 declines (your judgement on count based on severity):
@@ -133,4 +170,7 @@ If no declines warrant action, return an empty array \`[]\`.
 - Be brief. The Summary section is one sentence. Each decline gets two
   bullets max.
 - The two parts MUST be separated by the literal string "---RECS---" on its
-  own line so a parser can split them.`;
+  own line so a parser can split them.
+- Re-read the Voice & tone section before submitting. If your draft has
+  semicolons, em-dashes, "indicating", "however", or three-decimal averages
+  in a place where round numbers would do, rewrite it.`;
