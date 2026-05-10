@@ -8,7 +8,13 @@ export function rawFetch(path: string): Promise<Response> {
 }
 
 export type Period = "weekly" | "monthly" | "quarterly" | "lifetime";
-export type Status = "new" | "improved" | "steady" | "declined" | "missing" | "pending";
+export type Status =
+  | "new"
+  | "improved"
+  | "steady"
+  | "declined"
+  | "missing"
+  | "pending";
 export type Freshness = "fresh" | "stale" | "cold" | "never";
 
 export interface PeriodRow {
@@ -36,7 +42,12 @@ export interface PeriodRow {
 
 export interface PeriodResponse {
   period: Period;
-  window: { currentStart: string; currentEnd: string; previousStart: string; previousEnd: string };
+  window: {
+    currentStart: string;
+    currentEnd: string;
+    previousStart: string;
+    previousEnd: string;
+  };
   rows: PeriodRow[];
 }
 
@@ -49,15 +60,24 @@ export interface PeriodFilters {
 
 export function buildPeriodUrl(filters: PeriodFilters): string {
   const params = new URLSearchParams({ period: filters.period });
-  if (filters.clientId != null) params.set("clientId", String(filters.clientId));
-  if (filters.businessId != null) params.set("businessId", String(filters.businessId));
-  if (filters.aeoPlanId != null) params.set("aeoPlanId", String(filters.aeoPlanId));
+  if (filters.clientId != null)
+    params.set("clientId", String(filters.clientId));
+  if (filters.businessId != null)
+    params.set("businessId", String(filters.businessId));
+  if (filters.aeoPlanId != null)
+    params.set("aeoPlanId", String(filters.aeoPlanId));
   return `/api/ranking-reports/period-comparison?${params}`;
 }
 
 export function usePeriodComparison(filters: PeriodFilters) {
   return useQuery<PeriodResponse>({
-    queryKey: ["/api/ranking-reports/period-comparison", filters.period, filters.clientId, filters.businessId, filters.aeoPlanId],
+    queryKey: [
+      "/api/ranking-reports/period-comparison",
+      filters.period,
+      filters.clientId,
+      filters.businessId,
+      filters.aeoPlanId,
+    ],
     queryFn: async () => {
       const res = await rawFetch(buildPeriodUrl(filters));
       if (!res.ok) throw new Error("Failed to load period comparison");
@@ -71,7 +91,56 @@ export function fmtPos(n: number | null | undefined): string {
 }
 
 export function fmtWindow(s: string): string {
-  return new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(s).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/* ET-anchored date formatters. Audits run in America/New_York and the
+   server stores per-row dates as ET calendar days. Formatting in the
+   browser's local TZ shifts the day for users east of UTC (e.g. Manila
+   sees Apr 17 22:00Z as Apr 18). All Rankings UI must use these. */
+const ET = "America/New_York";
+
+export function fmtDayET(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: ET,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function fmtShortET(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: ET,
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function fmtIsoDateET(d: Date): string {
+  /* "YYYY-MM-DD" in ET. sv-SE locale renders ISO date format. */
+  return d.toLocaleDateString("sv-SE", { timeZone: ET });
+}
+
+export function fmtDateTimeET(d: Date): string {
+  const date = d.toLocaleDateString("en-US", {
+    timeZone: ET,
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: ET,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${date} at ${time}`;
 }
 
 export function fmtRelative(s: string | null): string {
@@ -86,15 +155,20 @@ export function fmtRelative(s: string | null): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   const diffWeeks = Math.floor(diffDays / 7);
   if (diffWeeks < 5) return `${diffWeeks}w ago`;
-  return new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(s).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"] as const;
 
 export const PLATFORM_COLORS: Record<string, string> = {
-  chatgpt: "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
+  chatgpt:
+    "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
   gemini: "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400",
-  perplexity: "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400",
+  perplexity:
+    "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400",
 };
 
 export interface StatusCounts {
@@ -126,7 +200,9 @@ function avg(nums: number[]): number | null {
   return nums.reduce((s, n) => s + n, 0) / nums.length;
 }
 
-export function aggregatePlatforms(rows: readonly PeriodRow[]): PlatformAggregate[] {
+export function aggregatePlatforms(
+  rows: readonly PeriodRow[],
+): PlatformAggregate[] {
   const byPlatform = new Map<string, PeriodRow[]>();
   for (const r of rows) {
     const list = byPlatform.get(r.platform);
@@ -135,20 +211,32 @@ export function aggregatePlatforms(rows: readonly PeriodRow[]): PlatformAggregat
   }
   const ordered: string[] = [
     ...PLATFORM_ORDER.filter((p) => byPlatform.has(p)),
-    ...[...byPlatform.keys()].filter((p) => !PLATFORM_ORDER.includes(p as typeof PLATFORM_ORDER[number])),
+    ...[...byPlatform.keys()].filter(
+      (p) => !PLATFORM_ORDER.includes(p as (typeof PLATFORM_ORDER)[number]),
+    ),
   ];
   return ordered.map((platform) => {
     const list = byPlatform.get(platform) ?? [];
-    const cur = list.map((r) => r.currentPosition).filter((n): n is number => n != null);
-    const prev = list.map((r) => r.previousPosition).filter((n): n is number => n != null);
-    const first = list.map((r) => r.firstPosition).filter((n): n is number => n != null);
+    const cur = list
+      .map((r) => r.currentPosition)
+      .filter((n): n is number => n != null);
+    const prev = list
+      .map((r) => r.previousPosition)
+      .filter((n): n is number => n != null);
+    const first = list
+      .map((r) => r.firstPosition)
+      .filter((n): n is number => n != null);
     const avgCur = avg(cur);
     const avgPrev = avg(prev);
     const avgFirstVal = avg(first);
     const avgCurRounded = avgCur != null ? Math.round(avgCur) : null;
     const avgPrevRounded = avgPrev != null ? Math.round(avgPrev) : null;
-    const avgFirstRounded = avgFirstVal != null ? Math.round(avgFirstVal) : null;
-    const change = avgCurRounded != null && avgPrevRounded != null ? avgPrevRounded - avgCurRounded : null;
+    const avgFirstRounded =
+      avgFirstVal != null ? Math.round(avgFirstVal) : null;
+    const change =
+      avgCurRounded != null && avgPrevRounded != null
+        ? avgPrevRounded - avgCurRounded
+        : null;
     return {
       platform,
       keywordCount: list.length,
@@ -175,11 +263,40 @@ export function countStatuses(rows: readonly PeriodRow[]): StatusCounts {
   };
 }
 
-export function periodLabel(p: Period): { short: string; long: string; previousLabel: string; currentLabel: string } {
+export function periodLabel(p: Period): {
+  short: string;
+  long: string;
+  previousLabel: string;
+  currentLabel: string;
+} {
   switch (p) {
-    case "weekly":    return { short: "Biweekly", long: "Current 2 weeks vs previous 2 weeks (ET)", previousLabel: "Last 2 weeks", currentLabel: "Current rank" };
-    case "monthly":   return { short: "Month",   long: "Current month vs last month", previousLabel: "Last month",      currentLabel: "Current rank" };
-    case "quarterly": return { short: "Quarter", long: "Current quarter vs last quarter", previousLabel: "Last quarter", currentLabel: "Current rank" };
-    case "lifetime":  return { short: "Lifetime", long: "First ever vs latest",      previousLabel: "Initial rank",    currentLabel: "Current rank" };
+    case "weekly":
+      return {
+        short: "Biweekly",
+        long: "Current 2 weeks vs previous 2 weeks (ET)",
+        previousLabel: "Last 2 weeks",
+        currentLabel: "Current rank",
+      };
+    case "monthly":
+      return {
+        short: "Month",
+        long: "Current month vs last month",
+        previousLabel: "Last month",
+        currentLabel: "Current rank",
+      };
+    case "quarterly":
+      return {
+        short: "Quarter",
+        long: "Current quarter vs last quarter",
+        previousLabel: "Last quarter",
+        currentLabel: "Current rank",
+      };
+    case "lifetime":
+      return {
+        short: "Lifetime",
+        long: "First ever vs latest",
+        previousLabel: "Initial rank",
+        currentLabel: "Current rank",
+      };
   }
 }

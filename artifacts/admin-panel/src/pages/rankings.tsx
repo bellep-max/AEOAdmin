@@ -23,10 +23,12 @@ import {
   rawFetch,
   usePeriodComparison,
   periodLabel,
+  fmtDayET,
+  fmtIsoDateET,
+  fmtDateTimeET,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { format } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -108,8 +110,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
   const pos = (n: number | null) => (n == null ? "—" : `#${n}`);
   const chg = (n: number | null) =>
     n == null ? "—" : n > 0 ? `+${n}` : String(n);
-  const dt = (s: string | null | undefined) =>
-    s ? format(new Date(s), "MMM d, yyyy") : "—";
+  const dt = (s: string | null | undefined) => fmtDayET(s);
   return [...byKeyword.values()]
     .sort((a, b) =>
       (a.base.clientName ?? "").localeCompare(b.base.clientName ?? ""),
@@ -157,8 +158,8 @@ interface PeriodWindow {
 }
 
 function fmtRange(start: string, end: string): string {
-  const s = format(new Date(start), "MMM d, yyyy");
-  const e = format(new Date(end), "MMM d, yyyy");
+  const s = fmtDayET(start);
+  const e = fmtDayET(end);
   return s === e ? s : `${s} – ${e}`;
 }
 
@@ -243,7 +244,7 @@ function exportRankingsCSV(
      them as plain rows in column A; auto-filter still works on the
      header row at line 3. */
   const subtitle = buildSubtitle(label, window);
-  const generated = `Generated ${format(new Date(), "MMM d, yyyy 'at' h:mm a")}`;
+  const generated = `Generated ${fmtDateTimeET(new Date())} ET`;
   const meta = [esc(`Rankings — ${subtitle}`), esc(generated)];
   const csv = [...meta, "", headers.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -252,7 +253,7 @@ function exportRankingsCSV(
   a.href = url;
   const stamp = window
     ? `${window.currentStart}_to_${window.currentEnd}`
-    : format(new Date(), "yyyy-MM-dd");
+    : fmtIsoDateET(new Date());
   a.download = `rankings-${label}-${stamp}.csv`;
   a.click();
   URL.revokeObjectURL(url);
@@ -278,12 +279,9 @@ function exportRankingsPDF(
   doc.setFont("helvetica", "normal");
   doc.setTextColor(148, 163, 184);
   doc.text(buildSubtitle(periodTitle, window), 10, 18);
-  doc.text(
-    `Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}`,
-    pageW - 10,
-    18,
-    { align: "right" },
-  );
+  doc.text(`Generated: ${fmtDateTimeET(new Date())} ET`, pageW - 10, 18, {
+    align: "right",
+  });
 
   const pivoted = pivotRows(rows);
   const grouped = new Map<string, PivotRow[]>();
@@ -403,7 +401,10 @@ function exportRankingsPDF(
         .finalY + 10;
   });
 
-  doc.save(`rankings-${label}-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+  const stamp = window
+    ? `${window.currentStart}_to_${window.currentEnd}`
+    : fmtIsoDateET(new Date());
+  doc.save(`rankings-${label}-${stamp}.pdf`);
 }
 
 export default function Rankings() {

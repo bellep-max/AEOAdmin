@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { format } from "date-fns";
 import { Building2, Search, Clock } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
+  fmtShortET,
   periodLabel,
   PLATFORM_ORDER,
   PLATFORM_COLORS,
@@ -191,7 +191,7 @@ export function PeriodByClientTab({
             onClick={() => setLatestOnly(!latestOnly)}
           >
             <Clock className="w-3.5 h-3.5" />
-            Latest run ({format(new Date(latestDate), "MMM d")})
+            Latest run ({fmtShortET(latestDate)})
           </Button>
         )}
         {comparisonOnly && filterCounts.total > 0 && (
@@ -365,19 +365,13 @@ export function PeriodByClientTab({
                               <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
                                 <div className="col-span-2" />
                                 <div className="col-span-2">
-                                  {p.firstDate
-                                    ? format(new Date(p.firstDate), "MMM d")
-                                    : ""}
+                                  {fmtShortET(p.firstDate)}
                                 </div>
                                 <div className="col-span-2">
-                                  {p.previousDate
-                                    ? format(new Date(p.previousDate), "MMM d")
-                                    : ""}
+                                  {fmtShortET(p.previousDate)}
                                 </div>
                                 <div className="col-span-2">
-                                  {p.currentDate
-                                    ? format(new Date(p.currentDate), "MMM d")
-                                    : ""}
+                                  {fmtShortET(p.currentDate)}
                                 </div>
                                 <div className="col-span-4" />
                               </div>
