@@ -57,18 +57,27 @@ interface PivotRow {
   campaign: string;
   keyword: string;
   chatgptFirst: string;
+  chatgptFirstDate: string;
   chatgptPrev: string;
+  chatgptPrevDate: string;
   chatgptCurr: string;
+  chatgptCurrDate: string;
   chatgptChange: string;
   chatgptStatus: string;
   geminiFirst: string;
+  geminiFirstDate: string;
   geminiPrev: string;
+  geminiPrevDate: string;
   geminiCurr: string;
+  geminiCurrDate: string;
   geminiChange: string;
   geminiStatus: string;
   perplexityFirst: string;
+  perplexityFirstDate: string;
   perplexityPrev: string;
+  perplexityPrevDate: string;
   perplexityCurr: string;
+  perplexityCurrDate: string;
   perplexityChange: string;
   perplexityStatus: string;
 }
@@ -99,6 +108,8 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
   const pos = (n: number | null) => (n == null ? "—" : `#${n}`);
   const chg = (n: number | null) =>
     n == null ? "—" : n > 0 ? `+${n}` : String(n);
+  const dt = (s: string | null | undefined) =>
+    s ? format(new Date(s), "MMM d, yyyy") : "—";
   return [...byKeyword.values()]
     .sort((a, b) =>
       (a.base.clientName ?? "").localeCompare(b.base.clientName ?? ""),
@@ -111,25 +122,58 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         campaign: base.campaignName ?? "",
         keyword: base.keywordText,
         chatgptFirst: pos(g("chatgpt")?.firstPosition ?? null),
+        chatgptFirstDate: dt(g("chatgpt")?.firstDate),
         chatgptPrev: pos(g("chatgpt")?.previousPosition ?? null),
+        chatgptPrevDate: dt(g("chatgpt")?.previousDate),
         chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
+        chatgptCurrDate: dt(g("chatgpt")?.currentDate),
         chatgptChange: chg(g("chatgpt")?.change ?? null),
         chatgptStatus: g("chatgpt")?.status ?? "—",
         geminiFirst: pos(g("gemini")?.firstPosition ?? null),
+        geminiFirstDate: dt(g("gemini")?.firstDate),
         geminiPrev: pos(g("gemini")?.previousPosition ?? null),
+        geminiPrevDate: dt(g("gemini")?.previousDate),
         geminiCurr: pos(g("gemini")?.currentPosition ?? null),
+        geminiCurrDate: dt(g("gemini")?.currentDate),
         geminiChange: chg(g("gemini")?.change ?? null),
         geminiStatus: g("gemini")?.status ?? "—",
         perplexityFirst: pos(g("perplexity")?.firstPosition ?? null),
+        perplexityFirstDate: dt(g("perplexity")?.firstDate),
         perplexityPrev: pos(g("perplexity")?.previousPosition ?? null),
+        perplexityPrevDate: dt(g("perplexity")?.previousDate),
         perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
+        perplexityCurrDate: dt(g("perplexity")?.currentDate),
         perplexityChange: chg(g("perplexity")?.change ?? null),
         perplexityStatus: g("perplexity")?.status ?? "—",
       };
     });
 }
 
-function exportRankingsCSV(rows: PeriodRow[], label: string) {
+interface PeriodWindow {
+  currentStart: string;
+  currentEnd: string;
+  previousStart: string;
+  previousEnd: string;
+}
+
+function fmtRange(start: string, end: string): string {
+  const s = format(new Date(start), "MMM d, yyyy");
+  const e = format(new Date(end), "MMM d, yyyy");
+  return s === e ? s : `${s} – ${e}`;
+}
+
+function buildSubtitle(label: string, window: PeriodWindow | null): string {
+  if (!window) return label;
+  const cur = fmtRange(window.currentStart, window.currentEnd);
+  const prev = fmtRange(window.previousStart, window.previousEnd);
+  return `${label} · Current: ${cur} · Compared with: ${prev}`;
+}
+
+function exportRankingsCSV(
+  rows: PeriodRow[],
+  label: string,
+  window: PeriodWindow | null,
+) {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const headers = [
     "Client",
@@ -137,18 +181,27 @@ function exportRankingsCSV(rows: PeriodRow[], label: string) {
     "Campaign",
     "Keyword",
     "ChatGPT First",
+    "ChatGPT First Date",
     "ChatGPT Previous",
+    "ChatGPT Previous Date",
     "ChatGPT Current",
+    "ChatGPT Current Date",
     "ChatGPT Change",
     "ChatGPT Status",
     "Gemini First",
+    "Gemini First Date",
     "Gemini Previous",
+    "Gemini Previous Date",
     "Gemini Current",
+    "Gemini Current Date",
     "Gemini Change",
     "Gemini Status",
     "Perplexity First",
+    "Perplexity First Date",
     "Perplexity Previous",
+    "Perplexity Previous Date",
     "Perplexity Current",
+    "Perplexity Current Date",
     "Perplexity Change",
     "Perplexity Status",
   ];
@@ -160,28 +213,47 @@ function exportRankingsCSV(rows: PeriodRow[], label: string) {
       esc(r.campaign),
       esc(r.keyword),
       esc(r.chatgptFirst),
+      esc(r.chatgptFirstDate),
       esc(r.chatgptPrev),
+      esc(r.chatgptPrevDate),
       esc(r.chatgptCurr),
+      esc(r.chatgptCurrDate),
       esc(r.chatgptChange),
       esc(r.chatgptStatus),
       esc(r.geminiFirst),
+      esc(r.geminiFirstDate),
       esc(r.geminiPrev),
+      esc(r.geminiPrevDate),
       esc(r.geminiCurr),
+      esc(r.geminiCurrDate),
       esc(r.geminiChange),
       esc(r.geminiStatus),
       esc(r.perplexityFirst),
+      esc(r.perplexityFirstDate),
       esc(r.perplexityPrev),
+      esc(r.perplexityPrevDate),
       esc(r.perplexityCurr),
+      esc(r.perplexityCurrDate),
       esc(r.perplexityChange),
       esc(r.perplexityStatus),
     ].join(","),
   );
-  const csv = [headers.join(","), ...lines].join("\n");
+  /* Two metadata rows above the header so Mary can see the comparison
+     period in Excel without parsing the filename. Spreadsheets render
+     them as plain rows in column A; auto-filter still works on the
+     header row at line 3. */
+  const subtitle = buildSubtitle(label, window);
+  const generated = `Generated ${format(new Date(), "MMM d, yyyy 'at' h:mm a")}`;
+  const meta = [esc(`Rankings — ${subtitle}`), esc(generated)];
+  const csv = [...meta, "", headers.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `rankings-${label}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+  const stamp = window
+    ? `${window.currentStart}_to_${window.currentEnd}`
+    : format(new Date(), "yyyy-MM-dd");
+  a.download = `rankings-${label}-${stamp}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -190,6 +262,7 @@ function exportRankingsPDF(
   rows: PeriodRow[],
   label: string,
   periodTitle: string,
+  window: PeriodWindow | null,
 ) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -204,7 +277,7 @@ function exportRankingsPDF(
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(148, 163, 184);
-  doc.text(periodTitle, 10, 18);
+  doc.text(buildSubtitle(periodTitle, window), 10, 18);
   doc.text(
     `Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}`,
     pageW - 10,
@@ -409,7 +482,9 @@ export default function Rankings() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Rankings</h1>
-            <p className="text-sm text-muted-foreground">{label.long}</p>
+            <p className="text-sm text-muted-foreground">
+              {buildSubtitle(label.long, periodData?.window ?? null)}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -432,7 +507,11 @@ export default function Rankings() {
               const rows = comparisonOnly
                 ? filterComparisonOnly(periodData!.rows)
                 : periodData!.rows;
-              exportRankingsCSV(rows, effectivePeriod);
+              exportRankingsCSV(
+                rows,
+                effectivePeriod,
+                periodData?.window ?? null,
+              );
             }}
           >
             <Download className="w-3.5 h-3.5" /> CSV
@@ -446,7 +525,12 @@ export default function Rankings() {
               const rows = comparisonOnly
                 ? filterComparisonOnly(periodData!.rows)
                 : periodData!.rows;
-              exportRankingsPDF(rows, effectivePeriod, label.long);
+              exportRankingsPDF(
+                rows,
+                effectivePeriod,
+                label.long,
+                periodData?.window ?? null,
+              );
             }}
           >
             <FileDown className="w-3.5 h-3.5" /> PDF
