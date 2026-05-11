@@ -97,15 +97,13 @@ function filterComparisonOnly(rows: PeriodRow[]): PeriodRow[] {
   return rows.filter((r) => keywordsWithPrev.has(r.keywordId));
 }
 
-/* Keep only rows whose Current audit matches the picked date.
-   `date` is a YYYY-MM-DD prefix; `currentDate` is the raw ISO timestamp,
-   so we compare in ET via fmtIsoDateET to avoid the same TZ-shift bug
-   that displayed "Apr 17" rows as "Apr 18". */
+/* Keep only rows whose Current audit matches the picked date. Both
+   `date` and `r.currentDate` are YYYY-MM-DD text strings (the API
+   returns the unambiguous `date` text column, not the timestamp), so
+   string equality is correct. */
 function filterByCurrentDate(rows: PeriodRow[], date: string): PeriodRow[] {
   if (date === "all" || !date) return rows;
-  return rows.filter(
-    (r) => r.currentDate && fmtIsoDateET(new Date(r.currentDate)) === date,
-  );
+  return rows.filter((r) => (r.currentDate ?? "").slice(0, 10) === date);
 }
 
 function pivotRows(rows: PeriodRow[]): PivotRow[] {
@@ -502,7 +500,7 @@ export default function Rankings() {
   const auditDates = useMemo<string[]>(() => {
     const set = new Set<string>();
     for (const r of periodData?.rows ?? []) {
-      if (r.currentDate) set.add(fmtIsoDateET(new Date(r.currentDate)));
+      if (r.currentDate) set.add(r.currentDate.slice(0, 10));
     }
     return [...set].sort((a, b) => b.localeCompare(a));
   }, [periodData]);
@@ -533,20 +531,6 @@ export default function Rankings() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={auditDate} onValueChange={setAuditDate}>
-            <SelectTrigger className="w-44 h-9 text-sm">
-              <SelectValue placeholder="Audit date" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All audits</SelectItem>
-              {auditDates.map((d, i) => (
-                <SelectItem key={d} value={d}>
-                  {fmtDayET(d)}
-                  {i === 0 ? " (latest)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Button
             variant={comparisonOnly ? "default" : "outline"}
             size="sm"
@@ -660,6 +644,21 @@ export default function Rankings() {
             {planScope.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>
                 {p.name ?? p.planType}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
+        <Select value={auditDate} onValueChange={setAuditDate}>
+          <SelectTrigger className="w-48 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
+            <SelectValue placeholder="Audit date" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All audits</SelectItem>
+            {auditDates.map((d, i) => (
+              <SelectItem key={d} value={d}>
+                {fmtDayET(d)}
+                {i === 0 ? " (latest)" : ""}
               </SelectItem>
             ))}
           </SelectContent>

@@ -1,6 +1,12 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rankingReportsTable, clientsTable, keywordsTable, businessesTable, clientAeoPlansTable } from "@workspace/db/schema";
+import {
+  rankingReportsTable,
+  clientsTable,
+  keywordsTable,
+  businessesTable,
+  clientAeoPlansTable,
+} from "@workspace/db/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 
@@ -8,12 +14,19 @@ const router = Router();
 
 router.get("/", async (req, res) => {
   try {
-    const { clientId, businessId, aeoPlanId, keywordId } = req.query as Record<string, string>;
+    const { clientId, businessId, aeoPlanId, keywordId } = req.query as Record<
+      string,
+      string
+    >;
     const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId)   conditions.push(eq(rankingReportsTable.clientId,   parseInt(clientId)));
-    if (businessId) conditions.push(eq(rankingReportsTable.businessId, parseInt(businessId)));
-    if (aeoPlanId)  conditions.push(eq(keywordsTable.aeoPlanId,        parseInt(aeoPlanId)));
-    if (keywordId)  conditions.push(eq(rankingReportsTable.keywordId,  parseInt(keywordId)));
+    if (clientId)
+      conditions.push(eq(rankingReportsTable.clientId, parseInt(clientId)));
+    if (businessId)
+      conditions.push(eq(rankingReportsTable.businessId, parseInt(businessId)));
+    if (aeoPlanId)
+      conditions.push(eq(keywordsTable.aeoPlanId, parseInt(aeoPlanId)));
+    if (keywordId)
+      conditions.push(eq(rankingReportsTable.keywordId, parseInt(keywordId)));
 
     const reports = await db
       .select({
@@ -63,17 +76,25 @@ router.get("/", async (req, res) => {
       })
       .from(rankingReportsTable)
       .leftJoin(clientsTable, eq(rankingReportsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(rankingReportsTable.businessId, businessesTable.id))
-      .leftJoin(keywordsTable, eq(rankingReportsTable.keywordId, keywordsTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(rankingReportsTable.businessId, businessesTable.id),
+      )
+      .leftJoin(
+        keywordsTable,
+        eq(rankingReportsTable.keywordId, keywordsTable.id),
+      )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(rankingReportsTable.createdAt));
 
-    res.json(reports.map((r) => ({
-      ...r,
-      clientName:   r.clientName   ?? r.joinedClientName ?? null,
-      bizName:      r.bizName      ?? r.joinedBusinessName ?? null,
-      keyword:      r.keyword      ?? r.joinedKeywordText ?? null,
-    })));
+    res.json(
+      reports.map((r) => ({
+        ...r,
+        clientName: r.clientName ?? r.joinedClientName ?? null,
+        bizName: r.bizName ?? r.joinedBusinessName ?? null,
+        keyword: r.keyword ?? r.joinedKeywordText ?? null,
+      })),
+    );
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
     res.status(500).json({ error: "Internal server error" });
@@ -83,26 +104,30 @@ router.get("/", async (req, res) => {
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
-    const platform = typeof body.platform === "string" ? body.platform.toLowerCase() : null;
+    const platform =
+      typeof body.platform === "string" ? body.platform.toLowerCase() : null;
 
     /* Upsert key: prefer body.date for backfills (so re-running an import for
        a past day finds yesterday's row), else fall back to today's date. */
-    const upsertDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
-      ? body.date
-      : null;
+    const upsertDate =
+      typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+        ? body.date
+        : null;
 
     const existing = await db
       .select({ id: rankingReportsTable.id })
       .from(rankingReportsTable)
-      .where(and(
-        eq(rankingReportsTable.keywordId, body.keywordId),
-        platform != null
-          ? eq(rankingReportsTable.platform, platform)
-          : sql`${rankingReportsTable.platform} IS NULL`,
-        upsertDate
-          ? eq(rankingReportsTable.date, upsertDate)
-          : sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
-      ))
+      .where(
+        and(
+          eq(rankingReportsTable.keywordId, body.keywordId),
+          platform != null
+            ? eq(rankingReportsTable.platform, platform)
+            : sql`${rankingReportsTable.platform} IS NULL`,
+          upsertDate
+            ? eq(rankingReportsTable.date, upsertDate)
+            : sql`DATE(${rankingReportsTable.createdAt}) = CURRENT_DATE`,
+        ),
+      )
       .limit(1);
 
     if (existing.length > 0) {
@@ -218,7 +243,9 @@ router.post("/dedupe", requireExecutorToken, async (req, res) => {
         AND a.id < b.id
       RETURNING a.id;
     `);
-    const deletedCount = Array.isArray(result) ? result.length : (result?.rowCount ?? 0);
+    const deletedCount = Array.isArray(result)
+      ? result.length
+      : (result?.rowCount ?? 0);
     res.json({ deletedRows: deletedCount });
   } catch (err) {
     req.log.error({ err }, "Error deduping ranking reports");
@@ -232,38 +259,62 @@ router.patch("/:id", requireExecutorToken, async (req, res) => {
     const id = parseInt(req.params.id);
     const body = req.body;
     const updates: Record<string, unknown> = {};
-    if (body.mapsUrl          !== undefined) updates.mapsUrl          = body.mapsUrl ?? null;
-    if (body.mapsPresence     !== undefined) updates.mapsPresence     = body.mapsPresence;
-    if (body.rankingPosition  !== undefined) updates.rankingPosition  = body.rankingPosition;
-    if (body.reasonRecommended !== undefined) updates.reasonRecommended = body.reasonRecommended;
-    if (body.screenshotUrl    !== undefined) updates.screenshotUrl    = body.screenshotUrl ?? null;
-    if (body.textRanking      !== undefined) updates.textRanking      = body.textRanking ?? null;
-    if (body.rankingTotal     !== undefined) updates.rankingTotal     = body.rankingTotal ?? null;
-    if (body.durationSeconds  !== undefined) updates.durationSeconds  = body.durationSeconds ?? null;
-    if (body.proxyIp          !== undefined) updates.proxyIp          = body.proxyIp ?? null;
-    if (body.proxyCity        !== undefined) updates.proxyCity        = body.proxyCity ?? null;
-    if (body.proxyRegion      !== undefined) updates.proxyRegion      = body.proxyRegion ?? null;
-    if (body.proxyCountry     !== undefined) updates.proxyCountry     = body.proxyCountry ?? null;
-    if (body.proxyZip         !== undefined) updates.proxyZip         = body.proxyZip ?? null;
-    if (body.baseLatitude     !== undefined) updates.baseLatitude     = body.baseLatitude ?? null;
-    if (body.baseLongitude    !== undefined) updates.baseLongitude    = body.baseLongitude ?? null;
-    if (body.mockedLatitude   !== undefined) updates.mockedLatitude   = body.mockedLatitude ?? null;
-    if (body.mockedLongitude  !== undefined) updates.mockedLongitude  = body.mockedLongitude ?? null;
-    if (body.deviceIdentifier !== undefined) updates.deviceIdentifier = body.deviceIdentifier ?? null;
-    if (body.clientName       !== undefined) updates.clientName       = body.clientName ?? null;
-    if (body.bizName          !== undefined) updates.bizName          = body.bizName ?? null;
-    if (body.searchAddress    !== undefined) updates.searchAddress    = body.searchAddress ?? null;
-    if (body.keyword          !== undefined) updates.keyword          = body.keyword ?? null;
-    if (body.timestamp        !== undefined) updates.timestamp        = body.timestamp ?? null;
-    if (body.date             !== undefined) updates.date             = body.date ?? null;
-    if (body.status           !== undefined) updates.status           = body.status ?? null;
-    if (body.proxyStatus      !== undefined) updates.proxyStatus      = body.proxyStatus ?? null;
-    if (body.proxyUsername    !== undefined) updates.proxyUsername    = body.proxyUsername ?? null;
-    if (body.proxyHost        !== undefined) updates.proxyHost        = body.proxyHost ?? null;
-    if (body.proxyPort        !== undefined) updates.proxyPort        = body.proxyPort ?? null;
-    if (body.mockedTimezone   !== undefined) updates.mockedTimezone   = body.mockedTimezone ?? null;
-    if (body.failureStep      !== undefined) updates.failureStep      = body.failureStep ?? null;
-    if (body.error            !== undefined) updates.error            = body.error ?? null;
+    if (body.mapsUrl !== undefined) updates.mapsUrl = body.mapsUrl ?? null;
+    if (body.mapsPresence !== undefined)
+      updates.mapsPresence = body.mapsPresence;
+    if (body.rankingPosition !== undefined)
+      updates.rankingPosition = body.rankingPosition;
+    if (body.reasonRecommended !== undefined)
+      updates.reasonRecommended = body.reasonRecommended;
+    if (body.screenshotUrl !== undefined)
+      updates.screenshotUrl = body.screenshotUrl ?? null;
+    if (body.textRanking !== undefined)
+      updates.textRanking = body.textRanking ?? null;
+    if (body.rankingTotal !== undefined)
+      updates.rankingTotal = body.rankingTotal ?? null;
+    if (body.durationSeconds !== undefined)
+      updates.durationSeconds = body.durationSeconds ?? null;
+    if (body.proxyIp !== undefined) updates.proxyIp = body.proxyIp ?? null;
+    if (body.proxyCity !== undefined)
+      updates.proxyCity = body.proxyCity ?? null;
+    if (body.proxyRegion !== undefined)
+      updates.proxyRegion = body.proxyRegion ?? null;
+    if (body.proxyCountry !== undefined)
+      updates.proxyCountry = body.proxyCountry ?? null;
+    if (body.proxyZip !== undefined) updates.proxyZip = body.proxyZip ?? null;
+    if (body.baseLatitude !== undefined)
+      updates.baseLatitude = body.baseLatitude ?? null;
+    if (body.baseLongitude !== undefined)
+      updates.baseLongitude = body.baseLongitude ?? null;
+    if (body.mockedLatitude !== undefined)
+      updates.mockedLatitude = body.mockedLatitude ?? null;
+    if (body.mockedLongitude !== undefined)
+      updates.mockedLongitude = body.mockedLongitude ?? null;
+    if (body.deviceIdentifier !== undefined)
+      updates.deviceIdentifier = body.deviceIdentifier ?? null;
+    if (body.clientName !== undefined)
+      updates.clientName = body.clientName ?? null;
+    if (body.bizName !== undefined) updates.bizName = body.bizName ?? null;
+    if (body.searchAddress !== undefined)
+      updates.searchAddress = body.searchAddress ?? null;
+    if (body.keyword !== undefined) updates.keyword = body.keyword ?? null;
+    if (body.timestamp !== undefined)
+      updates.timestamp = body.timestamp ?? null;
+    if (body.date !== undefined) updates.date = body.date ?? null;
+    if (body.status !== undefined) updates.status = body.status ?? null;
+    if (body.proxyStatus !== undefined)
+      updates.proxyStatus = body.proxyStatus ?? null;
+    if (body.proxyUsername !== undefined)
+      updates.proxyUsername = body.proxyUsername ?? null;
+    if (body.proxyHost !== undefined)
+      updates.proxyHost = body.proxyHost ?? null;
+    if (body.proxyPort !== undefined)
+      updates.proxyPort = body.proxyPort ?? null;
+    if (body.mockedTimezone !== undefined)
+      updates.mockedTimezone = body.mockedTimezone ?? null;
+    if (body.failureStep !== undefined)
+      updates.failureStep = body.failureStep ?? null;
+    if (body.error !== undefined) updates.error = body.error ?? null;
 
     const [report] = await db
       .update(rankingReportsTable)
@@ -317,8 +368,8 @@ router.get("/platform-summary", async (req, res) => {
         .orderBy(asc(rankingReportsTable.createdAt)),
     ]);
 
-    const clientMap   = new Map(clients.map((c) => [c.id, c]));
-    const keywordMap  = new Map(keywords.map((k) => [k.id, k]));
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
 
     // Build summary per platform
@@ -336,48 +387,64 @@ router.get("/platform-summary", async (req, res) => {
       const comparisons = [...grouped.entries()].map(([, grpRows]) => {
         const initial = grpRows.find((r) => r.isInitialRanking) ?? grpRows[0];
         const current = grpRows[grpRows.length - 1];
-        const client  = clientMap.get(initial.clientId);
+        const client = clientMap.get(initial.clientId);
         const keyword = keywordMap.get(initial.keywordId);
-        const change  =
+        const change =
           initial?.rankingPosition != null && current?.rankingPosition != null
             ? initial.rankingPosition - current.rankingPosition
             : null;
-        const business = keyword?.businessId != null ? businessMap.get(keyword.businessId) : null;
+        const business =
+          keyword?.businessId != null
+            ? businessMap.get(keyword.businessId)
+            : null;
         return {
-          clientId:        initial.clientId,
-          clientName:      client?.businessName ?? `Client #${initial.clientId}`,
-          businessId:      keyword?.businessId ?? null,
-          businessName:    business?.name ?? null,
-          aeoPlanId:       keyword?.aeoPlanId ?? null,
-          keywordId:       initial.keywordId,
-          keywordText:     keyword?.keywordText ?? `Keyword #${initial.keywordId}`,
+          clientId: initial.clientId,
+          clientName: client?.businessName ?? `Client #${initial.clientId}`,
+          businessId: keyword?.businessId ?? null,
+          businessName: business?.name ?? null,
+          aeoPlanId: keyword?.aeoPlanId ?? null,
+          keywordId: initial.keywordId,
+          keywordText: keyword?.keywordText ?? `Keyword #${initial.keywordId}`,
           initialPosition: initial?.rankingPosition ?? null,
           currentPosition: current?.rankingPosition ?? null,
-          positionChange:  change,
+          positionChange: change,
         };
       });
 
-      const withData   = comparisons.filter((c) => c.currentPosition != null);
-      const improving  = comparisons.filter((c) => (c.positionChange ?? 0) > 0);
-      const declining  = comparisons.filter((c) => (c.positionChange ?? 0) < 0);
-      const steady     = comparisons.filter((c) => c.positionChange === 0);
-      const avgPos     = withData.length > 0
-        ? Math.round(withData.reduce((s, c) => s + (c.currentPosition ?? 0), 0) / withData.length)
-        : null;
-      const topTen     = withData.filter((c) => (c.currentPosition ?? 99) <= 10);
-      const bestKw     = withData.sort((a, b) => (a.currentPosition ?? 99) - (b.currentPosition ?? 99))[0] ?? null;
+      const withData = comparisons.filter((c) => c.currentPosition != null);
+      const improving = comparisons.filter((c) => (c.positionChange ?? 0) > 0);
+      const declining = comparisons.filter((c) => (c.positionChange ?? 0) < 0);
+      const steady = comparisons.filter((c) => c.positionChange === 0);
+      const avgPos =
+        withData.length > 0
+          ? Math.round(
+              withData.reduce((s, c) => s + (c.currentPosition ?? 0), 0) /
+                withData.length,
+            )
+          : null;
+      const topTen = withData.filter((c) => (c.currentPosition ?? 99) <= 10);
+      const bestKw =
+        withData.sort(
+          (a, b) => (a.currentPosition ?? 99) - (b.currentPosition ?? 99),
+        )[0] ?? null;
 
       return {
         platform,
-        totalKeywords:  comparisons.length,
-        withData:       withData.length,
-        improving:      improving.length,
-        steady:         steady.length,
-        declining:      declining.length,
+        totalKeywords: comparisons.length,
+        withData: withData.length,
+        improving: improving.length,
+        steady: steady.length,
+        declining: declining.length,
         avgCurrentRank: avgPos,
-        topTenCount:    topTen.length,
-        bestKeyword:    bestKw ? { text: bestKw.keywordText, position: bestKw.currentPosition, change: bestKw.positionChange } : null,
-        keywords:       comparisons,
+        topTenCount: topTen.length,
+        bestKeyword: bestKw
+          ? {
+              text: bestKw.keywordText,
+              position: bestKw.currentPosition,
+              change: bestKw.positionChange,
+            }
+          : null,
+        keywords: comparisons,
       };
     });
 
@@ -395,20 +462,27 @@ router.get("/per-keyword-platform", async (req, res) => {
   try {
     const allReports = await db
       .select({
-        keywordId:       rankingReportsTable.keywordId,
-        platform:        rankingReportsTable.platform,
+        keywordId: rankingReportsTable.keywordId,
+        platform: rankingReportsTable.platform,
         rankingPosition: rankingReportsTable.rankingPosition,
-        createdAt:       rankingReportsTable.createdAt,
+        createdAt: rankingReportsTable.createdAt,
       })
       .from(rankingReportsTable)
       .orderBy(asc(rankingReportsTable.createdAt));
 
     // Group by keywordId + platform, keep only the latest
-    const latest = new Map<string, { keywordId: number; platform: string; rankingPosition: number | null }>();
+    const latest = new Map<
+      string,
+      { keywordId: number; platform: string; rankingPosition: number | null }
+    >();
     for (const r of allReports) {
       if (!r.platform) continue;
       const key = `${r.keywordId}-${r.platform}`;
-      latest.set(key, { keywordId: r.keywordId, platform: r.platform, rankingPosition: r.rankingPosition });
+      latest.set(key, {
+        keywordId: r.keywordId,
+        platform: r.platform,
+        rankingPosition: r.rankingPosition,
+      });
     }
 
     // Pivot: keywordId → { chatgpt, gemini, perplexity }
@@ -420,8 +494,8 @@ router.get("/per-keyword-platform", async (req, res) => {
 
     const result = [...pivot.entries()].map(([keywordId, platforms]) => ({
       keywordId,
-      chatgpt:    platforms["chatgpt"]    ?? null,
-      gemini:     platforms["gemini"]     ?? null,
+      chatgpt: platforms["chatgpt"] ?? null,
+      gemini: platforms["gemini"] ?? null,
       perplexity: platforms["perplexity"] ?? null,
     }));
 
@@ -443,8 +517,12 @@ type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
 function startOfDayET(d: Date): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).formatToParts(d);
   const map: Record<string, string> = {};
@@ -452,31 +530,47 @@ function startOfDayET(d: Date): Date {
   /* ET wall-clock for `d`. Compute the offset (UTC minus ET) from the
      difference between ET wall-clock and UTC wall-clock of the same instant. */
   const etWall = Date.UTC(
-    Number(map.year), Number(map.month) - 1, Number(map.day),
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
     Number(map.hour) === 24 ? 0 : Number(map.hour),
-    Number(map.minute), Number(map.second),
+    Number(map.minute),
+    Number(map.second),
   );
   const offsetMs = etWall - d.getTime();
   /* ET midnight of that calendar date, expressed as a UTC instant. */
-  const etMidnight = Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day));
+  const etMidnight = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+  );
   return new Date(etMidnight - offsetMs);
 }
 
-function windowsFor(period: PeriodKey, now: Date): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
+function windowsFor(
+  period: PeriodKey,
+  now: Date,
+): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
   if (period === "weekly") {
     /* Biweekly windows aligned to ET midnight. "weekly" key kept for
        backwards-compat with the FE; semantically it's the last 14 days. */
     const todayStart = startOfDayET(now);
     const curStart = new Date(todayStart.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const curEnd   = new Date(todayStart.getTime() + 1  * 24 * 60 * 60 * 1000);
+    const curEnd = new Date(todayStart.getTime() + 1 * 24 * 60 * 60 * 1000);
     const prevStart = new Date(curStart.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const prevEnd   = curStart;
+    const prevEnd = curStart;
     return { curStart, curEnd, prevStart, prevEnd };
   }
   if (period === "monthly") {
-    const curStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const curEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    const prevStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const curStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+    const curEnd = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+    );
+    const prevStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+    );
     const prevEnd = curStart;
     return { curStart, curEnd, prevStart, prevEnd };
   }
@@ -484,7 +578,9 @@ function windowsFor(period: PeriodKey, now: Date): { curStart: Date; curEnd: Dat
   const qStartMonth = Math.floor(now.getUTCMonth() / 3) * 3;
   const curStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
   const curEnd = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth + 3, 1));
-  const prevStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth - 3, 1));
+  const prevStart = new Date(
+    Date.UTC(now.getUTCFullYear(), qStartMonth - 3, 1),
+  );
   const prevEnd = curStart;
   return { curStart, curEnd, prevStart, prevEnd };
 }
@@ -495,13 +591,24 @@ router.get("/period-comparison", async (req, res) => {
     if (!["weekly", "monthly", "quarterly", "lifetime"].includes(period)) {
       return res.status(400).json({ error: "Invalid period" });
     }
-    const clientId = req.query.clientId ? parseInt(req.query.clientId as string, 10) : null;
-    const businessId = req.query.businessId ? parseInt(req.query.businessId as string, 10) : null;
-    const aeoPlanId = req.query.aeoPlanId ? parseInt(req.query.aeoPlanId as string, 10) : null;
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : null;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : null;
 
     const isLifetime = period === "lifetime";
     const { curStart, curEnd, prevStart, prevEnd } = isLifetime
-      ? { curStart: new Date(0), curEnd: new Date("9999-12-31"), prevStart: new Date(0), prevEnd: new Date("9999-12-31") }
+      ? {
+          curStart: new Date(0),
+          curEnd: new Date("9999-12-31"),
+          prevStart: new Date(0),
+          prevEnd: new Date("9999-12-31"),
+        }
       : windowsFor(period as Exclude<PeriodKey, "lifetime">, new Date());
 
     const [clients, keywords, businesses, plans, reports] = await Promise.all([
@@ -518,6 +625,7 @@ router.get("/period-comparison", async (req, res) => {
           rankingPosition: rankingReportsTable.rankingPosition,
           platform: rankingReportsTable.platform,
           createdAt: rankingReportsTable.createdAt,
+          date: rankingReportsTable.date,
           keywordVariant: rankingReportsTable.keywordVariant,
         })
         .from(rankingReportsTable)
@@ -541,7 +649,7 @@ router.get("/period-comparison", async (req, res) => {
 
     type PairKey = string; // `${keywordId}|${platform}`
     const latestInWindow = (from: Date, to: Date) => {
-      const map = new Map<PairKey, typeof reports[number]>();
+      const map = new Map<PairKey, (typeof reports)[number]>();
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
@@ -553,7 +661,7 @@ router.get("/period-comparison", async (req, res) => {
       return map;
     };
     const everLatest = () => {
-      const map = new Map<PairKey, typeof reports[number]>();
+      const map = new Map<PairKey, (typeof reports)[number]>();
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
@@ -565,7 +673,7 @@ router.get("/period-comparison", async (req, res) => {
 
     // For lifetime, previous = first-ever, current = latest-ever per (keyword × platform)
     const firstEver = () => {
-      const map = new Map<PairKey, typeof reports[number]>();
+      const map = new Map<PairKey, (typeof reports)[number]>();
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
@@ -589,7 +697,7 @@ router.get("/period-comparison", async (req, res) => {
         arr.push(r);
         buckets.set(key, arr);
       }
-      const map = new Map<PairKey, typeof reports[number]>();
+      const map = new Map<PairKey, (typeof reports)[number]>();
       for (const [key, arr] of buckets) {
         if (arr.length >= 2) map.set(key, arr[arr.length - 2]); // arr is asc-ordered
       }
@@ -598,20 +706,31 @@ router.get("/period-comparison", async (req, res) => {
 
     const ever = everLatest();
     const isWeekly = period === "weekly";
-    const current  = isWeekly ? ever : (isLifetime ? ever : latestInWindow(curStart, curEnd));
+    const current = isWeekly
+      ? ever
+      : isLifetime
+        ? ever
+        : latestInWindow(curStart, curEnd);
     const previous = isWeekly
       ? secondLatestPerPair()
-      : (isLifetime ? firstEver() : latestInWindow(prevStart, prevEnd));
+      : isLifetime
+        ? firstEver()
+        : latestInWindow(prevStart, prevEnd);
     const first = firstEver();
 
-    const allKeys = new Set<PairKey>([...current.keys(), ...previous.keys(), ...ever.keys()]);
+    const allKeys = new Set<PairKey>([
+      ...current.keys(),
+      ...previous.keys(),
+      ...ever.keys(),
+    ]);
 
     const rows = [...allKeys].map((key) => {
       const [kidStr, platform] = key.split("|");
       const keywordId = parseInt(kidStr, 10);
       const kw = keywordMap.get(keywordId);
       const client = kw ? clientMap.get(kw.clientId) : null;
-      const business = kw?.businessId != null ? businessMap.get(kw.businessId) : null;
+      const business =
+        kw?.businessId != null ? businessMap.get(kw.businessId) : null;
       const plan = kw?.aeoPlanId != null ? planMap.get(kw.aeoPlanId) : null;
       const cur = current.get(key);
       const prev = previous.get(key);
@@ -622,7 +741,13 @@ router.get("/period-comparison", async (req, res) => {
           ? prev.rankingPosition - cur.rankingPosition
           : null;
 
-      let status: "new" | "improved" | "steady" | "declined" | "missing" | "pending" = "pending";
+      let status:
+        | "new"
+        | "improved"
+        | "steady"
+        | "declined"
+        | "missing"
+        | "pending" = "pending";
       if (cur && !prev) status = "new";
       else if (cur && prev && change != null) {
         if (change > 0) status = "improved";
@@ -649,13 +774,17 @@ router.get("/period-comparison", async (req, res) => {
         campaignName: plan?.name ?? plan?.planType ?? null,
         currentReportId: cur?.id ?? null,
         currentPosition: cur?.rankingPosition ?? null,
-        currentDate: cur?.createdAt ?? null,
+        /* currentDate is the unambiguous YYYY-MM-DD `date` text column,
+           not the `created_at` timestamp. Using the timestamp made the
+           frontend's ET-conversion land on the prior calendar day for
+           backfilled rows where created_at = midnight-ET (T04:00:00Z). */
+        currentDate: cur?.date ?? null,
         currentVariant: cur?.keywordVariant ?? null,
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
-        previousDate: prev?.createdAt ?? null,
+        previousDate: prev?.date ?? null,
         firstPosition: firstEverRow?.rankingPosition ?? null,
-        firstDate: firstEverRow?.createdAt ?? null,
+        firstDate: firstEverRow?.date ?? null,
         change,
         status,
         freshness,
@@ -665,7 +794,12 @@ router.get("/period-comparison", async (req, res) => {
 
     res.json({
       period,
-      window: { currentStart: curStart, currentEnd: curEnd, previousStart: prevStart, previousEnd: prevEnd },
+      window: {
+        currentStart: curStart,
+        currentEnd: curEnd,
+        previousStart: prevStart,
+        previousEnd: prevEnd,
+      },
       rows,
     });
   } catch (err) {
@@ -676,8 +810,8 @@ router.get("/period-comparison", async (req, res) => {
 
 router.get("/initial-vs-current", async (req, res) => {
   try {
-    const clients    = await db.select().from(clientsTable);
-    const keywords   = await db.select().from(keywordsTable);
+    const clients = await db.select().from(clientsTable);
+    const keywords = await db.select().from(keywordsTable);
     const businesses = await db.select().from(businessesTable);
     const allReports = await db
       .select({
@@ -696,28 +830,34 @@ router.get("/initial-vs-current", async (req, res) => {
       .from(rankingReportsTable)
       .orderBy(asc(rankingReportsTable.createdAt));
 
-    const clientMap   = new Map(clients.map((c) => [c.id, c]));
-    const keywordMap  = new Map(keywords.map((k) => [k.id, k]));
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+    const keywordMap = new Map(keywords.map((k) => [k.id, k]));
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
 
-    const grouped: Record<string, {
-      clientId: number;
-      clientName: string;
-      businessId: number | null;
-      businessName: string | null;
-      aeoPlanId: number | null;
-      keywordId: number;
-      keywordText: string;
-      reports: typeof allReports;
-    }> = {};
+    const grouped: Record<
+      string,
+      {
+        clientId: number;
+        clientName: string;
+        businessId: number | null;
+        businessName: string | null;
+        aeoPlanId: number | null;
+        keywordId: number;
+        keywordText: string;
+        reports: typeof allReports;
+      }
+    > = {};
 
     for (const report of allReports) {
-      const key     = `${report.clientId}-${report.keywordId}`;
-      const client  = clientMap.get(report.clientId);
+      const key = `${report.clientId}-${report.keywordId}`;
+      const client = clientMap.get(report.clientId);
       const keyword = keywordMap.get(report.keywordId);
       if (!client || !keyword) continue;
       if (!grouped[key]) {
-        const business = keyword.businessId != null ? businessMap.get(keyword.businessId) : null;
+        const business =
+          keyword.businessId != null
+            ? businessMap.get(keyword.businessId)
+            : null;
         grouped[key] = {
           clientId: report.clientId,
           clientName: client.businessName,
@@ -733,32 +873,36 @@ router.get("/initial-vs-current", async (req, res) => {
     }
 
     const comparisons = Object.values(grouped).map((g) => {
-      const initialReport = g.reports.find((r) => r.isInitialRanking) ?? g.reports[0];
+      const initialReport =
+        g.reports.find((r) => r.isInitialRanking) ?? g.reports[0];
       const currentReport = g.reports[g.reports.length - 1];
       const posChange =
-        initialReport?.rankingPosition != null && currentReport?.rankingPosition != null
+        initialReport?.rankingPosition != null &&
+        currentReport?.rankingPosition != null
           ? initialReport.rankingPosition - currentReport.rankingPosition
           : null;
       return {
-        clientId:        g.clientId,
-        clientName:      g.clientName,
-        businessId:      g.businessId,
-        businessName:    g.businessName,
-        aeoPlanId:       g.aeoPlanId,
-        keywordId:       g.keywordId,
-        keywordText:     g.keywordText,
+        clientId: g.clientId,
+        clientName: g.clientName,
+        businessId: g.businessId,
+        businessName: g.businessName,
+        aeoPlanId: g.aeoPlanId,
+        keywordId: g.keywordId,
+        keywordText: g.keywordText,
         currentReportId: currentReport?.id ?? null,
-        initialDate:     initialReport?.createdAt ?? null,
+        initialDate: initialReport?.createdAt ?? null,
         initialPosition: initialReport?.rankingPosition ?? null,
-        currentDate:     currentReport?.createdAt ?? null,
+        currentDate: currentReport?.createdAt ?? null,
         currentPosition: currentReport?.rankingPosition ?? null,
-        currentVariant:  currentReport?.keywordVariant ?? null,
-        positionChange:  posChange,
-        isInTopTen:      currentReport?.rankingPosition != null && currentReport.rankingPosition <= 10,
-        mapsPresence:    currentReport?.mapsPresence ?? null,
-        mapsUrl:         currentReport?.mapsUrl ?? null,
-        screenshotUrl:   currentReport?.screenshotUrl ?? null,
-        textRanking:     currentReport?.textRanking ?? null,
+        currentVariant: currentReport?.keywordVariant ?? null,
+        positionChange: posChange,
+        isInTopTen:
+          currentReport?.rankingPosition != null &&
+          currentReport.rankingPosition <= 10,
+        mapsPresence: currentReport?.mapsPresence ?? null,
+        mapsUrl: currentReport?.mapsUrl ?? null,
+        screenshotUrl: currentReport?.screenshotUrl ?? null,
+        textRanking: currentReport?.textRanking ?? null,
       };
     });
 

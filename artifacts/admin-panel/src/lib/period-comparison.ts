@@ -97,26 +97,37 @@ export function fmtWindow(s: string): string {
   });
 }
 
-/* ET-anchored date formatters. Audits run in America/New_York and the
-   server stores per-row dates as ET calendar days. Formatting in the
-   browser's local TZ shifts the day for users east of UTC (e.g. Manila
-   sees Apr 17 22:00Z as Apr 18). All Rankings UI must use these. */
+/* ET-anchored date formatters. The Rankings API returns date fields
+   (firstDate/previousDate/currentDate) as YYYY-MM-DD text in ET. Parse
+   those components manually as a local Date so we never round-trip
+   through UTC midnight and shift to the prior day on browsers east of
+   UTC. (Earlier bug: Manila browser saw "Apr 17" rows as "Apr 18"
+   because the API used to return T04:00:00Z timestamps that crossed
+   the ET-midnight boundary during display.) */
 const ET = "America/New_York";
 
-export function fmtDayET(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: ET,
+function parseYmd(ymd: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+export function fmtDayET(ymd: string | null | undefined): string {
+  if (!ymd) return "—";
+  const d = parseYmd(ymd);
+  if (!d) return ymd;
+  return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
 }
 
-export function fmtShortET(iso: string | null | undefined): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: ET,
+export function fmtShortET(ymd: string | null | undefined): string {
+  if (!ymd) return "";
+  const d = parseYmd(ymd);
+  if (!d) return ymd;
+  return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });

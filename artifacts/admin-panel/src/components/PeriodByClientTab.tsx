@@ -9,7 +9,6 @@ import {
   countStatuses,
   fmtPos,
   fmtShortET,
-  fmtIsoDateET,
   periodLabel,
   PLATFORM_ORDER,
   PLATFORM_COLORS,
@@ -96,8 +95,7 @@ export function PeriodByClientTab({
         continue;
       if (
         auditDate !== "all" &&
-        r.currentDate &&
-        fmtIsoDateET(new Date(r.currentDate)) !== auditDate
+        (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
       if (r.previousPosition == null) newOnly++;
@@ -124,8 +122,7 @@ export function PeriodByClientTab({
         continue;
       if (
         auditDate !== "all" &&
-        r.currentDate &&
-        fmtIsoDateET(new Date(r.currentDate)) !== auditDate
+        (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
