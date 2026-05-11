@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Select,
@@ -95,6 +95,17 @@ function filterComparisonOnly(rows: PeriodRow[]): PeriodRow[] {
     if (r.previousPosition != null) keywordsWithPrev.add(r.keywordId);
   }
   return rows.filter((r) => keywordsWithPrev.has(r.keywordId));
+}
+
+/* Keep only rows whose Current audit matches the picked date.
+   `date` is a YYYY-MM-DD prefix; `currentDate` is the raw ISO timestamp,
+   so we compare in ET via fmtIsoDateET to avoid the same TZ-shift bug
+   that displayed "Apr 17" rows as "Apr 18". */
+function filterByCurrentDate(rows: PeriodRow[], date: string): PeriodRow[] {
+  if (date === "all" || !date) return rows;
+  return rows.filter(
+    (r) => r.currentDate && fmtIsoDateET(new Date(r.currentDate)) === date,
+  );
 }
 
 function pivotRows(rows: PeriodRow[]): PivotRow[] {
@@ -430,6 +441,7 @@ export default function Rankings() {
     null,
   );
   const [comparisonOnly, setComparisonOnly] = useState(false);
+  const [auditDate, setAuditDate] = useState<string>("all");
 
   const effectivePeriod: Period =
     compareMode === "lifetime" ? "lifetime" : period;
@@ -485,6 +497,26 @@ export default function Rankings() {
   const label = periodLabel(effectivePeriod);
   const hasRows = (periodData?.rows?.length ?? 0) > 0;
 
+  /* Distinct Current-audit dates in ET, newest first. Used by the audit-date
+     dropdown so the operator can drill into one specific audit run. */
+  const auditDates = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const r of periodData?.rows ?? []) {
+      if (r.currentDate) set.add(fmtIsoDateET(new Date(r.currentDate)));
+    }
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [periodData]);
+
+  /* Build the row set the page (and downloads) actually use. Stacks
+     audit-date filter then comparison-only filter. */
+  const filteredRows = useMemo<PeriodRow[]>(() => {
+    let rs = periodData?.rows ?? [];
+    rs = filterByCurrentDate(rs, auditDate);
+    if (comparisonOnly) rs = filterComparisonOnly(rs);
+    return rs;
+  }, [periodData, auditDate, comparisonOnly]);
+  const hasFilteredRows = filteredRows.length > 0;
+
   return (
     <div className="space-y-5">
       {/* Page header */}
@@ -501,6 +533,20 @@ export default function Rankings() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={auditDate} onValueChange={setAuditDate}>
+            <SelectTrigger className="w-44 h-9 text-sm">
+              <SelectValue placeholder="Audit date" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All audits</SelectItem>
+              {auditDates.map((d, i) => (
+                <SelectItem key={d} value={d}>
+                  {fmtDayET(d)}
+                  {i === 0 ? " (latest)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             variant={comparisonOnly ? "default" : "outline"}
             size="sm"
@@ -515,17 +561,14 @@ export default function Rankings() {
             variant="outline"
             size="sm"
             className="gap-1.5 border-slate-300 font-semibold"
-            disabled={!hasRows}
-            onClick={() => {
-              const rows = comparisonOnly
-                ? filterComparisonOnly(periodData!.rows)
-                : periodData!.rows;
+            disabled={!hasFilteredRows}
+            onClick={() =>
               exportRankingsCSV(
-                rows,
+                filteredRows,
                 effectivePeriod,
                 periodData?.window ?? null,
-              );
-            }}
+              )
+            }
           >
             <Download className="w-3.5 h-3.5" /> CSV
           </Button>
@@ -533,18 +576,15 @@ export default function Rankings() {
             variant="outline"
             size="sm"
             className="gap-1.5 border-red-300 text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
-            disabled={!hasRows}
-            onClick={() => {
-              const rows = comparisonOnly
-                ? filterComparisonOnly(periodData!.rows)
-                : periodData!.rows;
+            disabled={!hasFilteredRows}
+            onClick={() =>
               exportRankingsPDF(
-                rows,
+                filteredRows,
                 effectivePeriod,
                 label.long,
                 periodData?.window ?? null,
-              );
-            }}
+              )
+            }
           >
             <FileDown className="w-3.5 h-3.5" /> PDF
           </Button>
@@ -691,6 +731,7 @@ export default function Rankings() {
         businessId={selectedBusinessId}
         aeoPlanId={selectedCampaignId}
         comparisonOnly={comparisonOnly}
+        auditDate={auditDate}
       />
     </div>
   );

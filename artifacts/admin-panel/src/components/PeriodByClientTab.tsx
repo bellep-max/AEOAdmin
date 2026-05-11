@@ -2,14 +2,14 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Building2, Search, Clock } from "lucide-react";
+import { Building2, Search } from "lucide-react";
 import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
   fmtShortET,
+  fmtIsoDateET,
   periodLabel,
   PLATFORM_ORDER,
   PLATFORM_COLORS,
@@ -27,6 +27,9 @@ interface Props {
      "has comparison" rule). State is owned by the parent so CSV/PDF
      exports respect the same toggle. */
   comparisonOnly?: boolean;
+  /* "all" or a YYYY-MM-DD string (ET-anchored). When set, only keywords
+     whose Current audit landed on that ET calendar day are shown. */
+  auditDate?: string;
 }
 
 interface CampaignGroup {
@@ -73,9 +76,9 @@ export function PeriodByClientTab({
   businessId,
   aeoPlanId,
   comparisonOnly = false,
+  auditDate = "all",
 }: Props) {
   const [search, setSearch] = useState("");
-  const [latestOnly, setLatestOnly] = useState(false);
 
   const { data, isLoading } = usePeriodComparison({
     period,
@@ -85,27 +88,23 @@ export function PeriodByClientTab({
   });
   const label = periodLabel(period);
 
-  const latestDate = useMemo(() => {
-    if (!data?.rows) return null;
-    let max: string | null = null;
-    for (const r of data.rows) {
-      if (r.currentDate && (!max || r.currentDate > max)) max = r.currentDate;
-    }
-    return max;
-  }, [data]);
-
   const filterCounts = useMemo(() => {
     let comparable = 0;
     let newOnly = 0;
     for (const r of data?.rows ?? []) {
       if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase()))
         continue;
-      if (latestOnly && latestDate && r.currentDate !== latestDate) continue;
+      if (
+        auditDate !== "all" &&
+        r.currentDate &&
+        fmtIsoDateET(new Date(r.currentDate)) !== auditDate
+      )
+        continue;
       if (r.previousPosition == null) newOnly++;
       else comparable++;
     }
     return { comparable, newOnly, total: comparable + newOnly };
-  }, [data, search, latestOnly, latestDate]);
+  }, [data, search, auditDate]);
 
   /* Loose rule: a keyword is "comparable" if AT LEAST ONE platform has a
      prior rank. Build the set once per data change so the per-row filter
@@ -123,7 +122,12 @@ export function PeriodByClientTab({
     for (const r of data?.rows ?? []) {
       if (search && !r.keywordText.toLowerCase().includes(search.toLowerCase()))
         continue;
-      if (latestOnly && latestDate && r.currentDate !== latestDate) continue;
+      if (
+        auditDate !== "all" &&
+        r.currentDate &&
+        fmtIsoDateET(new Date(r.currentDate)) !== auditDate
+      )
+        continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
@@ -152,7 +156,7 @@ export function PeriodByClientTab({
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase()),
     );
-  }, [data, search, latestOnly, latestDate, comparisonOnly, keywordsWithPrev]);
+  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev]);
 
   if (isLoading) {
     return (
@@ -183,17 +187,6 @@ export function PeriodByClientTab({
             className="pl-9"
           />
         </div>
-        {latestDate && (
-          <Button
-            variant={latestOnly ? "default" : "outline"}
-            size="sm"
-            className="gap-1.5 h-9"
-            onClick={() => setLatestOnly(!latestOnly)}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            Latest run ({fmtShortET(latestDate)})
-          </Button>
-        )}
         {comparisonOnly && filterCounts.total > 0 && (
           <span className="text-xs text-muted-foreground">
             Showing {filterCounts.comparable} of {filterCounts.total}
