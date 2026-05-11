@@ -64,6 +64,7 @@ interface PivotRow {
   chatgptPrevDate: string;
   chatgptCurr: string;
   chatgptCurrDate: string;
+  chatgptCurrVariant: string;
   chatgptChange: string;
   chatgptStatus: string;
   geminiFirst: string;
@@ -72,6 +73,7 @@ interface PivotRow {
   geminiPrevDate: string;
   geminiCurr: string;
   geminiCurrDate: string;
+  geminiCurrVariant: string;
   geminiChange: string;
   geminiStatus: string;
   perplexityFirst: string;
@@ -80,6 +82,7 @@ interface PivotRow {
   perplexityPrevDate: string;
   perplexityCurr: string;
   perplexityCurrDate: string;
+  perplexityCurrVariant: string;
   perplexityChange: string;
   perplexityStatus: string;
 }
@@ -128,6 +131,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         chatgptPrevDate: dt(g("chatgpt")?.previousDate),
         chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
         chatgptCurrDate: dt(g("chatgpt")?.currentDate),
+        chatgptCurrVariant: g("chatgpt")?.currentVariant ?? "",
         chatgptChange: chg(g("chatgpt")?.change ?? null),
         chatgptStatus: g("chatgpt")?.status ?? "—",
         geminiFirst: pos(g("gemini")?.firstPosition ?? null),
@@ -136,6 +140,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         geminiPrevDate: dt(g("gemini")?.previousDate),
         geminiCurr: pos(g("gemini")?.currentPosition ?? null),
         geminiCurrDate: dt(g("gemini")?.currentDate),
+        geminiCurrVariant: g("gemini")?.currentVariant ?? "",
         geminiChange: chg(g("gemini")?.change ?? null),
         geminiStatus: g("gemini")?.status ?? "—",
         perplexityFirst: pos(g("perplexity")?.firstPosition ?? null),
@@ -144,6 +149,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         perplexityPrevDate: dt(g("perplexity")?.previousDate),
         perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
         perplexityCurrDate: dt(g("perplexity")?.currentDate),
+        perplexityCurrVariant: g("perplexity")?.currentVariant ?? "",
         perplexityChange: chg(g("perplexity")?.change ?? null),
         perplexityStatus: g("perplexity")?.status ?? "—",
       };
@@ -187,6 +193,7 @@ function exportRankingsCSV(
     "ChatGPT Previous Date",
     "ChatGPT Current",
     "ChatGPT Current Date",
+    "ChatGPT Current Variant",
     "ChatGPT Change",
     "ChatGPT Status",
     "Gemini First",
@@ -195,6 +202,7 @@ function exportRankingsCSV(
     "Gemini Previous Date",
     "Gemini Current",
     "Gemini Current Date",
+    "Gemini Current Variant",
     "Gemini Change",
     "Gemini Status",
     "Perplexity First",
@@ -203,6 +211,7 @@ function exportRankingsCSV(
     "Perplexity Previous Date",
     "Perplexity Current",
     "Perplexity Current Date",
+    "Perplexity Current Variant",
     "Perplexity Change",
     "Perplexity Status",
   ];
@@ -219,6 +228,7 @@ function exportRankingsCSV(
       esc(r.chatgptPrevDate),
       esc(r.chatgptCurr),
       esc(r.chatgptCurrDate),
+      esc(r.chatgptCurrVariant),
       esc(r.chatgptChange),
       esc(r.chatgptStatus),
       esc(r.geminiFirst),
@@ -227,6 +237,7 @@ function exportRankingsCSV(
       esc(r.geminiPrevDate),
       esc(r.geminiCurr),
       esc(r.geminiCurrDate),
+      esc(r.geminiCurrVariant),
       esc(r.geminiChange),
       esc(r.geminiStatus),
       esc(r.perplexityFirst),
@@ -235,6 +246,7 @@ function exportRankingsCSV(
       esc(r.perplexityPrevDate),
       esc(r.perplexityCurr),
       esc(r.perplexityCurrDate),
+      esc(r.perplexityCurrVariant),
       esc(r.perplexityChange),
       esc(r.perplexityStatus),
     ].join(","),
