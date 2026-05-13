@@ -794,12 +794,14 @@ router.get("/period-comparison", async (req, res) => {
 
     res.json({
       period,
-      window: {
-        currentStart: curStart,
-        currentEnd: curEnd,
-        previousStart: prevStart,
-        previousEnd: prevEnd,
-      },
+      window: isLifetime
+        ? null
+        : {
+            currentStart: curStart,
+            currentEnd: curEnd,
+            previousStart: prevStart,
+            previousEnd: prevEnd,
+          },
       rows,
     });
   } catch (err) {
