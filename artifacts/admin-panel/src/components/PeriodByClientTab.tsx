@@ -365,17 +365,6 @@ export function PeriodByClientTab({
                                 </div>
                                 <div className="col-span-4" />
                               </div>
-                              {p.currentVariant ? (
-                                <div className="grid grid-cols-12 gap-2 text-[10px] text-muted-foreground mt-0.5 italic">
-                                  <div className="col-span-2" />
-                                  <div
-                                    className="col-span-10 truncate"
-                                    title={p.currentVariant}
-                                  >
-                                    variant: {p.currentVariant}
-                                  </div>
-                                </div>
-                              ) : null}
                             </div>
                           ))}
                         </div>

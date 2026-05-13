@@ -64,7 +64,6 @@ interface PivotRow {
   chatgptPrevDate: string;
   chatgptCurr: string;
   chatgptCurrDate: string;
-  chatgptCurrVariant: string;
   chatgptChange: string;
   chatgptStatus: string;
   geminiFirst: string;
@@ -73,7 +72,6 @@ interface PivotRow {
   geminiPrevDate: string;
   geminiCurr: string;
   geminiCurrDate: string;
-  geminiCurrVariant: string;
   geminiChange: string;
   geminiStatus: string;
   perplexityFirst: string;
@@ -82,7 +80,6 @@ interface PivotRow {
   perplexityPrevDate: string;
   perplexityCurr: string;
   perplexityCurrDate: string;
-  perplexityCurrVariant: string;
   perplexityChange: string;
   perplexityStatus: string;
 }
@@ -140,7 +137,6 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         chatgptPrevDate: dt(g("chatgpt")?.previousDate),
         chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
         chatgptCurrDate: dt(g("chatgpt")?.currentDate),
-        chatgptCurrVariant: g("chatgpt")?.currentVariant ?? "",
         chatgptChange: chg(g("chatgpt")?.change ?? null),
         chatgptStatus: g("chatgpt")?.status ?? "—",
         geminiFirst: pos(g("gemini")?.firstPosition ?? null),
@@ -149,7 +145,6 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         geminiPrevDate: dt(g("gemini")?.previousDate),
         geminiCurr: pos(g("gemini")?.currentPosition ?? null),
         geminiCurrDate: dt(g("gemini")?.currentDate),
-        geminiCurrVariant: g("gemini")?.currentVariant ?? "",
         geminiChange: chg(g("gemini")?.change ?? null),
         geminiStatus: g("gemini")?.status ?? "—",
         perplexityFirst: pos(g("perplexity")?.firstPosition ?? null),
@@ -158,7 +153,6 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         perplexityPrevDate: dt(g("perplexity")?.previousDate),
         perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
         perplexityCurrDate: dt(g("perplexity")?.currentDate),
-        perplexityCurrVariant: g("perplexity")?.currentVariant ?? "",
         perplexityChange: chg(g("perplexity")?.change ?? null),
         perplexityStatus: g("perplexity")?.status ?? "—",
       };
@@ -185,10 +179,29 @@ function buildSubtitle(label: string, window: PeriodWindow | null): string {
   return `${label} · Current: ${cur} · Compared with: ${prev}`;
 }
 
+interface ExportFilters {
+  clientName: string | null;
+  businessName: string | null;
+  campaignName: string | null;
+  auditDate: string | null;
+  comparisonOnly: boolean;
+}
+
+function buildFiltersLine(f: ExportFilters): string | null {
+  const parts: string[] = [];
+  if (f.clientName) parts.push(`Client = ${f.clientName}`);
+  if (f.businessName) parts.push(`Business = ${f.businessName}`);
+  if (f.campaignName) parts.push(`Campaign = ${f.campaignName}`);
+  if (f.auditDate) parts.push(`Audit date = ${fmtDayET(f.auditDate)}`);
+  if (f.comparisonOnly) parts.push("Comparison only");
+  return parts.length > 0 ? `Filters: ${parts.join(" · ")}` : null;
+}
+
 function exportRankingsCSV(
   rows: PeriodRow[],
   label: string,
   window: PeriodWindow | null,
+  filters: ExportFilters,
 ) {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const headers = [
@@ -202,7 +215,6 @@ function exportRankingsCSV(
     "ChatGPT Previous Date",
     "ChatGPT Current",
     "ChatGPT Current Date",
-    "ChatGPT Current Variant",
     "ChatGPT Change",
     "ChatGPT Status",
     "Gemini First",
@@ -211,7 +223,6 @@ function exportRankingsCSV(
     "Gemini Previous Date",
     "Gemini Current",
     "Gemini Current Date",
-    "Gemini Current Variant",
     "Gemini Change",
     "Gemini Status",
     "Perplexity First",
@@ -220,7 +231,6 @@ function exportRankingsCSV(
     "Perplexity Previous Date",
     "Perplexity Current",
     "Perplexity Current Date",
-    "Perplexity Current Variant",
     "Perplexity Change",
     "Perplexity Status",
   ];
@@ -237,7 +247,6 @@ function exportRankingsCSV(
       esc(r.chatgptPrevDate),
       esc(r.chatgptCurr),
       esc(r.chatgptCurrDate),
-      esc(r.chatgptCurrVariant),
       esc(r.chatgptChange),
       esc(r.chatgptStatus),
       esc(r.geminiFirst),
@@ -246,7 +255,6 @@ function exportRankingsCSV(
       esc(r.geminiPrevDate),
       esc(r.geminiCurr),
       esc(r.geminiCurrDate),
-      esc(r.geminiCurrVariant),
       esc(r.geminiChange),
       esc(r.geminiStatus),
       esc(r.perplexityFirst),
@@ -255,18 +263,19 @@ function exportRankingsCSV(
       esc(r.perplexityPrevDate),
       esc(r.perplexityCurr),
       esc(r.perplexityCurrDate),
-      esc(r.perplexityCurrVariant),
       esc(r.perplexityChange),
       esc(r.perplexityStatus),
     ].join(","),
   );
-  /* Two metadata rows above the header so Mary can see the comparison
-     period in Excel without parsing the filename. Spreadsheets render
-     them as plain rows in column A; auto-filter still works on the
-     header row at line 3. */
+  /* Metadata rows above the header so Mary can see the comparison period
+     and active filters in Excel without parsing the filename. Spreadsheets
+     render them as plain rows in column A. */
   const subtitle = buildSubtitle(label, window);
+  const filtersLine = buildFiltersLine(filters);
   const generated = `Generated ${fmtDateTimeET(new Date())} ET`;
-  const meta = [esc(`Rankings — ${subtitle}`), esc(generated)];
+  const meta = [esc(`Rankings — ${subtitle}`)];
+  if (filtersLine) meta.push(esc(filtersLine));
+  meta.push(esc(generated));
   const csv = [...meta, "", headers.join(","), ...lines].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -285,13 +294,16 @@ function exportRankingsPDF(
   label: string,
   periodTitle: string,
   window: PeriodWindow | null,
+  filters: ExportFilters,
 ) {
+  const filtersLine = buildFiltersLine(filters);
+  const headerBandHeight = filtersLine ? 30 : 24;
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
   doc.setFillColor(17, 24, 39);
-  doc.rect(0, 0, pageW, 24, "F");
+  doc.rect(0, 0, pageW, headerBandHeight, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
@@ -303,6 +315,10 @@ function exportRankingsPDF(
   doc.text(`Generated: ${fmtDateTimeET(new Date())} ET`, pageW - 10, 18, {
     align: "right",
   });
+  if (filtersLine) {
+    doc.setTextColor(200, 215, 240);
+    doc.text(filtersLine, 10, 25);
+  }
 
   const pivoted = pivotRows(rows);
   const grouped = new Map<string, PivotRow[]>();
@@ -312,7 +328,7 @@ function exportRankingsPDF(
     grouped.get(key)!.push(r);
   }
 
-  let startY = 30;
+  let startY = headerBandHeight + 6;
   const footerFn = (data: { pageNumber: number }) => {
     const pages = (
       doc as unknown as { internal: { getNumberOfPages: () => number } }
@@ -515,6 +531,38 @@ export default function Rankings() {
   }, [periodData, auditDate, comparisonOnly]);
   const hasFilteredRows = filteredRows.length > 0;
 
+  const exportFilters: ExportFilters = useMemo(
+    () => ({
+      clientName:
+        selectedClientId === null
+          ? null
+          : ((allClients ?? []).find((c) => c.id === selectedClientId)
+              ?.businessName ?? null),
+      businessName:
+        selectedBusinessId === null
+          ? null
+          : ((allBusinesses ?? []).find((b) => b.id === selectedBusinessId)
+              ?.name ?? null),
+      campaignName:
+        selectedCampaignId === null
+          ? null
+          : ((allPlans ?? []).find((p) => p.id === selectedCampaignId)?.name ??
+            null),
+      auditDate: auditDate === "all" ? null : auditDate,
+      comparisonOnly,
+    }),
+    [
+      selectedClientId,
+      selectedBusinessId,
+      selectedCampaignId,
+      auditDate,
+      comparisonOnly,
+      allClients,
+      allBusinesses,
+      allPlans,
+    ],
+  );
+
   return (
     <div className="space-y-5">
       {/* Page header */}
@@ -551,6 +599,7 @@ export default function Rankings() {
                 filteredRows,
                 effectivePeriod,
                 periodData?.window ?? null,
+                exportFilters,
               )
             }
           >
@@ -567,6 +616,7 @@ export default function Rankings() {
                 effectivePeriod,
                 label.long,
                 periodData?.window ?? null,
+                exportFilters,
               )
             }
           >
