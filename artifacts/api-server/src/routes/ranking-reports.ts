@@ -114,6 +114,11 @@ router.post("/", requireExecutorToken, async (req, res) => {
         ? body.date
         : null;
 
+    /* timestamp without time zone needs a Date for Drizzle; importers
+       and the python pusher send an ISO string. */
+    const ts: Date | null =
+      body.timestamp ? new Date(body.timestamp) : null;
+
     const existing = await db
       .select({ id: rankingReportsTable.id })
       .from(rankingReportsTable)
@@ -139,7 +144,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
           searchAddress: body.searchAddress ?? null,
           keyword: body.keyword ?? null,
           keywordVariant: body.keywordVariant ?? null,
-          timestamp: body.timestamp ?? null,
+          timestamp: ts,
           date: body.date ?? null,
           platform: platform,
           deviceIdentifier: body.deviceIdentifier ?? null,
@@ -187,7 +192,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         searchAddress: body.searchAddress ?? null,
         keyword: body.keyword ?? null,
         keywordVariant: body.keywordVariant ?? null,
-        timestamp: body.timestamp ?? null,
+        timestamp: ts,
         date: body.date ?? null,
         platform: platform,
         ...(body.createdAt ? { createdAt: new Date(body.createdAt) } : {}),

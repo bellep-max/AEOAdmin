@@ -194,11 +194,15 @@ for (let i = 1; i < allRows.length; i++) {
     createdAt:        dateAuditRunCreatedAt,
   };
 
-  try { await postJson("/api/audit-logs", auditPayload); auditOk++; }
-  catch (e) { auditFail++; if (failures.length < 5) failures.push(`audit row ${i}: ${e.message}`); }
+  if (process.env.SKIP_AUDIT_LOGS !== "1") {
+    try { await postJson("/api/audit-logs", auditPayload); auditOk++; }
+    catch (e) { auditFail++; if (failures.length < 5) failures.push(`audit row ${i}: ${e.message}`); }
+  }
 
-  try { await postJson("/api/ranking-reports", rankingPayload); rankOk++; }
-  catch (e) { rankFail++; if (failures.length < 10) failures.push(`ranking row ${i}: ${e.message}`); }
+  if (process.env.SKIP_RANKING_REPORTS !== "1") {
+    try { await postJson("/api/ranking-reports", rankingPayload); rankOk++; }
+    catch (e) { rankFail++; if (failures.length < 10) failures.push(`ranking row ${i}: ${e.message}`); }
+  }
 
   if (i % 50 === 0) console.log(`  progress: ${i} / ${allRows.length - 1}`);
 }
