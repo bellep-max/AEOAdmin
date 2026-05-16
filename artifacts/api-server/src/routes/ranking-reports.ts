@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import {
   rankingReportsTable,
   clientsTable,
@@ -916,6 +916,238 @@ router.get("/initial-vs-current", async (req, res) => {
     res.json(comparisons);
   } catch (err) {
     req.log.error({ err }, "Error fetching initial vs current rankings");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /api/ranking-reports/bi-weekly-report?clientId=&businessId=&aeoPlanId=
+   Master report for the bi-weekly cadence: current batch summary, old-file
+   status, ranking trend across combos with 2+ prior runs, and initial-rank
+   distribution for combos new to the current batch. */
+router.get("/bi-weekly-report", async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : null;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : null;
+
+    /* Filter sub-clause and params shared by every CTE. The text-based
+       date column requires explicit ::date casts for arithmetic. */
+    const conds: string[] = ["date IS NOT NULL"];
+    const params: (number | null)[] = [];
+    if (clientId !== null) {
+      params.push(clientId);
+      conds.push(`client_id = $${params.length}`);
+    }
+    if (businessId !== null) {
+      params.push(businessId);
+      conds.push(`business_id = $${params.length}`);
+    }
+    if (aeoPlanId !== null) {
+      params.push(aeoPlanId);
+      conds.push(`keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`);
+    }
+    const where = conds.join(" AND ");
+
+    /* 1) Identify current batch = newest distinct date in scope. */
+    const batchesRes = await pool.query<{ date: string; combos: string }>(
+      `SELECT date, COUNT(*) AS combos FROM ranking_reports WHERE ${where}
+       GROUP BY date ORDER BY date DESC`,
+      params,
+    );
+    if (batchesRes.rows.length === 0) {
+      return res.json({
+        currentBatch: null,
+        oldFile: null,
+        rankingTrend: null,
+        initialRanking: null,
+        allBatches: [],
+      });
+    }
+    const currentBatchDate = batchesRes.rows[0].date;
+    const allBatches = batchesRes.rows.map((r) => ({
+      date: r.date,
+      combos: Number(r.combos),
+    }));
+    const nextDue = new Date(currentBatchDate);
+    nextDue.setUTCDate(nextDue.getUTCDate() + 14);
+    const nextDueDate = nextDue.toISOString().slice(0, 10);
+
+    const currentParamIdx = params.length + 1;
+    const paramsWithBatch = [...params, currentBatchDate];
+
+    /* Section A — current batch summary */
+    const sA = await pool.query(
+      `SELECT
+         COUNT(DISTINCT (keyword_id, lower(platform))) AS unique_combos,
+         COUNT(DISTINCT business_id) AS unique_businesses,
+         COUNT(DISTINCT client_id)   AS unique_clients,
+         COUNT(*) FILTER (WHERE NOT EXISTS (
+           SELECT 1 FROM ranking_reports r2
+           WHERE r2.keyword_id = ranking_reports.keyword_id
+             AND lower(r2.platform) = lower(ranking_reports.platform)
+             AND r2.date < ranking_reports.date
+         )) AS new_combos
+       FROM ranking_reports WHERE ${where} AND date = $${currentParamIdx}`,
+      paramsWithBatch,
+    );
+    const sessions = await pool.query<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM audit_logs
+       WHERE to_char(((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') = $1
+         ${clientId !== null ? `AND client_id = $2` : ""}
+         ${businessId !== null ? `AND business_id = $${clientId !== null ? 3 : 2}` : ""}`,
+      [
+        currentBatchDate,
+        ...(clientId !== null ? [clientId] : []),
+        ...(businessId !== null ? [businessId] : []),
+      ],
+    );
+    const sectA = sA.rows[0];
+    const sectionA = {
+      batchDate: currentBatchDate,
+      nextDueDate,
+      totalSessions: Number(sessions.rows[0].n),
+      uniqueCombos: Number(sectA.unique_combos),
+      uniqueBusinesses: Number(sectA.unique_businesses),
+      uniqueClients: Number(sectA.unique_clients),
+      newCombos: Number(sectA.new_combos),
+      auditType:
+        Number(sectA.new_combos) === Number(sectA.unique_combos)
+          ? "First-Ever Audit"
+          : "Recurring Audit",
+    };
+
+    /* Section B — old file: combos from batches before the current one */
+    const sB = await pool.query(
+      `WITH old_combos AS (
+         SELECT keyword_id, lower(platform) AS platform,
+                MIN(date::date) AS first_date,
+                MAX(date::date) AS last_date,
+                BOOL_OR(status = 'error') AS had_error
+         FROM ranking_reports WHERE ${where} AND date < $${currentParamIdx}
+         GROUP BY keyword_id, lower(platform)
+       )
+       SELECT
+         COUNT(*) AS total_old,
+         COUNT(*) FILTER (WHERE last_date >= (CURRENT_DATE - INTERVAL '14 days')) AS on_schedule,
+         COUNT(*) FILTER (WHERE last_date <  (CURRENT_DATE - INTERVAL '14 days')) AS still_behind,
+         COUNT(*) FILTER (WHERE had_error) AS with_errors,
+         MIN(first_date)::text AS earliest_date,
+         MAX(last_date)::text  AS latest_old_date
+       FROM old_combos`,
+      paramsWithBatch,
+    );
+    const sBBatches = await pool.query<{
+      expected_batch_date: string;
+      combos: string;
+    }>(
+      `WITH old_combos AS (
+         SELECT keyword_id, lower(platform) AS platform,
+                MAX(date::date) AS last_date
+         FROM ranking_reports WHERE ${where} AND date < $${currentParamIdx}
+         GROUP BY keyword_id, lower(platform)
+       )
+       SELECT (last_date + INTERVAL '14 days')::date::text AS expected_batch_date,
+              COUNT(*) AS combos
+       FROM old_combos
+       WHERE last_date < (CURRENT_DATE - INTERVAL '14 days')
+       GROUP BY expected_batch_date
+       ORDER BY expected_batch_date`,
+      paramsWithBatch,
+    );
+    const sBr = sB.rows[0];
+    const sectionB = {
+      earliestDate: sBr.earliest_date,
+      latestOldDate: sBr.latest_old_date,
+      totalOldCombos: Number(sBr.total_old),
+      onSchedule: Number(sBr.on_schedule),
+      stillBehindTotal: Number(sBr.still_behind),
+      withErrors: Number(sBr.with_errors),
+      stillBehindByBatch: sBBatches.rows.map((r) => ({
+        expectedBatchDate: r.expected_batch_date,
+        combos: Number(r.combos),
+      })),
+    };
+
+    /* Section C — ranking trend for OLD-FILE combos with 2+ runs */
+    const sC = await pool.query(
+      `WITH old_runs AS (
+         SELECT keyword_id, lower(platform) AS platform,
+                array_agg(ranking_position ORDER BY date DESC, id DESC) AS ranks_desc
+         FROM ranking_reports WHERE ${where} AND date < $${currentParamIdx}
+         GROUP BY keyword_id, lower(platform)
+         HAVING COUNT(*) >= 2
+       )
+       SELECT
+         COUNT(*) FILTER (WHERE ranks_desc[1] IS NOT NULL AND ranks_desc[2] IS NOT NULL AND ranks_desc[1] < ranks_desc[2]) AS improved,
+         COUNT(*) FILTER (WHERE ranks_desc[1] IS NOT NULL AND ranks_desc[2] IS NOT NULL AND ranks_desc[1] > ranks_desc[2]) AS declined,
+         COUNT(*) FILTER (WHERE ranks_desc[1] IS NOT NULL AND ranks_desc[2] IS NOT NULL AND ranks_desc[1] = ranks_desc[2]) AS no_change,
+         COUNT(*) FILTER (WHERE ranks_desc[1] IS NULL) AS not_ranked,
+         COUNT(*) AS eligible_total
+       FROM old_runs`,
+      paramsWithBatch,
+    );
+    const sCr = sC.rows[0];
+    const sectionC = {
+      eligibleCombos: Number(sCr.eligible_total),
+      improved: Number(sCr.improved),
+      declined: Number(sCr.declined),
+      noChange: Number(sCr.no_change),
+      notRanked: Number(sCr.not_ranked),
+    };
+
+    /* Section D — initial-rank distribution for combos NEW to the current batch.
+       Re-use the same filter conditions; column names are unprefixed in the
+       where-clause so they resolve against ranking_reports cleanly. */
+    const sD = await pool.query(
+      `WITH new_combos AS (
+         SELECT ranking_position FROM ranking_reports
+         WHERE ${where}
+           AND date = $${currentParamIdx}
+           AND NOT EXISTS (
+             SELECT 1 FROM ranking_reports r2
+             WHERE r2.keyword_id = ranking_reports.keyword_id
+               AND lower(r2.platform) = lower(ranking_reports.platform)
+               AND r2.date < ranking_reports.date
+           )
+       )
+       SELECT
+         COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 3) AS top3,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 4 AND 10) AS top4_10,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 11 AND 30) AS top11_30,
+         COUNT(*) FILTER (WHERE ranking_position > 30) AS beyond,
+         COUNT(*) FILTER (WHERE ranking_position IS NULL OR ranking_position = 0) AS not_ranked
+       FROM new_combos`,
+      paramsWithBatch,
+    );
+    const sDr = sD.rows[0];
+    const total = Number(sDr.total) || 1;
+    const sectionD = {
+      totalNewCombos: Number(sDr.total),
+      buckets: {
+        top3: { count: Number(sDr.top3), pct: Number(((Number(sDr.top3) / total) * 100).toFixed(1)) },
+        top4to10: { count: Number(sDr.top4_10), pct: Number(((Number(sDr.top4_10) / total) * 100).toFixed(1)) },
+        top11to30: { count: Number(sDr.top11_30), pct: Number(((Number(sDr.top11_30) / total) * 100).toFixed(1)) },
+        beyond30: { count: Number(sDr.beyond), pct: Number(((Number(sDr.beyond) / total) * 100).toFixed(1)) },
+        notRanked: { count: Number(sDr.not_ranked), pct: Number(((Number(sDr.not_ranked) / total) * 100).toFixed(1)) },
+      },
+    };
+
+    res.json({
+      currentBatch: sectionA,
+      oldFile: sectionB,
+      rankingTrend: sectionC,
+      initialRanking: sectionD,
+      allBatches,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error building bi-weekly report");
     res.status(500).json({ error: "Internal server error" });
   }
 });
