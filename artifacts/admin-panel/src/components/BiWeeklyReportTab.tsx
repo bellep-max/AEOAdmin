@@ -50,6 +50,94 @@ interface BiWeeklyReport {
     };
   } | null;
   allBatches: Array<{ date: string; combos: number }>;
+  details?: {
+    oldCombos: OldComboRow[];
+    newCombos: NewComboRow[];
+    rankingTrendRows: TrendRow[];
+    errors: ErrorRow[];
+    platformOld: PlatformOldRow[];
+    platformNew: PlatformNewRow[];
+    platformTrend: PlatformTrendRow[];
+  };
+}
+
+interface OldComboRow {
+  client: string | null;
+  business: string | null;
+  keyword: string;
+  platform: string;
+  first_audit: string;
+  latest_audit: string;
+  total_runs: number;
+  first_rank: number | null;
+  latest_rank: number | null;
+  error_count: number;
+  next_due: string;
+  status_class: "on_schedule" | "overdue";
+  days_overdue: number;
+}
+
+interface NewComboRow {
+  client: string | null;
+  business: string | null;
+  keyword: string | null;
+  platform: string;
+  audit_date: string;
+  initial_rank: number | null;
+  out_of_total: string | null;
+  status: string | null;
+  next_due: string;
+  has_prior: boolean;
+}
+
+interface TrendRow {
+  client: string | null;
+  keyword: string;
+  platform: string;
+  first_audit: string;
+  first_rank: number | null;
+  latest_audit: string;
+  latest_rank: number | null;
+  rank_change: number | null;
+  trend: "improved" | "declined" | "no_change" | "not_ranked";
+}
+
+interface ErrorRow {
+  client: string | null;
+  keyword: string | null;
+  platform: string;
+  error_date: string;
+  duration: number | null;
+  has_response: boolean;
+  recovered: boolean;
+  error_message: string | null;
+}
+
+interface PlatformOldRow {
+  platform: string;
+  total_combos: number;
+  in_top3: number;
+  in_top5: number;
+  avg_rank: number | null;
+  not_ranked: number;
+}
+
+interface PlatformNewRow {
+  platform: string;
+  total_combos: number;
+  in_top3: number;
+  in_top5: number;
+  avg_rank: number | null;
+  rank_26_plus: number;
+}
+
+interface PlatformTrendRow {
+  platform: string;
+  total: number;
+  improved: number;
+  declined: number;
+  no_change: number;
+  not_ranked: number;
 }
 
 interface Props {
@@ -343,6 +431,25 @@ export function BiWeeklyReportTab({ clientId, businessId, aeoPlanId }: Props) {
         ) : null}
       </div>
 
+      {/* Detail tables — only render when payload includes details */}
+      {data.details ? (
+        <>
+          <PlatformStandingTables details={data.details} />
+          <NewCombosTable
+            rows={data.details.newCombos}
+            batchDate={currentBatch.batchDate}
+          />
+          <BehindScheduleTable
+            rows={data.details.oldCombos.filter(
+              (r) => r.status_class === "overdue",
+            )}
+          />
+          <RankingTrendTable rows={data.details.rankingTrendRows} />
+          <OldCombosTable rows={data.details.oldCombos} />
+          <ErrorsTable rows={data.details.errors} />
+        </>
+      ) : null}
+
       {/* Batch history */}
       {allBatches.length > 0 ? (
         <Card>
@@ -466,4 +573,641 @@ function RankBar({
       </div>
     </div>
   );
+}
+
+/* ─────────────── Detail tables ─────────────── */
+
+function rankBandClass(rank: number | null | undefined): string {
+  if (rank === null || rank === undefined || rank === 0)
+    return "bg-slate-100 text-slate-700";
+  if (rank <= 3) return "bg-emerald-100 text-emerald-800";
+  if (rank <= 5) return "bg-blue-100 text-blue-800";
+  if (rank <= 10) return "bg-amber-100 text-amber-800";
+  if (rank <= 25) return "bg-orange-100 text-orange-800";
+  return "bg-red-100 text-red-800";
+}
+
+function RankBadge({ rank }: { rank: number | null | undefined }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center min-w-[2rem] px-1.5 py-0.5 rounded text-xs font-semibold ${rankBandClass(
+        rank,
+      )}`}
+    >
+      {rank === null || rank === undefined || rank === 0 ? "—" : `#${rank}`}
+    </span>
+  );
+}
+
+function PlatformPill({ platform }: { platform: string }) {
+  const tone =
+    platform === "chatgpt"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : platform === "gemini"
+        ? "bg-blue-50 text-blue-700 border-blue-200"
+        : "bg-purple-50 text-purple-700 border-purple-200";
+  return (
+    <span
+      className={`text-[10px] uppercase px-1.5 py-0.5 rounded border ${tone}`}
+    >
+      {platform}
+    </span>
+  );
+}
+
+function NewCombosTable({
+  rows,
+  batchDate,
+}: {
+  rows: NewComboRow[];
+  batchDate: string;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3 bg-emerald-50/50">
+        <CardTitle className="text-sm font-semibold">
+          {fmtDayET(batchDate)} · Current Batch · {rows.length.toLocaleString()}{" "}
+          rows
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr className="text-left">
+                <Th>Client</Th>
+                <Th>Business</Th>
+                <Th>Keyword</Th>
+                <Th>Platform</Th>
+                <Th className="text-right">Initial Rank</Th>
+                <Th className="text-right">Out of</Th>
+                <Th>Status</Th>
+                <Th>Next due</Th>
+                <Th>New?</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t hover:bg-slate-50/50">
+                  <Td>{r.client ?? "—"}</Td>
+                  <Td>{r.business ?? "—"}</Td>
+                  <Td className="font-medium">{r.keyword ?? "—"}</Td>
+                  <Td>
+                    <PlatformPill platform={r.platform} />
+                  </Td>
+                  <Td className="text-right">
+                    <RankBadge rank={r.initial_rank} />
+                  </Td>
+                  <Td className="text-right text-muted-foreground">
+                    {r.out_of_total ?? "—"}
+                  </Td>
+                  <Td>
+                    <Badge
+                      variant={
+                        r.status === "success" ? "secondary" : "destructive"
+                      }
+                      className="text-[10px]"
+                    >
+                      {r.status ?? "—"}
+                    </Badge>
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.next_due)}
+                  </Td>
+                  <Td>
+                    {r.has_prior ? (
+                      <span className="text-[10px] text-muted-foreground">
+                        recurring
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-emerald-700 font-medium">
+                        first
+                      </span>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OldCombosTable({ rows }: { rows: OldComboRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3 bg-slate-50">
+        <CardTitle className="text-sm font-semibold">
+          Old Combos — {rows.length.toLocaleString()} rows
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr className="text-left">
+                <Th>Client</Th>
+                <Th>Keyword</Th>
+                <Th>Platform</Th>
+                <Th>First audit</Th>
+                <Th>Latest audit</Th>
+                <Th className="text-right">Runs</Th>
+                <Th className="text-right">First</Th>
+                <Th className="text-right">Latest</Th>
+                <Th className="text-right">Errors</Th>
+                <Th>Next due</Th>
+                <Th>Status</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr
+                  key={i}
+                  className={`border-t hover:bg-slate-50/50 ${
+                    r.status_class === "overdue" ? "bg-red-50/40" : ""
+                  }`}
+                >
+                  <Td>{r.client ?? "—"}</Td>
+                  <Td className="font-medium">{r.keyword}</Td>
+                  <Td>
+                    <PlatformPill platform={r.platform} />
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.first_audit)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.latest_audit)}
+                  </Td>
+                  <Td className="text-right">{r.total_runs}</Td>
+                  <Td className="text-right">
+                    <RankBadge rank={r.first_rank} />
+                  </Td>
+                  <Td className="text-right">
+                    <RankBadge rank={r.latest_rank} />
+                  </Td>
+                  <Td className="text-right">
+                    {r.error_count > 0 ? (
+                      <span className="text-red-600 font-semibold">
+                        {r.error_count}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">0</span>
+                    )}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.next_due)}
+                  </Td>
+                  <Td>
+                    {r.status_class === "overdue" ? (
+                      <Badge variant="destructive" className="text-[10px]">
+                        Overdue {r.days_overdue}d
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">
+                        On schedule
+                      </Badge>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BehindScheduleTable({ rows }: { rows: OldComboRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card className="border-red-200">
+      <CardHeader className="pb-3 bg-red-50">
+        <CardTitle className="text-sm font-semibold text-red-800">
+          ⚠ Behind Schedule — {rows.length.toLocaleString()} combos · Run
+          immediately
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr className="text-left">
+                <Th>Client</Th>
+                <Th>Keyword</Th>
+                <Th>Platform</Th>
+                <Th>First audit</Th>
+                <Th>Last run</Th>
+                <Th className="text-right">Was due</Th>
+                <Th className="text-right">Days overdue</Th>
+                <Th className="text-right">First rank</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr
+                  key={i}
+                  className="border-t bg-red-50/30 hover:bg-red-50/60"
+                >
+                  <Td>{r.client ?? "—"}</Td>
+                  <Td className="font-medium">{r.keyword}</Td>
+                  <Td>
+                    <PlatformPill platform={r.platform} />
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.first_audit)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.latest_audit)}
+                  </Td>
+                  <Td className="text-right text-muted-foreground">
+                    {fmtDayET(r.next_due)}
+                  </Td>
+                  <Td className="text-right">
+                    <span className="text-red-700 font-semibold">
+                      {r.days_overdue}d
+                    </span>
+                  </Td>
+                  <Td className="text-right">
+                    <RankBadge rank={r.first_rank} />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function trendComment(r: TrendRow): string {
+  if (r.first_rank === null && r.latest_rank === null)
+    return "Not found in either run";
+  if (r.latest_rank === null)
+    return `Dropped off rankings — was #${r.first_rank} on ${r.first_audit}`;
+  if (r.first_rank === null)
+    return `Appeared at #${r.latest_rank} on ${r.latest_audit}`;
+  const delta = (r.first_rank ?? 0) - (r.latest_rank ?? 0);
+  if (delta > 0)
+    return `Improved ${delta} spot${delta !== 1 ? "s" : ""}: #${r.first_rank} → #${r.latest_rank} on ${r.latest_audit}`;
+  if (delta < 0)
+    return `Dropped ${Math.abs(delta)} spot${Math.abs(delta) !== 1 ? "s" : ""}: #${r.first_rank} → #${r.latest_rank} on ${r.latest_audit}`;
+  return `No change: stayed at #${r.latest_rank}`;
+}
+
+function RankingTrendTable({ rows }: { rows: TrendRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3 bg-purple-50/50">
+        <CardTitle className="text-sm font-semibold">
+          Ranking Trend — {rows.length.toLocaleString()} combos with 2+ runs ·
+          first audit vs latest
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr className="text-left">
+                <Th>Client</Th>
+                <Th>Keyword</Th>
+                <Th>Platform</Th>
+                <Th>First audit</Th>
+                <Th className="text-right">First rank</Th>
+                <Th>Latest audit</Th>
+                <Th className="text-right">Latest rank</Th>
+                <Th className="text-right">Δ</Th>
+                <Th>Trend</Th>
+                <Th>Comment</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const trendBadge =
+                  r.trend === "improved"
+                    ? {
+                        label: "Improved",
+                        cls: "bg-emerald-100 text-emerald-800",
+                      }
+                    : r.trend === "declined"
+                      ? { label: "Declined", cls: "bg-red-100 text-red-800" }
+                      : r.trend === "no_change"
+                        ? {
+                            label: "No change",
+                            cls: "bg-slate-100 text-slate-700",
+                          }
+                        : {
+                            label: "Not ranked",
+                            cls: "bg-amber-100 text-amber-800",
+                          };
+                return (
+                  <tr key={i} className="border-t hover:bg-slate-50/50">
+                    <Td>{r.client ?? "—"}</Td>
+                    <Td className="font-medium">{r.keyword}</Td>
+                    <Td>
+                      <PlatformPill platform={r.platform} />
+                    </Td>
+                    <Td className="text-muted-foreground">
+                      {fmtDayET(r.first_audit)}
+                    </Td>
+                    <Td className="text-right">
+                      <RankBadge rank={r.first_rank} />
+                    </Td>
+                    <Td className="text-muted-foreground">
+                      {fmtDayET(r.latest_audit)}
+                    </Td>
+                    <Td className="text-right">
+                      <RankBadge rank={r.latest_rank} />
+                    </Td>
+                    <Td className="text-right">
+                      {r.rank_change === null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : r.rank_change > 0 ? (
+                        <span className="text-emerald-700 font-semibold">
+                          +{r.rank_change}
+                        </span>
+                      ) : r.rank_change < 0 ? (
+                        <span className="text-red-700 font-semibold">
+                          {r.rank_change}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
+                      )}
+                    </Td>
+                    <Td>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${trendBadge.cls}`}
+                      >
+                        {trendBadge.label}
+                      </span>
+                    </Td>
+                    <Td className="text-muted-foreground text-[11px]">
+                      {trendComment(r)}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ErrorsTable({ rows }: { rows: ErrorRow[] }) {
+  if (rows.length === 0) return null;
+  const recovered = rows.filter((r) => r.recovered).length;
+  return (
+    <Card className="border-amber-200">
+      <CardHeader className="pb-3 bg-amber-50">
+        <CardTitle className="text-sm font-semibold text-amber-900">
+          Errors — {rows.length.toLocaleString()} total ·{" "}
+          <span className="text-emerald-700">{recovered} recovered</span> ·{" "}
+          <span className="text-red-700">
+            {rows.length - recovered} unrecovered
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr className="text-left">
+                <Th>Client</Th>
+                <Th>Keyword</Th>
+                <Th>Platform</Th>
+                <Th>Date</Th>
+                <Th className="text-right">Duration</Th>
+                <Th>Response?</Th>
+                <Th>Recovered?</Th>
+                <Th>Comment</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t hover:bg-slate-50/50">
+                  <Td>{r.client ?? "—"}</Td>
+                  <Td className="font-medium">{r.keyword ?? "—"}</Td>
+                  <Td>
+                    <PlatformPill platform={r.platform} />
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {fmtDayET(r.error_date)}
+                  </Td>
+                  <Td className="text-right text-muted-foreground">
+                    {r.duration !== null ? `${r.duration.toFixed(0)}s` : "—"}
+                  </Td>
+                  <Td>
+                    <span
+                      className={
+                        r.has_response
+                          ? "text-emerald-700"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {r.has_response ? "Yes" : "No"}
+                    </span>
+                  </Td>
+                  <Td>
+                    {r.recovered ? (
+                      <span className="text-emerald-700 font-medium">
+                        Yes ✓
+                      </span>
+                    ) : (
+                      <span className="text-red-700 font-medium">No</span>
+                    )}
+                  </Td>
+                  <Td className="text-muted-foreground text-[11px] truncate max-w-[300px]">
+                    {r.error_message ?? "—"}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PlatformStandingTables({
+  details,
+}: {
+  details: NonNullable<BiWeeklyReport["details"]>;
+}) {
+  const { platformOld, platformNew, platformTrend } = details;
+  if (
+    platformOld.length === 0 &&
+    platformNew.length === 0 &&
+    platformTrend.length === 0
+  )
+    return null;
+  return (
+    <Card>
+      <CardHeader className="pb-3 bg-violet-50/50">
+        <CardTitle className="text-sm font-semibold">
+          Platform Standing — current rankings per AI platform
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        {platformOld.length > 0 ? (
+          <div>
+            <div className="text-[11px] font-semibold mb-1 text-slate-700">
+              Old File — latest rank per combo
+            </div>
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr className="text-left">
+                  <Th>Platform</Th>
+                  <Th className="text-right">Total</Th>
+                  <Th className="text-right">In Top 3</Th>
+                  <Th className="text-right">In Top 5</Th>
+                  <Th className="text-right">Avg rank (1–25)</Th>
+                  <Th className="text-right">Not ranked</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {platformOld.map((p) => (
+                  <tr key={p.platform} className="border-t">
+                    <Td>
+                      <PlatformPill platform={p.platform} />
+                    </Td>
+                    <Td className="text-right">{p.total_combos}</Td>
+                    <Td className="text-right">
+                      {p.in_top3} ({pct(p.in_top3, p.total_combos)}%)
+                    </Td>
+                    <Td className="text-right">
+                      {p.in_top5} ({pct(p.in_top5, p.total_combos)}%)
+                    </Td>
+                    <Td className="text-right font-semibold">
+                      {p.avg_rank ?? "—"}
+                    </Td>
+                    <Td className="text-right">{p.not_ranked}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {platformNew.length > 0 ? (
+          <div>
+            <div className="text-[11px] font-semibold mb-1 text-slate-700">
+              New File (current batch) — initial rankings
+            </div>
+            <table className="w-full">
+              <thead className="bg-emerald-50">
+                <tr className="text-left">
+                  <Th>Platform</Th>
+                  <Th className="text-right">Total</Th>
+                  <Th className="text-right">In Top 3</Th>
+                  <Th className="text-right">In Top 5</Th>
+                  <Th className="text-right">Avg rank (1–25)</Th>
+                  <Th className="text-right">Rank 26+</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {platformNew.map((p) => (
+                  <tr key={p.platform} className="border-t">
+                    <Td>
+                      <PlatformPill platform={p.platform} />
+                    </Td>
+                    <Td className="text-right">{p.total_combos}</Td>
+                    <Td className="text-right">
+                      {p.in_top3} ({pct(p.in_top3, p.total_combos)}%)
+                    </Td>
+                    <Td className="text-right">
+                      {p.in_top5} ({pct(p.in_top5, p.total_combos)}%)
+                    </Td>
+                    <Td className="text-right font-semibold">
+                      {p.avg_rank ?? "—"}
+                    </Td>
+                    <Td className="text-right">{p.rank_26_plus}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {platformTrend.length > 0 ? (
+          <div>
+            <div className="text-[11px] font-semibold mb-1 text-slate-700">
+              Old File — ranking trend by platform (first vs latest)
+            </div>
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr className="text-left">
+                  <Th>Platform</Th>
+                  <Th className="text-right">2+ runs</Th>
+                  <Th className="text-right text-emerald-700">Improved</Th>
+                  <Th className="text-right text-red-700">Declined</Th>
+                  <Th className="text-right text-slate-700">No change</Th>
+                  <Th className="text-right text-amber-700">Not ranked</Th>
+                  <Th className="text-right">Improvement %</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {platformTrend.map((p) => (
+                  <tr key={p.platform} className="border-t">
+                    <Td>
+                      <PlatformPill platform={p.platform} />
+                    </Td>
+                    <Td className="text-right">{p.total}</Td>
+                    <Td className="text-right text-emerald-700 font-medium">
+                      {p.improved}
+                    </Td>
+                    <Td className="text-right text-red-700 font-medium">
+                      {p.declined}
+                    </Td>
+                    <Td className="text-right">{p.no_change}</Td>
+                    <Td className="text-right text-amber-700">
+                      {p.not_ranked}
+                    </Td>
+                    <Td className="text-right font-semibold">
+                      {pct(p.improved, p.total)}%
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function pct(num: number, denom: number): string {
+  if (!denom) return "0";
+  return ((num / denom) * 100).toFixed(1);
+}
+
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th className={`px-2 py-1.5 font-semibold text-slate-700 ${className}`}>
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <td className={`px-2 py-1 ${className}`}>{children}</td>;
 }

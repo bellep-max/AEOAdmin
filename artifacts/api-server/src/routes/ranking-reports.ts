@@ -116,8 +116,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
 
     /* timestamp without time zone needs a Date for Drizzle; importers
        and the python pusher send an ISO string. */
-    const ts: Date | null =
-      body.timestamp ? new Date(body.timestamp) : null;
+    const ts: Date | null = body.timestamp ? new Date(body.timestamp) : null;
 
     const existing = await db
       .select({ id: rankingReportsTable.id })
@@ -950,7 +949,9 @@ router.get("/bi-weekly-report", async (req, res) => {
     }
     if (aeoPlanId !== null) {
       params.push(aeoPlanId);
-      conds.push(`keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`);
+      conds.push(
+        `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
+      );
     }
     const where = conds.join(" AND ");
 
@@ -1131,13 +1132,282 @@ router.get("/bi-weekly-report", async (req, res) => {
     const sectionD = {
       totalNewCombos: Number(sDr.total),
       buckets: {
-        top3: { count: Number(sDr.top3), pct: Number(((Number(sDr.top3) / total) * 100).toFixed(1)) },
-        top4to10: { count: Number(sDr.top4_10), pct: Number(((Number(sDr.top4_10) / total) * 100).toFixed(1)) },
-        top11to30: { count: Number(sDr.top11_30), pct: Number(((Number(sDr.top11_30) / total) * 100).toFixed(1)) },
-        beyond30: { count: Number(sDr.beyond), pct: Number(((Number(sDr.beyond) / total) * 100).toFixed(1)) },
-        notRanked: { count: Number(sDr.not_ranked), pct: Number(((Number(sDr.not_ranked) / total) * 100).toFixed(1)) },
+        top3: {
+          count: Number(sDr.top3),
+          pct: Number(((Number(sDr.top3) / total) * 100).toFixed(1)),
+        },
+        top4to10: {
+          count: Number(sDr.top4_10),
+          pct: Number(((Number(sDr.top4_10) / total) * 100).toFixed(1)),
+        },
+        top11to30: {
+          count: Number(sDr.top11_30),
+          pct: Number(((Number(sDr.top11_30) / total) * 100).toFixed(1)),
+        },
+        beyond30: {
+          count: Number(sDr.beyond),
+          pct: Number(((Number(sDr.beyond) / total) * 100).toFixed(1)),
+        },
+        notRanked: {
+          count: Number(sDr.not_ranked),
+          pct: Number(((Number(sDr.not_ranked) / total) * 100).toFixed(1)),
+        },
       },
     };
+
+    /* Detail tables — one query each, returned as arrays for the FE
+       to render. Heavy aggregations use window functions; keep them
+       within the same scope filter ($1..$N). */
+
+    /* Old combos detail — every (kw, platform) before current batch */
+    const oldCombosRows = await pool.query(
+      `WITH base AS (
+         SELECT rr.id, rr.keyword_id, lower(rr.platform) AS platform,
+                rr.date::date AS d, rr.ranking_position, rr.ranking_total, rr.status,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date DESC, rr.id DESC) AS rn_desc
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date < $${currentParamIdx}
+       ),
+       agg AS (
+         SELECT keyword_id, platform,
+           MIN(d) AS first_date, MAX(d) AS last_date,
+           COUNT(*) AS total_runs,
+           COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+           MAX(CASE WHEN rn_asc = 1 THEN ranking_position END) AS first_rank,
+           MAX(CASE WHEN rn_desc = 1 THEN ranking_position END) AS latest_rank
+         FROM base GROUP BY keyword_id, platform
+       )
+       SELECT
+         cl.business_name AS client,
+         b.name AS business,
+         k.keyword_text AS keyword,
+         a.platform,
+         a.first_date::text AS first_audit,
+         a.last_date::text AS latest_audit,
+         a.total_runs::int,
+         a.first_rank::int,
+         a.latest_rank::int,
+         a.error_count::int,
+         (a.last_date + INTERVAL '14 days')::date::text AS next_due,
+         CASE
+           WHEN a.last_date >= (CURRENT_DATE - INTERVAL '14 days') THEN 'on_schedule'
+           ELSE 'overdue'
+         END AS status_class,
+         GREATEST(0, (CURRENT_DATE - (a.last_date + INTERVAL '14 days')::date))::int AS days_overdue
+       FROM agg a
+       JOIN keywords k ON k.id = a.keyword_id
+       LEFT JOIN clients cl ON cl.id = k.client_id
+       LEFT JOIN businesses b ON b.id = k.business_id
+       ORDER BY status_class DESC, days_overdue DESC, client, keyword, platform`,
+      paramsWithBatch,
+    );
+
+    /* New combos detail — rows in the current batch (with prior-audit context) */
+    const newCombosRows = await pool.query(
+      `SELECT
+         cl.business_name AS client,
+         b.name AS business,
+         rr.keyword AS keyword,
+         lower(rr.platform) AS platform,
+         rr.date::text AS audit_date,
+         rr.ranking_position::int AS initial_rank,
+         rr.ranking_total::text AS out_of_total,
+         rr.status,
+         (rr.date::date + INTERVAL '14 days')::date::text AS next_due,
+         EXISTS (
+           SELECT 1 FROM ranking_reports r2
+           WHERE r2.keyword_id = rr.keyword_id
+             AND lower(r2.platform) = lower(rr.platform)
+             AND r2.date < rr.date
+         ) AS has_prior
+       FROM ranking_reports rr
+       JOIN keywords k ON k.id = rr.keyword_id
+       LEFT JOIN clients cl ON cl.id = k.client_id
+       LEFT JOIN businesses b ON b.id = k.business_id
+       WHERE ${where
+         .replace(/\bdate\b/g, "rr.date")
+         .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+         .replace(/\bclient_id\b/g, "rr.client_id")
+         .replace(/\bbusiness_id\b/g, "rr.business_id")}
+         AND rr.date = $${currentParamIdx}
+       ORDER BY client, business, keyword, platform`,
+      paramsWithBatch,
+    );
+
+    /* Ranking trend detail — for old-file combos with 2+ runs */
+    const trendRows = await pool.query(
+      `WITH base AS (
+         SELECT rr.id, rr.keyword_id, lower(rr.platform) AS platform,
+                rr.date::date AS d, rr.ranking_position,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date DESC, rr.id DESC) AS rn_desc,
+                COUNT(*) OVER (PARTITION BY rr.keyword_id, lower(rr.platform)) AS run_count
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date < $${currentParamIdx}
+       ),
+       paired AS (
+         SELECT keyword_id, platform,
+                MAX(CASE WHEN rn_asc = 1 THEN d END) AS first_date,
+                MAX(CASE WHEN rn_asc = 1 THEN ranking_position END) AS first_rank,
+                MAX(CASE WHEN rn_desc = 1 THEN d END) AS latest_date,
+                MAX(CASE WHEN rn_desc = 1 THEN ranking_position END) AS latest_rank
+         FROM base WHERE run_count >= 2
+         GROUP BY keyword_id, platform
+       )
+       SELECT
+         cl.business_name AS client,
+         k.keyword_text AS keyword,
+         p.platform,
+         p.first_date::text AS first_audit,
+         p.first_rank::int,
+         p.latest_date::text AS latest_audit,
+         p.latest_rank::int,
+         CASE
+           WHEN p.first_rank IS NULL OR p.latest_rank IS NULL THEN NULL
+           ELSE (p.first_rank - p.latest_rank)::int
+         END AS rank_change,
+         CASE
+           WHEN p.latest_rank IS NULL THEN 'not_ranked'
+           WHEN p.first_rank IS NULL THEN 'not_ranked'
+           WHEN p.latest_rank < p.first_rank THEN 'improved'
+           WHEN p.latest_rank > p.first_rank THEN 'declined'
+           ELSE 'no_change'
+         END AS trend
+       FROM paired p
+       JOIN keywords k ON k.id = p.keyword_id
+       LEFT JOIN clients cl ON cl.id = k.client_id
+       ORDER BY
+         CASE
+           WHEN p.latest_rank IS NULL OR p.first_rank IS NULL THEN 0
+           ELSE p.latest_rank - p.first_rank
+         END DESC,
+         client, keyword, platform`,
+      paramsWithBatch,
+    );
+
+    /* Errors — all audit_logs error rows scoped to old file (before current batch) */
+    const errorsParams: (number | string | null)[] = [currentBatchDate];
+    let errClientFilter = "";
+    let errBusinessFilter = "";
+    if (clientId !== null) {
+      errorsParams.push(clientId);
+      errClientFilter = `AND al.client_id = $${errorsParams.length}`;
+    }
+    if (businessId !== null) {
+      errorsParams.push(businessId);
+      errBusinessFilter = `AND al.business_id = $${errorsParams.length}`;
+    }
+    const errorsRows = await pool.query(
+      `SELECT
+         cl.business_name AS client,
+         al.keyword_text AS keyword,
+         lower(al.platform) AS platform,
+         to_char(((al.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') AS error_date,
+         al.duration_seconds::float AS duration,
+         (al.response_text IS NOT NULL AND length(al.response_text) > 0) AS has_response,
+         EXISTS (
+           SELECT 1 FROM ranking_reports rr
+           WHERE rr.keyword_id = al.keyword_id
+             AND lower(rr.platform) = lower(al.platform)
+             AND rr.status = 'success'
+             AND rr.date::date > ((al.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York')::date
+         ) AS recovered,
+         al.error AS error_message
+       FROM audit_logs al
+       LEFT JOIN clients cl ON cl.id = al.client_id
+       WHERE al.status = 'error'
+         AND ((al.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York')::date < $1::date
+         ${errClientFilter}
+         ${errBusinessFilter}
+       ORDER BY error_date DESC, client, keyword`,
+      errorsParams,
+    );
+
+    /* Platform scorecards — old file + new file + old-file trend */
+    const platformOld = await pool.query(
+      `WITH latest_per_combo AS (
+         SELECT DISTINCT ON (keyword_id, lower(platform))
+                lower(platform) AS platform, ranking_position
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date < $${currentParamIdx}
+         ORDER BY keyword_id, lower(platform), rr.date DESC, rr.id DESC
+       )
+       SELECT
+         platform,
+         COUNT(*)::int AS total_combos,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 3)::int AS in_top3,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 5)::int AS in_top5,
+         ROUND(AVG(ranking_position) FILTER (WHERE ranking_position BETWEEN 1 AND 25)::numeric, 1)::float AS avg_rank,
+         COUNT(*) FILTER (WHERE ranking_position IS NULL OR ranking_position = 0)::int AS not_ranked
+       FROM latest_per_combo
+       GROUP BY platform ORDER BY platform`,
+      paramsWithBatch,
+    );
+    const platformNew = await pool.query(
+      `SELECT
+         lower(platform) AS platform,
+         COUNT(*)::int AS total_combos,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 3)::int AS in_top3,
+         COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 5)::int AS in_top5,
+         ROUND(AVG(ranking_position) FILTER (WHERE ranking_position BETWEEN 1 AND 25)::numeric, 1)::float AS avg_rank,
+         COUNT(*) FILTER (WHERE ranking_position > 25)::int AS rank_26_plus
+       FROM ranking_reports rr
+       WHERE ${where
+         .replace(/\bdate\b/g, "rr.date")
+         .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+         .replace(/\bclient_id\b/g, "rr.client_id")
+         .replace(/\bbusiness_id\b/g, "rr.business_id")}
+         AND rr.date = $${currentParamIdx}
+       GROUP BY lower(platform) ORDER BY lower(platform)`,
+      paramsWithBatch,
+    );
+    const platformTrend = await pool.query(
+      `WITH base AS (
+         SELECT rr.keyword_id, lower(rr.platform) AS platform, rr.id, rr.date::date AS d, rr.ranking_position,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
+                ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date DESC, rr.id DESC) AS rn_desc,
+                COUNT(*) OVER (PARTITION BY rr.keyword_id, lower(rr.platform)) AS run_count
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date < $${currentParamIdx}
+       ),
+       paired AS (
+         SELECT keyword_id, platform,
+                MAX(CASE WHEN rn_asc = 1 THEN ranking_position END) AS first_rank,
+                MAX(CASE WHEN rn_desc = 1 THEN ranking_position END) AS latest_rank
+         FROM base WHERE run_count >= 2
+         GROUP BY keyword_id, platform
+       )
+       SELECT
+         platform,
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE first_rank IS NOT NULL AND latest_rank IS NOT NULL AND latest_rank < first_rank)::int AS improved,
+         COUNT(*) FILTER (WHERE first_rank IS NOT NULL AND latest_rank IS NOT NULL AND latest_rank > first_rank)::int AS declined,
+         COUNT(*) FILTER (WHERE first_rank IS NOT NULL AND latest_rank IS NOT NULL AND latest_rank = first_rank)::int AS no_change,
+         COUNT(*) FILTER (WHERE latest_rank IS NULL OR first_rank IS NULL)::int AS not_ranked
+       FROM paired GROUP BY platform ORDER BY platform`,
+      paramsWithBatch,
+    );
 
     res.json({
       currentBatch: sectionA,
@@ -1145,6 +1415,15 @@ router.get("/bi-weekly-report", async (req, res) => {
       rankingTrend: sectionC,
       initialRanking: sectionD,
       allBatches,
+      details: {
+        oldCombos: oldCombosRows.rows,
+        newCombos: newCombosRows.rows,
+        rankingTrendRows: trendRows.rows,
+        errors: errorsRows.rows,
+        platformOld: platformOld.rows,
+        platformNew: platformNew.rows,
+        platformTrend: platformTrend.rows,
+      },
     });
   } catch (err) {
     req.log.error({ err }, "Error building bi-weekly report");
