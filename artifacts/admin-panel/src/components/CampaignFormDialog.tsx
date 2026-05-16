@@ -29,7 +29,7 @@ interface Props {
   businessId: number;
   businessName?: string;
   campaign?: CampaignLike | null;
-  onSaved?: () => void;
+  onSaved?: (saved: { id: number; name: string | null; planType: string }) => void;
 }
 
 export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, businessName, campaign, onSaved }: Props) {
@@ -106,8 +106,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
+      const saved = await res.json();
       toast({ title: isEdit ? "Campaign updated" : "Campaign created" });
-      onSaved?.();
+      onSaved?.({ id: saved.id, name: saved.name ?? null, planType: saved.planType });
       onOpenChange(false);
     } catch {
       toast({ title: isEdit ? "Failed to update campaign" : "Failed to create campaign", variant: "destructive" });

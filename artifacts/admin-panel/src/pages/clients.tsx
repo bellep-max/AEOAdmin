@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
+import { BulkAddKeywordsDialog } from "@/components/BulkAddKeywordsDialog";
 import { CreatedByField } from "@/components/CreatedByField";
 
 const businessFormSchema = z.object({
@@ -95,7 +96,9 @@ export default function Clients() {
   const [postCreatePrompt, setPostCreatePrompt] = useState<{ clientId: number; clientName: string } | null>(null);
   const [addBusinessFor, setAddBusinessFor] = useState<{ clientId: number; clientName: string } | null>(null);
   const [postBusinessPrompt, setPostBusinessPrompt] = useState<{ clientId: number; clientName: string; businessId: number; businessName: string } | null>(null);
-  const [addCampaignFor, setAddCampaignFor] = useState<{ clientId: number; businessId: number; businessName: string } | null>(null);
+  const [addCampaignFor, setAddCampaignFor] = useState<{ clientId: number; clientName: string; businessId: number; businessName: string } | null>(null);
+  const [postCampaignPrompt, setPostCampaignPrompt] = useState<{ clientId: number; clientName: string; businessId: number; businessName: string; aeoPlanId: number; campaignName: string | null } | null>(null);
+  const [bulkAddKeywordsFor, setBulkAddKeywordsFor] = useState<{ clientId: number; clientName: string; businessId: number; businessName: string; aeoPlanId: number; campaignName: string | null } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const allPlanNames = useAllPlanNames();
@@ -845,6 +848,7 @@ export default function Clients() {
                 if (postBusinessPrompt) {
                   setAddCampaignFor({
                     clientId: postBusinessPrompt.clientId,
+                    clientName: postBusinessPrompt.clientName,
                     businessId: postBusinessPrompt.businessId,
                     businessName: postBusinessPrompt.businessName,
                   });
@@ -885,7 +889,58 @@ export default function Clients() {
           clientId={addCampaignFor.clientId}
           businessId={addCampaignFor.businessId}
           businessName={addCampaignFor.businessName}
-          onSaved={() => { refetch(); setAddCampaignFor(null); }}
+          onSaved={(saved) => {
+            refetch();
+            setPostCampaignPrompt({
+              clientId: addCampaignFor.clientId,
+              clientName: addCampaignFor.clientName,
+              businessId: addCampaignFor.businessId,
+              businessName: addCampaignFor.businessName,
+              aeoPlanId: saved.id,
+              campaignName: saved.name,
+            });
+            setAddCampaignFor(null);
+          }}
+        />
+      )}
+
+      {/* Post-campaign: prompt to add keywords */}
+      <AlertDialog open={!!postCampaignPrompt} onOpenChange={(open) => { if (!open) setPostCampaignPrompt(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add keywords for {postCampaignPrompt?.campaignName ?? postCampaignPrompt?.businessName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Paste a list of keywords (one per line) — we'll create them all under this campaign. You can generate search variants for each one from its detail page later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPostCampaignPrompt(null)}>Later</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => {
+                if (postCampaignPrompt) {
+                  setBulkAddKeywordsFor(postCampaignPrompt);
+                  setPostCampaignPrompt(null);
+                }
+              }}
+            >
+              Yes, add keywords now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {bulkAddKeywordsFor && (
+        <BulkAddKeywordsDialog
+          open={!!bulkAddKeywordsFor}
+          onOpenChange={(open) => { if (!open) setBulkAddKeywordsFor(null); }}
+          clientId={bulkAddKeywordsFor.clientId}
+          clientName={bulkAddKeywordsFor.clientName}
+          businessId={bulkAddKeywordsFor.businessId}
+          businessName={bulkAddKeywordsFor.businessName}
+          aeoPlanId={bulkAddKeywordsFor.aeoPlanId}
+          campaignName={bulkAddKeywordsFor.campaignName}
+          onSaved={() => { refetch(); setBulkAddKeywordsFor(null); }}
         />
       )}
 
