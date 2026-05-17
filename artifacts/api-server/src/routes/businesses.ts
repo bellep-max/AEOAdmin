@@ -1,39 +1,57 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { businessesTable, keywordsTable, clientAeoPlansTable } from "@workspace/db/schema";
-import { eq, desc, inArray, sql } from "drizzle-orm";
+import {
+  businessesTable,
+  keywordsTable,
+  clientAeoPlansTable,
+} from "@workspace/db/schema";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/", async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
-    const query = db.select().from(businessesTable).orderBy(desc(businessesTable.createdAt));
+    const query = db
+      .select()
+      .from(businessesTable)
+      .orderBy(desc(businessesTable.createdAt));
     const rows = clientId
       ? await query.where(eq(businessesTable.clientId, parseInt(clientId)))
       : await query;
 
     const ids = rows.map((b) => b.id);
-    const counts = new Map<number, { keywordCount: number; campaignCount: number }>();
+    const counts = new Map<
+      number,
+      { keywordCount: number; campaignCount: number }
+    >();
     for (const id of ids) counts.set(id, { keywordCount: 0, campaignCount: 0 });
 
     if (ids.length > 0) {
       const kwRows = await db
-        .select({ businessId: keywordsTable.businessId, c: sql<number>`count(*)::int` })
+        .select({
+          businessId: keywordsTable.businessId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(keywordsTable)
         .where(inArray(keywordsTable.businessId, ids))
         .groupBy(keywordsTable.businessId);
       for (const r of kwRows) {
-        if (r.businessId != null) counts.get(r.businessId)!.keywordCount = Number(r.c);
+        if (r.businessId != null)
+          counts.get(r.businessId)!.keywordCount = Number(r.c);
       }
 
       const cpRows = await db
-        .select({ businessId: clientAeoPlansTable.businessId, c: sql<number>`count(*)::int` })
+        .select({
+          businessId: clientAeoPlansTable.businessId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(clientAeoPlansTable)
         .where(inArray(clientAeoPlansTable.businessId, ids))
         .groupBy(clientAeoPlansTable.businessId);
       for (const r of cpRows) {
-        if (r.businessId != null) counts.get(r.businessId)!.campaignCount = Number(r.c);
+        if (r.businessId != null)
+          counts.get(r.businessId)!.campaignCount = Number(r.c);
       }
     }
 
@@ -47,7 +65,10 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const [business] = await db.select().from(businessesTable).where(eq(businessesTable.id, id));
+    const [business] = await db
+      .select()
+      .from(businessesTable)
+      .where(eq(businessesTable.id, id));
     if (!business) return res.status(404).json({ error: "Not found" });
     res.json(business);
   } catch (err) {
@@ -62,11 +83,31 @@ router.post("/", async (req, res) => {
     if (!body.clientId || !body.name) {
       return res.status(400).json({ error: "clientId and name are required" });
     }
+    const trimmedName = String(body.name).trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: "name cannot be empty" });
+    }
+    const [existing] = await db
+      .select({ id: businessesTable.id, name: businessesTable.name })
+      .from(businessesTable)
+      .where(
+        and(
+          eq(businessesTable.clientId, body.clientId),
+          sql`lower(trim(${businessesTable.name})) = lower(${trimmedName})`,
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      return res.status(409).json({
+        error: `This client already has a business named "${existing.name}" (id ${existing.id}).`,
+        conflictId: existing.id,
+      });
+    }
     const [business] = await db
       .insert(businessesTable)
       .values({
         clientId: body.clientId,
-        name: body.name,
+        name: trimmedName,
         gmbUrl: body.gmbUrl ?? null,
         websiteUrl: body.websiteUrl ?? null,
         category: body.category ?? null,
@@ -98,6 +139,38 @@ router.patch("/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     const { searchAddress: _ignored, ...rest } = req.body ?? {};
     const body = { ...rest, updatedAt: new Date() };
+
+    // Reject renames that collide with another business under the same client
+    if (typeof body.name === "string") {
+      const trimmed = body.name.trim();
+      if (!trimmed) {
+        return res.status(400).json({ error: "name cannot be empty" });
+      }
+      const [self] = await db
+        .select({ clientId: businessesTable.clientId })
+        .from(businessesTable)
+        .where(eq(businessesTable.id, id));
+      if (!self) return res.status(404).json({ error: "Not found" });
+      const [conflict] = await db
+        .select({ id: businessesTable.id, name: businessesTable.name })
+        .from(businessesTable)
+        .where(
+          and(
+            eq(businessesTable.clientId, self.clientId),
+            sql`lower(trim(${businessesTable.name})) = lower(${trimmed})`,
+            sql`${businessesTable.id} <> ${id}`,
+          ),
+        )
+        .limit(1);
+      if (conflict) {
+        return res.status(409).json({
+          error: `This client already has another business named "${conflict.name}" (id ${conflict.id}).`,
+          conflictId: conflict.id,
+        });
+      }
+      body.name = trimmed;
+    }
+
     const [business] = await db
       .update(businessesTable)
       .set(body)

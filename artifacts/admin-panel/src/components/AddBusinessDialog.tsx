@@ -1,8 +1,20 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -13,8 +25,18 @@ import { CreatedByField } from "./CreatedByField";
 const schema = z.object({
   name: z.string().min(2, "Business name is required").max(150),
   category: z.string().max(100).optional().or(z.literal("")),
-  gmbUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
-  websiteUrl: z.string().url("Must be a valid URL").max(500).optional().or(z.literal("")),
+  gmbUrl: z
+    .string()
+    .url("Must be a valid URL")
+    .max(500)
+    .optional()
+    .or(z.literal("")),
+  websiteUrl: z
+    .string()
+    .url("Must be a valid URL")
+    .max(500)
+    .optional()
+    .or(z.literal("")),
   publishedAddress: z.string().max(200).optional().or(z.literal("")),
   zipCode: z.string().max(20).optional().or(z.literal("")),
   createdBy: z.string().min(1, "Created By is required").max(50),
@@ -43,7 +65,15 @@ interface AddBusinessDialogProps {
   onUpdated?: (business: { id: number; name: string }) => void;
 }
 
-export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, business, onCreated, onUpdated }: AddBusinessDialogProps) {
+export function AddBusinessDialog({
+  open,
+  onOpenChange,
+  clientId,
+  clientName,
+  business,
+  onCreated,
+  onUpdated,
+}: AddBusinessDialogProps) {
   const isEdit = !!business;
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -95,23 +125,43 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       createdBy: values.createdBy || null,
     };
     try {
-      const url = isEdit ? `${BASE}/api/businesses/${business!.id}` : `${BASE}/api/businesses`;
+      const url = isEdit
+        ? `${BASE}/api/businesses/${business!.id}`
+        : `${BASE}/api/businesses`;
       const res = await fetch(url, {
         method: isEdit ? "PATCH" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        let msg = "Failed";
+        try {
+          const j = await res.json();
+          if (typeof j?.error === "string") msg = j.error;
+        } catch {
+          /* ignore parse errors */
+        }
+        throw new Error(msg);
+      }
       const saved = await res.json();
-      toast({ title: isEdit ? "Business updated" : "Business added", description: `${saved.name} saved.` });
+      toast({
+        title: isEdit ? "Business updated" : "Business added",
+        description: `${saved.name} saved.`,
+      });
       await queryClient.invalidateQueries({ queryKey: ["/api/businesses"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       if (isEdit) onUpdated?.(saved);
       else onCreated?.(saved);
       onOpenChange(false);
     } catch (err) {
-      toast({ title: isEdit ? "Failed to update business" : "Failed to create business", variant: "destructive" });
+      toast({
+        title: isEdit
+          ? "Failed to update business"
+          : "Failed to create business",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -122,19 +172,30 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
       <DialogContent className="sm:max-w-[720px] bg-white max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-black">
-            {isEdit ? "Edit Business" : `Add Business${clientName ? ` to ${clientName}` : ""}`}
+            {isEdit
+              ? "Edit Business"
+              : `Add Business${clientName ? ` to ${clientName}` : ""}`}
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4 max-h-[70vh] overflow-y-auto pr-2">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-4 mt-4 max-h-[70vh] overflow-y-auto pr-2"
+          >
             <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Business Name *</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    Business Name *
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="Acme Dental - Downtown" className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="Acme Dental - Downtown"
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -145,9 +206,15 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="category"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Service Category</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    Service Category
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="Airport Black Car Service, Dentist, Plumber, etc." className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="Airport Black Car Service, Dentist, Plumber, etc."
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -158,9 +225,15 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="gmbUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">GMB URL</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    GMB URL
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="https://maps.google.com/..." className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="https://maps.google.com/..."
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -171,9 +244,15 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="websiteUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Website</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    Website
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="https://example.com" className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="https://example.com"
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -184,9 +263,15 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="publishedAddress"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Published (GMB) Address</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    Published (GMB) Address
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="123 Main St, Austin, TX" className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="123 Main St, Austin, TX"
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -197,9 +282,15 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               name="zipCode"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">Zip Code</FormLabel>
+                  <FormLabel className="text-sm uppercase tracking-widest text-black font-bold">
+                    Zip Code
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="78701" className="h-11 text-base text-black bg-slate-50" {...field} />
+                    <Input
+                      placeholder="78701"
+                      className="h-11 text-base text-black bg-slate-50"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -223,11 +314,23 @@ export function AddBusinessDialog({ open, onOpenChange, clientId, clientName, bu
               )}
             />
             <div className="pt-4 flex justify-end gap-2 sticky bottom-0 bg-white">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting} className="h-11 text-base font-bold">
-                {submitting ? "Saving..." : isEdit ? "Save Changes" : "Create Business"}
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="h-11 text-base font-bold"
+              >
+                {submitting
+                  ? "Saving..."
+                  : isEdit
+                    ? "Save Changes"
+                    : "Create Business"}
               </Button>
             </div>
           </form>

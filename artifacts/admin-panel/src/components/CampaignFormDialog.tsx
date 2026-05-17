@@ -1,9 +1,20 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { CreatedByField } from "./CreatedByField";
@@ -29,10 +40,22 @@ interface Props {
   businessId: number;
   businessName?: string;
   campaign?: CampaignLike | null;
-  onSaved?: (saved: { id: number; name: string | null; planType: string }) => void;
+  onSaved?: (saved: {
+    id: number;
+    name: string | null;
+    planType: string;
+  }) => void;
 }
 
-export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, businessName, campaign, onSaved }: Props) {
+export function CampaignFormDialog({
+  open,
+  onOpenChange,
+  clientId,
+  businessId,
+  businessName,
+  campaign,
+  onSaved,
+}: Props) {
   const { toast } = useToast();
   const allPlanNames = useAllPlanNames();
   const isEdit = !!campaign;
@@ -74,7 +97,11 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
     setCreatedByError(null);
     if (!trimmedCreatedBy) {
       setCreatedByError("Created By is required");
-      toast({ title: "Created By is required", description: "Pick a role or enter a name before saving.", variant: "destructive" });
+      toast({
+        title: "Created By is required",
+        description: "Pick a role or enter a name before saving.",
+        variant: "destructive",
+      });
       return;
     }
     if (!planType.trim()) {
@@ -82,7 +109,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
       return;
     }
     setSaving(true);
-    const autoName = [businessName, searchAddress.trim()].filter(Boolean).join(" — ");
+    const autoName = [businessName, searchAddress.trim()]
+      .filter(Boolean)
+      .join(" — ");
     const payload = {
       businessId,
       businessName: businessName ?? null,
@@ -105,13 +134,32 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        let msg = "Failed";
+        try {
+          const j = await res.json();
+          if (typeof j?.error === "string") msg = j.error;
+        } catch {
+          /* ignore parse errors */
+        }
+        throw new Error(msg);
+      }
       const saved = await res.json();
       toast({ title: isEdit ? "Campaign updated" : "Campaign created" });
-      onSaved?.({ id: saved.id, name: saved.name ?? null, planType: saved.planType });
+      onSaved?.({
+        id: saved.id,
+        name: saved.name ?? null,
+        planType: saved.planType,
+      });
       onOpenChange(false);
-    } catch {
-      toast({ title: isEdit ? "Failed to update campaign" : "Failed to create campaign", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: isEdit
+          ? "Failed to update campaign"
+          : "Failed to create campaign",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -127,9 +175,12 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
         </DialogHeader>
         <div className="space-y-4 mt-2">
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Campaign Name</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Campaign Name
+            </Label>
             <div className="h-10 px-3 flex items-center text-sm rounded-md bg-muted/20 border border-dashed border-border/60 text-muted-foreground">
-              {[businessName, searchAddress].filter(Boolean).join(" — ") || "Auto-generated from Business + Search Address"}
+              {[businessName, searchAddress].filter(Boolean).join(" — ") ||
+                "Auto-generated from Business + Search Address"}
             </div>
           </div>
 
@@ -156,7 +207,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
                 </SelectTrigger>
                 <SelectContent>
                   {allPlanNames.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -164,18 +217,27 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
 
             <CreatedByField
               value={createdBy}
-              onChange={(v) => { setCreatedBy(v); if (createdByError) setCreatedByError(null); }}
+              onChange={(v) => {
+                setCreatedBy(v);
+                if (createdByError) setCreatedByError(null);
+              }}
               required
               error={createdByError}
             />
           </div>
 
           <div className="border-t border-border/40 pt-4 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Subscription</p>
-            <p className="text-[11px] text-muted-foreground -mt-1">Manual entry — fill in if you have it.</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Subscription
+            </p>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Manual entry — fill in if you have it.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription ID</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Subscription ID
+                </Label>
                 <Input
                   className="h-10 bg-muted/30"
                   placeholder="sub_xxxxxxxxxxxx"
@@ -184,18 +246,24 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Card (last 4)</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Card (last 4)
+                </Label>
                 <Input
                   className="h-10 bg-muted/30"
                   placeholder="4242"
                   inputMode="numeric"
                   maxLength={4}
                   value={cardLast4}
-                  onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  onChange={(e) =>
+                    setCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start Date</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Start Date
+                </Label>
                 <Input
                   type="date"
                   className="h-10 bg-muted/30"
@@ -204,7 +272,9 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next Billing Date</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Next Billing Date
+                </Label>
                 <Input
                   type="date"
                   className="h-10 bg-muted/30"
@@ -216,10 +286,18 @@ export function CampaignFormDialog({ open, onOpenChange, clientId, businessId, b
           </div>
 
           <div className="pt-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="h-10 font-bold">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-10 font-bold"
+            >
               {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Campaign"}
             </Button>
           </div>

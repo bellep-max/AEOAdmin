@@ -28,24 +28,37 @@ router.get("/", async (req, res) => {
       .orderBy(desc(clientsTable.createdAt));
 
     const ids = baseClients.map((c) => c.id);
-    const counts = new Map<number, { keywordCount: number; businessCount: number; campaignCount: number }>();
+    const counts = new Map<
+      number,
+      { keywordCount: number; businessCount: number; campaignCount: number }
+    >();
     if (ids.length > 0) {
       const kwRows = await db
-        .select({ clientId: keywordsTable.clientId, c: sql<number>`count(*)::int` })
+        .select({
+          clientId: keywordsTable.clientId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(keywordsTable)
         .where(inArray(keywordsTable.clientId, ids))
         .groupBy(keywordsTable.clientId);
       const bizRows = await db
-        .select({ clientId: businessesTable.clientId, c: sql<number>`count(*)::int` })
+        .select({
+          clientId: businessesTable.clientId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(businessesTable)
         .where(inArray(businessesTable.clientId, ids))
         .groupBy(businessesTable.clientId);
       const campRows = await db
-        .select({ clientId: clientAeoPlansTable.clientId, c: sql<number>`count(*)::int` })
+        .select({
+          clientId: clientAeoPlansTable.clientId,
+          c: sql<number>`count(*)::int`,
+        })
         .from(clientAeoPlansTable)
         .where(inArray(clientAeoPlansTable.clientId, ids))
         .groupBy(clientAeoPlansTable.clientId);
-      for (const id of ids) counts.set(id, { keywordCount: 0, businessCount: 0, campaignCount: 0 });
+      for (const id of ids)
+        counts.set(id, { keywordCount: 0, businessCount: 0, campaignCount: 0 });
       for (const r of kwRows) counts.get(r.clientId)!.keywordCount = r.c;
       for (const r of bizRows) counts.get(r.clientId)!.businessCount = r.c;
       for (const r of campRows) counts.get(r.clientId)!.campaignCount = r.c;
@@ -61,7 +74,7 @@ router.get("/", async (req, res) => {
       ? clients.filter(
           (c) =>
             c.businessName.toLowerCase().includes(search.toLowerCase()) ||
-            (c.city && c.city.toLowerCase().includes(search.toLowerCase()))
+            (c.city && c.city.toLowerCase().includes(search.toLowerCase())),
         )
       : clients;
 
@@ -75,37 +88,56 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const body = req.body;
-    
+
+    const trimmedName = String(body.businessName ?? "").trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: "businessName is required" });
+    }
+
+    const [existing] = await db
+      .select({ id: clientsTable.id, businessName: clientsTable.businessName })
+      .from(clientsTable)
+      .where(
+        sql`lower(trim(${clientsTable.businessName})) = lower(${trimmedName})`,
+      )
+      .limit(1);
+    if (existing) {
+      return res.status(409).json({
+        error: `A client named "${existing.businessName}" already exists (id ${existing.id}). Pick a different name or edit the existing client.`,
+        conflictId: existing.id,
+      });
+    }
+
     const [client] = await db
       .insert(clientsTable)
       .values({
         // Business Information
-        businessName: body.businessName,
+        businessName: trimmedName,
         searchAddress: body.searchAddress ?? null,
         gmbUrl: body.gmbLink ?? null,
         websitePublishedOnGmb: body.websitePublishedOnGMB ?? null,
         websiteLinkedOnGmb: body.websiteLinkedOnGMB ?? null,
-        
+
         // Subscription Information
         planName: body.plan ?? null,
         accountType: body.accountType ?? null,
         startDate: body.startDate ?? null,
         nextBillDate: body.nextBillDate ?? null,
         subscriptionId: body.subscriptionId ?? null,
-        
+
         // Account Information
         accountUser: body.accountUser ?? null,
         accountUserName: body.accountUserName ?? null,
         accountEmail: body.accountEmail ?? null,
         billingEmail: body.billingEmail ?? null,
         lastFourCard: body.cardLast4 ?? null,
-        
+
         // Default values
         status: body.status ?? "active",
         contactEmail: body.billingEmail ?? null,
         addressType: 1,
         createdBy: body.createdBy ?? null,
-        notes:     body.notes     ?? null,
+        notes: body.notes ?? null,
       })
       .returning();
 
@@ -144,6 +176,34 @@ router.patch("/:id", async (req, res) => {
     const clientUpdateData = { ...body };
     delete clientUpdateData.keywords;
 
+    // Reject renames that would collide with another client
+    if (typeof clientUpdateData.businessName === "string") {
+      const trimmed = clientUpdateData.businessName.trim();
+      if (!trimmed) {
+        return res.status(400).json({ error: "businessName cannot be empty" });
+      }
+      const [conflict] = await db
+        .select({
+          id: clientsTable.id,
+          businessName: clientsTable.businessName,
+        })
+        .from(clientsTable)
+        .where(
+          and(
+            sql`lower(trim(${clientsTable.businessName})) = lower(${trimmed})`,
+            sql`${clientsTable.id} <> ${id}`,
+          ),
+        )
+        .limit(1);
+      if (conflict) {
+        return res.status(409).json({
+          error: `Another client named "${conflict.businessName}" already exists (id ${conflict.id}).`,
+          conflictId: conflict.id,
+        });
+      }
+      clientUpdateData.businessName = trimmed;
+    }
+
     const [client] = await db
       .update(clientsTable)
       .set(clientUpdateData)
@@ -172,7 +232,12 @@ router.patch("/:id", async (req, res) => {
         await db
           .update(keywordLinksTable)
           .set({ linkActive: isActive })
-          .where(inArray(keywordLinksTable.keywordId, clientKwIds.map((k) => k.id)));
+          .where(
+            inArray(
+              keywordLinksTable.keywordId,
+              clientKwIds.map((k) => k.id),
+            ),
+          );
       }
     }
 
@@ -189,7 +254,7 @@ router.patch("/:id", async (req, res) => {
             linkActive: kw.linkActive !== false,
             initialRankReportLink: kw.initialRankReportLink ?? null,
             currentRankReportLink: kw.currentRankReportLink ?? null,
-          }))
+          })),
         )
         .returning();
     }
@@ -227,7 +292,10 @@ router.get("/:id/gbp-snippet", async (req, res) => {
 
     // Get most recent ranking report for maps presence
     const [latestReport] = await db
-      .select({ mapsPresence: rankingReportsTable.mapsPresence, createdAt: rankingReportsTable.createdAt })
+      .select({
+        mapsPresence: rankingReportsTable.mapsPresence,
+        createdAt: rankingReportsTable.createdAt,
+      })
       .from(rankingReportsTable)
       .where(eq(rankingReportsTable.clientId, id))
       .orderBy(desc(rankingReportsTable.createdAt))
@@ -239,11 +307,12 @@ router.get("/:id/gbp-snippet", async (req, res) => {
       .where(eq(keywordsTable.clientId, id));
 
     const verificationStatus =
-      keywords.length > 0 && keywords.every((k) => k.verificationStatus === "verified")
+      keywords.length > 0 &&
+      keywords.every((k) => k.verificationStatus === "verified")
         ? "verified"
         : keywords.some((k) => k.verificationStatus === "failed")
-        ? "failed"
-        : "pending";
+          ? "failed"
+          : "pending";
 
     res.json({
       clientId: client.id,
@@ -280,12 +349,23 @@ router.get("/:id/aeo-summary", async (req, res) => {
     const keywordIds = keywords.map((k) => k.id);
 
     // Get initial and current rankings for each keyword
-    const rankingData: Record<number, { initial?: typeof rankingReportsTable.$inferSelect; current?: typeof rankingReportsTable.$inferSelect }> = {};
+    const rankingData: Record<
+      number,
+      {
+        initial?: typeof rankingReportsTable.$inferSelect;
+        current?: typeof rankingReportsTable.$inferSelect;
+      }
+    > = {};
     for (const kwId of keywordIds) {
       const reports = await db
         .select()
         .from(rankingReportsTable)
-        .where(and(eq(rankingReportsTable.clientId, id), eq(rankingReportsTable.keywordId, kwId)))
+        .where(
+          and(
+            eq(rankingReportsTable.clientId, id),
+            eq(rankingReportsTable.keywordId, kwId),
+          ),
+        )
         .orderBy(rankingReportsTable.createdAt);
 
       rankingData[kwId] = {
@@ -299,7 +379,8 @@ router.get("/:id/aeo-summary", async (req, res) => {
       .map((r) => r.current?.rankingPosition)
       .filter((p): p is number => p != null);
     const avgPos = allReportPositions.length
-      ? allReportPositions.reduce((a, b) => a + b, 0) / allReportPositions.length
+      ? allReportPositions.reduce((a, b) => a + b, 0) /
+        allReportPositions.length
       : null;
 
     // Sessions for date range
@@ -313,8 +394,10 @@ router.get("/:id/aeo-summary", async (req, res) => {
       keywordId: k.id,
       keywordText: k.keywordText,
       initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
-      initialRankingPosition: rankingData[k.id]?.initial?.rankingPosition ?? null,
-      currentRankingPosition: rankingData[k.id]?.current?.rankingPosition ?? null,
+      initialRankingPosition:
+        rankingData[k.id]?.initial?.rankingPosition ?? null,
+      currentRankingPosition:
+        rankingData[k.id]?.current?.rankingPosition ?? null,
       clicksDelivered: 0,
       verificationStatus: k.verificationStatus,
     }));
