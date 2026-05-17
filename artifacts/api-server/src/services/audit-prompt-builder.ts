@@ -129,3 +129,40 @@ export { AUDIT_PROMPT_TEMPLATE_V2 as AUDIT_PROMPT_V2 };
 // Mark unused-warning suppression for the imported type when only used
 // via the `import type` re-export.
 export type { SessionContext };
+
+// ───────────────────────────────────────────────────────────────────────
+// Stateless variant — caller supplies all context; service only renders
+// the template. No DB lookup, no variant rotation.
+// ───────────────────────────────────────────────────────────────────────
+
+export interface BuildAuditPromptStaticInput {
+  keyword_phrase: string;
+  city?:          string | null;
+  state?:         string | null;
+  biz_name?:      string | null;
+  biz_url?:       string | null;
+}
+
+export interface BuildAuditPromptStaticOutput {
+  keywordPhrase:   string;
+  prompt:          string;
+  templateVersion: "v2";
+}
+
+export function buildAuditPromptStatic(input: BuildAuditPromptStaticInput): BuildAuditPromptStaticOutput {
+  if (!input.keyword_phrase || typeof input.keyword_phrase !== "string") {
+    throw new Error("keyword_phrase is required and must be a non-empty string");
+  }
+  const prompt = renderAuditPrompt({
+    keywordPhrase: input.keyword_phrase,
+    city:          input.city  ?? null,
+    state:         input.state ?? null,
+    bizName:       input.biz_name ?? null,
+    bizUrl:        input.biz_url  ?? null,
+  });
+  return {
+    keywordPhrase:   input.keyword_phrase,
+    prompt,
+    templateVersion: "v2",
+  };
+}

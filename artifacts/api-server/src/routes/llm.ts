@@ -35,8 +35,8 @@ import {
   runAuditReport,
   type AnalystScope,
 } from "../services/daily-analyst";
-import { buildSession, type VoiceKey } from "../services/session-prompt-builder";
-import { buildAuditPrompt } from "../services/audit-prompt-builder";
+import { buildSession, buildSessionStatic, type VoiceKey } from "../services/session-prompt-builder";
+import { buildAuditPrompt, buildAuditPromptStatic } from "../services/audit-prompt-builder";
 
 const router = Router();
 
@@ -328,6 +328,105 @@ router.post("/build-audit", requireExecutorToken, async (req, res) => {
     res.json({ ...out, _elapsedMs: Date.now() - start });
   } catch (err) {
     req.log.error({ err }, "Error building audit prompt");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════════
+   /api/llm/build-session-static — stateless daily prompt
+   /api/llm/build-audit-static   — stateless audit prompt
+
+   Same outputs as build-session / build-audit, but the caller supplies all
+   context (keyword text, variant text, biz info, optional backlinks). No
+   DB lookup, no variant rotation, no times_used bump.
+   ════════════════════════════════════════════════════════════════════════ */
+
+router.post("/build-session-static", requireExecutorToken, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    const keywordText = body.keyword_text ?? body.keywordText;
+    if (typeof keywordText !== "string" || keywordText.trim() === "") {
+      return res.status(400).json({ error: "keyword_text is required and must be a non-empty string" });
+    }
+
+    let platform: string | undefined;
+    if (body.platform != null && body.platform !== "") {
+      platform = String(body.platform).toLowerCase();
+      if (!VALID_PLATFORMS.has(platform)) {
+        return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+      }
+    }
+
+    let voice: VoiceKey | undefined;
+    if (body.voice != null && body.voice !== "") {
+      if (typeof body.voice !== "string" || !VALID_VOICES.includes(body.voice as VoiceKey)) {
+        return res.status(400).json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
+      }
+      voice = body.voice as VoiceKey;
+    }
+
+    let backlinks: Array<{ url: string | null; link_type_label?: string | null; embedded_url?: string | null }> | undefined;
+    if (body.backlinks != null) {
+      if (!Array.isArray(body.backlinks)) {
+        return res.status(400).json({ error: "backlinks must be an array" });
+      }
+      backlinks = body.backlinks as Array<{ url: string | null; link_type_label?: string | null; embedded_url?: string | null }>;
+    }
+
+    const variantText = body.variant_text ?? body.variantText;
+    const optStr = (v: unknown): string | null | undefined =>
+      v == null ? undefined : (typeof v === "string" ? (v === "" ? null : v) : null);
+
+    const start = Date.now();
+    const out = await buildSessionStatic({
+      keyword_text:      keywordText,
+      variant_text:      typeof variantText === "string" ? variantText : undefined,
+      platform,
+      voice,
+      biz_name:          optStr(body.biz_name ?? body.bizName),
+      biz_category:      optStr(body.biz_category ?? body.bizCategory),
+      city:              optStr(body.city),
+      state:             optStr(body.state),
+      zip:               optStr(body.zip),
+      published_address: optStr(body.published_address ?? body.publishedAddress),
+      search_address:    optStr(body.search_address ?? body.searchAddress),
+      gmb_url:           optStr(body.gmb_url ?? body.gmbUrl),
+      website_url:       optStr(body.website_url ?? body.websiteUrl),
+      backlinks,
+    });
+    res.json({ ...out, _elapsedMs: Date.now() - start });
+  } catch (err) {
+    req.log.error({ err }, "Error building static session prompt");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+router.post("/build-audit-static", requireExecutorToken, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    const keywordPhrase = body.keyword_phrase ?? body.keywordPhrase;
+    if (typeof keywordPhrase !== "string" || keywordPhrase.trim() === "") {
+      return res.status(400).json({ error: "keyword_phrase is required and must be a non-empty string" });
+    }
+
+    const optStr = (v: unknown): string | null | undefined =>
+      v == null ? undefined : (typeof v === "string" ? (v === "" ? null : v) : null);
+
+    const start = Date.now();
+    const out = buildAuditPromptStatic({
+      keyword_phrase: keywordPhrase,
+      city:           optStr(body.city),
+      state:          optStr(body.state),
+      biz_name:       optStr(body.biz_name ?? body.bizName),
+      biz_url:        optStr(body.biz_url  ?? body.bizUrl),
+    });
+    res.json({ ...out, _elapsedMs: Date.now() - start });
+  } catch (err) {
+    req.log.error({ err }, "Error building static audit prompt");
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: message });
   }

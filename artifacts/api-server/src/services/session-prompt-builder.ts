@@ -615,3 +615,100 @@ export async function buildSession(input: BuildSessionInput): Promise<BuildSessi
 // authoritative versions instead of keeping its own copy.
 export const SEEDING_SYSTEM_PROMPT_V1  = SEEDING_SYSTEM_PROMPT;
 export const FOLLOWUP_SYSTEM_PROMPT_V1 = FOLLOWUP_SYSTEM_PROMPT;
+
+// ───────────────────────────────────────────────────────────────────────
+// Stateless variant — caller supplies all context; service only calls
+// DeepSeek. No DB lookup, no variant rotation, no times_used bump.
+// Useful for prompt-engineering tests, ad-hoc previews, or runners that
+// already have their context loaded and just want a fresh prompt.
+// ───────────────────────────────────────────────────────────────────────
+
+export interface BuildSessionStaticInput {
+  keyword_text:       string;
+  variant_text?:      string;
+  platform?:          string;
+  voice?:             VoiceKey;
+  biz_name?:          string | null;
+  biz_category?:      string | null;
+  city?:              string | null;
+  state?:             string | null;
+  zip?:               string | null;
+  published_address?: string | null;
+  search_address?:    string | null;
+  gmb_url?:           string | null;
+  website_url?:       string | null;
+  backlinks?:         Array<{
+    url:              string | null;
+    link_type_label?: string | null;
+    embedded_url?:    string | null;
+  }>;
+}
+
+export interface BuildSessionStaticOutput {
+  keywordText:      string;
+  variantText:      string;
+  platform:         string;
+  voice:            VoiceKey;
+  prompt:           string;
+  followUp:         string | null;
+  hasFollowUp:      boolean;
+  backlinkInjected: boolean;
+  backlinkUrl:      string | null;
+  backlinkType:     "gbp" | "article" | null;
+  modelUsed:        string;
+}
+
+export async function buildSessionStatic(input: BuildSessionStaticInput): Promise<BuildSessionStaticOutput> {
+  if (!input.keyword_text || typeof input.keyword_text !== "string") {
+    throw new Error("keyword_text is required and must be a non-empty string");
+  }
+  const variantText = input.variant_text?.trim() || input.keyword_text;
+
+  const ctx: SessionContext = {
+    keywordId:        0,
+    keywordText:      input.keyword_text,
+    clientId:         0,
+    businessId:       null,
+    campaignId:       null,
+    bizName:          input.biz_name ?? null,
+    bizCategory:      input.biz_category ?? null,
+    city:             input.city ?? null,
+    state:            input.state ?? null,
+    zip:              input.zip ?? null,
+    publishedAddress: input.published_address ?? null,
+    searchAddress:    input.search_address ?? null,
+    gmbUrl:           input.gmb_url ?? null,
+    websiteUrl:       input.website_url ?? null,
+    backlinks:        (input.backlinks ?? []).map(b => ({
+      url:           b.url,
+      linkTypeLabel: b.link_type_label ?? null,
+      embeddedUrl:   b.embedded_url ?? null,
+    })),
+  };
+
+  const hasBacklinks = ctx.backlinks.length > 0;
+  const injectBacklink = hasBacklinks && Math.random() < BACKLINK_INJECTION_RATE;
+  const classified = classifyBacklinks(injectBacklink ? ctx.backlinks : []);
+  const voice = input.voice ?? pickVoice(classified);
+
+  const prompt = await callSeedingLlm({ ctx, variantText, voice, classified, injectBacklink });
+  const followUp = await callFollowupLlm({
+    ctx, variantText, seedingPrompt: prompt,
+    platform: input.platform ?? null,
+    classified, injectBacklink,
+  });
+
+  return {
+    keywordText:      ctx.keywordText,
+    variantText,
+    platform:         (input.platform ?? "gemini").toLowerCase(),
+    voice,
+    prompt,
+    followUp,
+    hasFollowUp:      followUp != null,
+    backlinkInjected: injectBacklink,
+    backlinkUrl:      injectBacklink ? classified.pickedUrl : null,
+    backlinkType:     injectBacklink ? classified.pickedType : null,
+    modelUsed:        "deepseek-chat",
+  };
+}

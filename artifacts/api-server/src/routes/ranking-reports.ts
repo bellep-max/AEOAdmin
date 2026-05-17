@@ -1180,12 +1180,14 @@ router.get("/bi-weekly-report", async (req, res) => {
            COUNT(*) AS total_runs,
            COUNT(*) FILTER (WHERE status = 'error') AS error_count,
            MAX(CASE WHEN rn_asc = 1 THEN ranking_position END) AS first_rank,
-           MAX(CASE WHEN rn_desc = 1 THEN ranking_position END) AS latest_rank
+           MAX(CASE WHEN rn_desc = 1 THEN ranking_position END) AS latest_rank,
+           MAX(CASE WHEN rn_desc = 1 THEN status END) AS latest_status
          FROM base GROUP BY keyword_id, platform
        )
        SELECT
          cl.business_name AS client,
          b.name AS business,
+         k.id::int AS keyword_id,
          k.keyword_text AS keyword,
          a.platform,
          a.first_date::text AS first_audit,
@@ -1194,17 +1196,30 @@ router.get("/bi-weekly-report", async (req, res) => {
          a.first_rank::int,
          a.latest_rank::int,
          a.error_count::int,
+         a.latest_status AS last_status,
          (a.last_date + INTERVAL '14 days')::date::text AS next_due,
          CASE
            WHEN a.last_date >= (CURRENT_DATE - INTERVAL '14 days') THEN 'on_schedule'
            ELSE 'overdue'
          END AS status_class,
-         GREATEST(0, (CURRENT_DATE - (a.last_date + INTERVAL '14 days')::date))::int AS days_overdue
+         GREATEST(0, (CURRENT_DATE - (a.last_date + INTERVAL '14 days')::date))::int AS days_overdue,
+         CASE
+           WHEN a.total_runs < 2 THEN NULL
+           WHEN a.first_rank IS NULL OR a.latest_rank IS NULL THEN NULL
+           ELSE (a.first_rank - a.latest_rank)::int
+         END AS rank_change,
+         CASE
+           WHEN a.total_runs < 2 THEN 'single_run'
+           WHEN a.latest_rank IS NULL OR a.first_rank IS NULL THEN 'not_ranked'
+           WHEN a.latest_rank < a.first_rank THEN 'improved'
+           WHEN a.latest_rank > a.first_rank THEN 'declined'
+           ELSE 'no_change'
+         END AS trend
        FROM agg a
        JOIN keywords k ON k.id = a.keyword_id
        LEFT JOIN clients cl ON cl.id = k.client_id
        LEFT JOIN businesses b ON b.id = k.business_id
-       ORDER BY status_class DESC, days_overdue DESC, client, keyword, platform`,
+       ORDER BY (a.last_date + INTERVAL '14 days') ASC, client, keyword, platform`,
       paramsWithBatch,
     );
 
@@ -1409,12 +1424,72 @@ router.get("/bi-weekly-report", async (req, res) => {
       paramsWithBatch,
     );
 
+    /* Client Health Matrix — one row per client, columns are the batch dates.
+       Each cell carries success/error counts so the FE can color-code. */
+    const clientMatrixRows = await pool.query(
+      `WITH per_batch AS (
+         SELECT
+           rr.client_id,
+           rr.date::text AS batch_date,
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE rr.status = 'success')::int AS success,
+           COUNT(*) FILTER (WHERE rr.status = 'error')::int AS errors,
+           COUNT(*) FILTER (WHERE rr.ranking_position IS NOT NULL AND rr.ranking_position <= 3)::int AS in_top3
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+         GROUP BY rr.client_id, rr.date
+       ),
+       client_totals AS (
+         SELECT
+           client_id,
+           SUM(total) AS lifetime_total,
+           MAX(batch_date) AS last_batch
+         FROM per_batch GROUP BY client_id
+       )
+       SELECT
+         cl.id::int AS client_id,
+         cl.business_name AS client,
+         ct.last_batch,
+         (ct.last_batch::date + INTERVAL '14 days')::date::text AS next_due,
+         CASE
+           WHEN ct.last_batch::date < (CURRENT_DATE - INTERVAL '14 days') THEN 'overdue'
+           ELSE 'on_schedule'
+         END AS status_class,
+         GREATEST(0, (CURRENT_DATE - (ct.last_batch::date + INTERVAL '14 days')))::int AS days_overdue,
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'date', pb.batch_date,
+               'total', pb.total,
+               'success', pb.success,
+               'errors', pb.errors,
+               'in_top3', pb.in_top3
+             ) ORDER BY pb.batch_date DESC
+           ) FILTER (WHERE pb.batch_date IS NOT NULL),
+           '[]'::json
+         ) AS batches
+       FROM client_totals ct
+       JOIN clients cl ON cl.id = ct.client_id
+       LEFT JOIN per_batch pb ON pb.client_id = ct.client_id
+       GROUP BY cl.id, cl.business_name, ct.last_batch
+       ORDER BY
+         CASE WHEN ct.last_batch::date < (CURRENT_DATE - INTERVAL '14 days') THEN 0 ELSE 1 END,
+         ct.last_batch ASC,
+         cl.business_name`,
+      params,
+    );
+
     res.json({
       currentBatch: sectionA,
       oldFile: sectionB,
       rankingTrend: sectionC,
       initialRanking: sectionD,
       allBatches,
+      clientMatrix: clientMatrixRows.rows,
       details: {
         oldCombos: oldCombosRows.rows,
         newCombos: newCombosRows.rows,
