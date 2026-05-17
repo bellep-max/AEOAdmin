@@ -19,8 +19,6 @@ import {
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
-import { BiWeeklyReportTab } from "@/components/BiWeeklyReportTab";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   rawFetch,
   usePeriodComparison,
@@ -458,7 +456,6 @@ export default function Rankings() {
   );
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
-  const [view, setView] = useState<"period" | "biweekly">("period");
 
   const effectivePeriod: Period =
     compareMode === "lifetime" ? "lifetime" : period;
@@ -631,17 +628,6 @@ export default function Rankings() {
       {/* Weekly run banner */}
       <RankingRunBanner />
 
-      {/* View switcher — period table vs bi-weekly master report */}
-      <Tabs
-        value={view}
-        onValueChange={(v) => setView(v as "period" | "biweekly")}
-      >
-        <TabsList>
-          <TabsTrigger value="period">Period Comparison</TabsTrigger>
-          <TabsTrigger value="biweekly">Bi-Weekly Report</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {/* Cascade filter */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-3">
         <Building2 className="w-5 h-5 text-slate-600 dark:text-slate-400 flex-shrink-0 ml-1" />
@@ -776,36 +762,26 @@ export default function Rankings() {
         )}
       </div>
 
-      {view === "period" ? (
-        <>
-          {/* Period overview — all three periods at a glance */}
-          {compareMode === "period" && (
-            <PeriodOverview
-              clientId={selectedClientId}
-              businessId={selectedBusinessId}
-              aeoPlanId={selectedCampaignId}
-              activePeriod={period}
-              onSelect={(p) => setPeriod(p)}
-            />
-          )}
-
-          {/* Single view — grouped by Client with inline Business · Campaign context */}
-          <PeriodByClientTab
-            period={effectivePeriod}
-            clientId={selectedClientId}
-            businessId={selectedBusinessId}
-            aeoPlanId={selectedCampaignId}
-            comparisonOnly={comparisonOnly}
-            auditDate={auditDate}
-          />
-        </>
-      ) : (
-        <BiWeeklyReportTab
+      {/* Period overview — all three periods at a glance */}
+      {compareMode === "period" && (
+        <PeriodOverview
           clientId={selectedClientId}
           businessId={selectedBusinessId}
           aeoPlanId={selectedCampaignId}
+          activePeriod={period}
+          onSelect={(p) => setPeriod(p)}
         />
       )}
+
+      {/* Single view — grouped by Client with inline Business · Campaign context */}
+      <PeriodByClientTab
+        period={effectivePeriod}
+        clientId={selectedClientId}
+        businessId={selectedBusinessId}
+        aeoPlanId={selectedCampaignId}
+        comparisonOnly={comparisonOnly}
+        auditDate={auditDate}
+      />
     </div>
   );
 }

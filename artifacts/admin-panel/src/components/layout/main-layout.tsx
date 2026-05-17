@@ -12,7 +12,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Bell, Sun, Moon, User, ChevronLeft, UserCircle } from "lucide-react";
+import {
+  LogOut,
+  Bell,
+  Sun,
+  Moon,
+  User,
+  ChevronLeft,
+  UserCircle,
+} from "lucide-react";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
@@ -25,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/devices": "Devices",
   "/proxies": "Proxies",
   "/rankings": "Rankings",
+  "/rankings/bi-weekly": "Bi-Weekly Report",
   "/metrics": "Metrics",
   "/farm-metrics": "Device Farm Metrics",
   "/business-metrics": "Business Metrics",
@@ -41,7 +50,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // Find the best matching title
   const title =
     PAGE_TITLES[location] ??
-    Object.entries(PAGE_TITLES).find(([k]) => location.startsWith(k) && k !== "/")?.[1] ??
+    Object.entries(PAGE_TITLES).find(
+      ([k]) => location.startsWith(k) && k !== "/",
+    )?.[1] ??
     "Signal AEO";
 
   const canGoBack = location !== "/";
@@ -64,12 +75,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <ChevronLeft className="w-5 h-5" />
               </Button>
             )}
-            <span className="text-sm font-semibold text-foreground hidden sm:block">{title}</span>
+            <span className="text-sm font-semibold text-foreground hidden sm:block">
+              {title}
+            </span>
           </div>
 
           {user && (
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground relative"
+              >
                 <Bell className="w-4 h-4" />
               </Button>
 
@@ -79,9 +96,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                 onClick={toggleTheme}
-                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+                title={
+                  theme === "light"
+                    ? "Switch to dark mode"
+                    : "Switch to light mode"
+                }
               >
-                {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                {theme === "light" ? (
+                  <Moon className="w-4 h-4" />
+                ) : (
+                  <Sun className="w-4 h-4" />
+                )}
               </Button>
 
               {/* User Profile Dropdown */}
@@ -95,8 +120,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       {user.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="hidden md:block leading-tight text-left">
-                      <p className="text-sm font-medium text-foreground">{user.name}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {user.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {user.role}
+                      </p>
                     </div>
                   </Button>
                 </DropdownMenuTrigger>
@@ -104,7 +133,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <DropdownMenuLabel>
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{user.name}</p>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {user.email}
+                      </p>
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
@@ -127,7 +158,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     )}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem
+                    onClick={logout}
+                    className="text-destructive focus:text-destructive"
+                  >
                     <LogOut className="w-4 h-4 mr-2" />
                     Sign out
                   </DropdownMenuItem>

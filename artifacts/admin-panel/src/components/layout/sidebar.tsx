@@ -1,11 +1,23 @@
 import {
-  Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem,
-  SidebarMenuButton, SidebarRail, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarFooter,
-  SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarRail,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarFooter,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
 } from "@/components/ui/sidebar";
 import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -17,8 +29,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, Trophy, BarChart3, LogOut, Radio, Sun, Moon, Box, Key,
-  Activity, ChevronRight, Calendar, Search, List, FileText, ScrollText, Sparkles,
+  LayoutDashboard,
+  Users,
+  Trophy,
+  BarChart3,
+  LogOut,
+  Radio,
+  Sun,
+  Moon,
+  Box,
+  Key,
+  Activity,
+  ChevronRight,
+  Calendar,
+  Search,
+  List,
+  FileText,
+  ScrollText,
+  Sparkles,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -46,24 +74,22 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Overview",
-    items: [
-      { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    ],
+    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard }],
   },
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients",  href: "/clients",  icon: Users },
+      { name: "Clients", href: "/clients", icon: Users },
       {
         name: "Keywords",
         href: "/keywords",
         icon: Key,
         children: [
-          { name: "Keywords by Business", href: "/keywords",     icon: Key   },
-          { name: "All Keywords",         href: "/keywords/all", icon: List  },
+          { name: "Keywords by Business", href: "/keywords", icon: Key },
+          { name: "All Keywords", href: "/keywords/all", icon: List },
         ],
       },
-      { name: "Plans",    href: "/packages", icon: Box   },
+      { name: "Plans", href: "/packages", icon: Box },
     ],
   },
   {
@@ -74,8 +100,8 @@ const navGroups: NavGroup[] = [
         href: "/sessions",
         icon: Activity,
         children: [
-          { name: "Daily",          href: "/sessions/daily", icon: Calendar },
-          { name: "Audit Ranking",  href: "/sessions/audit", icon: Search   },
+          { name: "Daily", href: "/sessions/daily", icon: Calendar },
+          { name: "Audit Ranking", href: "/sessions/audit", icon: Search },
         ],
       },
     ],
@@ -83,16 +109,33 @@ const navGroups: NavGroup[] = [
   {
     label: "Analytics",
     items: [
-      { name: "Rankings", href: "/rankings", icon: Trophy     },
-      { name: "Metrics",  href: "/metrics",  icon: BarChart3  },
-      { name: "Reports",  href: "/reports",  icon: ScrollText, ownerOnly: true },
+      {
+        name: "Rankings",
+        href: "/rankings",
+        icon: Trophy,
+        children: [
+          { name: "Period Comparison", href: "/rankings", icon: BarChart3 },
+          {
+            name: "Bi-Weekly Report",
+            href: "/rankings/bi-weekly",
+            icon: Calendar,
+          },
+        ],
+      },
+      { name: "Metrics", href: "/metrics", icon: BarChart3 },
+      { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },
     ],
   },
   {
     label: "Admin",
     items: [
-      { name: "Prompts",  href: "/admin/prompts",  icon: FileText },
-      { name: "Variants", href: "/admin/variants", icon: Sparkles, ownerOnly: true },
+      { name: "Prompts", href: "/admin/prompts", icon: FileText },
+      {
+        name: "Variants",
+        href: "/admin/variants",
+        icon: Sparkles,
+        ownerOnly: true,
+      },
     ],
   },
 ];
@@ -119,7 +162,12 @@ export function AppSidebar() {
     href === "/" ? location === "/" : location.startsWith(href);
 
   const healthScore = health?.score ?? 0;
-  const healthColor = healthScore > 90 ? "bg-emerald-500" : healthScore > 70 ? "bg-amber-500" : "bg-destructive";
+  const healthColor =
+    healthScore > 90
+      ? "bg-emerald-500"
+      : healthScore > 70
+        ? "bg-amber-500"
+        : "bg-destructive";
 
   return (
     <Sidebar variant="inset" collapsible="icon">
@@ -130,11 +178,17 @@ export function AppSidebar() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm">
               <Radio className="w-4 h-4 text-white" />
             </div>
-            <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-sidebar ${healthColor}`} />
+            <span
+              className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-sidebar ${healthColor}`}
+            />
           </div>
           <div className="group-data-[collapsible=icon]:hidden leading-tight">
-            <p className="text-base font-bold text-black dark:text-white tracking-tight">Signal AEO</p>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Operations</p>
+            <p className="text-base font-bold text-black dark:text-white tracking-tight">
+              Signal AEO
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Operations
+            </p>
           </div>
         </div>
       </SidebarHeader>
@@ -151,7 +205,9 @@ export function AppSidebar() {
                 {group.items.map((item) => {
                   const active = isActive(item.href);
                   if (item.children && item.children.length > 0) {
-                    const childActive = item.children.some((c) => isActive(c.href));
+                    const childActive = item.children.some((c) =>
+                      isActive(c.href),
+                    );
                     const groupOpen = active || childActive;
                     return (
                       <Collapsible
@@ -170,8 +226,12 @@ export function AppSidebar() {
                                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                               }`}
                             >
-                              <item.icon className={`w-4 h-4 flex-shrink-0 ${childActive ? "text-primary" : ""}`} />
-                              <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">{item.name}</span>
+                              <item.icon
+                                className={`w-4 h-4 flex-shrink-0 ${childActive ? "text-primary" : ""}`}
+                              />
+                              <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">
+                                {item.name}
+                              </span>
                               <ChevronRight className="ml-auto w-4 h-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
                             </SidebarMenuButton>
                           </CollapsibleTrigger>
@@ -184,11 +244,22 @@ export function AppSidebar() {
                                     <SidebarMenuSubButton
                                       asChild
                                       isActive={cActive}
-                                      className={cActive ? "bg-primary/15 text-primary font-medium" : ""}
+                                      className={
+                                        cActive
+                                          ? "bg-primary/15 text-primary font-medium"
+                                          : ""
+                                      }
                                     >
-                                      <Link href={child.href} className="flex items-center gap-2">
-                                        <child.icon className={`w-4 h-4 flex-shrink-0 ${cActive ? "text-primary" : ""}`} />
-                                        <span className="text-base font-semibold text-black dark:text-white">{child.name}</span>
+                                      <Link
+                                        href={child.href}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <child.icon
+                                          className={`w-4 h-4 flex-shrink-0 ${cActive ? "text-primary" : ""}`}
+                                        />
+                                        <span className="text-base font-semibold text-black dark:text-white">
+                                          {child.name}
+                                        </span>
                                       </Link>
                                     </SidebarMenuSubButton>
                                   </SidebarMenuSubItem>
@@ -212,9 +283,16 @@ export function AppSidebar() {
                             : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                         }`}
                       >
-                        <Link href={item.href} className="flex items-center gap-2.5 px-2 py-2">
-                          <item.icon className={`w-4 h-4 flex-shrink-0 ${active ? "text-primary" : ""}`} />
-                          <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">{item.name}</span>
+                        <Link
+                          href={item.href}
+                          className="flex items-center gap-2.5 px-2 py-2"
+                        >
+                          <item.icon
+                            className={`w-4 h-4 flex-shrink-0 ${active ? "text-primary" : ""}`}
+                          />
+                          <span className="text-base font-semibold text-black dark:text-white group-data-[collapsible=icon]:hidden">
+                            {item.name}
+                          </span>
                           {active && (
                             <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary group-data-[collapsible=icon]:hidden" />
                           )}
@@ -234,8 +312,12 @@ export function AppSidebar() {
         {/* Health indicator */}
         <div className="mb-2 group-data-[collapsible=icon]:hidden">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-bold text-black dark:text-white uppercase tracking-wider">System</span>
-            <span className={`text-sm font-bold ${healthScore > 90 ? "text-emerald-400" : "text-amber-400"}`}>
+            <span className="text-sm font-bold text-black dark:text-white uppercase tracking-wider">
+              System
+            </span>
+            <span
+              className={`text-sm font-bold ${healthScore > 90 ? "text-emerald-400" : "text-amber-400"}`}
+            >
               {healthScore}%
             </span>
           </div>
@@ -262,8 +344,12 @@ export function AppSidebar() {
                     {user.name.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0 text-left group-data-[collapsible=icon]:hidden">
-                    <p className="text-base font-bold text-black dark:text-white truncate">{user.name}</p>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{user.role}</p>
+                    <p className="text-base font-bold text-black dark:text-white truncate">
+                      {user.name}
+                    </p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 truncate">
+                      {user.role}
+                    </p>
                   </div>
                 </div>
               </Button>
@@ -271,8 +357,12 @@ export function AppSidebar() {
             <DropdownMenuContent side="top" align="end" className="w-56 mb-2">
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-base font-bold text-black dark:text-white">{user.name}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{user.email}</p>
+                  <p className="text-base font-bold text-black dark:text-white">
+                    {user.name}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    {user.email}
+                  </p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -290,7 +380,10 @@ export function AppSidebar() {
                 )}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem
+                onClick={logout}
+                className="text-destructive focus:text-destructive"
+              >
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign out
               </DropdownMenuItem>

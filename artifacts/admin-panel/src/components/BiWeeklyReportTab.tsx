@@ -1,6 +1,8 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { rawFetch, fmtDayET } from "@/lib/period-comparison";
 import {
   AlertTriangle,
@@ -50,6 +52,7 @@ interface BiWeeklyReport {
     };
   } | null;
   allBatches: Array<{ date: string; combos: number }>;
+  clientMatrix?: ClientMatrixRow[];
   details?: {
     oldCombos: OldComboRow[];
     newCombos: NewComboRow[];
@@ -61,9 +64,26 @@ interface BiWeeklyReport {
   };
 }
 
+interface ClientMatrixRow {
+  client_id: number;
+  client: string | null;
+  last_batch: string;
+  next_due: string;
+  status_class: "on_schedule" | "overdue";
+  days_overdue: number;
+  batches: Array<{
+    date: string;
+    total: number;
+    success: number;
+    errors: number;
+    in_top3: number;
+  }>;
+}
+
 interface OldComboRow {
   client: string | null;
   business: string | null;
+  keyword_id: number;
   keyword: string;
   platform: string;
   first_audit: string;
@@ -72,9 +92,12 @@ interface OldComboRow {
   first_rank: number | null;
   latest_rank: number | null;
   error_count: number;
+  last_status: string | null;
   next_due: string;
   status_class: "on_schedule" | "overdue";
   days_overdue: number;
+  rank_change: number | null;
+  trend: "improved" | "declined" | "no_change" | "not_ranked" | "single_run";
 }
 
 interface NewComboRow {
@@ -431,6 +454,11 @@ export function BiWeeklyReportTab({ clientId, businessId, aeoPlanId }: Props) {
         ) : null}
       </div>
 
+      {/* Client Health Matrix — clients × batches grid */}
+      {data.clientMatrix && data.clientMatrix.length > 0 ? (
+        <ClientHealthMatrix rows={data.clientMatrix} batches={allBatches} />
+      ) : null}
+
       {/* Detail tables — only render when payload includes details */}
       {data.details ? (
         <>
@@ -439,13 +467,7 @@ export function BiWeeklyReportTab({ clientId, businessId, aeoPlanId }: Props) {
             rows={data.details.newCombos}
             batchDate={currentBatch.batchDate}
           />
-          <BehindScheduleTable
-            rows={data.details.oldCombos.filter(
-              (r) => r.status_class === "overdue",
-            )}
-          />
-          <RankingTrendTable rows={data.details.rankingTrendRows} />
-          <OldCombosTable rows={data.details.oldCombos} />
+          <UnifiedCombosTable rows={data.details.oldCombos} />
           <ErrorsTable rows={data.details.errors} />
         </>
       ) : null}
@@ -696,259 +718,159 @@ function NewCombosTable({
   );
 }
 
-function OldCombosTable({ rows }: { rows: OldComboRow[] }) {
+type ComboFilter =
+  | "all"
+  | "overdue"
+  | "declined"
+  | "improved"
+  | "no_change"
+  | "not_ranked"
+  | "single_run"
+  | "errors";
+
+function UnifiedCombosTable({ rows }: { rows: OldComboRow[] }) {
+  const [filter, setFilter] = useState<ComboFilter>("all");
+  const filtered = useMemo(() => {
+    if (filter === "all") return rows;
+    if (filter === "overdue")
+      return rows.filter((r) => r.status_class === "overdue");
+    if (filter === "errors") return rows.filter((r) => r.error_count > 0);
+    return rows.filter((r) => r.trend === filter);
+  }, [rows, filter]);
+
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      overdue: rows.filter((r) => r.status_class === "overdue").length,
+      declined: rows.filter((r) => r.trend === "declined").length,
+      improved: rows.filter((r) => r.trend === "improved").length,
+      no_change: rows.filter((r) => r.trend === "no_change").length,
+      not_ranked: rows.filter((r) => r.trend === "not_ranked").length,
+      single_run: rows.filter((r) => r.trend === "single_run").length,
+      errors: rows.filter((r) => r.error_count > 0).length,
+    }),
+    [rows],
+  );
+
   if (rows.length === 0) return null;
+
+  const chips: Array<{ k: ComboFilter; label: string }> = [
+    { k: "all", label: "All" },
+    { k: "overdue", label: "Overdue" },
+    { k: "declined", label: "Declined" },
+    { k: "improved", label: "Improved" },
+    { k: "no_change", label: "No change" },
+    { k: "not_ranked", label: "Not ranked" },
+    { k: "single_run", label: "Single run" },
+    { k: "errors", label: "Errors" },
+  ];
+
   return (
     <Card>
       <CardHeader className="pb-3 bg-slate-50">
-        <CardTitle className="text-sm font-semibold">
-          Old Combos — {rows.length.toLocaleString()} rows
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-sm font-semibold">
+            Combos · sorted by next-run date ·{" "}
+            {filtered.length.toLocaleString()} of {rows.length.toLocaleString()}
+          </CardTitle>
+          <div className="flex flex-wrap gap-1">
+            {chips.map((c) => {
+              const n = counts[c.k];
+              const active = filter === c.k;
+              return (
+                <Button
+                  key={c.k}
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setFilter(c.k)}
+                  className="h-7 text-[11px] px-2.5 gap-1.5"
+                >
+                  {c.label}
+                  <span
+                    className={
+                      active
+                        ? "text-[10px] opacity-90"
+                        : "text-[10px] text-muted-foreground"
+                    }
+                  >
+                    {n.toLocaleString()}
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 sticky top-0">
+            <thead className="bg-slate-50 sticky top-0 z-10">
               <tr className="text-left">
                 <Th>Client</Th>
                 <Th>Keyword</Th>
                 <Th>Platform</Th>
-                <Th>First audit</Th>
                 <Th>Latest audit</Th>
-                <Th className="text-right">Runs</Th>
                 <Th className="text-right">First</Th>
                 <Th className="text-right">Latest</Th>
+                <Th className="text-right">Δ</Th>
+                <Th className="text-right">Runs</Th>
                 <Th className="text-right">Errors</Th>
-                <Th>Next due</Th>
+                <Th>Next run</Th>
                 <Th>Status</Th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr
-                  key={i}
-                  className={`border-t hover:bg-slate-50/50 ${
-                    r.status_class === "overdue" ? "bg-red-50/40" : ""
-                  }`}
-                >
-                  <Td>{r.client ?? "—"}</Td>
-                  <Td className="font-medium">{r.keyword}</Td>
-                  <Td>
-                    <PlatformPill platform={r.platform} />
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {fmtDayET(r.first_audit)}
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {fmtDayET(r.latest_audit)}
-                  </Td>
-                  <Td className="text-right">{r.total_runs}</Td>
-                  <Td className="text-right">
-                    <RankBadge rank={r.first_rank} />
-                  </Td>
-                  <Td className="text-right">
-                    <RankBadge rank={r.latest_rank} />
-                  </Td>
-                  <Td className="text-right">
-                    {r.error_count > 0 ? (
-                      <span className="text-red-600 font-semibold">
-                        {r.error_count}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">0</span>
-                    )}
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {fmtDayET(r.next_due)}
-                  </Td>
-                  <Td>
-                    {r.status_class === "overdue" ? (
-                      <Badge variant="destructive" className="text-[10px]">
-                        Overdue {r.days_overdue}d
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-[10px]">
-                        On schedule
-                      </Badge>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function BehindScheduleTable({ rows }: { rows: OldComboRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <Card className="border-red-200">
-      <CardHeader className="pb-3 bg-red-50">
-        <CardTitle className="text-sm font-semibold text-red-800">
-          ⚠ Behind Schedule — {rows.length.toLocaleString()} combos · Run
-          immediately
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 sticky top-0">
-              <tr className="text-left">
-                <Th>Client</Th>
-                <Th>Keyword</Th>
-                <Th>Platform</Th>
-                <Th>First audit</Th>
-                <Th>Last run</Th>
-                <Th className="text-right">Was due</Th>
-                <Th className="text-right">Days overdue</Th>
-                <Th className="text-right">First rank</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr
-                  key={i}
-                  className="border-t bg-red-50/30 hover:bg-red-50/60"
-                >
-                  <Td>{r.client ?? "—"}</Td>
-                  <Td className="font-medium">{r.keyword}</Td>
-                  <Td>
-                    <PlatformPill platform={r.platform} />
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {fmtDayET(r.first_audit)}
-                  </Td>
-                  <Td className="text-muted-foreground">
-                    {fmtDayET(r.latest_audit)}
-                  </Td>
-                  <Td className="text-right text-muted-foreground">
-                    {fmtDayET(r.next_due)}
-                  </Td>
-                  <Td className="text-right">
-                    <span className="text-red-700 font-semibold">
-                      {r.days_overdue}d
-                    </span>
-                  </Td>
-                  <Td className="text-right">
-                    <RankBadge rank={r.first_rank} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function trendComment(r: TrendRow): string {
-  if (r.first_rank === null && r.latest_rank === null)
-    return "Not found in either run";
-  if (r.latest_rank === null)
-    return `Dropped off rankings — was #${r.first_rank} on ${r.first_audit}`;
-  if (r.first_rank === null)
-    return `Appeared at #${r.latest_rank} on ${r.latest_audit}`;
-  const delta = (r.first_rank ?? 0) - (r.latest_rank ?? 0);
-  if (delta > 0)
-    return `Improved ${delta} spot${delta !== 1 ? "s" : ""}: #${r.first_rank} → #${r.latest_rank} on ${r.latest_audit}`;
-  if (delta < 0)
-    return `Dropped ${Math.abs(delta)} spot${Math.abs(delta) !== 1 ? "s" : ""}: #${r.first_rank} → #${r.latest_rank} on ${r.latest_audit}`;
-  return `No change: stayed at #${r.latest_rank}`;
-}
-
-function RankingTrendTable({ rows }: { rows: TrendRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <Card>
-      <CardHeader className="pb-3 bg-purple-50/50">
-        <CardTitle className="text-sm font-semibold">
-          Ranking Trend — {rows.length.toLocaleString()} combos with 2+ runs ·
-          first audit vs latest
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 sticky top-0">
-              <tr className="text-left">
-                <Th>Client</Th>
-                <Th>Keyword</Th>
-                <Th>Platform</Th>
-                <Th>First audit</Th>
-                <Th className="text-right">First rank</Th>
-                <Th>Latest audit</Th>
-                <Th className="text-right">Latest rank</Th>
-                <Th className="text-right">Δ</Th>
-                <Th>Trend</Th>
-                <Th>Comment</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const trendBadge =
-                  r.trend === "improved"
-                    ? {
-                        label: "Improved",
-                        cls: "bg-emerald-100 text-emerald-800",
-                      }
+              {filtered.map((r) => {
+                const rowKey = `${r.keyword_id}-${r.platform}`;
+                const rowBg =
+                  r.status_class === "overdue"
+                    ? "bg-red-50/40"
                     : r.trend === "declined"
-                      ? { label: "Declined", cls: "bg-red-100 text-red-800" }
-                      : r.trend === "no_change"
-                        ? {
-                            label: "No change",
-                            cls: "bg-slate-100 text-slate-700",
-                          }
-                        : {
-                            label: "Not ranked",
-                            cls: "bg-amber-100 text-amber-800",
-                          };
+                      ? "bg-amber-50/30"
+                      : r.trend === "improved"
+                        ? "bg-emerald-50/30"
+                        : "";
                 return (
-                  <tr key={i} className="border-t hover:bg-slate-50/50">
+                  <tr
+                    key={rowKey}
+                    className={`border-t hover:bg-slate-100/60 ${rowBg}`}
+                  >
                     <Td>{r.client ?? "—"}</Td>
                     <Td className="font-medium">{r.keyword}</Td>
                     <Td>
                       <PlatformPill platform={r.platform} />
                     </Td>
                     <Td className="text-muted-foreground">
-                      {fmtDayET(r.first_audit)}
+                      {fmtDayET(r.latest_audit)}
                     </Td>
                     <Td className="text-right">
                       <RankBadge rank={r.first_rank} />
-                    </Td>
-                    <Td className="text-muted-foreground">
-                      {fmtDayET(r.latest_audit)}
                     </Td>
                     <Td className="text-right">
                       <RankBadge rank={r.latest_rank} />
                     </Td>
                     <Td className="text-right">
-                      {r.rank_change === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : r.rank_change > 0 ? (
-                        <span className="text-emerald-700 font-semibold">
-                          +{r.rank_change}
-                        </span>
-                      ) : r.rank_change < 0 ? (
-                        <span className="text-red-700 font-semibold">
-                          {r.rank_change}
+                      <DeltaCell delta={r.rank_change} />
+                    </Td>
+                    <Td className="text-right">{r.total_runs}</Td>
+                    <Td className="text-right">
+                      {r.error_count > 0 ? (
+                        <span className="text-red-600 font-semibold">
+                          {r.error_count}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
                       )}
                     </Td>
                     <Td>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${trendBadge.cls}`}
-                      >
-                        {trendBadge.label}
-                      </span>
+                      <NextRunCell
+                        nextDue={r.next_due}
+                        statusClass={r.status_class}
+                        daysOverdue={r.days_overdue}
+                      />
                     </Td>
-                    <Td className="text-muted-foreground text-[11px]">
-                      {trendComment(r)}
+                    <Td>
+                      <TrendBadge trend={r.trend} />
                     </Td>
                   </tr>
                 );
@@ -959,6 +881,224 @@ function RankingTrendTable({ rows }: { rows: TrendRow[] }) {
       </CardContent>
     </Card>
   );
+}
+
+function DeltaCell({ delta }: { delta: number | null }) {
+  if (delta === null) return <span className="text-muted-foreground">—</span>;
+  if (delta > 0)
+    return <span className="text-emerald-700 font-semibold">+{delta}</span>;
+  if (delta < 0)
+    return <span className="text-red-700 font-semibold">{delta}</span>;
+  return <span className="text-muted-foreground">0</span>;
+}
+
+function NextRunCell({
+  nextDue,
+  statusClass,
+  daysOverdue,
+}: {
+  nextDue: string;
+  statusClass: "on_schedule" | "overdue";
+  daysOverdue: number;
+}) {
+  if (statusClass === "overdue") {
+    return (
+      <div className="flex flex-col">
+        <span className="text-red-700 font-semibold">{fmtDayET(nextDue)}</span>
+        <span className="text-[10px] text-red-600">{daysOverdue}d overdue</span>
+      </div>
+    );
+  }
+  return <span className="text-muted-foreground">{fmtDayET(nextDue)}</span>;
+}
+
+function TrendBadge({ trend }: { trend: OldComboRow["trend"] }) {
+  const map: Record<OldComboRow["trend"], { label: string; cls: string }> = {
+    improved: { label: "Improved", cls: "bg-emerald-100 text-emerald-800" },
+    declined: { label: "Declined", cls: "bg-red-100 text-red-800" },
+    no_change: { label: "No change", cls: "bg-slate-100 text-slate-700" },
+    not_ranked: { label: "Not ranked", cls: "bg-amber-100 text-amber-800" },
+    single_run: { label: "Single run", cls: "bg-blue-100 text-blue-800" },
+  };
+  const b = map[trend];
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${b.cls}`}>
+      {b.label}
+    </span>
+  );
+}
+
+function ClientHealthMatrix({
+  rows,
+  batches,
+}: {
+  rows: ClientMatrixRow[];
+  batches: Array<{ date: string; combos: number }>;
+}) {
+  const today = todayYmd();
+  const batchDates = batches.map((b) => b.date);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3 bg-slate-50">
+        <CardTitle className="text-sm font-semibold">
+          Client Health Matrix · {rows.length.toLocaleString()} clients ×{" "}
+          {batches.length} batches
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            (sorted: most-overdue first · cells show combos audited per batch)
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0 z-10">
+              <tr className="text-left">
+                <Th className="min-w-[180px] sticky left-0 bg-slate-50 z-20">
+                  Client
+                </Th>
+                <Th>Last batch</Th>
+                <Th>Next run</Th>
+                <Th>Status</Th>
+                {batchDates.map((d) => (
+                  <Th key={d} className="text-center min-w-[64px]">
+                    {fmtShortDate(d)}
+                  </Th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const cells = new Map(r.batches.map((b) => [b.date, b]));
+                return (
+                  <tr
+                    key={r.client_id}
+                    className={`border-t hover:bg-slate-100/60 ${
+                      r.status_class === "overdue" ? "bg-red-50/40" : ""
+                    }`}
+                  >
+                    <Td className="font-medium sticky left-0 bg-white z-10">
+                      {r.client ?? "—"}
+                    </Td>
+                    <Td className="text-muted-foreground">
+                      {fmtDayET(r.last_batch)}
+                    </Td>
+                    <Td
+                      className={
+                        r.status_class === "overdue"
+                          ? "text-red-700 font-semibold"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {fmtDayET(r.next_due)}
+                      {r.status_class === "overdue" ? (
+                        <span className="ml-1 text-[10px]">
+                          ({r.days_overdue}d late)
+                        </span>
+                      ) : null}
+                    </Td>
+                    <Td>
+                      {r.status_class === "overdue" ? (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Overdue
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">
+                          On schedule
+                        </Badge>
+                      )}
+                    </Td>
+                    {batchDates.map((d) => {
+                      const cell = cells.get(d);
+                      return (
+                        <Td key={d} className="text-center">
+                          <MatrixCell
+                            cell={cell ?? null}
+                            isLastBatch={d === r.last_batch}
+                          />
+                        </Td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 text-[10px] text-muted-foreground border-t flex items-center gap-3">
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            all success
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-500" />
+            partial errors
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-500" />
+            all error / not run
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-slate-200" />
+            not in batch
+          </span>
+          <span className="ml-auto">Today: {fmtDayET(today)}</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MatrixCell({
+  cell,
+  isLastBatch,
+}: {
+  cell: {
+    total: number;
+    success: number;
+    errors: number;
+    in_top3: number;
+  } | null;
+  isLastBatch: boolean;
+}) {
+  if (!cell) {
+    return <span className="inline-block w-7 h-6 rounded bg-slate-100" />;
+  }
+  const tone =
+    cell.errors === 0
+      ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+      : cell.success === 0
+        ? "bg-red-100 text-red-800 border-red-200"
+        : "bg-amber-100 text-amber-800 border-amber-200";
+  const ring = isLastBatch ? "ring-1 ring-slate-700/40" : "";
+  return (
+    <span
+      className={`inline-flex items-center justify-center min-w-[34px] h-6 px-1.5 rounded border text-[10px] font-semibold ${tone} ${ring}`}
+      title={`${cell.total} combos · ${cell.success} success · ${cell.errors} errors · ${cell.in_top3} in top 3`}
+    >
+      {cell.total}
+    </span>
+  );
+}
+
+function fmtShortDate(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  if (!m) return ymd;
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `${months[Number(m[2]) - 1]} ${Number(m[3])}`;
 }
 
 function ErrorsTable({ rows }: { rows: ErrorRow[] }) {

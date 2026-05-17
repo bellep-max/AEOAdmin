@@ -19,6 +19,7 @@ import KeywordsAll from "@/pages/keywords-all";
 import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
+import RankingsBiWeekly from "@/pages/rankings-bi-weekly";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
 import Packages from "@/pages/packages";
@@ -31,7 +32,11 @@ import AdminVariants from "@/pages/admin-variants";
 
 import type { ComponentType } from "react";
 
-function OwnerGate({ component: Component }: { component: ComponentType<unknown> }) {
+function OwnerGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
   const { isOwner, isLoading } = useAuth();
   if (isLoading) return null;
   if (!isOwner) return <Redirect to="/" />;
@@ -65,12 +70,22 @@ function ProtectedRoutes() {
         <Route path="/" component={Dashboard} />
         <Route path="/clients" component={Clients} />
         <Route path="/clients/:id" component={ClientDetail} />
-        <Route path="/clients/:clientId/businesses/:businessId" component={BusinessDetail} />
-        <Route path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/keywords/:keywordId" component={KeywordDetail} />
-        <Route path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId" component={CampaignDetail} />
+        <Route
+          path="/clients/:clientId/businesses/:businessId"
+          component={BusinessDetail}
+        />
+        <Route
+          path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/keywords/:keywordId"
+          component={KeywordDetail}
+        />
+        <Route
+          path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId"
+          component={CampaignDetail}
+        />
         <Route path="/plans" component={Plans} />
         <Route path="/keywords" component={Keywords} />
         <Route path="/keywords/all" component={KeywordsAll} />
+        <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />
         <Route path="/packages" component={Packages} />
@@ -101,9 +116,7 @@ function Router() {
 
   return (
     <Switch>
-      <Route path="/login">
-        {user ? <Redirect to="/" /> : <Login />}
-      </Route>
+      <Route path="/login">{user ? <Redirect to="/" /> : <Login />}</Route>
       <Route>
         <ProtectedRoutes />
       </Route>
