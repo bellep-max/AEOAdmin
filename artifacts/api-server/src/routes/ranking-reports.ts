@@ -1459,7 +1459,7 @@ router.get("/bi-weekly-report", async (req, res) => {
            WHEN ct.last_batch::date < (CURRENT_DATE - INTERVAL '14 days') THEN 'overdue'
            ELSE 'on_schedule'
          END AS status_class,
-         GREATEST(0, (CURRENT_DATE - (ct.last_batch::date + INTERVAL '14 days')))::int AS days_overdue,
+         GREATEST(0, (CURRENT_DATE - (ct.last_batch::date + INTERVAL '14 days')::date))::int AS days_overdue,
          COALESCE(
            json_agg(
              json_build_object(
