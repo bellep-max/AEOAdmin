@@ -147,11 +147,19 @@ export default function KeywordsAll() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Campaigns</SelectItem>
-            {(allPlans ?? []).map((p) => (
-              <SelectItem key={p.id} value={String(p.id)}>
-                {p.name ?? p.planType}
-              </SelectItem>
-            ))}
+            {[...(allPlans ?? [])]
+              .sort((a, b) =>
+                (a.name ?? a.planType ?? "").localeCompare(
+                  b.name ?? b.planType ?? "",
+                  undefined,
+                  { sensitivity: "base" },
+                ),
+              )
+              .map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name ?? p.planType}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>

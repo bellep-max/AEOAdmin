@@ -1029,7 +1029,9 @@ export default function Keywords() {
                 setCollapsed(new Set());
                 setPage(0);
               }}
-              options={(clients ?? []).map((c) => ({ value: String(c.id), label: c.businessName }))}
+              options={[...(clients ?? [])]
+                .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? "", undefined, { sensitivity: "base" }))
+                .map((c) => ({ value: String(c.id), label: c.businessName }))}
               placeholder="All Clients"
               allLabel="All Clients"
             />
@@ -1045,7 +1047,9 @@ export default function Keywords() {
                 if (next !== null) setCollapsed(new Set([next]));
                 setPage(0);
               }}
-              options={bizInScope.map((b) => ({ value: String(b.id), label: b.name }))}
+              options={[...bizInScope]
+                .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }))
+                .map((b) => ({ value: String(b.id), label: b.name }))}
               placeholder="All Businesses"
               allLabel="All Businesses"
               disabled={bizInScope.length === 0}
@@ -1056,7 +1060,15 @@ export default function Keywords() {
             <SearchableSelect
               value={selectedCampaignId !== null ? String(selectedCampaignId) : null}
               onChange={(v) => { setSelectedCampaignId(v == null ? null : Number(v)); setPage(0); }}
-              options={planInScope.map((p) => ({ value: String(p.id), label: p.name ?? p.planType, sublabel: p.planType }))}
+              options={[...planInScope]
+                .sort((a, b) =>
+                  (a.name ?? a.planType ?? "").localeCompare(
+                    b.name ?? b.planType ?? "",
+                    undefined,
+                    { sensitivity: "base" },
+                  ),
+                )
+                .map((p) => ({ value: String(p.id), label: p.name ?? p.planType, sublabel: p.planType }))}
               placeholder="All Campaigns"
               allLabel="All Campaigns"
               disabled={planInScope.length === 0}

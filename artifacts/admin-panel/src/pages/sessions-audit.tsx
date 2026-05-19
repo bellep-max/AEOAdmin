@@ -152,7 +152,9 @@ export default function SessionsAudit() {
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All clients</SelectItem>
-                  {(clients ?? []).map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.businessName}</SelectItem>)}
+                  {[...(clients ?? [])]
+                    .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? "", undefined, { sensitivity: "base" }))
+                    .map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.businessName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -166,7 +168,9 @@ export default function SessionsAudit() {
                 <SelectTrigger><SelectValue placeholder={clientId == null ? "Pick client first" : "All"} /></SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All businesses</SelectItem>
-                  {filteredBusinesses.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+                  {[...filteredBusinesses]
+                    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }))
+                    .map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -180,7 +184,9 @@ export default function SessionsAudit() {
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All campaigns</SelectItem>
-                  {filteredCampaigns.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType}</SelectItem>)}
+                  {[...filteredCampaigns]
+                    .sort((a, b) => (a.name ?? a.planType ?? "").localeCompare(b.name ?? b.planType ?? "", undefined, { sensitivity: "base" }))
+                    .map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

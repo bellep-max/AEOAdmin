@@ -62,14 +62,22 @@ export default function RankingsBiWeekly() {
     },
   });
 
-  const bizScope = (allBusinesses ?? []).filter(
-    (b) => selectedClientId === null || b.clientId === selectedClientId,
+  const byName = (a: string | null | undefined, b: string | null | undefined) =>
+    (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
+
+  const clientsSorted = [...(allClients ?? [])].sort((a, b) =>
+    byName(a.businessName, b.businessName),
   );
-  const planScope = (allPlans ?? []).filter(
-    (p) =>
-      (selectedClientId === null || p.clientId === selectedClientId) &&
-      (selectedBusinessId === null || p.businessId === selectedBusinessId),
-  );
+  const bizScope = (allBusinesses ?? [])
+    .filter((b) => selectedClientId === null || b.clientId === selectedClientId)
+    .sort((a, b) => byName(a.name, b.name));
+  const planScope = (allPlans ?? [])
+    .filter(
+      (p) =>
+        (selectedClientId === null || p.clientId === selectedClientId) &&
+        (selectedBusinessId === null || p.businessId === selectedBusinessId),
+    )
+    .sort((a, b) => byName(a.name ?? a.planType, b.name ?? b.planType));
 
   const filtersActive =
     selectedClientId !== null ||
@@ -113,7 +121,7 @@ export default function RankingsBiWeekly() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Clients</SelectItem>
-            {(allClients ?? []).map((c) => (
+            {clientsSorted.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.businessName}
               </SelectItem>

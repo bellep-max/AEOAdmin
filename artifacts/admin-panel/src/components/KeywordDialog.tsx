@@ -135,11 +135,13 @@ export function KeywordDialog({
                   <Select value={selectedClientId} onValueChange={(v) => { set("clientId", v); set("businessId", ""); set("aeoPlanId", ""); }}>
                     <SelectTrigger className="bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 h-11 text-base text-black dark:text-white"><SelectValue placeholder="Select client…" /></SelectTrigger>
                     <SelectContent>
-                      {clients?.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          <span className="font-bold text-base">{c.businessName}</span>
-                        </SelectItem>
-                      ))}
+                      {[...(clients ?? [])]
+                        .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? "", undefined, { sensitivity: "base" }))
+                        .map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            <span className="font-bold text-base">{c.businessName}</span>
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -153,11 +155,13 @@ export function KeywordDialog({
                       {businessOptions.length === 0 && (
                         <div className="px-3 py-2 text-sm text-slate-500 italic">No businesses for this client</div>
                       )}
-                      {businessOptions.map((b) => (
-                        <SelectItem key={b.id} value={String(b.id)}>
-                          <span className="font-bold text-base">{b.name}</span>
-                        </SelectItem>
-                      ))}
+                      {[...businessOptions]
+                        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }))
+                        .map((b) => (
+                          <SelectItem key={b.id} value={String(b.id)}>
+                            <span className="font-bold text-base">{b.name}</span>
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -171,12 +175,14 @@ export function KeywordDialog({
                       {campaigns.length === 0 && (
                         <div className="px-3 py-2 text-sm text-slate-500 italic">No campaigns for this business</div>
                       )}
-                      {campaigns.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          <span className="font-semibold">{c.name ?? c.planType}</span>
-                          <span className="text-slate-500 ml-1">· {c.planType}</span>
-                        </SelectItem>
-                      ))}
+                      {[...campaigns]
+                        .sort((a, b) => (a.name ?? a.planType ?? "").localeCompare(b.name ?? b.planType ?? "", undefined, { sensitivity: "base" }))
+                        .map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            <span className="font-semibold">{c.name ?? c.planType}</span>
+                            <span className="text-slate-500 ml-1">· {c.planType}</span>
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>

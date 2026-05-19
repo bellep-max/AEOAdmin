@@ -118,15 +118,23 @@ function PlanForm({
                 <SelectValue placeholder="Select a client" />
               </SelectTrigger>
               <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    <div className="flex flex-col gap-0">
-                      <span className="font-bold">{c.businessName ?? `Client #${c.id}`}</span>
-                      {c.searchAddress && <span className="text-xs text-muted-foreground">Search: {c.searchAddress}</span>}
-                      {c.publishedAddress && <span className="text-xs text-muted-foreground">GMB: {c.publishedAddress}</span>}
-                    </div>
-                  </SelectItem>
-                ))}
+                {[...clients]
+                  .sort((a, b) =>
+                    (a.businessName ?? `Client #${a.id}`).localeCompare(
+                      b.businessName ?? `Client #${b.id}`,
+                      undefined,
+                      { sensitivity: "base" },
+                    ),
+                  )
+                  .map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      <div className="flex flex-col gap-0">
+                        <span className="font-bold">{c.businessName ?? `Client #${c.id}`}</span>
+                        {c.searchAddress && <span className="text-xs text-muted-foreground">Search: {c.searchAddress}</span>}
+                        {c.publishedAddress && <span className="text-xs text-muted-foreground">GMB: {c.publishedAddress}</span>}
+                      </div>
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
