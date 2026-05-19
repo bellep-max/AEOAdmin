@@ -428,17 +428,17 @@ function exportRankingsPDF(
           },
         ],
         [
-          { content: "1st", styles: { halign: "center" } },
-          { content: "Prev", styles: { halign: "center" } },
-          { content: "Curr", styles: { halign: "center" } },
+          { content: "Initial", styles: { halign: "center" } },
+          { content: "Previous", styles: { halign: "center" } },
+          { content: "Current", styles: { halign: "center" } },
           { content: "Status", styles: { halign: "center" } },
-          { content: "1st", styles: { halign: "center" } },
-          { content: "Prev", styles: { halign: "center" } },
-          { content: "Curr", styles: { halign: "center" } },
+          { content: "Initial", styles: { halign: "center" } },
+          { content: "Previous", styles: { halign: "center" } },
+          { content: "Current", styles: { halign: "center" } },
           { content: "Status", styles: { halign: "center" } },
-          { content: "1st", styles: { halign: "center" } },
-          { content: "Prev", styles: { halign: "center" } },
-          { content: "Curr", styles: { halign: "center" } },
+          { content: "Initial", styles: { halign: "center" } },
+          { content: "Previous", styles: { halign: "center" } },
+          { content: "Current", styles: { halign: "center" } },
           { content: "Status", styles: { halign: "center" } },
         ],
       ],
@@ -461,21 +461,23 @@ function exportRankingsPDF(
         overflow: "linebreak",
       },
       alternateRowStyles: { fillColor: [245, 247, 252] },
+      /* A4 landscape = 297mm; margins 8+8 leave 281mm usable.
+         77 (left cols) + 68×3 (platform groups) = 281 exactly. */
       columnStyles: {
-        0: { cellWidth: 28 }, // Business
-        1: { cellWidth: 28 }, // Campaign
-        2: { cellWidth: 38, overflow: "linebreak" }, // Keyword
-        3: { cellWidth: 16, halign: "center" }, // CG 1st
-        4: { cellWidth: 16, halign: "center" }, // CG Prev
-        5: { cellWidth: 16, halign: "center" }, // CG Curr
+        0: { cellWidth: 22 }, // Business
+        1: { cellWidth: 22 }, // Campaign
+        2: { cellWidth: 33, overflow: "linebreak" }, // Keyword
+        3: { cellWidth: 17, halign: "center" }, // CG Initial
+        4: { cellWidth: 17, halign: "center" }, // CG Previous
+        5: { cellWidth: 17, halign: "center" }, // CG Current
         6: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // CG Status
-        7: { cellWidth: 16, halign: "center" }, // Gem 1st
-        8: { cellWidth: 16, halign: "center" }, // Gem Prev
-        9: { cellWidth: 16, halign: "center" }, // Gem Curr
+        7: { cellWidth: 17, halign: "center" }, // Gem Initial
+        8: { cellWidth: 17, halign: "center" }, // Gem Previous
+        9: { cellWidth: 17, halign: "center" }, // Gem Current
         10: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // Gem Status
-        11: { cellWidth: 16, halign: "center" }, // Px 1st
-        12: { cellWidth: 16, halign: "center" }, // Px Prev
-        13: { cellWidth: 16, halign: "center" }, // Px Curr
+        11: { cellWidth: 17, halign: "center" }, // Px Initial
+        12: { cellWidth: 17, halign: "center" }, // Px Previous
+        13: { cellWidth: 17, halign: "center" }, // Px Current
         14: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // Px Status
       },
       margin: { left: 8, right: 8 },
