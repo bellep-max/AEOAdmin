@@ -14,7 +14,7 @@ import {
   Trophy,
 } from "lucide-react";
 
-interface BiWeeklyReport {
+export interface BiWeeklyReport {
   currentBatch: {
     batchDate: string;
     nextDueDate: string;
@@ -80,7 +80,7 @@ interface ClientMatrixRow {
   }>;
 }
 
-interface OldComboRow {
+export interface OldComboRow {
   client: string | null;
   business: string | null;
   keyword_id: number;

@@ -158,8 +158,25 @@ export function AppSidebar() {
     }))
     .filter((g) => (isOwner || !g.ownerOnly) && g.items.length > 0);
 
-  const isActive = (href: string) =>
-    href === "/" ? location === "/" : location.startsWith(href);
+  // Longest-prefix wins. /rankings/bi-weekly must NOT light up /rankings.
+  const allHrefs = visibleGroups.flatMap((g) =>
+    g.items.flatMap((it) => [
+      it.href,
+      ...(it.children?.map((c) => c.href) ?? []),
+    ]),
+  );
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    if (location === href) return true;
+    if (!location.startsWith(href + "/")) return false;
+    // Don't claim active when a more-specific sibling matches better.
+    return !allHrefs.some(
+      (h) =>
+        h !== href &&
+        h.startsWith(href + "/") &&
+        (location === h || location.startsWith(h + "/")),
+    );
+  };
 
   const healthScore = health?.score ?? 0;
   const healthColor =

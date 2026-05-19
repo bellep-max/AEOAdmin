@@ -8,8 +8,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { rawFetch } from "@/lib/period-comparison";
-import { BarChart3, Building2, X } from "lucide-react";
+import { BarChart3, Building2, X, Download, FileDown } from "lucide-react";
+import {
+  ExportBiWeeklyDialog,
+  type BiWeeklyExportValue,
+} from "@/components/ExportBiWeeklyDialog";
+import { exportBiWeeklyCSV, exportBiWeeklyPDF } from "@/lib/bi-weekly-export";
+import type { BiWeeklyReport } from "@/components/BiWeeklyReportTab";
 
 interface ClientRow {
   id: number;
@@ -36,6 +43,7 @@ export default function RankingsBiWeekly() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
     null,
   );
+  const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
 
   const { data: allClients } = useQuery<ClientRow[]>({
     queryKey: ["/api/clients"],
@@ -101,6 +109,24 @@ export default function RankingsBiWeekly() {
               matrix
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-slate-300 font-semibold"
+            onClick={() => setExportMode("csv")}
+          >
+            <Download className="w-3.5 h-3.5" /> CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-red-300 text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
+            onClick={() => setExportMode("pdf")}
+          >
+            <FileDown className="w-3.5 h-3.5" /> PDF
+          </Button>
         </div>
       </div>
 
@@ -194,6 +220,48 @@ export default function RankingsBiWeekly() {
         businessId={selectedBusinessId}
         aeoPlanId={selectedCampaignId}
       />
+
+      {exportMode && (
+        <ExportBiWeeklyDialog
+          open={!!exportMode}
+          onOpenChange={(o) => {
+            if (!o) setExportMode(null);
+          }}
+          mode={exportMode}
+          defaults={{
+            clientId: selectedClientId,
+            businessId: selectedBusinessId,
+            aeoPlanId: selectedCampaignId,
+          }}
+          clients={allClients ?? []}
+          businesses={allBusinesses ?? []}
+          plans={allPlans ?? []}
+          onConfirm={(v: BiWeeklyExportValue, report: BiWeeklyReport) => {
+            const filters = {
+              clientName:
+                v.clientId === null
+                  ? null
+                  : ((allClients ?? []).find((c) => c.id === v.clientId)
+                      ?.businessName ?? null),
+              businessName:
+                v.businessId === null
+                  ? null
+                  : ((allBusinesses ?? []).find((b) => b.id === v.businessId)
+                      ?.name ?? null),
+              campaignName:
+                v.aeoPlanId === null
+                  ? null
+                  : ((allPlans ?? []).find((p) => p.id === v.aeoPlanId)?.name ??
+                    null),
+            };
+            if (exportMode === "csv") {
+              exportBiWeeklyCSV(report, filters);
+            } else {
+              exportBiWeeklyPDF(report, filters);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
