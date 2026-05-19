@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -26,11 +26,17 @@ import {
   fmtDayET,
   fmtIsoDateET,
   fmtDateTimeET,
+  buildPeriodUrl,
   type Period,
+  type PeriodResponse,
   type PeriodRow,
 } from "@/lib/period-comparison";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  ExportRankingsDialog,
+  type ExportFiltersValue,
+} from "@/components/ExportRankingsDialog";
 
 interface ClientRow {
   id: number;
@@ -456,6 +462,8 @@ export default function Rankings() {
   );
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
+  const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
+  const queryClient = useQueryClient();
 
   const effectivePeriod: Period =
     compareMode === "lifetime" ? "lifetime" : period;
@@ -601,15 +609,7 @@ export default function Rankings() {
             variant="outline"
             size="sm"
             className="gap-1.5 border-slate-300 font-semibold"
-            disabled={!hasFilteredRows}
-            onClick={() =>
-              exportRankingsCSV(
-                filteredRows,
-                effectivePeriod,
-                periodData?.window ?? null,
-                exportFilters,
-              )
-            }
+            onClick={() => setExportMode("csv")}
           >
             <Download className="w-3.5 h-3.5" /> CSV
           </Button>
@@ -617,16 +617,7 @@ export default function Rankings() {
             variant="outline"
             size="sm"
             className="gap-1.5 border-red-300 text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
-            disabled={!hasFilteredRows}
-            onClick={() =>
-              exportRankingsPDF(
-                filteredRows,
-                effectivePeriod,
-                label.long,
-                periodData?.window ?? null,
-                exportFilters,
-              )
-            }
+            onClick={() => setExportMode("pdf")}
           >
             <FileDown className="w-3.5 h-3.5" /> PDF
           </Button>
@@ -790,6 +781,89 @@ export default function Rankings() {
         comparisonOnly={comparisonOnly}
         auditDate={auditDate}
       />
+
+      {/* Export dialog (PDF or CSV) — reviews/edits filters before generating */}
+      {exportMode && (
+        <ExportRankingsDialog
+          open={!!exportMode}
+          onOpenChange={(o) => {
+            if (!o) setExportMode(null);
+          }}
+          mode={exportMode}
+          defaults={{
+            clientId: selectedClientId,
+            businessId: selectedBusinessId,
+            aeoPlanId: selectedCampaignId,
+            period,
+            compareMode,
+            auditDate,
+            comparisonOnly,
+          }}
+          clients={allClients ?? []}
+          businesses={allBusinesses ?? []}
+          plans={allPlans ?? []}
+          onConfirm={async (v: ExportFiltersValue) => {
+            const eff: Period =
+              v.compareMode === "lifetime" ? "lifetime" : v.period;
+            const data = await queryClient.fetchQuery<PeriodResponse>({
+              queryKey: [
+                "/api/ranking-reports/period-comparison",
+                eff,
+                v.clientId,
+                v.businessId,
+                v.aeoPlanId,
+              ],
+              queryFn: async () => {
+                const res = await rawFetch(
+                  buildPeriodUrl({
+                    period: eff,
+                    clientId: v.clientId,
+                    businessId: v.businessId,
+                    aeoPlanId: v.aeoPlanId,
+                  }),
+                );
+                if (!res.ok) throw new Error("Failed");
+                return res.json();
+              },
+            });
+            let rows = data.rows;
+            rows = filterByCurrentDate(rows, v.auditDate);
+            if (v.comparisonOnly) rows = filterComparisonOnly(rows);
+
+            const ef: ExportFilters = {
+              clientName:
+                v.clientId === null
+                  ? null
+                  : ((allClients ?? []).find((c) => c.id === v.clientId)
+                      ?.businessName ?? null),
+              businessName:
+                v.businessId === null
+                  ? null
+                  : ((allBusinesses ?? []).find((b) => b.id === v.businessId)
+                      ?.name ?? null),
+              campaignName:
+                v.aeoPlanId === null
+                  ? null
+                  : ((allPlans ?? []).find((p) => p.id === v.aeoPlanId)?.name ??
+                    null),
+              auditDate: v.auditDate === "all" ? null : v.auditDate,
+              comparisonOnly: v.comparisonOnly,
+            };
+
+            if (exportMode === "csv") {
+              exportRankingsCSV(rows, eff, data.window, ef);
+            } else {
+              exportRankingsPDF(
+                rows,
+                eff,
+                periodLabel(eff).long,
+                data.window,
+                ef,
+              );
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
