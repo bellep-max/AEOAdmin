@@ -368,21 +368,39 @@ function exportRankingsPDF(
     );
     startY += 9;
 
+    // Strip ", YYYY" so "May 12, 2026" → "May 12" (saves cell width)
+    const shortDate = (s: string) => s.replace(/,\s*\d{4}$/, "");
+    // Combine "#9" + "May 12" into two-line cell content. Empty when no data.
+    const rd = (rank: string, date: string) => {
+      if (!rank || rank === "—") return date ? `—\n${shortDate(date)}` : "—";
+      return date ? `${rank}\n${shortDate(date)}` : rank;
+    };
+
+    // Status -> color tint (cell fill) so the eye finds wins/losses fast.
+    const statusFill = (s: string): [number, number, number] | undefined => {
+      const k = (s ?? "").toLowerCase();
+      if (k === "improved") return [220, 252, 231]; // green-100
+      if (k === "declined") return [254, 226, 226]; // red-100
+      if (k === "steady") return [241, 245, 249]; // slate-100
+      if (k === "new") return [219, 234, 254]; // blue-100
+      return undefined;
+    };
+
     const body = clientRows.map((r) => [
       r.business,
       r.campaign,
       r.keyword,
-      r.chatgptFirst,
-      r.chatgptPrev,
-      r.chatgptCurr,
+      rd(r.chatgptFirst, r.chatgptFirstDate),
+      rd(r.chatgptPrev, r.chatgptPrevDate),
+      rd(r.chatgptCurr, r.chatgptCurrDate),
       r.chatgptStatus,
-      r.geminiFirst,
-      r.geminiPrev,
-      r.geminiCurr,
+      rd(r.geminiFirst, r.geminiFirstDate),
+      rd(r.geminiPrev, r.geminiPrevDate),
+      rd(r.geminiCurr, r.geminiCurrDate),
       r.geminiStatus,
-      r.perplexityFirst,
-      r.perplexityPrev,
-      r.perplexityCurr,
+      rd(r.perplexityFirst, r.perplexityFirstDate),
+      rd(r.perplexityPrev, r.perplexityPrevDate),
+      rd(r.perplexityCurr, r.perplexityCurrDate),
       r.perplexityStatus,
     ]);
 
@@ -390,52 +408,89 @@ function exportRankingsPDF(
       startY,
       head: [
         [
-          "Business",
-          "Campaign",
-          "Keyword",
-          "ChatGPT 1st",
-          "ChatGPT Prev",
-          "ChatGPT Curr",
-          "Status",
-          "Gemini 1st",
-          "Gemini Prev",
-          "Gemini Curr",
-          "Status",
-          "Perplexity 1st",
-          "Perplexity Prev",
-          "Perplexity Curr",
-          "Status",
+          { content: "Business", rowSpan: 2 },
+          { content: "Campaign", rowSpan: 2 },
+          { content: "Keyword", rowSpan: 2 },
+          {
+            content: "ChatGPT",
+            colSpan: 4,
+            styles: { fillColor: [16, 90, 60], halign: "center" },
+          },
+          {
+            content: "Gemini",
+            colSpan: 4,
+            styles: { fillColor: [29, 78, 132], halign: "center" },
+          },
+          {
+            content: "Perplexity",
+            colSpan: 4,
+            styles: { fillColor: [88, 28, 135], halign: "center" },
+          },
+        ],
+        [
+          { content: "1st", styles: { halign: "center" } },
+          { content: "Prev", styles: { halign: "center" } },
+          { content: "Curr", styles: { halign: "center" } },
+          { content: "Status", styles: { halign: "center" } },
+          { content: "1st", styles: { halign: "center" } },
+          { content: "Prev", styles: { halign: "center" } },
+          { content: "Curr", styles: { halign: "center" } },
+          { content: "Status", styles: { halign: "center" } },
+          { content: "1st", styles: { halign: "center" } },
+          { content: "Prev", styles: { halign: "center" } },
+          { content: "Curr", styles: { halign: "center" } },
+          { content: "Status", styles: { halign: "center" } },
         ],
       ],
       body,
       theme: "striped",
       headStyles: {
         fillColor: [17, 24, 39],
-        textColor: [180, 200, 230],
-        fontSize: 6,
+        textColor: [255, 255, 255],
+        fontSize: 7.5,
         fontStyle: "bold",
         cellPadding: 2,
+        halign: "left",
+        valign: "middle",
       },
-      bodyStyles: { fontSize: 6, cellPadding: 1.5, textColor: [30, 30, 50] },
+      bodyStyles: {
+        fontSize: 6.5,
+        cellPadding: 1.5,
+        textColor: [30, 30, 50],
+        valign: "middle",
+        overflow: "linebreak",
+      },
       alternateRowStyles: { fillColor: [245, 247, 252] },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 22 },
-        2: { cellWidth: 28, overflow: "linebreak" },
-        3: { cellWidth: 11, halign: "center" },
-        4: { cellWidth: 11, halign: "center" },
-        5: { cellWidth: 11, halign: "center" },
-        6: { cellWidth: 12, halign: "center" },
-        7: { cellWidth: 11, halign: "center" },
-        8: { cellWidth: 11, halign: "center" },
-        9: { cellWidth: 11, halign: "center" },
-        10: { cellWidth: 12, halign: "center" },
-        11: { cellWidth: 13, halign: "center" },
-        12: { cellWidth: 13, halign: "center" },
-        13: { cellWidth: 13, halign: "center" },
-        14: { cellWidth: 13, halign: "center" },
+        0: { cellWidth: 28 }, // Business
+        1: { cellWidth: 28 }, // Campaign
+        2: { cellWidth: 38, overflow: "linebreak" }, // Keyword
+        3: { cellWidth: 16, halign: "center" }, // CG 1st
+        4: { cellWidth: 16, halign: "center" }, // CG Prev
+        5: { cellWidth: 16, halign: "center" }, // CG Curr
+        6: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // CG Status
+        7: { cellWidth: 16, halign: "center" }, // Gem 1st
+        8: { cellWidth: 16, halign: "center" }, // Gem Prev
+        9: { cellWidth: 16, halign: "center" }, // Gem Curr
+        10: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // Gem Status
+        11: { cellWidth: 16, halign: "center" }, // Px 1st
+        12: { cellWidth: 16, halign: "center" }, // Px Prev
+        13: { cellWidth: 16, halign: "center" }, // Px Curr
+        14: { cellWidth: 17, halign: "center", fontStyle: "bold" }, // Px Status
       },
-      margin: { left: 10, right: 10 },
+      margin: { left: 8, right: 8 },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        // Color the three Status cells (indexes 6, 10, 14)
+        if (
+          data.column.index === 6 ||
+          data.column.index === 10 ||
+          data.column.index === 14
+        ) {
+          const fill = statusFill(String(data.cell.raw ?? ""));
+          if (fill) data.cell.styles.fillColor = fill;
+        }
+      },
       didDrawPage: footerFn,
     });
 
