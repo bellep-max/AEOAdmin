@@ -397,7 +397,8 @@ export function PeriodByClientTab({
       </div>
 
       <RankingScreenshotDialog
-        reportId={shotCell?.id ?? null}
+        recordId={shotCell?.id ?? null}
+        endpoint="/api/ranking-reports/{id}/screenshot-url"
         onClose={() => setShotCell(null)}
         title="Audit screenshot"
         subtitle={shotCell?.label}

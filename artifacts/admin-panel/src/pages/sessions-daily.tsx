@@ -1,19 +1,44 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { rawFetch } from "@/lib/period-comparison";
 import { ImportSessionsDialog } from "@/components/ImportSessionsDialog";
+import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 import { Upload } from "lucide-react";
 import {
-  useClients, useBusinesses, useCampaigns,
-  fmtDateTime, fmtDuration, fmtBool, statusBadgeClass,
+  useClients,
+  useBusinesses,
+  useCampaigns,
+  fmtDateTime,
+  fmtDuration,
+  fmtBool,
+  statusBadgeClass,
 } from "@/lib/session-common";
 
 interface SessionRow {
@@ -79,13 +104,22 @@ const POPOVER_MAX_H = "max-h-[320px]";
 /* Last-7-days default in ET so date filters match the server-side ET-aware range. */
 function etDateString(d: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).formatToParts(d);
-  const m = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+  const m = Object.fromEntries(
+    parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]),
+  );
   return `${m.year}-${m.month}-${m.day}`;
 }
-function defaultToET():   string { return etDateString(new Date()); }
-function defaultFromET(): string { return etDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)); }
+function defaultToET(): string {
+  return etDateString(new Date());
+}
+function defaultFromET(): string {
+  return etDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+}
 
 export default function SessionsDaily() {
   const [clientId, setClientId] = useState<number | null>(null);
@@ -94,9 +128,10 @@ export default function SessionsDaily() {
   const [platform, setPlatform] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [from, setFrom] = useState<string>(() => defaultFromET());
-  const [to, setTo]     = useState<string>(() => defaultToET());
+  const [to, setTo] = useState<string>(() => defaultToET());
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<SessionRow | null>(null);
+  const [shotId, setShotId] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const { data: clients } = useClients();
@@ -104,30 +139,45 @@ export default function SessionsDaily() {
   const { data: campaigns } = useCampaigns(clientId);
 
   const filteredBusinesses = useMemo(
-    () => (clientId == null ? [] : (businesses ?? []).filter((b) => b.clientId === clientId)),
+    () =>
+      clientId == null
+        ? []
+        : (businesses ?? []).filter((b) => b.clientId === clientId),
     [businesses, clientId],
   );
   const filteredCampaigns = useMemo(
-    () => (campaigns ?? []).filter((c) =>
-      (clientId == null   || c.clientId === clientId) &&
-      (businessId == null || c.businessId === businessId),
-    ),
+    () =>
+      (campaigns ?? []).filter(
+        (c) =>
+          (clientId == null || c.clientId === clientId) &&
+          (businessId == null || c.businessId === businessId),
+      ),
     [campaigns, clientId, businessId],
   );
 
-  const queryKey = ["/api/sessions", clientId, businessId, campaignId, platform, status, from, to, page] as const;
+  const queryKey = [
+    "/api/sessions",
+    clientId,
+    businessId,
+    campaignId,
+    platform,
+    status,
+    from,
+    to,
+    page,
+  ] as const;
   const { data, isLoading, error, refetch } = useQuery<SessionsResponse>({
     queryKey,
     queryFn: async () => {
       const p = new URLSearchParams();
-      if (clientId   != null) p.set("clientId",   String(clientId));
+      if (clientId != null) p.set("clientId", String(clientId));
       if (businessId != null) p.set("businessId", String(businessId));
       if (campaignId != null) p.set("campaignId", String(campaignId));
-      if (platform)           p.set("platform",   platform);
-      if (status)             p.set("status",     status);
-      if (from)               p.set("from",       from);
-      if (to)                 p.set("to",         to);
-      p.set("limit",  String(PAGE_SIZE));
+      if (platform) p.set("platform", platform);
+      if (status) p.set("status", status);
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+      p.set("limit", String(PAGE_SIZE));
       p.set("offset", String(page * PAGE_SIZE));
       const res = await rawFetch(`/api/sessions?${p}`);
       if (!res.ok) throw new Error("Failed to load sessions");
@@ -139,9 +189,13 @@ export default function SessionsDaily() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function clearFilters() {
-    setClientId(null); setBusinessId(null); setCampaignId(null);
-    setPlatform(""); setStatus("");
-    setFrom(defaultFromET()); setTo(defaultToET());
+    setClientId(null);
+    setBusinessId(null);
+    setCampaignId(null);
+    setPlatform("");
+    setStatus("");
+    setFrom(defaultFromET());
+    setTo(defaultToET());
     setPage(0);
   }
 
@@ -150,34 +204,61 @@ export default function SessionsDaily() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Daily Sessions</h1>
-          <p className="text-sm text-muted-foreground">Per-run logs from the executor — one row per AI session.</p>
+          <p className="text-sm text-muted-foreground">
+            Per-run logs from the executor — one row per AI session.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            className="gap-2"
+          >
             <Upload className="w-4 h-4" />
             Import CSV
           </Button>
-          <Button variant="outline" onClick={() => refetch()}>Refresh</Button>
+          <Button variant="outline" onClick={() => refetch()}>
+            Refresh
+          </Button>
         </div>
       </div>
 
       {/* Filters */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Filters</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Filters</CardTitle>
+        </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Client</Label>
               <Select
                 value={clientId == null ? ALL : String(clientId)}
-                onValueChange={(v) => { setClientId(v === ALL ? null : Number(v)); setBusinessId(null); setCampaignId(null); setPage(0); }}
+                onValueChange={(v) => {
+                  setClientId(v === ALL ? null : Number(v));
+                  setBusinessId(null);
+                  setCampaignId(null);
+                  setPage(0);
+                }}
               >
-                <SelectTrigger><SelectValue placeholder="All clients" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="All clients" />
+                </SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All clients</SelectItem>
                   {[...(clients ?? [])]
-                    .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? "", undefined, { sensitivity: "base" }))
-                    .map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.businessName}</SelectItem>)}
+                    .sort((a, b) =>
+                      (a.businessName ?? "").localeCompare(
+                        b.businessName ?? "",
+                        undefined,
+                        { sensitivity: "base" },
+                      ),
+                    )
+                    .map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.businessName}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -185,15 +266,33 @@ export default function SessionsDaily() {
               <Label className="text-xs">Business</Label>
               <Select
                 value={businessId == null ? ALL : String(businessId)}
-                onValueChange={(v) => { setBusinessId(v === ALL ? null : Number(v)); setCampaignId(null); setPage(0); }}
+                onValueChange={(v) => {
+                  setBusinessId(v === ALL ? null : Number(v));
+                  setCampaignId(null);
+                  setPage(0);
+                }}
                 disabled={clientId == null}
               >
-                <SelectTrigger><SelectValue placeholder={clientId == null ? "Pick client first" : "All businesses"} /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      clientId == null ? "Pick client first" : "All businesses"
+                    }
+                  />
+                </SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All businesses</SelectItem>
                   {[...filteredBusinesses]
-                    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }))
-                    .map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+                    .sort((a, b) =>
+                      (a.name ?? "").localeCompare(b.name ?? "", undefined, {
+                        sensitivity: "base",
+                      }),
+                    )
+                    .map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -201,22 +300,45 @@ export default function SessionsDaily() {
               <Label className="text-xs">Campaign</Label>
               <Select
                 value={campaignId == null ? ALL : String(campaignId)}
-                onValueChange={(v) => { setCampaignId(v === ALL ? null : Number(v)); setPage(0); }}
+                onValueChange={(v) => {
+                  setCampaignId(v === ALL ? null : Number(v));
+                  setPage(0);
+                }}
                 disabled={clientId == null}
               >
-                <SelectTrigger><SelectValue placeholder="All campaigns" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="All campaigns" />
+                </SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All campaigns</SelectItem>
                   {[...filteredCampaigns]
-                    .sort((a, b) => (a.name ?? a.planType ?? "").localeCompare(b.name ?? b.planType ?? "", undefined, { sensitivity: "base" }))
-                    .map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType}</SelectItem>)}
+                    .sort((a, b) =>
+                      (a.name ?? a.planType ?? "").localeCompare(
+                        b.name ?? b.planType ?? "",
+                        undefined,
+                        { sensitivity: "base" },
+                      ),
+                    )
+                    .map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name ?? c.planType}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Platform</Label>
-              <Select value={platform || ALL} onValueChange={(v) => { setPlatform(v === ALL ? "" : v); setPage(0); }}>
-                <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <Select
+                value={platform || ALL}
+                onValueChange={(v) => {
+                  setPlatform(v === ALL ? "" : v);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All platforms</SelectItem>
                   <SelectItem value="gemini">Gemini</SelectItem>
@@ -227,8 +349,16 @@ export default function SessionsDaily() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Status</Label>
-              <Select value={status || ALL} onValueChange={(v) => { setStatus(v === ALL ? "" : v); setPage(0); }}>
-                <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <Select
+                value={status || ALL}
+                onValueChange={(v) => {
+                  setStatus(v === ALL ? "" : v);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
                 <SelectContent className={POPOVER_MAX_H}>
                   <SelectItem value={ALL}>All</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
@@ -239,15 +369,31 @@ export default function SessionsDaily() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">From</Label>
-              <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} />
+              <Input
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setPage(0);
+                }}
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">To</Label>
-              <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} />
+              <Input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setPage(0);
+                }}
+              />
             </div>
           </div>
           <div className="flex justify-end mt-3">
-            <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -257,24 +403,57 @@ export default function SessionsDaily() {
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-base">
             Sessions
-            <span className="ml-2 text-sm font-normal text-muted-foreground">{total.toLocaleString()} total</span>
-            <span className="ml-2 text-xs font-normal text-muted-foreground">· times in America/New_York (ET)</span>
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {total.toLocaleString()} total
+            </span>
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              · times in America/New_York (ET)
+            </span>
           </CardTitle>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev</Button>
-            <span>Page {page + 1} / {totalPages}</span>
-            <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page === 0}
+              onClick={() => setPage(page - 1)}
+            >
+              Prev
+            </Button>
+            <span>
+              Page {page + 1} / {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page + 1 >= totalPages}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading && <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>}
-          {error && <p className="text-sm text-destructive py-8 text-center">Failed to load sessions.</p>}
+          {isLoading && (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Loading…
+            </p>
+          )}
+          {error && (
+            <p className="text-sm text-destructive py-8 text-center">
+              Failed to load sessions.
+            </p>
+          )}
           {!isLoading && !error && (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Time <span className="text-xs font-normal text-muted-foreground">(ET)</span></TableHead>
+                    <TableHead>
+                      Time{" "}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        (ET)
+                      </span>
+                    </TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Business</TableHead>
                     <TableHead>Campaign</TableHead>
@@ -287,29 +466,70 @@ export default function SessionsDaily() {
                 </TableHeader>
                 <TableBody>
                   {(data?.sessions ?? []).length === 0 ? (
-                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No sessions match these filters.</TableCell></TableRow>
-                  ) : (data?.sessions ?? []).map((s) => (
-                    <TableRow key={s.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setOpen(s)}>
-                      <TableCell className="whitespace-nowrap text-xs">{fmtDateTime(s.timestamp)}</TableCell>
-                      <TableCell className="text-sm">{s.clientName ?? `#${s.clientId}`}</TableCell>
-                      <TableCell className="text-sm">{s.bizName ?? "—"}</TableCell>
-                      <TableCell className="text-sm">{s.campaignName ?? "—"}</TableCell>
-                      <TableCell className="text-sm">
-                        {s.keywordVariant ? (
-                          <div>
-                            <span className="font-medium">{s.keywordVariant}</span>
-                            <div className="text-xs text-muted-foreground">↳ {s.keywordText ?? "—"}</div>
-                          </div>
-                        ) : (
-                          <span className="font-medium">{s.keywordText ?? "—"}</span>
-                        )}
+                    <TableRow>
+                      <TableCell
+                        colSpan={9}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        No sessions match these filters.
                       </TableCell>
-                      <TableCell><Badge variant="secondary">{s.aiPlatform}</Badge></TableCell>
-                      <TableCell><Badge className={statusBadgeClass(s.status)}>{s.status}</Badge></TableCell>
-                      <TableCell className="text-sm">{fmtDuration(s.durationSeconds)}</TableCell>
-                      <TableCell>{renderBacklink(s.backlinksExpected, s.backlinkInjected, s.backlinkFound)}</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    (data?.sessions ?? []).map((s) => (
+                      <TableRow
+                        key={s.id}
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => setOpen(s)}
+                      >
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {fmtDateTime(s.timestamp)}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {s.clientName ?? `#${s.clientId}`}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {s.bizName ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {s.campaignName ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {s.keywordVariant ? (
+                            <div>
+                              <span className="font-medium">
+                                {s.keywordVariant}
+                              </span>
+                              <div className="text-xs text-muted-foreground">
+                                ↳ {s.keywordText ?? "—"}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="font-medium">
+                              {s.keywordText ?? "—"}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{s.aiPlatform}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={statusBadgeClass(s.status)}>
+                            {s.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {fmtDuration(s.durationSeconds)}
+                        </TableCell>
+                        <TableCell>
+                          {renderBacklink(
+                            s.backlinksExpected,
+                            s.backlinkInjected,
+                            s.backlinkFound,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -318,71 +538,168 @@ export default function SessionsDaily() {
       </Card>
 
       {/* Detail drawer */}
-      <Sheet open={open != null} onOpenChange={(v) => { if (!v) setOpen(null); }}>
+      <Sheet
+        open={open != null}
+        onOpenChange={(v) => {
+          if (!v) setOpen(null);
+        }}
+      >
         <SheetContent className="w-[640px] sm:max-w-[640px] overflow-y-auto">
           {open && (
             <>
               <SheetHeader>
                 <SheetTitle>Session #{open.id}</SheetTitle>
-                <SheetDescription>{fmtDateTime(open.timestamp)} · {open.aiPlatform}</SheetDescription>
+                <SheetDescription>
+                  {fmtDateTime(open.timestamp)} · {open.aiPlatform}
+                </SheetDescription>
               </SheetHeader>
               <div className="mt-6 space-y-5 text-sm">
                 <Section title="Identity">
-                  <Row label="Client"   value={`${open.clientName ?? "—"}${open.clientId ? ` (#${open.clientId})` : ""}`} />
-                  <Row label="Business" value={`${open.bizName ?? "—"}${open.businessId ? ` (#${open.businessId})` : ""}`} />
-                  <Row label="Campaign" value={`${open.campaignName ?? "—"}${open.campaignId ? ` (#${open.campaignId})` : ""}`} />
+                  <Row
+                    label="Client"
+                    value={`${open.clientName ?? "—"}${open.clientId ? ` (#${open.clientId})` : ""}`}
+                  />
+                  <Row
+                    label="Business"
+                    value={`${open.bizName ?? "—"}${open.businessId ? ` (#${open.businessId})` : ""}`}
+                  />
+                  <Row
+                    label="Campaign"
+                    value={`${open.campaignName ?? "—"}${open.campaignId ? ` (#${open.campaignId})` : ""}`}
+                  />
                   {open.keywordVariant ? (
                     <Row label="Variant" value={open.keywordVariant} />
                   ) : null}
-                  <Row label="Keyword"  value={`${open.keywordText ?? "—"}${open.keywordId ? ` (#${open.keywordId})` : ""}`} />
-                  <Row label="City/State" value={[open.city, open.state].filter(Boolean).join(", ") || "—"} />
+                  <Row
+                    label="Keyword"
+                    value={`${open.keywordText ?? "—"}${open.keywordId ? ` (#${open.keywordId})` : ""}`}
+                  />
+                  <Row
+                    label="City/State"
+                    value={
+                      [open.city, open.state].filter(Boolean).join(", ") || "—"
+                    }
+                  />
                 </Section>
 
                 <Section title="Run">
-                  <Row label="Status"   value={open.status} />
-                  <Row label="Type"     value={open.type} />
-                  <Row label="Duration" value={fmtDuration(open.durationSeconds)} />
-                  <Row label="Date"     value={open.date ?? "—"} />
+                  <Row label="Status" value={open.status} />
+                  <Row label="Type" value={open.type} />
+                  <Row
+                    label="Duration"
+                    value={fmtDuration(open.durationSeconds)}
+                  />
+                  <Row label="Date" value={open.date ?? "—"} />
                 </Section>
 
                 <Section title="Prompts">
-                  <Row label="Prompt"     value={open.promptText ?? "—"}   pre />
-                  <Row label="Has follow-up" value={fmtBool(open.hasFollowUp)} />
-                  <Row label="Follow-up"  value={open.followupText ?? "—"} pre />
+                  <Row label="Prompt" value={open.promptText ?? "—"} pre />
+                  <Row
+                    label="Has follow-up"
+                    value={fmtBool(open.hasFollowUp)}
+                  />
+                  <Row label="Follow-up" value={open.followupText ?? "—"} pre />
                 </Section>
 
                 <Section title="Device & Proxy">
-                  <Row label="Device id"        value={open.deviceIdentifier ?? (open.deviceId ? `#${open.deviceId}` : "—")} />
-                  <Row label="Proxy status"     value={open.proxyStatus ?? "—"} />
-                  <Row label="Proxy username"   value={open.proxyUsername ?? "—"} />
-                  <Row label="Proxy host:port"  value={open.proxyHost ? `${open.proxyHost}:${open.proxyPort ?? "?"}` : "—"} />
-                  <Row label="Exit IP"          value={open.proxyIp ?? "—"} />
-                  <Row label="Exit location"    value={[open.proxyCity, open.proxyRegion, open.proxyCountry, open.proxyZip].filter(Boolean).join(", ") || "—"} />
+                  <Row
+                    label="Device id"
+                    value={
+                      open.deviceIdentifier ??
+                      (open.deviceId ? `#${open.deviceId}` : "—")
+                    }
+                  />
+                  <Row label="Proxy status" value={open.proxyStatus ?? "—"} />
+                  <Row
+                    label="Proxy username"
+                    value={open.proxyUsername ?? "—"}
+                  />
+                  <Row
+                    label="Proxy host:port"
+                    value={
+                      open.proxyHost
+                        ? `${open.proxyHost}:${open.proxyPort ?? "?"}`
+                        : "—"
+                    }
+                  />
+                  <Row label="Exit IP" value={open.proxyIp ?? "—"} />
+                  <Row
+                    label="Exit location"
+                    value={
+                      [
+                        open.proxyCity,
+                        open.proxyRegion,
+                        open.proxyCountry,
+                        open.proxyZip,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "—"
+                    }
+                  />
                 </Section>
 
                 <Section title="Geo">
-                  <Row label="Base coords"   value={open.baseLatitude   != null && open.baseLongitude   != null ? `${open.baseLatitude}, ${open.baseLongitude}` : "—"} />
-                  <Row label="Mocked coords" value={open.mockedLatitude != null && open.mockedLongitude != null ? `${open.mockedLatitude}, ${open.mockedLongitude}` : "—"} />
-                  <Row label="Mocked tz"     value={open.mockedTimezone ?? "—"} />
+                  <Row
+                    label="Base coords"
+                    value={
+                      open.baseLatitude != null && open.baseLongitude != null
+                        ? `${open.baseLatitude}, ${open.baseLongitude}`
+                        : "—"
+                    }
+                  />
+                  <Row
+                    label="Mocked coords"
+                    value={
+                      open.mockedLatitude != null &&
+                      open.mockedLongitude != null
+                        ? `${open.mockedLatitude}, ${open.mockedLongitude}`
+                        : "—"
+                    }
+                  />
+                  <Row label="Mocked tz" value={open.mockedTimezone ?? "—"} />
                 </Section>
 
                 <Section title="Backlinks">
-                  <Row label="Expected" value={open.backlinksExpected != null ? String(open.backlinksExpected) : "—"} />
-                  <Row label="Injected" value={fmtBool(open.backlinkInjected)} />
-                  <Row label="Found"    value={open.backlinkInjected ? fmtBool(open.backlinkFound) : "N/A (not injected)"} />
-                  <Row label="URL"      value={open.backlinkUrl ?? "—"} />
+                  <Row
+                    label="Expected"
+                    value={
+                      open.backlinksExpected != null
+                        ? String(open.backlinksExpected)
+                        : "—"
+                    }
+                  />
+                  <Row
+                    label="Injected"
+                    value={fmtBool(open.backlinkInjected)}
+                  />
+                  <Row
+                    label="Found"
+                    value={
+                      open.backlinkInjected
+                        ? fmtBool(open.backlinkFound)
+                        : "N/A (not injected)"
+                    }
+                  />
+                  <Row label="URL" value={open.backlinkUrl ?? "—"} />
                 </Section>
 
                 {open.errorMessage && (
                   <Section title="Error">
-                    <Row label="Class"   value={open.errorClass ?? "—"} />
+                    <Row label="Class" value={open.errorClass ?? "—"} />
                     <Row label="Message" value={open.errorMessage} pre />
                   </Section>
                 )}
 
                 {open.screenshotUrl && (
                   <Section title="Screenshot">
-                    <Row label="URL" value={open.screenshotUrl} />
+                    <button
+                      type="button"
+                      onClick={() => setShotId(open.id)}
+                      className="text-left text-xs underline decoration-dotted decoration-muted-foreground/40 underline-offset-2 hover:decoration-primary hover:text-primary transition-colors break-all"
+                      title="View screenshot"
+                    >
+                      {open.screenshotUrl}
+                    </button>
                   </Section>
                 )}
               </div>
@@ -390,6 +707,16 @@ export default function SessionsDaily() {
           )}
         </SheetContent>
       </Sheet>
+
+      <RankingScreenshotDialog
+        recordId={shotId}
+        endpoint="/api/sessions/{id}/screenshot-url"
+        onClose={() => setShotId(null)}
+        title="Session screenshot"
+        subtitle={
+          open ? `${open.aiPlatform} · ${open.keywordText ?? ""}` : undefined
+        }
+      />
 
       <ImportSessionsDialog
         open={importOpen}
@@ -400,39 +727,83 @@ export default function SessionsDaily() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{title}</h3>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+        {title}
+      </h3>
       <div className="space-y-1">{children}</div>
     </div>
   );
 }
 
-function renderBacklink(expected: number | null, injected: boolean, found: boolean) {
+function renderBacklink(
+  expected: number | null,
+  injected: boolean,
+  found: boolean,
+) {
   if (expected == null || expected === 0) {
-    return <span className="text-xs text-muted-foreground" title="No backlinks configured for this keyword">—</span>;
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        title="No backlinks configured for this keyword"
+      >
+        —
+      </span>
+    );
   }
   if (!injected) {
-    return <span className="text-xs text-muted-foreground" title="Backlink reference not seeded in this prompt (control group)">N/A</span>;
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        title="Backlink reference not seeded in this prompt (control group)"
+      >
+        N/A
+      </span>
+    );
   }
   return (
     <Badge
       variant={found ? "default" : "outline"}
-      title={found ? "AI response contained the injected backlink URL" : "Backlink injected into prompt but not surfaced in the AI response"}
+      title={
+        found
+          ? "AI response contained the injected backlink URL"
+          : "Backlink injected into prompt but not surfaced in the AI response"
+      }
     >
       {found ? "Yes" : "No"}
     </Badge>
   );
 }
 
-function Row({ label, value, pre = false }: { label: string; value: string; pre?: boolean }) {
+function Row({
+  label,
+  value,
+  pre = false,
+}: {
+  label: string;
+  value: string;
+  pre?: boolean;
+}) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-32 shrink-0 text-xs text-muted-foreground pt-0.5">{label}</div>
-      {pre
-        ? <pre className="flex-1 whitespace-pre-wrap break-words text-xs bg-muted/50 rounded p-2">{value}</pre>
-        : <div className="flex-1 break-words text-sm">{value}</div>}
+      <div className="w-32 shrink-0 text-xs text-muted-foreground pt-0.5">
+        {label}
+      </div>
+      {pre ? (
+        <pre className="flex-1 whitespace-pre-wrap break-words text-xs bg-muted/50 rounded p-2">
+          {value}
+        </pre>
+      ) : (
+        <div className="flex-1 break-words text-sm">{value}</div>
+      )}
     </div>
   );
 }

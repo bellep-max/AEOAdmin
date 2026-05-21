@@ -9,8 +9,14 @@ import { Loader2, ImageOff, ExternalLink } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 
 interface Props {
-  /* Null when the dialog should be closed. */
-  reportId: number | null;
+  /* Null when the dialog should be closed. The id is passed through to the
+     `endpoint` so multiple consumers (ranking-reports, sessions, audit-logs)
+     can share this component. */
+  recordId: number | null;
+  /* Endpoint template using {id} as the placeholder, e.g.
+     "/api/ranking-reports/{id}/screenshot-url" or
+     "/api/sessions/{id}/screenshot-url". */
+  endpoint: string;
   onClose: () => void;
   /* Optional context for the header. */
   title?: string;
@@ -27,23 +33,24 @@ interface ScreenshotResponse {
 }
 
 export function RankingScreenshotDialog({
-  reportId,
+  recordId,
+  endpoint,
   onClose,
   title,
   subtitle,
   rank,
   date,
 }: Props) {
-  const open = reportId !== null;
+  const open = recordId !== null;
+  const resolvedUrl =
+    recordId != null ? endpoint.replace("{id}", String(recordId)) : null;
   /* Re-fetch every time the dialog opens with a new id; signed URLs expire
      in 15 min so stale data is harmless within a session. */
   const { data, isLoading, error } = useQuery<ScreenshotResponse>({
-    queryKey: ["/api/ranking-reports", reportId, "screenshot-url"],
-    enabled: open && reportId != null,
+    queryKey: [endpoint, recordId, "screenshot-url"],
+    enabled: open && resolvedUrl != null,
     queryFn: async () => {
-      const res = await rawFetch(
-        `/api/ranking-reports/${reportId}/screenshot-url`,
-      );
+      const res = await rawFetch(resolvedUrl as string);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as ScreenshotResponse;
     },
