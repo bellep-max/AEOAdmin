@@ -345,29 +345,22 @@ export function PeriodByClientTab({
                                   <PlatformChip row={p} />
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  <RankCellButton
-                                    reportId={p.firstReportId}
-                                    rank={p.firstPosition}
-                                    date={p.firstDate}
-                                    label={`First audit · ${p.platform} · ${p.keywordText}`}
-                                    onPick={setShotCell}
-                                  />
+                                  {fmtPos(p.firstPosition)}
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  <RankCellButton
-                                    reportId={p.previousReportId}
-                                    rank={p.previousPosition}
-                                    date={p.previousDate}
-                                    label={`Previous audit · ${p.platform} · ${p.keywordText}`}
-                                    onPick={setShotCell}
-                                  />
+                                  {fmtPos(p.previousPosition)}
                                 </div>
                                 <div className="col-span-2 font-semibold">
+                                  {/* Only the Current cell opens a screenshot.
+                                      Historical (First/Previous) audits from
+                                      the older dispatcher sometimes captured
+                                      the prompt pre-submission instead of the
+                                      answer, so we don't surface those PNGs. */}
                                   <RankCellButton
                                     reportId={p.currentReportId}
                                     rank={p.currentPosition}
                                     date={p.currentDate}
-                                    label={`Current audit · ${p.platform} · ${p.keywordText}`}
+                                    label={`${p.platform} · ${p.keywordText}`}
                                     onPick={setShotCell}
                                   />
                                 </div>
