@@ -345,17 +345,24 @@ export function PeriodByClientTab({
                                   <PlatformChip row={p} />
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  {fmtPos(p.firstPosition)}
+                                  <RankCellButton
+                                    reportId={p.firstReportId}
+                                    rank={p.firstPosition}
+                                    date={p.firstDate}
+                                    label={`${p.platform} · ${p.keywordText}`}
+                                    onPick={setShotCell}
+                                  />
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  {fmtPos(p.previousPosition)}
+                                  <RankCellButton
+                                    reportId={p.previousReportId}
+                                    rank={p.previousPosition}
+                                    date={p.previousDate}
+                                    label={`${p.platform} · ${p.keywordText}`}
+                                    onPick={setShotCell}
+                                  />
                                 </div>
                                 <div className="col-span-2 font-semibold">
-                                  {/* Only the Current cell opens a screenshot.
-                                      Historical (First/Previous) audits from
-                                      the older dispatcher sometimes captured
-                                      the prompt pre-submission instead of the
-                                      answer, so we don't surface those PNGs. */}
                                   <RankCellButton
                                     reportId={p.currentReportId}
                                     rank={p.currentPosition}
