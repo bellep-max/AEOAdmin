@@ -7,9 +7,15 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, count, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, like, sql } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION ?? "us-east-1",
+});
 
 const router = Router();
 
@@ -19,7 +25,9 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
   const [y, m, d] = raw.split("-").map(Number);
   const noon = new Date(Date.UTC(y, m - 1, d, 12));
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York", hour: "2-digit", hour12: false,
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    hour12: false,
   }).formatToParts(noon);
   const etHour = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
   const offsetHours = 12 - (etHour === 24 ? 0 : etHour);
@@ -48,15 +56,26 @@ router.get("/", async (req, res) => {
     } = req.query as Record<string, string>;
 
     const conditions = [] as ReturnType<typeof eq>[];
-    if (clientId)   conditions.push(eq(auditLogsTable.clientId,   parseInt(clientId)));
-    if (businessId) conditions.push(eq(auditLogsTable.businessId, parseInt(businessId)));
-    if (campaignId) conditions.push(eq(auditLogsTable.campaignId, parseInt(campaignId)));
-    if (keywordId)  conditions.push(eq(auditLogsTable.keywordId,  parseInt(keywordId)));
-    if (platform)   conditions.push(eq(auditLogsTable.platform,   platform.toLowerCase()));
-    if (mode)       conditions.push(eq(auditLogsTable.mode,       mode));
-    if (status)     conditions.push(eq(auditLogsTable.status,     status));
-    if (from)       conditions.push(gte(auditLogsTable.timestamp, parseFilterDate(from, "start")));
-    if (to)         conditions.push(lte(auditLogsTable.timestamp, parseFilterDate(to,   "end")));
+    if (clientId)
+      conditions.push(eq(auditLogsTable.clientId, parseInt(clientId)));
+    if (businessId)
+      conditions.push(eq(auditLogsTable.businessId, parseInt(businessId)));
+    if (campaignId)
+      conditions.push(eq(auditLogsTable.campaignId, parseInt(campaignId)));
+    if (keywordId)
+      conditions.push(eq(auditLogsTable.keywordId, parseInt(keywordId)));
+    if (platform)
+      conditions.push(eq(auditLogsTable.platform, platform.toLowerCase()));
+    if (mode) conditions.push(eq(auditLogsTable.mode, mode));
+    if (status) conditions.push(eq(auditLogsTable.status, status));
+    if (from)
+      conditions.push(
+        gte(auditLogsTable.timestamp, parseFilterDate(from, "start")),
+      );
+    if (to)
+      conditions.push(
+        lte(auditLogsTable.timestamp, parseFilterDate(to, "end")),
+      );
 
     const lim = Math.min(parseInt(limit), 200);
     const off = parseInt(offset);
@@ -69,47 +88,53 @@ router.get("/", async (req, res) => {
 
     const logs = await db
       .select({
-        id:              auditLogsTable.id,
-        clientId:        auditLogsTable.clientId,
-        businessId:      auditLogsTable.businessId,
-        campaignId:      auditLogsTable.campaignId,
-        keywordId:       auditLogsTable.keywordId,
-        deviceId:        auditLogsTable.deviceId,
-        bizName:         auditLogsTable.bizName,
-        campaignName:    auditLogsTable.campaignName,
-        keywordText:     auditLogsTable.keywordText,
-        keywordVariant:  auditLogsTable.keywordVariant,
-        timestamp:       auditLogsTable.timestamp,
-        createdAt:       auditLogsTable.createdAt,
-        platform:        auditLogsTable.platform,
-        mode:            auditLogsTable.mode,
-        device:          auditLogsTable.device,
-        status:          auditLogsTable.status,
+        id: auditLogsTable.id,
+        clientId: auditLogsTable.clientId,
+        businessId: auditLogsTable.businessId,
+        campaignId: auditLogsTable.campaignId,
+        keywordId: auditLogsTable.keywordId,
+        deviceId: auditLogsTable.deviceId,
+        bizName: auditLogsTable.bizName,
+        campaignName: auditLogsTable.campaignName,
+        keywordText: auditLogsTable.keywordText,
+        keywordVariant: auditLogsTable.keywordVariant,
+        timestamp: auditLogsTable.timestamp,
+        createdAt: auditLogsTable.createdAt,
+        platform: auditLogsTable.platform,
+        mode: auditLogsTable.mode,
+        device: auditLogsTable.device,
+        status: auditLogsTable.status,
         durationSeconds: auditLogsTable.durationSeconds,
-        rankPosition:    auditLogsTable.rankPosition,
-        rankTotal:       auditLogsTable.rankTotal,
-        mentioned:       auditLogsTable.mentioned,
-        rankContext:     auditLogsTable.rankContext,
-        screenshotPath:  auditLogsTable.screenshotPath,
-        responseText:    auditLogsTable.responseText,
-        prompt:          auditLogsTable.prompt,
-        error:           auditLogsTable.error,
-        proxyUsername:   auditLogsTable.proxyUsername,
-        proxyIp:         auditLogsTable.proxyIp,
-        proxyCity:       auditLogsTable.proxyCity,
-        proxyRegion:     auditLogsTable.proxyRegion,
-        proxyZip:        auditLogsTable.proxyZip,
+        rankPosition: auditLogsTable.rankPosition,
+        rankTotal: auditLogsTable.rankTotal,
+        mentioned: auditLogsTable.mentioned,
+        rankContext: auditLogsTable.rankContext,
+        screenshotPath: auditLogsTable.screenshotPath,
+        responseText: auditLogsTable.responseText,
+        prompt: auditLogsTable.prompt,
+        error: auditLogsTable.error,
+        proxyUsername: auditLogsTable.proxyUsername,
+        proxyIp: auditLogsTable.proxyIp,
+        proxyCity: auditLogsTable.proxyCity,
+        proxyRegion: auditLogsTable.proxyRegion,
+        proxyZip: auditLogsTable.proxyZip,
         /* joins for denormalized fallback */
-        joinedClientName:    clientsTable.businessName,
-        joinedBusinessName:  businessesTable.name,
-        joinedCampaignName:  clientAeoPlansTable.name,
-        joinedKeywordText:   keywordsTable.keywordText,
+        joinedClientName: clientsTable.businessName,
+        joinedBusinessName: businessesTable.name,
+        joinedCampaignName: clientAeoPlansTable.name,
+        joinedKeywordText: keywordsTable.keywordText,
       })
       .from(auditLogsTable)
-      .leftJoin(clientsTable,        eq(auditLogsTable.clientId,   clientsTable.id))
-      .leftJoin(businessesTable,     eq(auditLogsTable.businessId, businessesTable.id))
-      .leftJoin(clientAeoPlansTable, eq(auditLogsTable.campaignId, clientAeoPlansTable.id))
-      .leftJoin(keywordsTable,       eq(auditLogsTable.keywordId,  keywordsTable.id))
+      .leftJoin(clientsTable, eq(auditLogsTable.clientId, clientsTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(auditLogsTable.businessId, businessesTable.id),
+      )
+      .leftJoin(
+        clientAeoPlansTable,
+        eq(auditLogsTable.campaignId, clientAeoPlansTable.id),
+      )
+      .leftJoin(keywordsTable, eq(auditLogsTable.keywordId, keywordsTable.id))
       .where(where)
       .orderBy(desc(auditLogsTable.timestamp))
       .limit(lim)
@@ -118,14 +143,14 @@ router.get("/", async (req, res) => {
     res.json({
       logs: logs.map((l) => ({
         ...l,
-        clientName:   l.joinedClientName ?? null,
-        bizName:      l.bizName      ?? l.joinedBusinessName ?? null,
+        clientName: l.joinedClientName ?? null,
+        bizName: l.bizName ?? l.joinedBusinessName ?? null,
         campaignName: l.campaignName ?? l.joinedCampaignName ?? null,
-        keywordText:  l.keywordText  ?? l.joinedKeywordText  ?? null,
+        keywordText: l.keywordText ?? l.joinedKeywordText ?? null,
       })),
-      total:  Number(totalResult.count),
+      total: Number(totalResult.count),
       offset: off,
-      limit:  lim,
+      limit: lim,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching audit logs");
@@ -142,35 +167,46 @@ router.post("/", requireExecutorToken, async (req, res) => {
     const [log] = await db
       .insert(auditLogsTable)
       .values({
-        clientId:        body.clientId   != null ? Number(body.clientId)   : null,
-        businessId:      body.businessId != null ? Number(body.businessId) : null,
-        campaignId:      body.campaignId != null ? Number(body.campaignId) : null,
-        keywordId:       body.keywordId  != null ? Number(body.keywordId)  : null,
-        deviceId:        body.deviceId   != null ? Number(body.deviceId)   : null,
-        ...(body.timestamp ? { timestamp: new Date(body.timestamp as string) } : {}),
-        ...(body.createdAt ? { createdAt: new Date(body.createdAt as string) } : {}),
-        bizName:         (body.bizName        as string | null | undefined) ?? null,
-        campaignName:    (body.campaignName   as string | null | undefined) ?? null,
-        keywordText:     (body.keywordText ?? body.keyword) as string | null ?? null,
-        keywordVariant:  (body.keywordVariant as string | null | undefined) ?? null,
-        platform:        body.platform != null ? String(body.platform).toLowerCase() : null,
-        mode:            (body.mode           as string | null | undefined) ?? null,
-        device:          (body.device         as string | null | undefined) ?? null,
-        status:          (body.status         as string | null | undefined) ?? null,
-        durationSeconds: body.durationSeconds != null ? Number(body.durationSeconds) : null,
-        rankPosition:    body.rankPosition    != null ? Number(body.rankPosition)    : null,
-        rankTotal:       body.rankTotal       != null ? Number(body.rankTotal)       : null,
-        mentioned:       (body.mentioned      as string | null | undefined) ?? null,
-        rankContext:     (body.rankContext    as string | null | undefined) ?? null,
-        screenshotPath:  (body.screenshotPath ?? body.screenshot) as string | null ?? null,
-        responseText:    (body.responseText   as string | null | undefined) ?? null,
-        prompt:          (body.prompt         as string | null | undefined) ?? null,
-        error:           (body.error          as string | null | undefined) ?? null,
-        proxyUsername:   (body.proxyUsername  as string | null | undefined) ?? null,
-        proxyIp:         (body.proxyIp        as string | null | undefined) ?? null,
-        proxyCity:       (body.proxyCity      as string | null | undefined) ?? null,
-        proxyRegion:     (body.proxyRegion    as string | null | undefined) ?? null,
-        proxyZip:        (body.proxyZip       as string | null | undefined) ?? null,
+        clientId: body.clientId != null ? Number(body.clientId) : null,
+        businessId: body.businessId != null ? Number(body.businessId) : null,
+        campaignId: body.campaignId != null ? Number(body.campaignId) : null,
+        keywordId: body.keywordId != null ? Number(body.keywordId) : null,
+        deviceId: body.deviceId != null ? Number(body.deviceId) : null,
+        ...(body.timestamp
+          ? { timestamp: new Date(body.timestamp as string) }
+          : {}),
+        ...(body.createdAt
+          ? { createdAt: new Date(body.createdAt as string) }
+          : {}),
+        bizName: (body.bizName as string | null | undefined) ?? null,
+        campaignName: (body.campaignName as string | null | undefined) ?? null,
+        keywordText:
+          ((body.keywordText ?? body.keyword) as string | null) ?? null,
+        keywordVariant:
+          (body.keywordVariant as string | null | undefined) ?? null,
+        platform:
+          body.platform != null ? String(body.platform).toLowerCase() : null,
+        mode: (body.mode as string | null | undefined) ?? null,
+        device: (body.device as string | null | undefined) ?? null,
+        status: (body.status as string | null | undefined) ?? null,
+        durationSeconds:
+          body.durationSeconds != null ? Number(body.durationSeconds) : null,
+        rankPosition:
+          body.rankPosition != null ? Number(body.rankPosition) : null,
+        rankTotal: body.rankTotal != null ? Number(body.rankTotal) : null,
+        mentioned: (body.mentioned as string | null | undefined) ?? null,
+        rankContext: (body.rankContext as string | null | undefined) ?? null,
+        screenshotPath:
+          ((body.screenshotPath ?? body.screenshot) as string | null) ?? null,
+        responseText: (body.responseText as string | null | undefined) ?? null,
+        prompt: (body.prompt as string | null | undefined) ?? null,
+        error: (body.error as string | null | undefined) ?? null,
+        proxyUsername:
+          (body.proxyUsername as string | null | undefined) ?? null,
+        proxyIp: (body.proxyIp as string | null | undefined) ?? null,
+        proxyCity: (body.proxyCity as string | null | undefined) ?? null,
+        proxyRegion: (body.proxyRegion as string | null | undefined) ?? null,
+        proxyZip: (body.proxyZip as string | null | undefined) ?? null,
       })
       .returning();
     res.status(201).json(log);
@@ -221,11 +257,12 @@ router.post("/sync", async (req, res) => {
             AND al."timestamp"::date = COALESCE(rr.timestamp, rr.created_at)::date
         )
         ${from ? sql`AND COALESCE(rr.timestamp, rr.created_at) >= ${new Date(from as string)}` : sql``}
-        ${to   ? sql`AND COALESCE(rr.timestamp, rr.created_at) <  ${new Date(to as string)}` : sql``}
+        ${to ? sql`AND COALESCE(rr.timestamp, rr.created_at) <  ${new Date(to as string)}` : sql``}
       )
-      ${isDryRun
-        ? sql`SELECT count(*)::int AS inserted FROM to_insert`
-        : sql`
+      ${
+        isDryRun
+          ? sql`SELECT count(*)::int AS inserted FROM to_insert`
+          : sql`
           INSERT INTO audit_logs
             (client_id, business_id, campaign_id, keyword_id, platform, status,
              rank_position, rank_total, "timestamp",
@@ -233,12 +270,13 @@ router.post("/sync", async (req, res) => {
              keyword_text, biz_name, campaign_name)
           SELECT * FROM to_insert
           RETURNING id
-        `}
+        `
+      }
     `);
 
     const count_ = isDryRun
-      ? (result.rows[0] as Record<string, unknown>).inserted ?? 0
-      : result.rowCount ?? 0;
+      ? ((result.rows[0] as Record<string, unknown>).inserted ?? 0)
+      : (result.rowCount ?? 0);
 
     res.json({ synced: Number(count_), dryRun: isDryRun });
   } catch (err) {
@@ -260,6 +298,64 @@ router.delete("/:id", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error deleting audit log");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /api/audit-logs/:id/screenshot-url
+   Same contract as /api/ranking-reports/:id/screenshot-url and
+   /api/sessions/:id/screenshot-url:
+     - "s3://..."   → pre-signed GET URL (15 min)
+     - "https://..." → returned as-is
+     - local path   → basename-fallback against ranking_reports.screenshot_url;
+       if a matching s3:// row exists, sign that. */
+router.get("/:id/screenshot-url", async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+  try {
+    const rows = await db
+      .select({ url: auditLogsTable.screenshotPath })
+      .from(auditLogsTable)
+      .where(eq(auditLogsTable.id, id))
+      .limit(1);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "audit log not found" });
+    }
+    let raw = rows[0].url ?? null;
+    if (!raw) return res.json({ url: null, kind: "none" });
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      return res.json({ url: raw, kind: "external" });
+    }
+    if (!raw.startsWith("s3://")) {
+      const baseName = raw.split("/").pop() ?? "";
+      if (baseName) {
+        const match = await db
+          .select({ url: rankingReportsTable.screenshotUrl })
+          .from(rankingReportsTable)
+          .where(
+            and(like(rankingReportsTable.screenshotUrl, `s3://%/${baseName}`)),
+          )
+          .limit(1);
+        if (match.length > 0 && match[0].url) {
+          raw = match[0].url;
+        }
+      }
+    }
+    if (raw.startsWith("s3://")) {
+      const m = raw.match(/^s3:\/\/([^/]+)\/(.+)$/);
+      if (!m) {
+        return res.status(500).json({ error: "malformed s3 url" });
+      }
+      const [, bucket, key] = m;
+      const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+      const url = await getSignedUrl(s3Client, cmd, { expiresIn: 900 });
+      return res.json({ url, kind: "s3", expiresIn: 900 });
+    }
+    return res.json({ url: null, kind: "local", originalPath: raw });
+  } catch (err) {
+    req.log.error({ err, id }, "Error generating audit-log screenshot URL");
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
