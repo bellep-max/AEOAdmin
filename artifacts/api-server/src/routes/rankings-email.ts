@@ -1,16 +1,16 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
-  rankingReportsTable,
   clientsTable,
   businessesTable,
-  keywordsTable,
+  clientAeoPlansTable,
   emailSendsTable,
 } from "@workspace/db/schema";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import sgMail from "@sendgrid/mail";
+import { chatCompletion } from "../services/llm-client";
 
 const router = Router();
 
@@ -30,8 +30,446 @@ function configureSendGrid(): void {
   sgConfigured = true;
 }
 
-/* GET /api/rankings/email-recipients/:clientId
-   Returns the 3 stored email fields so the FE can pre-fill the picker. */
+interface RankingFilter {
+  clientId: number;
+  businessId?: number | null;
+  aeoPlanId?: number | null;
+}
+
+interface BiWeeklyRow {
+  keywordId: number;
+  keywordText: string;
+  platform: string;
+  current: {
+    reportId: number;
+    date: string;
+    rank: number | null;
+    screenshotUrl: string | null;
+  } | null;
+  previous: {
+    reportId: number;
+    date: string;
+    rank: number | null;
+    screenshotUrl: string | null;
+  } | null;
+  change: number | null;
+  status: "improved" | "declined" | "steady" | "new" | "lost" | "no-data";
+}
+
+/* Bi-weekly comparison query: returns Current (most recent) and Previous (one
+   before) per (keyword_id, platform). Respects business + aeo-plan filters. */
+async function getBiWeeklyRankings(
+  filter: RankingFilter,
+): Promise<BiWeeklyRow[]> {
+  const result = await db.execute(sql`
+    WITH ranked AS (
+      SELECT
+        rr.id, rr.keyword_id, lower(rr.platform) AS platform,
+        rr.date, rr.ranking_position, rr.screenshot_url,
+        k.keyword_text,
+        ROW_NUMBER() OVER (
+          PARTITION BY rr.keyword_id, lower(rr.platform)
+          ORDER BY rr.date DESC, rr.id DESC
+        ) AS rn
+      FROM ranking_reports rr
+      LEFT JOIN keywords k ON k.id = rr.keyword_id
+      WHERE rr.client_id = ${filter.clientId}
+        ${filter.businessId ? sql`AND rr.business_id = ${filter.businessId}` : sql``}
+        ${filter.aeoPlanId ? sql`AND rr.keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = ${filter.aeoPlanId})` : sql``}
+    )
+    SELECT
+      keyword_id,
+      MAX(keyword_text)                                AS keyword_text,
+      platform,
+      MAX(CASE WHEN rn=1 THEN id END)                  AS current_id,
+      MAX(CASE WHEN rn=1 THEN date END)                AS current_date,
+      MAX(CASE WHEN rn=1 THEN ranking_position END)    AS current_rank,
+      MAX(CASE WHEN rn=1 THEN screenshot_url END)      AS current_url,
+      MAX(CASE WHEN rn=2 THEN id END)                  AS prev_id,
+      MAX(CASE WHEN rn=2 THEN date END)                AS prev_date,
+      MAX(CASE WHEN rn=2 THEN ranking_position END)    AS prev_rank,
+      MAX(CASE WHEN rn=2 THEN screenshot_url END)      AS prev_url
+    FROM ranked
+    WHERE rn <= 2
+    GROUP BY keyword_id, platform
+    ORDER BY MAX(keyword_text), platform
+  `);
+
+  function deriveStatus(
+    prev: number | null,
+    cur: number | null,
+  ): BiWeeklyRow["status"] {
+    if (cur == null && prev == null) return "no-data";
+    if (prev == null && cur != null) return "new";
+    if (prev != null && cur == null) return "lost";
+    if (prev != null && cur != null) {
+      if (cur < prev) return "improved";
+      if (cur > prev) return "declined";
+      return "steady";
+    }
+    return "no-data";
+  }
+
+  return (result.rows as Array<Record<string, unknown>>).map((r) => {
+    const currentRank = r.current_rank == null ? null : Number(r.current_rank);
+    const prevRank = r.prev_rank == null ? null : Number(r.prev_rank);
+    const change =
+      currentRank != null && prevRank != null ? currentRank - prevRank : null;
+    return {
+      keywordId: Number(r.keyword_id),
+      keywordText: String(r.keyword_text ?? ""),
+      platform: String(r.platform),
+      current: r.current_id
+        ? {
+            reportId: Number(r.current_id),
+            date: String(r.current_date),
+            rank: currentRank,
+            screenshotUrl: r.current_url == null ? null : String(r.current_url),
+          }
+        : null,
+      previous: r.prev_id
+        ? {
+            reportId: Number(r.prev_id),
+            date: String(r.prev_date),
+            rank: prevRank,
+            screenshotUrl: r.prev_url == null ? null : String(r.prev_url),
+          }
+        : null,
+      change,
+      status: deriveStatus(prevRank, currentRank),
+    };
+  });
+}
+
+async function maybeSignS3(url: string | null): Promise<string | null> {
+  if (!url || !url.startsWith("s3://")) return null;
+  const m = url.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  if (!m) return null;
+  const [, bucket, key] = m;
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+    { expiresIn: SEVEN_DAYS_SECONDS },
+  );
+}
+
+interface SignedBiWeeklyRow extends Omit<BiWeeklyRow, "current" | "previous"> {
+  current:
+    | (NonNullable<BiWeeklyRow["current"]> & { imageUrl: string | null })
+    | null;
+  previous:
+    | (NonNullable<BiWeeklyRow["previous"]> & { imageUrl: string | null })
+    | null;
+}
+
+async function signAllUrls(rows: BiWeeklyRow[]): Promise<SignedBiWeeklyRow[]> {
+  return Promise.all(
+    rows.map(async (r) => ({
+      ...r,
+      current: r.current
+        ? { ...r.current, imageUrl: await maybeSignS3(r.current.screenshotUrl) }
+        : null,
+      previous: r.previous
+        ? {
+            ...r.previous,
+            imageUrl: await maybeSignS3(r.previous.screenshotUrl),
+          }
+        : null,
+    })),
+  );
+}
+
+function platformLabel(p: string): string {
+  if (p === "chatgpt") return "ChatGPT";
+  if (p === "gemini") return "Gemini";
+  if (p === "perplexity") return "Perplexity";
+  return p;
+}
+function platformColor(p: string): string {
+  if (p === "chatgpt") return "#10a37f";
+  if (p === "gemini") return "#4285f4";
+  if (p === "perplexity") return "#7c3aed";
+  return "#64748b";
+}
+function statusBadge(status: BiWeeklyRow["status"]): string {
+  const map = {
+    improved: { label: "↑ Improved", bg: "#dcfce7", fg: "#166534" },
+    declined: { label: "↓ Declined", bg: "#fee2e2", fg: "#991b1b" },
+    steady: { label: "= Steady", bg: "#f1f5f9", fg: "#475569" },
+    new: { label: "★ New", bg: "#e0e7ff", fg: "#3730a3" },
+    lost: { label: "✗ Lost", bg: "#fee2e2", fg: "#991b1b" },
+    "no-data": { label: "—", bg: "#f1f5f9", fg: "#94a3b8" },
+  };
+  const s = map[status];
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${s.bg};color:${s.fg};font-size:11px;font-weight:600">${s.label}</span>`;
+}
+function rankPill(rank: number | null): string {
+  if (rank == null) return `<span style="color:#94a3b8">—</span>`;
+  return `<strong>#${rank}</strong>`;
+}
+function changePill(
+  change: number | null,
+  status: BiWeeklyRow["status"],
+): string {
+  if (
+    change == null ||
+    status === "no-data" ||
+    status === "steady" ||
+    status === "new" ||
+    status === "lost"
+  ) {
+    return `<span style="color:#94a3b8">—</span>`;
+  }
+  const isUp = change < 0;
+  const color = isUp ? "#16a34a" : "#dc2626";
+  const arrow = isUp ? "▲" : "▼";
+  return `<span style="color:${color};font-weight:600">${arrow} ${Math.abs(change)}</span>`;
+}
+
+interface BuildEmailArgs {
+  clientName: string;
+  filterLabel: string | null;
+  rows: SignedBiWeeklyRow[];
+  customMessage?: string;
+}
+
+function buildEmailHtml({
+  clientName,
+  filterLabel,
+  rows,
+  customMessage,
+}: BuildEmailArgs): string {
+  /* Group rows by keyword for the table. */
+  const byKeyword = new Map<
+    number,
+    { text: string; platforms: SignedBiWeeklyRow[] }
+  >();
+  for (const r of rows) {
+    if (!byKeyword.has(r.keywordId)) {
+      byKeyword.set(r.keywordId, { text: r.keywordText, platforms: [] });
+    }
+    byKeyword.get(r.keywordId)!.platforms.push(r);
+  }
+
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
+
+  const keywordSections = [...byKeyword.values()]
+    .map((kw) => {
+      const platRows = kw.platforms
+        .sort((a, b) => a.platform.localeCompare(b.platform))
+        .map((p) => {
+          const img = p.current?.imageUrl
+            ? `<a href="${p.current.imageUrl}" style="display:inline-block">
+               <img src="${p.current.imageUrl}" alt="screenshot" width="160"
+                    style="max-width:160px;height:auto;border:1px solid #e5e7eb;border-radius:6px;display:block" />
+             </a>`
+            : `<span style="color:#cbd5e1;font-size:11px">no screenshot</span>`;
+          return `
+          <tr>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
+              <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${platformColor(p.platform)};color:#fff;font-size:11px;font-weight:600">${platformLabel(p.platform)}</span>
+            </td>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
+              <div style="font-size:14px">${rankPill(p.previous?.rank ?? null)}</div>
+              <div style="font-size:10px;color:#94a3b8">${p.previous?.date ?? "—"}</div>
+            </td>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
+              <div style="font-size:16px">${rankPill(p.current?.rank ?? null)}</div>
+              <div style="font-size:10px;color:#94a3b8">${p.current?.date ?? "—"}</div>
+            </td>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px">${changePill(p.change, p.status)}</td>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">${statusBadge(p.status)}</td>
+            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">${img}</td>
+          </tr>`;
+        })
+        .join("");
+      return `
+      <div style="margin:24px 0">
+        <h3 style="margin:0 0 8px 0;color:#0f172a;font-size:16px">${kw.text}</h3>
+        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Platform</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Previous</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Current</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Change</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Status</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Screenshot</th>
+            </tr>
+          </thead>
+          <tbody>${platRows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("");
+
+  const customBlock = customMessage?.trim()
+    ? `<div style="margin:16px 0;padding:16px;background:#f8fafc;border-left:3px solid #6366f1;border-radius:4px;color:#334155;font-size:14px;white-space:pre-wrap">${customMessage}</div>`
+    : "";
+
+  const filterLine = filterLabel
+    ? `<p style="margin:0 0 8px 0;color:#64748b;font-size:13px">Scope: ${filterLabel}</p>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:760px;margin:0 auto;padding:32px 16px">
+    <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
+      <h1 style="margin:0 0 4px 0;color:#0f172a;font-size:22px">AEO Bi-Weekly Rankings Report</h1>
+      <p style="margin:0 0 4px 0;color:#64748b;font-size:14px">${clientName} · ${today}</p>
+      ${filterLine}
+      ${customBlock}
+      ${keywordSections || `<p style="color:#94a3b8">No keyword data for this period.</p>`}
+      <p style="margin:28px 0 0 0;color:#94a3b8;font-size:11px;text-align:center">
+        Comparison: latest audit vs the audit before it. Screenshot links expire in 7 days.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/* ─── helpers shared by send + preview + templates: derive filter label and
+        compute high-level summary stats ───────────────────────────────── */
+interface FilterContext {
+  clientName: string;
+  businessName: string | null;
+  campaignName: string | null;
+  filterLabel: string | null;
+}
+async function loadFilterContext(
+  filter: RankingFilter,
+): Promise<FilterContext> {
+  const clientRow = await db
+    .select({ businessName: clientsTable.businessName })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, filter.clientId))
+    .limit(1);
+  const clientName = clientRow[0]?.businessName ?? `Client ${filter.clientId}`;
+
+  let businessName: string | null = null;
+  if (filter.businessId) {
+    const r = await db
+      .select({ name: businessesTable.name })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, filter.businessId))
+      .limit(1);
+    businessName = r[0]?.name ?? null;
+  }
+  let campaignName: string | null = null;
+  if (filter.aeoPlanId) {
+    const r = await db
+      .select({ name: clientAeoPlansTable.name })
+      .from(clientAeoPlansTable)
+      .where(eq(clientAeoPlansTable.id, filter.aeoPlanId))
+      .limit(1);
+    campaignName = r[0]?.name ?? null;
+  }
+  const parts: string[] = [];
+  if (businessName) parts.push(`Business: ${businessName}`);
+  if (campaignName) parts.push(`Campaign: ${campaignName}`);
+  return {
+    clientName,
+    businessName,
+    campaignName,
+    filterLabel: parts.length ? parts.join(" · ") : null,
+  };
+}
+
+interface SummaryStats {
+  keywordCount: number;
+  rowCount: number;
+  screenshotCount: number;
+  improvedCount: number;
+  declinedCount: number;
+  steadyCount: number;
+  newCount: number;
+  lostCount: number;
+  topKeyword: string | null;
+  topRank: number | null;
+  biggestImprover: { keyword: string; from: number; to: number } | null;
+  biggestDecliner: { keyword: string; from: number; to: number } | null;
+}
+function summarize(rows: SignedBiWeeklyRow[]): SummaryStats {
+  const keywordIds = new Set(rows.map((r) => r.keywordId));
+  let topKeyword: string | null = null;
+  let topRank: number | null = null;
+  let biggestImprover: SummaryStats["biggestImprover"] = null;
+  let biggestDecliner: SummaryStats["biggestDecliner"] = null;
+  let improved = 0,
+    declined = 0,
+    steady = 0,
+    newC = 0,
+    lost = 0;
+  let screenshots = 0;
+  for (const r of rows) {
+    if (r.current?.imageUrl) screenshots++;
+    if (r.status === "improved") improved++;
+    else if (r.status === "declined") declined++;
+    else if (r.status === "steady") steady++;
+    else if (r.status === "new") newC++;
+    else if (r.status === "lost") lost++;
+    if (
+      r.current?.rank != null &&
+      (topRank == null || r.current.rank < topRank)
+    ) {
+      topRank = r.current.rank;
+      topKeyword = r.keywordText;
+    }
+    if (
+      r.change != null &&
+      r.change < 0 &&
+      r.previous?.rank != null &&
+      r.current?.rank != null &&
+      (biggestImprover == null ||
+        r.change < biggestImprover.to - biggestImprover.from)
+    ) {
+      biggestImprover = {
+        keyword: r.keywordText,
+        from: r.previous.rank,
+        to: r.current.rank,
+      };
+    }
+    if (
+      r.change != null &&
+      r.change > 0 &&
+      r.previous?.rank != null &&
+      r.current?.rank != null &&
+      (biggestDecliner == null ||
+        r.change > biggestDecliner.to - biggestDecliner.from)
+    ) {
+      biggestDecliner = {
+        keyword: r.keywordText,
+        from: r.previous.rank,
+        to: r.current.rank,
+      };
+    }
+  }
+  return {
+    keywordCount: keywordIds.size,
+    rowCount: rows.length,
+    screenshotCount: screenshots,
+    improvedCount: improved,
+    declinedCount: declined,
+    steadyCount: steady,
+    newCount: newC,
+    lostCount: lost,
+    topKeyword,
+    topRank,
+    biggestImprover,
+    biggestDecliner,
+  };
+}
+
+/* ─── ROUTES ───────────────────────────────────────────────────────────── */
+
 router.get("/email-recipients/:clientId", async (req, res) => {
   const id = Number.parseInt(req.params.clientId, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
@@ -55,181 +493,252 @@ router.get("/email-recipients/:clientId", async (req, res) => {
   }
 });
 
-interface RankRow {
-  reportId: number;
-  keywordId: number;
-  keywordText: string;
-  platform: string;
-  rank: number | null;
-  date: string;
-  screenshotUrl: string | null;
+function parseFilterQuery(req: {
+  query: Record<string, unknown>;
+}): RankingFilter | null {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  if (Number.isNaN(clientId)) return null;
+  return {
+    clientId,
+    businessId: req.query.businessId
+      ? Number.parseInt(String(req.query.businessId), 10)
+      : null,
+    aeoPlanId: req.query.aeoPlanId
+      ? Number.parseInt(String(req.query.aeoPlanId), 10)
+      : null,
+  };
 }
 
-/* Fetch the latest ranking_reports row per (keyword, platform) for the given
-   client (optionally filtered by business or aeo-plan). One row per pair. */
-async function getCurrentRankings(filter: {
-  clientId: number;
-  businessId?: number;
-  aeoPlanId?: number;
-}): Promise<RankRow[]> {
-  const conditions = [eq(rankingReportsTable.clientId, filter.clientId)];
-  if (filter.businessId)
-    conditions.push(eq(rankingReportsTable.businessId, filter.businessId));
-
-  /* DISTINCT ON (keyword_id, platform) — latest by date desc, id desc. */
-  const result = await db.execute(sql`
-    SELECT DISTINCT ON (rr.keyword_id, lower(rr.platform))
-      rr.id              AS report_id,
-      rr.keyword_id      AS keyword_id,
-      k.keyword_text     AS keyword_text,
-      lower(rr.platform) AS platform,
-      rr.ranking_position AS rank,
-      rr.date            AS date,
-      rr.screenshot_url  AS screenshot_url
-    FROM ranking_reports rr
-    LEFT JOIN keywords k ON k.id = rr.keyword_id
-    WHERE rr.client_id = ${filter.clientId}
-      ${filter.businessId ? sql`AND rr.business_id = ${filter.businessId}` : sql``}
-    ORDER BY rr.keyword_id, lower(rr.platform), rr.date DESC, rr.id DESC
-  `);
-
-  return (result.rows as Array<Record<string, unknown>>).map((r) => ({
-    reportId: Number(r.report_id),
-    keywordId: Number(r.keyword_id),
-    keywordText: String(r.keyword_text ?? ""),
-    platform: String(r.platform),
-    rank: r.rank == null ? null : Number(r.rank),
-    date: String(r.date),
-    screenshotUrl: r.screenshot_url == null ? null : String(r.screenshot_url),
-  }));
-}
-
-async function maybeSignS3(url: string | null): Promise<string | null> {
-  if (!url || !url.startsWith("s3://")) return null;
-  const m = url.match(/^s3:\/\/([^/]+)\/(.+)$/);
-  if (!m) return null;
-  const [, bucket, key] = m;
-  return getSignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { expiresIn: SEVEN_DAYS_SECONDS },
-  );
-}
-
-function platformLabel(p: string): string {
-  if (p === "chatgpt") return "ChatGPT";
-  if (p === "gemini") return "Gemini";
-  if (p === "perplexity") return "Perplexity";
-  return p;
-}
-
-function platformColor(p: string): string {
-  if (p === "chatgpt") return "#10a37f";
-  if (p === "gemini") return "#4285f4";
-  if (p === "perplexity") return "#7c3aed";
-  return "#64748b";
-}
-
-function rankPill(rank: number | null): string {
-  if (rank == null) return `<span style="color:#94a3b8">—</span>`;
-  return `<strong>#${rank}</strong>`;
-}
-
-interface BuildEmailArgs {
-  clientName: string;
-  rows: Array<RankRow & { imageUrl: string | null }>;
-  customMessage?: string;
-}
-
-function buildEmailHtml({
-  clientName,
-  rows,
-  customMessage,
-}: BuildEmailArgs): string {
-  /* Group rows by keyword for the table. */
-  const byKeyword = new Map<number, { text: string; platforms: typeof rows }>();
-  for (const r of rows) {
-    if (!byKeyword.has(r.keywordId)) {
-      byKeyword.set(r.keywordId, { text: r.keywordText, platforms: [] });
-    }
-    byKeyword.get(r.keywordId)!.platforms.push(r);
+/* GET /api/rankings/email-preview */
+router.get("/email-preview", async (req, res) => {
+  const filter = parseFilterQuery(req);
+  if (!filter) return res.status(400).json({ error: "clientId required" });
+  try {
+    const ctx = await loadFilterContext(filter);
+    const raw = await getBiWeeklyRankings(filter);
+    const rows = await signAllUrls(raw);
+    const html = buildEmailHtml({
+      clientName: ctx.clientName,
+      filterLabel: ctx.filterLabel,
+      rows,
+      customMessage: req.query.customMessage
+        ? String(req.query.customMessage)
+        : undefined,
+    });
+    const stats = summarize(rows);
+    return res.json({
+      html,
+      clientName: ctx.clientName,
+      filterLabel: ctx.filterLabel,
+      keywordCount: stats.keywordCount,
+      rowCount: stats.rowCount,
+      withScreenshotCount: stats.screenshotCount,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error building email preview");
+    return res.status(500).json({ error: "Internal server error" });
   }
+});
 
-  const today = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "America/New_York",
-  });
+/* GET /api/rankings/email-templates */
+router.get("/email-templates", async (req, res) => {
+  const filter = parseFilterQuery(req);
+  if (!filter) return res.status(400).json({ error: "clientId required" });
+  try {
+    const ctx = await loadFilterContext(filter);
+    const raw = await getBiWeeklyRankings(filter);
+    const rows = await signAllUrls(raw);
+    const stats = summarize(rows);
 
-  const keywordSections = [...byKeyword.values()]
-    .map((kw) => {
-      const platRows = kw.platforms
-        .sort((a, b) => a.platform.localeCompare(b.platform))
-        .map((p) => {
-          const img = p.imageUrl
-            ? `<a href="${p.imageUrl}" style="display:inline-block">
-               <img src="${p.imageUrl}" alt="screenshot" width="200"
-                    style="max-width:200px;height:auto;border:1px solid #e5e7eb;border-radius:6px;display:block" />
-             </a>
-             <div style="margin-top:4px;font-size:11px"><a href="${p.imageUrl}" style="color:#475569">View full size</a></div>`
-            : `<span style="color:#94a3b8;font-size:12px">no screenshot</span>`;
-          return `
-          <tr>
-            <td style="padding:12px;border-bottom:1px solid #f1f5f9;vertical-align:top">
-              <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${platformColor(p.platform)};color:#fff;font-size:11px;font-weight:600">${platformLabel(p.platform)}</span>
-            </td>
-            <td style="padding:12px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:18px">${rankPill(p.rank)}</td>
-            <td style="padding:12px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:12px;color:#64748b">${p.date}</td>
-            <td style="padding:12px;border-bottom:1px solid #f1f5f9;vertical-align:top">${img}</td>
-          </tr>`;
-        })
-        .join("");
-      return `
-      <div style="margin:24px 0">
-        <h3 style="margin:0 0 8px 0;color:#0f172a;font-size:16px">${kw.text}</h3>
-        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Platform</th>
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Current Rank</th>
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Audited</th>
-              <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Screenshot</th>
-            </tr>
-          </thead>
-          <tbody>${platRows}</tbody>
-        </table>
-      </div>`;
-    })
-    .join("");
+    const todayET = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "America/New_York",
+    });
+    const scopeNote = ctx.filterLabel ? ` (${ctx.filterLabel})` : "";
 
-  const customBlock = customMessage?.trim()
-    ? `<div style="margin:16px 0;padding:16px;background:#f8fafc;border-left:3px solid #6366f1;border-radius:4px;color:#334155;font-size:14px;white-space:pre-wrap">${customMessage}</div>`
-    : "";
+    const vars = {
+      client_name: ctx.clientName,
+      date: todayET,
+      scope: ctx.filterLabel ?? "all keywords",
+      keyword_count: stats.keywordCount,
+      row_count: stats.rowCount,
+      screenshot_count: stats.screenshotCount,
+      improved_count: stats.improvedCount,
+      declined_count: stats.declinedCount,
+      steady_count: stats.steadyCount,
+      top_keyword: stats.topKeyword ?? "your keywords",
+      top_rank: stats.topRank,
+      biggest_improver: stats.biggestImprover
+        ? `"${stats.biggestImprover.keyword}" went from #${stats.biggestImprover.from} to #${stats.biggestImprover.to}`
+        : null,
+    };
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:680px;margin:0 auto;padding:32px 16px">
-    <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
-      <h1 style="margin:0 0 4px 0;color:#0f172a;font-size:22px">AEO Rankings Report</h1>
-      <p style="margin:0 0 16px 0;color:#64748b;font-size:14px">${clientName} · ${today}</p>
-      ${customBlock}
-      ${keywordSections || `<p style="color:#94a3b8">No keyword data for this period.</p>`}
-      <p style="margin:28px 0 0 0;color:#94a3b8;font-size:11px;text-align:center">
-        Screenshot links expire in 7 days. Reply to this email for help.
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
+    const interpolate = (s: string): string =>
+      s.replace(/\{(\w+)\}/g, (_, k) =>
+        String(vars[k as keyof typeof vars] ?? ""),
+      );
+
+    const rawTemplates: Array<{ id: string; name: string; body: string }> = [
+      {
+        id: "biweekly",
+        name: "Bi-weekly comparison",
+        body: `Hi {client_name},
+
+Here's your bi-weekly AEO rankings update as of {date}${scopeNote}. We compared the latest audit to the audit before it across {keyword_count} keywords.
+
+Summary:
+• {improved_count} keywords improved
+• {declined_count} keywords declined
+• {steady_count} keywords held steady
+
+Tap any screenshot in the table below to see the audit result on each AI platform.`,
+      },
+      {
+        id: "highlight",
+        name: "Highlight a top result",
+        body: `Hi {client_name},
+
+Great news — "{top_keyword}" is currently ranking #{top_rank} across the AI platforms we track. Below is the bi-weekly comparison of all keywords${scopeNote} as of {date}, with screenshots for every audit.
+
+Let us know if you'd like to discuss strategy on any of the keywords below.`,
+      },
+      {
+        id: "checkin",
+        name: "Quick check-in",
+        body: `Hi {client_name},
+
+Your bi-weekly AEO rankings report for {date} is attached${scopeNote}. {keyword_count} keywords tracked. {improved_count} improved, {declined_count} declined, {steady_count} steady.
+
+Let me know if anything needs attention.`,
+      },
+      {
+        id: "blank",
+        name: "Start from scratch",
+        body: "",
+      },
+    ];
+
+    const templates = rawTemplates.map((t) => ({
+      ...t,
+      body: interpolate(t.body),
+    }));
+
+    return res.json({ vars, templates });
+  } catch (err) {
+    req.log.error({ err }, "Error building email templates");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/rankings/email-ai-suggest
+   Body: { clientId, businessId?, aeoPlanId?, instruction? }
+   Calls DeepSeek with a compact summary of the bi-weekly data + (optional)
+   instruction hint, returns a generated email body the user can edit. */
+router.post("/email-ai-suggest", async (req, res) => {
+  const body = req.body as Partial<RankingFilter> & { instruction?: string };
+  if (!body.clientId)
+    return res.status(400).json({ error: "clientId required" });
+  try {
+    const filter: RankingFilter = {
+      clientId: body.clientId,
+      businessId: body.businessId ?? null,
+      aeoPlanId: body.aeoPlanId ?? null,
+    };
+    const ctx = await loadFilterContext(filter);
+    const raw = await getBiWeeklyRankings(filter);
+    const rows = await signAllUrls(raw);
+    const stats = summarize(rows);
+
+    /* Compact data summary the LLM will reason about. */
+    const compact = {
+      client: ctx.clientName,
+      scope: ctx.filterLabel ?? "all keywords",
+      date_ranges: {
+        previous_dates: [
+          ...new Set(rows.map((r) => r.previous?.date).filter(Boolean)),
+        ],
+        current_dates: [
+          ...new Set(rows.map((r) => r.current?.date).filter(Boolean)),
+        ],
+      },
+      counts: {
+        keywords: stats.keywordCount,
+        platform_rows: stats.rowCount,
+        improved: stats.improvedCount,
+        declined: stats.declinedCount,
+        steady: stats.steadyCount,
+        new: stats.newCount,
+        lost: stats.lostCount,
+      },
+      top_current_rank:
+        stats.topRank != null
+          ? { keyword: stats.topKeyword, rank: stats.topRank }
+          : null,
+      biggest_improver: stats.biggestImprover,
+      biggest_decliner: stats.biggestDecliner,
+      /* Per-keyword breakdown limited to top 25 most-changed for the LLM. */
+      keyword_breakdown: rows
+        .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
+        .slice(0, 25)
+        .map((r) => ({
+          keyword: r.keywordText,
+          platform: r.platform,
+          previous_rank: r.previous?.rank ?? null,
+          current_rank: r.current?.rank ?? null,
+          change: r.change,
+          status: r.status,
+        })),
+    };
+
+    const systemPrompt = `You write concise, friendly, professional emails for SEO clients about their AI-search (AEO) rankings on ChatGPT, Gemini, and Perplexity.
+
+Write only the body text — NO subject line, NO greeting like "Hi {name}", NO sign-off. The system already adds:
+- A greeting and the client name
+- The rankings table with per-keyword screenshots
+- A footer
+
+Your output:
+- 2-4 short paragraphs, max 150 words
+- Plain text only (no markdown, no HTML)
+- Reference specific numbers from the data (improvements, declines, top keyword)
+- Match the tone of a trusted account manager — warm but factual
+- If there are wins, lead with them. If results are mixed, be balanced.
+- If the user provided an instruction, follow it`;
+
+    const userPrompt = `Here is the actual ranking data for this client:
+
+${JSON.stringify(compact, null, 2)}
+
+${body.instruction?.trim() ? `User instruction: ${body.instruction.trim()}\n\n` : ""}Write the email body now.`;
+
+    const result = await chatCompletion({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.7,
+      maxTokens: 600,
+    });
+    return res.json({
+      body: result.content.trim(),
+      model: result.model,
+      costUsd: Number(result.costUsd.toFixed(6)),
+      tokens: result.totalTokens,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error generating AI email suggestion");
+    const detail = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: "AI generation failed", detail });
+  }
+});
 
 interface SendReportBody {
   clientId: number;
-  businessId?: number;
-  aeoPlanId?: number;
+  businessId?: number | null;
+  aeoPlanId?: number | null;
   recipients: string[];
   subject?: string;
   customMessage?: string;
@@ -254,37 +763,24 @@ router.post("/send-report", async (req, res) => {
     if (!fromEmail)
       return res.status(500).json({ error: "SENDGRID_FROM_EMAIL not set" });
 
-    const clientRow = await db
-      .select({ businessName: clientsTable.businessName })
-      .from(clientsTable)
-      .where(eq(clientsTable.id, body.clientId))
-      .limit(1);
-    if (clientRow.length === 0)
-      return res.status(404).json({ error: "client not found" });
-    const clientName = clientRow[0].businessName ?? `Client ${body.clientId}`;
-
-    const rankings = await getCurrentRankings({
+    const filter: RankingFilter = {
       clientId: body.clientId,
-      businessId: body.businessId,
-      aeoPlanId: body.aeoPlanId,
-    });
-
-    /* Sign all S3 URLs (parallel; 7-day TTL). */
-    const rowsWithImages = await Promise.all(
-      rankings.map(async (r) => ({
-        ...r,
-        imageUrl: await maybeSignS3(r.screenshotUrl),
-      })),
-    );
+      businessId: body.businessId ?? null,
+      aeoPlanId: body.aeoPlanId ?? null,
+    };
+    const ctx = await loadFilterContext(filter);
+    const raw = await getBiWeeklyRankings(filter);
+    const rows = await signAllUrls(raw);
 
     const html = buildEmailHtml({
-      clientName,
-      rows: rowsWithImages,
+      clientName: ctx.clientName,
+      filterLabel: ctx.filterLabel,
+      rows,
       customMessage: body.customMessage,
     });
     const subject =
       body.subject?.trim() ||
-      `AEO Rankings Report — ${clientName} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
+      `AEO Bi-Weekly Rankings — ${ctx.clientName}${ctx.filterLabel ? ` (${ctx.filterLabel})` : ""} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
 
     /* Safe recipient override — re-route during testing. */
     const intendedRecipients = body.recipients
@@ -346,8 +842,8 @@ router.post("/send-report", async (req, res) => {
       recipientsActual: actualRecipients,
       recipientsIntended: intendedRecipients,
       safeModeActive: Boolean(safeOverride),
-      keywordsIncluded: new Set(rowsWithImages.map((r) => r.keywordId)).size,
-      rowsIncluded: rowsWithImages.length,
+      keywordsIncluded: new Set(rows.map((r) => r.keywordId)).size,
+      rowsIncluded: rows.length,
     });
   } catch (err) {
     req.log.error({ err }, "Error sending rankings report email");
@@ -356,168 +852,7 @@ router.post("/send-report", async (req, res) => {
   }
 });
 
-/* GET /api/rankings/email-preview?clientId=&businessId=
-   Returns the HTML body so the FE can show a preview before sending. */
-router.get("/email-preview", async (req, res) => {
-  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
-  if (Number.isNaN(clientId))
-    return res.status(400).json({ error: "clientId required" });
-  try {
-    const businessId = req.query.businessId
-      ? Number.parseInt(String(req.query.businessId), 10)
-      : undefined;
-    const aeoPlanId = req.query.aeoPlanId
-      ? Number.parseInt(String(req.query.aeoPlanId), 10)
-      : undefined;
-    const clientRow = await db
-      .select({ businessName: clientsTable.businessName })
-      .from(clientsTable)
-      .where(eq(clientsTable.id, clientId))
-      .limit(1);
-    if (clientRow.length === 0)
-      return res.status(404).json({ error: "client not found" });
-    const clientName = clientRow[0].businessName ?? `Client ${clientId}`;
-
-    const rankings = await getCurrentRankings({
-      clientId,
-      businessId,
-      aeoPlanId,
-    });
-    const rowsWithImages = await Promise.all(
-      rankings.map(async (r) => ({
-        ...r,
-        imageUrl: await maybeSignS3(r.screenshotUrl),
-      })),
-    );
-
-    const html = buildEmailHtml({
-      clientName,
-      rows: rowsWithImages,
-      customMessage: req.query.customMessage
-        ? String(req.query.customMessage)
-        : undefined,
-    });
-    return res.json({
-      html,
-      clientName,
-      keywordCount: new Set(rowsWithImages.map((r) => r.keywordId)).size,
-      rowCount: rowsWithImages.length,
-      withScreenshotCount: rowsWithImages.filter((r) => r.imageUrl).length,
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error building email preview");
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/* GET /api/rankings/email-templates?clientId=&businessId=
-   Returns ready-to-use message templates with variables (client_name, date,
-   keyword_count, screenshot_count, top_keyword) interpolated from real data.
-   Frontend renders the resulting bodies in a picker; user can pick one and
-   then edit further before sending. */
-router.get("/email-templates", async (req, res) => {
-  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
-  if (Number.isNaN(clientId))
-    return res.status(400).json({ error: "clientId required" });
-  try {
-    const businessId = req.query.businessId
-      ? Number.parseInt(String(req.query.businessId), 10)
-      : undefined;
-    const clientRow = await db
-      .select({ businessName: clientsTable.businessName })
-      .from(clientsTable)
-      .where(eq(clientsTable.id, clientId))
-      .limit(1);
-    if (clientRow.length === 0)
-      return res.status(404).json({ error: "client not found" });
-    const clientName = clientRow[0].businessName ?? `Client ${clientId}`;
-
-    const rankings = await getCurrentRankings({ clientId, businessId });
-    const keywordIds = new Set(rankings.map((r) => r.keywordId));
-    const withScreenshot = rankings.filter((r) =>
-      r.screenshotUrl?.startsWith("s3://"),
-    ).length;
-    /* Best current rank wins; fall back alphabetically. */
-    const topRanked = [...rankings]
-      .filter((r) => r.rank != null)
-      .sort(
-        (a, b) =>
-          a.rank! - b.rank! || a.keywordText.localeCompare(b.keywordText),
-      )[0];
-
-    const todayET = new Date().toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: "America/New_York",
-    });
-
-    const vars = {
-      client_name: clientName,
-      date: todayET,
-      keyword_count: keywordIds.size,
-      row_count: rankings.length,
-      screenshot_count: withScreenshot,
-      top_keyword: topRanked?.keywordText ?? "your keywords",
-      top_rank: topRanked?.rank ?? null,
-    };
-
-    const interpolate = (s: string): string =>
-      s.replace(/\{(\w+)\}/g, (_, k) =>
-        String(vars[k as keyof typeof vars] ?? ""),
-      );
-
-    const rawTemplates: Array<{ id: string; name: string; body: string }> = [
-      {
-        id: "monthly",
-        name: "Monthly update",
-        body: `Hi {client_name},
-
-Here's your latest AEO rankings report as of {date}. We're tracking {keyword_count} keywords across ChatGPT, Gemini, and Perplexity, and we've captured {screenshot_count} new audit screenshots since the last report.
-
-Click any screenshot in the table below to see exactly how your business appeared in the AI search results.
-
-Questions? Just reply to this email.`,
-      },
-      {
-        id: "highlight",
-        name: "Highlight a top result",
-        body: `Hi {client_name},
-
-Great news — "{top_keyword}" is currently ranking #{top_rank} across the AI platforms we track. Below is your full rankings snapshot as of {date} with screenshots for every audit.
-
-Let us know if you'd like to discuss strategy on any of the keywords below.`,
-      },
-      {
-        id: "checkin",
-        name: "Quick check-in",
-        body: `Hi {client_name},
-
-Your AEO rankings report for {date} is attached. {keyword_count} keywords tracked, {screenshot_count} audit screenshots captured.
-
-Let me know if anything needs attention.`,
-      },
-      {
-        id: "blank",
-        name: "Start from scratch",
-        body: "",
-      },
-    ];
-
-    const templates = rawTemplates.map((t) => ({
-      ...t,
-      body: interpolate(t.body),
-    }));
-
-    return res.json({ vars, templates });
-  } catch (err) {
-    req.log.error({ err }, "Error building email templates");
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/* GET /api/rankings/email-sends?clientId=
-   Last 20 send attempts for an audit panel. */
+/* GET /api/rankings/email-sends?clientId= */
 router.get("/email-sends", async (req, res) => {
   try {
     const clientId = req.query.clientId

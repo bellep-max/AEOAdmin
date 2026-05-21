@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { rawFetch } from "@/lib/period-comparison";
-import { X, Send, Eye, EyeOff } from "lucide-react";
+import { X, Send, Eye, EyeOff, Sparkles } from "lucide-react";
 
 interface EmailRecipientsResponse {
   contactEmail: string | null;
@@ -54,6 +54,7 @@ interface SendReportDialogProps {
   onClose: () => void;
   clientId: number | null;
   businessId?: number | null;
+  aeoPlanId?: number | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -63,6 +64,7 @@ export function SendReportDialog({
   onClose,
   clientId,
   businessId,
+  aeoPlanId,
 }: SendReportDialogProps) {
   const [recipients, setRecipients] = useState<string[]>([]);
   const [newRecipient, setNewRecipient] = useState("");
@@ -70,6 +72,7 @@ export function SendReportDialog({
   const [customMessage, setCustomMessage] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
   const [result, setResult] = useState<{
     ok: boolean;
     message: string;
@@ -101,10 +104,16 @@ export function SendReportDialog({
   /* Load templates (with data already interpolated) when dialog opens. */
   const { data: templatesData } = useQuery<TemplatesResponse>({
     enabled: open && clientId != null,
-    queryKey: ["/api/rankings/email-templates", clientId, businessId ?? null],
+    queryKey: [
+      "/api/rankings/email-templates",
+      clientId,
+      businessId ?? null,
+      aeoPlanId ?? null,
+    ],
     queryFn: async () => {
       const p = new URLSearchParams({ clientId: String(clientId) });
       if (businessId != null) p.set("businessId", String(businessId));
+      if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
       const res = await rawFetch(`/api/rankings/email-templates?${p}`);
       if (!res.ok) throw new Error("Failed to load templates");
       return res.json();
@@ -117,13 +126,37 @@ export function SendReportDialog({
     if (t) setCustomMessage(t.body);
   }
 
+  const aiSuggest = useMutation({
+    mutationFn: async () => {
+      const res = await rawFetch("/api/rankings/email-ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
+          instruction: aiInstruction.trim() || undefined,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok)
+        throw new Error(body?.detail ?? body?.error ?? "AI generation failed");
+      return body as { body: string; costUsd: number; tokens: number };
+    },
+    onSuccess: (data) => {
+      setCustomMessage(data.body);
+      setSelectedTemplateId(""); // clear template selection since AI replaced it
+    },
+  });
+
   const previewQueryParams = useMemo(() => {
     if (clientId == null) return null;
     const p = new URLSearchParams({ clientId: String(clientId) });
     if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (customMessage.trim()) p.set("customMessage", customMessage.trim());
     return p.toString();
-  }, [clientId, businessId, customMessage]);
+  }, [clientId, businessId, aeoPlanId, customMessage]);
 
   const { data: preview, isFetching: previewLoading } =
     useQuery<PreviewResponse>({
@@ -146,6 +179,7 @@ export function SendReportDialog({
         body: JSON.stringify({
           clientId,
           businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
           recipients,
           subject: subject.trim() || undefined,
           customMessage: customMessage.trim() || undefined,
@@ -260,9 +294,50 @@ export function SendReportDialog({
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                Templates use real data — client name, date, keyword count,
-                top-ranked keyword. Edit freely after picking.
+                Templates use real bi-weekly data — client name, date, keyword
+                count, improved/declined counts, top result. Edit freely after
+                picking.
               </p>
+            </div>
+
+            {/* AI generate */}
+            <div className="space-y-2 p-3 border border-indigo-200 bg-indigo-50/40 rounded-md">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                <Label className="m-0">AI-generated message</Label>
+              </div>
+              <Input
+                placeholder="Optional hint (e.g., 'focus on the wins, keep it short')"
+                value={aiInstruction}
+                onChange={(e) => setAiInstruction(e.target.value)}
+                disabled={aiSuggest.isPending}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-100 w-full"
+                onClick={() => aiSuggest.mutate()}
+                disabled={clientId == null || aiSuggest.isPending}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {aiSuggest.isPending
+                  ? "Generating…"
+                  : "Generate with DeepSeek (uses real data)"}
+              </Button>
+              {aiSuggest.isError && (
+                <p className="text-[11px] text-red-600">
+                  {aiSuggest.error instanceof Error
+                    ? aiSuggest.error.message
+                    : "AI generation failed"}
+                </p>
+              )}
+              {aiSuggest.isSuccess && aiSuggest.data && (
+                <p className="text-[11px] text-muted-foreground">
+                  Generated · {aiSuggest.data.tokens} tokens · $
+                  {aiSuggest.data.costUsd.toFixed(5)}
+                </p>
+              )}
             </div>
 
             {/* Recipients */}

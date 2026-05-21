@@ -703,6 +703,7 @@ export default function Rankings() {
         onClose={() => setSendReportOpen(false)}
         clientId={selectedClientId}
         businessId={selectedBusinessId}
+        aeoPlanId={selectedCampaignId}
       />
 
       {/* Weekly run banner */}
