@@ -60,7 +60,9 @@ async function buildAll() {
       "@mikro-orm/*",
       "@grpc/*",
       "@swc/*",
-      "@aws-sdk/*",
+      /* "@aws-sdk/*" intentionally NOT externalized — the runtime Dockerfile
+         stage only copies dist/, so any externalized package would fail with
+         ERR_MODULE_NOT_FOUND. AWS SDK v3 is pure JS and bundles cleanly. */
       "@azure/*",
       "@opentelemetry/*",
       "@google-cloud/*",
