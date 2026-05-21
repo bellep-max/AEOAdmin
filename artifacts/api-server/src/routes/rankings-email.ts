@@ -410,6 +410,112 @@ router.get("/email-preview", async (req, res) => {
   }
 });
 
+/* GET /api/rankings/email-templates?clientId=&businessId=
+   Returns ready-to-use message templates with variables (client_name, date,
+   keyword_count, screenshot_count, top_keyword) interpolated from real data.
+   Frontend renders the resulting bodies in a picker; user can pick one and
+   then edit further before sending. */
+router.get("/email-templates", async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  if (Number.isNaN(clientId))
+    return res.status(400).json({ error: "clientId required" });
+  try {
+    const businessId = req.query.businessId
+      ? Number.parseInt(String(req.query.businessId), 10)
+      : undefined;
+    const clientRow = await db
+      .select({ businessName: clientsTable.businessName })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, clientId))
+      .limit(1);
+    if (clientRow.length === 0)
+      return res.status(404).json({ error: "client not found" });
+    const clientName = clientRow[0].businessName ?? `Client ${clientId}`;
+
+    const rankings = await getCurrentRankings({ clientId, businessId });
+    const keywordIds = new Set(rankings.map((r) => r.keywordId));
+    const withScreenshot = rankings.filter((r) =>
+      r.screenshotUrl?.startsWith("s3://"),
+    ).length;
+    /* Best current rank wins; fall back alphabetically. */
+    const topRanked = [...rankings]
+      .filter((r) => r.rank != null)
+      .sort(
+        (a, b) =>
+          a.rank! - b.rank! || a.keywordText.localeCompare(b.keywordText),
+      )[0];
+
+    const todayET = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "America/New_York",
+    });
+
+    const vars = {
+      client_name: clientName,
+      date: todayET,
+      keyword_count: keywordIds.size,
+      row_count: rankings.length,
+      screenshot_count: withScreenshot,
+      top_keyword: topRanked?.keywordText ?? "your keywords",
+      top_rank: topRanked?.rank ?? null,
+    };
+
+    const interpolate = (s: string): string =>
+      s.replace(/\{(\w+)\}/g, (_, k) =>
+        String(vars[k as keyof typeof vars] ?? ""),
+      );
+
+    const rawTemplates: Array<{ id: string; name: string; body: string }> = [
+      {
+        id: "monthly",
+        name: "Monthly update",
+        body: `Hi {client_name},
+
+Here's your latest AEO rankings report as of {date}. We're tracking {keyword_count} keywords across ChatGPT, Gemini, and Perplexity, and we've captured {screenshot_count} new audit screenshots since the last report.
+
+Click any screenshot in the table below to see exactly how your business appeared in the AI search results.
+
+Questions? Just reply to this email.`,
+      },
+      {
+        id: "highlight",
+        name: "Highlight a top result",
+        body: `Hi {client_name},
+
+Great news — "{top_keyword}" is currently ranking #{top_rank} across the AI platforms we track. Below is your full rankings snapshot as of {date} with screenshots for every audit.
+
+Let us know if you'd like to discuss strategy on any of the keywords below.`,
+      },
+      {
+        id: "checkin",
+        name: "Quick check-in",
+        body: `Hi {client_name},
+
+Your AEO rankings report for {date} is attached. {keyword_count} keywords tracked, {screenshot_count} audit screenshots captured.
+
+Let me know if anything needs attention.`,
+      },
+      {
+        id: "blank",
+        name: "Start from scratch",
+        body: "",
+      },
+    ];
+
+    const templates = rawTemplates.map((t) => ({
+      ...t,
+      body: interpolate(t.body),
+    }));
+
+    return res.json({ vars, templates });
+  } catch (err) {
+    req.log.error({ err }, "Error building email templates");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* GET /api/rankings/email-sends?clientId=
    Last 20 send attempts for an audit panel. */
 router.get("/email-sends", async (req, res) => {
