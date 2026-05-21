@@ -336,7 +336,9 @@ router.get("/:id/screenshot-url", async (req, res) => {
       return res.json({ url: raw, kind: "external" });
     }
 
-    /* Structured-field fallback for local paths and rows with no path. */
+    /* Structured-field fallback for local paths and rows with no path.
+       audit_logs.timestamp + ranking_reports.date for the same audit
+       resolve to the same calendar day, so a direct date() match works. */
     if (
       !raw?.startsWith("s3://") &&
       row.keywordId &&
@@ -350,7 +352,7 @@ router.get("/:id/screenshot-url", async (req, res) => {
           and(
             eq(rankingReportsTable.keywordId, row.keywordId),
             sql`lower(${rankingReportsTable.platform}) = lower(${row.platform})`,
-            sql`${rankingReportsTable.date} = (${row.timestamp}::timestamp AT TIME ZONE 'America/New_York')::date`,
+            sql`${rankingReportsTable.date} = date(${row.timestamp})`,
             like(rankingReportsTable.screenshotUrl, "s3://%"),
           ),
         )
