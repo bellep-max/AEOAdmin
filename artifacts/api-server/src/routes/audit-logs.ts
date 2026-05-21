@@ -302,12 +302,14 @@ router.delete("/:id", async (req, res) => {
 });
 
 /* GET /api/audit-logs/:id/screenshot-url
-   Same contract as /api/ranking-reports/:id/screenshot-url and
-   /api/sessions/:id/screenshot-url:
+   Resolves an audit log's screenshot to a viewable URL.
      - "s3://..."   → pre-signed GET URL (15 min)
      - "https://..." → returned as-is
-     - local path   → basename-fallback against ranking_reports.screenshot_url;
-       if a matching s3:// row exists, sign that. */
+     - local path   → falls back by matching (keyword_id, lower(platform),
+       date(timestamp)) against ranking_reports — uses that row's S3 URL.
+       Structured-field matching (rather than basename) is required because
+       S3 keys use a renamed scheme `{date}_rank{N}_{trend}.png` that has
+       no relation to the original `kw{id}_{platform}_{unix_ts}.png` file. */
 router.get("/:id/screenshot-url", async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
@@ -315,34 +317,50 @@ router.get("/:id/screenshot-url", async (req, res) => {
   }
   try {
     const rows = await db
-      .select({ url: auditLogsTable.screenshotPath })
+      .select({
+        url: auditLogsTable.screenshotPath,
+        keywordId: auditLogsTable.keywordId,
+        platform: auditLogsTable.platform,
+        timestamp: auditLogsTable.timestamp,
+      })
       .from(auditLogsTable)
       .where(eq(auditLogsTable.id, id))
       .limit(1);
     if (rows.length === 0) {
       return res.status(404).json({ error: "audit log not found" });
     }
-    let raw = rows[0].url ?? null;
-    if (!raw) return res.json({ url: null, kind: "none" });
-    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    const row = rows[0];
+    let raw = row.url ?? null;
+
+    if (raw?.startsWith("http://") || raw?.startsWith("https://")) {
       return res.json({ url: raw, kind: "external" });
     }
-    if (!raw.startsWith("s3://")) {
-      const baseName = raw.split("/").pop() ?? "";
-      if (baseName) {
-        const match = await db
-          .select({ url: rankingReportsTable.screenshotUrl })
-          .from(rankingReportsTable)
-          .where(
-            and(like(rankingReportsTable.screenshotUrl, `s3://%/${baseName}`)),
-          )
-          .limit(1);
-        if (match.length > 0 && match[0].url) {
-          raw = match[0].url;
-        }
+
+    /* Structured-field fallback for local paths and rows with no path. */
+    if (
+      !raw?.startsWith("s3://") &&
+      row.keywordId &&
+      row.platform &&
+      row.timestamp
+    ) {
+      const match = await db
+        .select({ url: rankingReportsTable.screenshotUrl })
+        .from(rankingReportsTable)
+        .where(
+          and(
+            eq(rankingReportsTable.keywordId, row.keywordId),
+            sql`lower(${rankingReportsTable.platform}) = lower(${row.platform})`,
+            sql`${rankingReportsTable.date} = (${row.timestamp}::timestamp AT TIME ZONE 'America/New_York')::date`,
+            like(rankingReportsTable.screenshotUrl, "s3://%"),
+          ),
+        )
+        .limit(1);
+      if (match.length > 0 && match[0].url) {
+        raw = match[0].url;
       }
     }
-    if (raw.startsWith("s3://")) {
+
+    if (raw?.startsWith("s3://")) {
       const m = raw.match(/^s3:\/\/([^/]+)\/(.+)$/);
       if (!m) {
         return res.status(500).json({ error: "malformed s3 url" });
@@ -352,6 +370,7 @@ router.get("/:id/screenshot-url", async (req, res) => {
       const url = await getSignedUrl(s3Client, cmd, { expiresIn: 900 });
       return res.json({ url, kind: "s3", expiresIn: 900 });
     }
+    if (!raw) return res.json({ url: null, kind: "none" });
     return res.json({ url: null, kind: "local", originalPath: raw });
   } catch (err) {
     req.log.error({ err, id }, "Error generating audit-log screenshot URL");
