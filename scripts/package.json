@@ -12,6 +12,7 @@
     "tsx": "catalog:"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1050.0",
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "^8.20.0"
