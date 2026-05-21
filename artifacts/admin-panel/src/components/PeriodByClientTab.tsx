@@ -16,6 +16,7 @@ import {
   type PeriodRow,
 } from "@/lib/period-comparison";
 import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
 interface Props {
   period: Period;
@@ -78,6 +79,13 @@ export function PeriodByClientTab({
   auditDate = "all",
 }: Props) {
   const [search, setSearch] = useState("");
+  /* When set, opens the screenshot dialog for that ranking_reports row. */
+  const [shotCell, setShotCell] = useState<{
+    id: number;
+    label: string;
+    rank: number | null;
+    date: string | null;
+  } | null>(null);
 
   const { data, isLoading } = usePeriodComparison({
     period,
@@ -337,13 +345,31 @@ export function PeriodByClientTab({
                                   <PlatformChip row={p} />
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  {fmtPos(p.firstPosition)}
+                                  <RankCellButton
+                                    reportId={p.firstReportId}
+                                    rank={p.firstPosition}
+                                    date={p.firstDate}
+                                    label={`First audit · ${p.platform} · ${p.keywordText}`}
+                                    onPick={setShotCell}
+                                  />
                                 </div>
                                 <div className="col-span-2 text-muted-foreground">
-                                  {fmtPos(p.previousPosition)}
+                                  <RankCellButton
+                                    reportId={p.previousReportId}
+                                    rank={p.previousPosition}
+                                    date={p.previousDate}
+                                    label={`Previous audit · ${p.platform} · ${p.keywordText}`}
+                                    onPick={setShotCell}
+                                  />
                                 </div>
                                 <div className="col-span-2 font-semibold">
-                                  {fmtPos(p.currentPosition)}
+                                  <RankCellButton
+                                    reportId={p.currentReportId}
+                                    rank={p.currentPosition}
+                                    date={p.currentDate}
+                                    label={`Current audit · ${p.platform} · ${p.keywordText}`}
+                                    onPick={setShotCell}
+                                  />
                                 </div>
                                 <div className="col-span-2">
                                   <ChangeCell change={p.change} />
@@ -376,6 +402,53 @@ export function PeriodByClientTab({
           );
         })}
       </div>
+
+      <RankingScreenshotDialog
+        reportId={shotCell?.id ?? null}
+        onClose={() => setShotCell(null)}
+        title="Audit screenshot"
+        subtitle={shotCell?.label}
+        rank={shotCell?.rank ?? null}
+        date={shotCell?.date ?? null}
+      />
     </div>
+  );
+}
+
+interface RankCellButtonProps {
+  reportId: number | null;
+  rank: number | null;
+  date: string | null;
+  label: string;
+  onPick: (cell: {
+    id: number;
+    label: string;
+    rank: number | null;
+    date: string | null;
+  }) => void;
+}
+
+/* Click-to-view-screenshot wrapper around the rank text in each cell.
+   Renders as plain text (no underline) when there's no report row to link to. */
+function RankCellButton({
+  reportId,
+  rank,
+  date,
+  label,
+  onPick,
+}: RankCellButtonProps) {
+  const text = fmtPos(rank);
+  if (reportId == null) {
+    return <span>{text}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onPick({ id: reportId, label, rank, date })}
+      className="underline decoration-dotted decoration-muted-foreground/40 underline-offset-2 hover:decoration-primary hover:text-primary transition-colors"
+      title="View screenshot"
+    >
+      {text}
+    </button>
   );
 }

@@ -27,11 +27,14 @@ export interface PeriodRow {
   businessName: string | null;
   aeoPlanId: number | null;
   campaignName: string | null;
+  currentReportId: number | null;
   currentPosition: number | null;
   currentDate: string | null;
   currentVariant: string | null;
+  previousReportId: number | null;
   previousPosition: number | null;
   previousDate: string | null;
+  firstReportId: number | null;
   firstPosition: number | null;
   firstDate: string | null;
   change: number | null;

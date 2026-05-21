@@ -9,8 +9,16 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const router = Router();
+
+/* Shared S3 client. Credentials are resolved from the App Runner instance role
+   in prod or AWS_PROFILE/env vars locally. Region defaults to us-east-1. */
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION ?? "us-east-1",
+});
 
 router.get("/", async (req, res) => {
   try {
@@ -787,6 +795,7 @@ router.get("/period-comparison", async (req, res) => {
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
         previousDate: prev?.date ?? null,
+        firstReportId: firstEverRow?.id ?? null,
         firstPosition: firstEverRow?.rankingPosition ?? null,
         firstDate: firstEverRow?.date ?? null,
         change,
@@ -1503,6 +1512,57 @@ router.get("/bi-weekly-report", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error building bi-weekly report");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /api/ranking-reports/:id/screenshot-url
+   Resolves the row's screenshot_url into a viewable URL for the admin UI:
+     - "s3://..." → pre-signed GET URL (15 min TTL)
+     - "https://..." / "http://..." → returned as-is
+     - local path or null → returned as { url: null, kind } so the FE can hide
+       the screenshot section without erroring.
+   Requires no auth — viewing a row's screenshot is allowed for any admin
+   that can see the row itself; rate-limited by the App Runner front. */
+router.get("/:id/screenshot-url", async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+  try {
+    const rows = await db
+      .select({ url: rankingReportsTable.screenshotUrl })
+      .from(rankingReportsTable)
+      .where(eq(rankingReportsTable.id, id))
+      .limit(1);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "ranking report not found" });
+    }
+    const raw = rows[0].url ?? null;
+    if (!raw) {
+      return res.json({ url: null, kind: "none" });
+    }
+    if (raw.startsWith("s3://")) {
+      const m = raw.match(/^s3:\/\/([^/]+)\/(.+)$/);
+      if (!m) {
+        return res.status(500).json({ error: "malformed s3 url" });
+      }
+      const [, bucket, key] = m;
+      const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+      const url = await getSignedUrl(s3Client, cmd, { expiresIn: 900 });
+      return res.json({
+        url,
+        kind: "s3",
+        expiresIn: 900,
+      });
+    }
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      return res.json({ url: raw, kind: "external" });
+    }
+    /* Local path or relative — not servable from the admin panel. */
+    return res.json({ url: null, kind: "local", originalPath: raw });
+  } catch (err) {
+    req.log.error({ err, id }, "Error generating screenshot URL");
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
