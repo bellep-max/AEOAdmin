@@ -352,7 +352,7 @@ router.get("/:id/screenshot-url", async (req, res) => {
           and(
             eq(rankingReportsTable.keywordId, row.keywordId),
             sql`lower(${rankingReportsTable.platform}) = lower(${row.platform})`,
-            sql`${rankingReportsTable.date} = date(${row.timestamp})`,
+            sql`${rankingReportsTable.date}::date = date(${row.timestamp})`,
             like(rankingReportsTable.screenshotUrl, "s3://%"),
           ),
         )
