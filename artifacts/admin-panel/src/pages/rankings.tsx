@@ -37,6 +37,8 @@ import {
   ExportRankingsDialog,
   type ExportFiltersValue,
 } from "@/components/ExportRankingsDialog";
+import { SendReportDialog } from "@/components/SendReportDialog";
+import { Mail } from "lucide-react";
 
 interface ClientRow {
   id: number;
@@ -520,6 +522,7 @@ export default function Rankings() {
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
+  const [sendReportOpen, setSendReportOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const effectivePeriod: Period =
@@ -678,8 +681,29 @@ export default function Rankings() {
           >
             <FileDown className="w-3.5 h-3.5" /> PDF
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-indigo-300 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 font-semibold"
+            onClick={() => setSendReportOpen(true)}
+            disabled={selectedClientId == null}
+            title={
+              selectedClientId == null
+                ? "Pick a client first"
+                : "Email this client a report with the latest rankings + screenshots"
+            }
+          >
+            <Mail className="w-3.5 h-3.5" /> Send Report
+          </Button>
         </div>
       </div>
+
+      <SendReportDialog
+        open={sendReportOpen}
+        onClose={() => setSendReportOpen(false)}
+        clientId={selectedClientId}
+        businessId={selectedBusinessId}
+      />
 
       {/* Weekly run banner */}
       <RankingRunBanner />

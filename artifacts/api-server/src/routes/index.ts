@@ -23,6 +23,7 @@ import onboardingRouter from "./onboarding";
 import keywordVariantsRouter from "./keyword-variants";
 import analyticsRouter from "./analytics";
 import llmRouter from "./llm";
+import rankingsEmailRouter from "./rankings-email";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use("/onboarding", onboardingRouter);
 router.use(keywordVariantsRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/llm", llmRouter);
+router.use("/rankings", rankingsEmailRouter);
 
 export default router;

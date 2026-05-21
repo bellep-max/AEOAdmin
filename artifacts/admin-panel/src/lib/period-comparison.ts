@@ -1,10 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-export function rawFetch(path: string): Promise<Response> {
+export function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers: Record<string, string> = {};
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { headers, credentials: "include" });
+  return fetch(BASE + path, {
+    credentials: "include",
+    ...init,
+    headers: {
+      ...headers,
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+  });
 }
 
 export type Period = "weekly" | "monthly" | "quarterly" | "lifetime";
