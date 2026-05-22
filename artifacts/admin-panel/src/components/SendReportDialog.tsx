@@ -80,6 +80,9 @@ export function SendReportDialog({
   const [subject, setSubject] = useState("");
   const [customMessage, setCustomMessage] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [mode, setMode] = useState<"comparison" | "current" | "previous">(
+    "comparison",
+  );
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
   const [result, setResult] = useState<{
@@ -175,8 +178,9 @@ export function SendReportDialog({
     if (businessId != null) p.set("businessId", String(businessId));
     if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (customMessage.trim()) p.set("customMessage", customMessage.trim());
+    p.set("mode", mode);
     return p.toString();
-  }, [clientId, businessId, aeoPlanId, customMessage]);
+  }, [clientId, businessId, aeoPlanId, customMessage, mode]);
 
   const { data: preview, isFetching: previewLoading } =
     useQuery<PreviewResponse>({
@@ -203,6 +207,7 @@ export function SendReportDialog({
           recipients,
           subject: subject.trim() || undefined,
           customMessage: customMessage.trim() || undefined,
+          mode,
         }),
       });
       const body = await res.json();
@@ -329,6 +334,55 @@ export function SendReportDialog({
                 listed recipients.
               </div>
             )}
+
+            {/* Mode picker — controls what columns show in the email table */}
+            <div className="space-y-2">
+              <Label>Include in email</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setMode("comparison")}
+                  className={`text-xs px-3 py-2 rounded-md border transition-colors ${
+                    mode === "comparison"
+                      ? "bg-indigo-600 border-indigo-600 text-white font-semibold"
+                      : "bg-background border-input hover:bg-muted"
+                  }`}
+                >
+                  Comparison
+                  <div className="text-[10px] opacity-75 font-normal mt-0.5">
+                    Current vs Previous
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("current")}
+                  className={`text-xs px-3 py-2 rounded-md border transition-colors ${
+                    mode === "current"
+                      ? "bg-indigo-600 border-indigo-600 text-white font-semibold"
+                      : "bg-background border-input hover:bg-muted"
+                  }`}
+                >
+                  Current only
+                  <div className="text-[10px] opacity-75 font-normal mt-0.5">
+                    Latest audit
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("previous")}
+                  className={`text-xs px-3 py-2 rounded-md border transition-colors ${
+                    mode === "previous"
+                      ? "bg-indigo-600 border-indigo-600 text-white font-semibold"
+                      : "bg-background border-input hover:bg-muted"
+                  }`}
+                >
+                  Previous only
+                  <div className="text-[10px] opacity-75 font-normal mt-0.5">
+                    Last ~2 weeks
+                  </div>
+                </button>
+              </div>
+            </div>
 
             {/* Template picker */}
             <div className="space-y-2">

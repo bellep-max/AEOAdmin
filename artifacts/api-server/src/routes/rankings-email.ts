@@ -226,11 +226,14 @@ function changePill(
   return `<span style="color:${color};font-weight:600">${arrow} ${Math.abs(change)}</span>`;
 }
 
+type EmailMode = "comparison" | "current" | "previous";
+
 interface BuildEmailArgs {
   clientName: string;
   filterLabel: string | null;
   rows: SignedBiWeeklyRow[];
   customMessage?: string;
+  mode?: EmailMode;
 }
 
 function buildEmailHtml({
@@ -238,6 +241,7 @@ function buildEmailHtml({
   filterLabel,
   rows,
   customMessage,
+  mode = "comparison",
 }: BuildEmailArgs): string {
   /* Group rows by keyword for the table. */
   const byKeyword = new Map<
@@ -258,50 +262,78 @@ function buildEmailHtml({
     timeZone: "America/New_York",
   });
 
+  /* Column headers vary by mode. */
+  const headers =
+    mode === "comparison"
+      ? ["Platform", "Previous", "Current", "Change", "Status", "Screenshot"]
+      : mode === "current"
+        ? ["Platform", "Current Rank", "Date", "Screenshot"]
+        : ["Platform", "Previous Rank", "Date", "Screenshot"];
+
+  const th = headers
+    .map(
+      (h) =>
+        `<th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">${h}</th>`,
+    )
+    .join("");
+
+  function imgCell(url: string | null | undefined): string {
+    if (!url) return `<span style="color:#cbd5e1;font-size:11px">no screenshot</span>`;
+    return `<a href="${url}" style="display:inline-block">
+        <img src="${url}" alt="screenshot" width="160"
+             style="max-width:160px;height:auto;border:1px solid #e5e7eb;border-radius:6px;display:block" />
+      </a>`;
+  }
+
+  function platformCell(p: string): string {
+    return `<td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
+              <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${platformColor(p)};color:#fff;font-size:11px;font-weight:600">${platformLabel(p)}</span>
+            </td>`;
+  }
+
+  function rowFor(p: SignedBiWeeklyRow): string {
+    const td = (inner: string): string =>
+      `<td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">${inner}</td>`;
+    if (mode === "current") {
+      return `<tr>
+        ${platformCell(p.platform)}
+        ${td(`<div style="font-size:16px">${rankPill(p.current?.rank ?? null)}</div>`)}
+        ${td(`<div style="font-size:11px;color:#64748b">${p.current?.date ?? "—"}</div>`)}
+        ${td(imgCell(p.current?.imageUrl))}
+      </tr>`;
+    }
+    if (mode === "previous") {
+      return `<tr>
+        ${platformCell(p.platform)}
+        ${td(`<div style="font-size:16px">${rankPill(p.previous?.rank ?? null)}</div>`)}
+        ${td(`<div style="font-size:11px;color:#64748b">${p.previous?.date ?? "—"}</div>`)}
+        ${td(imgCell(p.previous?.imageUrl))}
+      </tr>`;
+    }
+    /* comparison */
+    return `<tr>
+      ${platformCell(p.platform)}
+      ${td(`<div style="font-size:14px">${rankPill(p.previous?.rank ?? null)}</div>
+            <div style="font-size:10px;color:#94a3b8">${p.previous?.date ?? "—"}</div>`)}
+      ${td(`<div style="font-size:16px">${rankPill(p.current?.rank ?? null)}</div>
+            <div style="font-size:10px;color:#94a3b8">${p.current?.date ?? "—"}</div>`)}
+      ${td(`<span style="font-size:14px">${changePill(p.change, p.status)}</span>`)}
+      ${td(statusBadge(p.status))}
+      ${td(imgCell(p.current?.imageUrl))}
+    </tr>`;
+  }
+
   const keywordSections = [...byKeyword.values()]
     .map((kw) => {
       const platRows = kw.platforms
         .sort((a, b) => a.platform.localeCompare(b.platform))
-        .map((p) => {
-          const img = p.current?.imageUrl
-            ? `<a href="${p.current.imageUrl}" style="display:inline-block">
-               <img src="${p.current.imageUrl}" alt="screenshot" width="160"
-                    style="max-width:160px;height:auto;border:1px solid #e5e7eb;border-radius:6px;display:block" />
-             </a>`
-            : `<span style="color:#cbd5e1;font-size:11px">no screenshot</span>`;
-          return `
-          <tr>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
-              <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${platformColor(p.platform)};color:#fff;font-size:11px;font-weight:600">${platformLabel(p.platform)}</span>
-            </td>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
-              <div style="font-size:14px">${rankPill(p.previous?.rank ?? null)}</div>
-              <div style="font-size:10px;color:#94a3b8">${p.previous?.date ?? "—"}</div>
-            </td>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">
-              <div style="font-size:16px">${rankPill(p.current?.rank ?? null)}</div>
-              <div style="font-size:10px;color:#94a3b8">${p.current?.date ?? "—"}</div>
-            </td>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px">${changePill(p.change, p.status)}</td>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">${statusBadge(p.status)}</td>
-            <td style="padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top">${img}</td>
-          </tr>`;
-        })
+        .map((p) => rowFor(p))
         .join("");
       return `
       <div style="margin:24px 0">
         <h3 style="margin:0 0 8px 0;color:#0f172a;font-size:16px">${kw.text}</h3>
         <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Platform</th>
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Previous</th>
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Current</th>
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Change</th>
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Status</th>
-              <th style="padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Screenshot</th>
-            </tr>
-          </thead>
+          <thead><tr style="background:#f8fafc">${th}</tr></thead>
           <tbody>${platRows}</tbody>
         </table>
       </div>`;
@@ -316,20 +348,32 @@ function buildEmailHtml({
     ? `<p style="margin:0 0 8px 0;color:#64748b;font-size:13px">Scope: ${filterLabel}</p>`
     : "";
 
+  const title =
+    mode === "current"
+      ? "AEO Current Rankings Report"
+      : mode === "previous"
+        ? "AEO Rankings — Previous Period"
+        : "AEO Bi-Weekly Rankings Report";
+
+  const footer =
+    mode === "comparison"
+      ? "Comparison: latest audit vs the audit before it. Screenshot links expire in 7 days."
+      : mode === "current"
+        ? "Latest audit per keyword × platform. Screenshot links expire in 7 days."
+        : "Audit from the previous period (one before latest). Screenshot links expire in 7 days.";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
   <div style="max-width:760px;margin:0 auto;padding:32px 16px">
     <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
-      <h1 style="margin:0 0 4px 0;color:#0f172a;font-size:22px">AEO Bi-Weekly Rankings Report</h1>
+      <h1 style="margin:0 0 4px 0;color:#0f172a;font-size:22px">${title}</h1>
       <p style="margin:0 0 4px 0;color:#64748b;font-size:14px">${clientName} · ${today}</p>
       ${filterLine}
       ${customBlock}
       ${keywordSections || `<p style="color:#94a3b8">No keyword data for this period.</p>`}
-      <p style="margin:28px 0 0 0;color:#94a3b8;font-size:11px;text-align:center">
-        Comparison: latest audit vs the audit before it. Screenshot links expire in 7 days.
-      </p>
+      <p style="margin:28px 0 0 0;color:#94a3b8;font-size:11px;text-align:center">${footer}</p>
     </div>
   </div>
 </body>
@@ -536,10 +580,16 @@ router.get("/email-preview", async (req, res) => {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
     const rows = await signAllUrls(raw);
+    const modeParam = String(req.query.mode ?? "comparison");
+    const mode: EmailMode =
+      modeParam === "current" || modeParam === "previous"
+        ? modeParam
+        : "comparison";
     const html = buildEmailHtml({
       clientName: ctx.clientName,
       filterLabel: ctx.filterLabel,
       rows,
+      mode,
       customMessage: req.query.customMessage
         ? String(req.query.customMessage)
         : undefined,
@@ -761,6 +811,11 @@ interface SendReportBody {
   recipients: string[];
   subject?: string;
   customMessage?: string;
+  /* What to include in the table:
+       comparison = Previous | Current | Change | Status | Screenshot
+       current    = Current Rank | Date | Screenshot
+       previous   = Previous Rank | Date | Screenshot */
+  mode?: EmailMode;
 }
 
 /* POST /api/rankings/send-report */
@@ -796,16 +851,25 @@ router.post("/send-report", async (req, res) => {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
     const rows = await signAllUrls(raw);
+    const mode: EmailMode =
+      body.mode === "current" || body.mode === "previous"
+        ? body.mode
+        : "comparison";
 
     const html = buildEmailHtml({
       clientName: ctx.clientName,
       filterLabel: ctx.filterLabel,
       rows,
+      mode,
       customMessage: body.customMessage,
     });
+    const subjectModeWord =
+      mode === "current" ? "Current Rankings" :
+      mode === "previous" ? "Rankings — Previous Period" :
+      "Bi-Weekly Rankings";
     const subject =
       body.subject?.trim() ||
-      `AEO Bi-Weekly Rankings — ${ctx.clientName}${ctx.filterLabel ? ` (${ctx.filterLabel})` : ""} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
+      `AEO ${subjectModeWord} — ${ctx.clientName}${ctx.filterLabel ? ` (${ctx.filterLabel})` : ""} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
 
     /* Safe recipient override — re-route during testing. */
     const intendedRecipients = body.recipients
