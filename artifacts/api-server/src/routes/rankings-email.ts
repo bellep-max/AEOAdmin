@@ -470,6 +470,25 @@ function summarize(rows: SignedBiWeeklyRow[]): SummaryStats {
 
 /* ─── ROUTES ───────────────────────────────────────────────────────────── */
 
+/* GET /api/rankings/email-config
+   Reports which sender bits are configured so the FE can show a clear
+   "you can't send yet" banner instead of waiting for the send to fail. */
+router.get("/email-config", (_req, res) => {
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL ?? "";
+  const fromName = process.env.SENDGRID_FROM_NAME ?? "";
+  const hasApiKey = Boolean(process.env.SENDGRID_API_KEY);
+  const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE ?? "";
+  const ready = Boolean(fromEmail && hasApiKey);
+  return res.json({
+    ready,
+    fromEmail: fromEmail || null,
+    fromName: fromName || null,
+    hasApiKey,
+    safeRecipientOverride: safeOverride || null,
+    safeModeActive: Boolean(safeOverride),
+  });
+});
+
 router.get("/email-recipients/:clientId", async (req, res) => {
   const id = Number.parseInt(req.params.clientId, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
@@ -760,8 +779,14 @@ router.post("/send-report", async (req, res) => {
     configureSendGrid();
     const fromEmail = process.env.SENDGRID_FROM_EMAIL;
     const fromName = process.env.SENDGRID_FROM_NAME ?? "AEO Platform Reports";
-    if (!fromEmail)
-      return res.status(500).json({ error: "SENDGRID_FROM_EMAIL not set" });
+    if (!fromEmail) {
+      return res.status(503).json({
+        error: "Sender email not configured",
+        code: "SENDER_NOT_CONFIGURED",
+        detail:
+          "No FROM address is set. Sending is disabled until you set SENDGRID_FROM_EMAIL in AWS Secrets Manager (aeo-admin/prod) and verify the address in SendGrid.",
+      });
+    }
 
     const filter: RankingFilter = {
       clientId: body.clientId,

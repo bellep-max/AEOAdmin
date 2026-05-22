@@ -23,6 +23,15 @@ import {
 import { rawFetch } from "@/lib/period-comparison";
 import { X, Send, Eye, EyeOff, Sparkles } from "lucide-react";
 
+interface EmailConfigResponse {
+  ready: boolean;
+  fromEmail: string | null;
+  fromName: string | null;
+  hasApiKey: boolean;
+  safeRecipientOverride: string | null;
+  safeModeActive: boolean;
+}
+
 interface EmailRecipientsResponse {
   contactEmail: string | null;
   accountEmail: string | null;
@@ -81,6 +90,17 @@ export function SendReportDialog({
   } | null>(null);
 
   /* Pre-fill recipients from client's stored email fields when client changes. */
+  /* Sender-side config: tells us if the backend can actually send. */
+  const { data: emailConfig } = useQuery<EmailConfigResponse>({
+    enabled: open,
+    queryKey: ["/api/rankings/email-config"],
+    queryFn: async () => {
+      const res = await rawFetch("/api/rankings/email-config");
+      if (!res.ok) throw new Error("Failed to load email config");
+      return res.json();
+    },
+  });
+
   const { data: defaults } = useQuery<EmailRecipientsResponse>({
     enabled: open && clientId != null,
     queryKey: ["/api/rankings/email-recipients", clientId],
@@ -274,6 +294,42 @@ export function SendReportDialog({
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden min-h-0">
           {/* LEFT: form */}
           <div className="overflow-y-auto space-y-4 pr-1">
+            {/* Config warning */}
+            {emailConfig && !emailConfig.ready && (
+              <div className="p-3 rounded-md text-sm bg-amber-50 border border-amber-300 text-amber-900">
+                <div className="font-semibold mb-1">
+                  Sending is disabled — sender not configured
+                </div>
+                <div className="text-xs space-y-0.5">
+                  {!emailConfig.fromEmail && (
+                    <div>
+                      • No FROM address set
+                      <span className="opacity-70">
+                        {" "}
+                        (SENDGRID_FROM_EMAIL in Secrets Manager)
+                      </span>
+                    </div>
+                  )}
+                  {!emailConfig.hasApiKey && (
+                    <div>
+                      • No SendGrid API key{" "}
+                      <span className="opacity-70">(SENDGRID_API_KEY)</span>
+                    </div>
+                  )}
+                  <div className="opacity-70 mt-1">
+                    You can still preview the email and try AI generation below.
+                  </div>
+                </div>
+              </div>
+            )}
+            {emailConfig?.ready && emailConfig.safeModeActive && (
+              <div className="p-2 rounded-md text-xs bg-blue-50 border border-blue-200 text-blue-900">
+                Safe test mode is active — all sends will go to{" "}
+                <strong>{emailConfig.safeRecipientOverride}</strong>, not the
+                listed recipients.
+              </div>
+            )}
+
             {/* Template picker */}
             <div className="space-y-2">
               <Label>Template</Label>
@@ -463,9 +519,17 @@ export function SendReportDialog({
           <Button
             onClick={() => send.mutate()}
             disabled={
-              recipients.length === 0 || clientId == null || send.isPending
+              recipients.length === 0 ||
+              clientId == null ||
+              send.isPending ||
+              emailConfig?.ready === false
             }
             className="gap-1.5"
+            title={
+              emailConfig?.ready === false
+                ? "Sender not configured — set SENDGRID_FROM_EMAIL in Secrets Manager"
+                : undefined
+            }
           >
             <Send className="w-3.5 h-3.5" />
             {send.isPending ? "Sending…" : "Send report"}
