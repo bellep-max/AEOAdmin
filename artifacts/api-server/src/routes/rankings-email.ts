@@ -162,6 +162,31 @@ interface SignedBiWeeklyRow extends Omit<BiWeeklyRow, "current" | "previous"> {
     | null;
 }
 
+/* Drop rows whose platform or keywordId isn't in the explicit allow-list.
+   An undefined/empty list means "no filter" (include all). Used by both
+   /email-preview and /send-report to let the operator narrow the email
+   table without changing the summary stats. */
+function applyEmailTableFilter<
+  T extends { platform: string; keywordId: number },
+>(
+  rows: T[],
+  platforms: string[] | undefined,
+  keywordIds: number[] | undefined,
+): T[] {
+  const platSet =
+    platforms && platforms.length > 0
+      ? new Set(platforms.map((p) => p.toLowerCase()))
+      : null;
+  const kwSet =
+    keywordIds && keywordIds.length > 0 ? new Set(keywordIds) : null;
+  if (!platSet && !kwSet) return rows;
+  return rows.filter(
+    (r) =>
+      (!platSet || platSet.has(r.platform)) &&
+      (!kwSet || kwSet.has(r.keywordId)),
+  );
+}
+
 async function signAllUrls(rows: BiWeeklyRow[]): Promise<SignedBiWeeklyRow[]> {
   return Promise.all(
     rows.map(async (r) => ({
@@ -278,7 +303,8 @@ function buildEmailHtml({
     .join("");
 
   function imgCell(url: string | null | undefined): string {
-    if (!url) return `<span style="color:#cbd5e1;font-size:11px">no screenshot</span>`;
+    if (!url)
+      return `<span style="color:#cbd5e1;font-size:11px">no screenshot</span>`;
     return `<a href="${url}" style="display:inline-block">
         <img src="${url}" alt="screenshot" width="160"
              style="max-width:160px;height:auto;border:1px solid #e5e7eb;border-radius:6px;display:block" />
@@ -585,16 +611,49 @@ router.get("/email-preview", async (req, res) => {
       modeParam === "current" || modeParam === "previous"
         ? modeParam
         : "comparison";
+
+    /* Optional email-table filters (don't affect the keyword-list payload below). */
+    const platformsParam = req.query.platforms;
+    const keywordIdsParam = req.query.keywordIds;
+    const platforms = Array.isArray(platformsParam)
+      ? platformsParam.map(String)
+      : typeof platformsParam === "string" && platformsParam.length > 0
+        ? platformsParam.split(",")
+        : undefined;
+    const keywordIds = Array.isArray(keywordIdsParam)
+      ? keywordIdsParam.map((x) => Number(x)).filter((n) => Number.isFinite(n))
+      : typeof keywordIdsParam === "string" && keywordIdsParam.length > 0
+        ? keywordIdsParam
+            .split(",")
+            .map((x) => Number(x))
+            .filter((n) => Number.isFinite(n))
+        : undefined;
+
+    const tableRows = applyEmailTableFilter(rows, platforms, keywordIds);
+
     const html = buildEmailHtml({
       clientName: ctx.clientName,
       filterLabel: ctx.filterLabel,
-      rows,
+      rows: tableRows,
       mode,
       customMessage: req.query.customMessage
         ? String(req.query.customMessage)
         : undefined,
     });
+    /* Summary stats stay on the unfiltered set so the recipient still sees
+       the full client-scope numbers in the intro copy. */
     const stats = summarize(rows);
+
+    /* Unique keywords across the unfiltered scope — drives the FE checkbox list. */
+    const seenKwIds = new Set<number>();
+    const keywords = [] as Array<{ id: number; text: string }>;
+    for (const r of rows) {
+      if (seenKwIds.has(r.keywordId)) continue;
+      seenKwIds.add(r.keywordId);
+      keywords.push({ id: r.keywordId, text: r.keywordText });
+    }
+    keywords.sort((a, b) => a.text.localeCompare(b.text));
+
     return res.json({
       html,
       clientName: ctx.clientName,
@@ -602,6 +661,7 @@ router.get("/email-preview", async (req, res) => {
       keywordCount: stats.keywordCount,
       rowCount: stats.rowCount,
       withScreenshotCount: stats.screenshotCount,
+      keywords,
     });
   } catch (err) {
     req.log.error({ err }, "Error building email preview");
@@ -816,6 +876,11 @@ interface SendReportBody {
        current    = Current Rank | Date | Screenshot
        previous   = Previous Rank | Date | Screenshot */
   mode?: EmailMode;
+  /* Optional email-table filters. Empty/undefined = include all. Filters
+     drop rows from the rendered table only; the intro summary counts
+     still reflect the full client scope. */
+  platforms?: string[];
+  keywordIds?: number[];
 }
 
 /* POST /api/rankings/send-report */
@@ -856,17 +921,25 @@ router.post("/send-report", async (req, res) => {
         ? body.mode
         : "comparison";
 
+    const tableRows = applyEmailTableFilter(
+      rows,
+      body.platforms,
+      body.keywordIds,
+    );
+
     const html = buildEmailHtml({
       clientName: ctx.clientName,
       filterLabel: ctx.filterLabel,
-      rows,
+      rows: tableRows,
       mode,
       customMessage: body.customMessage,
     });
     const subjectModeWord =
-      mode === "current" ? "Current Rankings" :
-      mode === "previous" ? "Rankings — Previous Period" :
-      "Bi-Weekly Rankings";
+      mode === "current"
+        ? "Current Rankings"
+        : mode === "previous"
+          ? "Rankings — Previous Period"
+          : "Bi-Weekly Rankings";
     const subject =
       body.subject?.trim() ||
       `AEO ${subjectModeWord} — ${ctx.clientName}${ctx.filterLabel ? ` (${ctx.filterLabel})` : ""} (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;

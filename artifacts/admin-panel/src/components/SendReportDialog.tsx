@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -20,8 +21,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import { rawFetch } from "@/lib/period-comparison";
 import { X, Send, Eye, EyeOff, Sparkles } from "lucide-react";
+
+const ALL_PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
+type PlatformId = (typeof ALL_PLATFORMS)[number];
 
 interface EmailConfigResponse {
   ready: boolean;
@@ -45,6 +50,7 @@ interface PreviewResponse {
   keywordCount: number;
   rowCount: number;
   withScreenshotCount: number;
+  keywords: Array<{ id: number; text: string }>;
 }
 
 interface EmailTemplate {
@@ -75,6 +81,7 @@ export function SendReportDialog({
   businessId,
   aeoPlanId,
 }: SendReportDialogProps) {
+  const { toast } = useToast();
   const [recipients, setRecipients] = useState<string[]>([]);
   const [newRecipient, setNewRecipient] = useState("");
   const [subject, setSubject] = useState("");
@@ -91,6 +98,17 @@ export function SendReportDialog({
     safeModeActive?: boolean;
     recipientsActual?: string[];
   } | null>(null);
+
+  /* Table-filter selections. Both default ALL on; user unchecks to drop.
+     selectedKeywordIds is null until the preview loads (then it's seeded
+     with every keyword id). Per-platform / per-keyword filtering applies
+     only to the email's table — summary copy still reflects the full set. */
+  const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformId[]>([
+    ...ALL_PLATFORMS,
+  ]);
+  const [selectedKeywordIds, setSelectedKeywordIds] = useState<number[] | null>(
+    null,
+  );
 
   /* Pre-fill recipients from client's stored email fields when client changes. */
   /* Sender-side config: tells us if the backend can actually send. */
@@ -179,8 +197,27 @@ export function SendReportDialog({
     if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (customMessage.trim()) p.set("customMessage", customMessage.trim());
     p.set("mode", mode);
+    p.set("platforms", selectedPlatforms.join(","));
+    if (selectedKeywordIds !== null) {
+      p.set("keywordIds", selectedKeywordIds.join(","));
+    }
     return p.toString();
-  }, [clientId, businessId, aeoPlanId, customMessage, mode]);
+  }, [
+    clientId,
+    businessId,
+    aeoPlanId,
+    customMessage,
+    mode,
+    selectedPlatforms,
+    selectedKeywordIds,
+  ]);
+
+  /* Reset filter selections whenever the scope changes — keyword IDs from
+     the previous client are meaningless for the new one. */
+  useEffect(() => {
+    setSelectedPlatforms([...ALL_PLATFORMS]);
+    setSelectedKeywordIds(null);
+  }, [clientId, businessId, aeoPlanId]);
 
   const { data: preview, isFetching: previewLoading } =
     useQuery<PreviewResponse>({
@@ -208,6 +245,8 @@ export function SendReportDialog({
           subject: subject.trim() || undefined,
           customMessage: customMessage.trim() || undefined,
           mode,
+          platforms: selectedPlatforms,
+          keywordIds: selectedKeywordIds ?? undefined,
         }),
       });
       const body = await res.json();
@@ -216,20 +255,61 @@ export function SendReportDialog({
       return body;
     },
     onSuccess: (data) => {
+      const actual: string[] = data.recipientsActual ?? [];
       setResult({
         ok: true,
-        message: `Sent to ${(data.recipientsActual ?? []).join(", ")}`,
+        message: `Sent to ${actual.join(", ")}`,
         safeModeActive: data.safeModeActive,
-        recipientsActual: data.recipientsActual,
+        recipientsActual: actual,
+      });
+      toast({
+        title: data.safeModeActive
+          ? "Email sent (safe-mode override)"
+          : "Email sent",
+        description:
+          actual.length > 0
+            ? `Delivered to ${actual.join(", ")}`
+            : "SendGrid accepted the message.",
       });
     },
     onError: (err: unknown) => {
-      setResult({
-        ok: false,
-        message: err instanceof Error ? err.message : "Send failed",
+      const msg = err instanceof Error ? err.message : "Send failed";
+      setResult({ ok: false, message: msg });
+      toast({
+        title: "Send failed",
+        description: msg,
+        variant: "destructive",
       });
     },
   });
+
+  /* Seed keyword selection once the first preview arrives for the current
+     scope. After that, the user owns the selection until scope changes. */
+  useEffect(() => {
+    if (preview?.keywords && selectedKeywordIds === null) {
+      setSelectedKeywordIds(preview.keywords.map((k) => k.id));
+    }
+  }, [preview, selectedKeywordIds]);
+
+  function togglePlatform(p: PlatformId) {
+    setSelectedPlatforms((cur) =>
+      cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
+    );
+  }
+  function toggleKeyword(id: number) {
+    setSelectedKeywordIds((cur) => {
+      if (cur === null) return cur;
+      return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    });
+  }
+  function selectAllKeywords() {
+    if (preview?.keywords) {
+      setSelectedKeywordIds(preview.keywords.map((k) => k.id));
+    }
+  }
+  function selectNoKeywords() {
+    setSelectedKeywordIds([]);
+  }
 
   function addRecipient() {
     const trimmed = newRecipient.trim();
@@ -382,6 +462,112 @@ export function SendReportDialog({
                   </div>
                 </button>
               </div>
+            </div>
+
+            {/* Platform filter — uncheck to drop a platform from the email table */}
+            <div className="space-y-2">
+              <Label>Platforms</Label>
+              <div className="flex flex-wrap gap-2">
+                {ALL_PLATFORMS.map((p) => {
+                  const checked = selectedPlatforms.includes(p);
+                  return (
+                    <label
+                      key={p}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs cursor-pointer select-none transition-colors ${
+                        checked
+                          ? "bg-indigo-50 border-indigo-300 text-indigo-900"
+                          : "bg-background border-input text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={() => togglePlatform(p)}
+                        aria-label={p}
+                      />
+                      {p === "chatgpt"
+                        ? "ChatGPT"
+                        : p === "gemini"
+                          ? "Gemini"
+                          : "Perplexity"}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Filters which platforms appear in the email table. Summary
+                counts above the table still reflect the full client scope.
+              </p>
+            </div>
+
+            {/* Keyword filter — checkbox list (driven by /email-preview's
+                keywords payload) with Select All / None shortcuts. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Keywords</Label>
+                {preview?.keywords && preview.keywords.length > 0 && (
+                  <div className="flex gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={selectAllKeywords}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Select all
+                    </button>
+                    <span className="text-muted-foreground">·</span>
+                    <button
+                      type="button"
+                      onClick={selectNoKeywords}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Select none
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="border border-input rounded-md max-h-44 overflow-y-auto">
+                {!preview?.keywords ? (
+                  <div className="p-2 text-xs text-muted-foreground">
+                    {previewLoading ? "Loading…" : "No keywords in scope."}
+                  </div>
+                ) : preview.keywords.length === 0 ? (
+                  <div className="p-2 text-xs text-muted-foreground">
+                    No keywords in scope.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-input">
+                    {preview.keywords.map((k) => {
+                      const checked =
+                        selectedKeywordIds === null ||
+                        selectedKeywordIds.includes(k.id);
+                      return (
+                        <li
+                          key={k.id}
+                          className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-muted/40"
+                        >
+                          <Checkbox
+                            id={`kw-${k.id}`}
+                            checked={checked}
+                            onCheckedChange={() => toggleKeyword(k.id)}
+                          />
+                          <label
+                            htmlFor={`kw-${k.id}`}
+                            className="flex-1 cursor-pointer truncate"
+                            title={k.text}
+                          >
+                            {k.text}
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+              {selectedKeywordIds !== null && (
+                <p className="text-[11px] text-muted-foreground">
+                  {selectedKeywordIds.length} of{" "}
+                  {preview?.keywords?.length ?? 0} selected
+                </p>
+              )}
             </div>
 
             {/* Template picker */}
@@ -576,13 +762,19 @@ export function SendReportDialog({
               recipients.length === 0 ||
               clientId == null ||
               send.isPending ||
-              emailConfig?.ready === false
+              emailConfig?.ready === false ||
+              selectedPlatforms.length === 0 ||
+              selectedKeywordIds?.length === 0
             }
             className="gap-1.5"
             title={
               emailConfig?.ready === false
                 ? "Sender not configured — set SENDGRID_FROM_EMAIL in Secrets Manager"
-                : undefined
+                : selectedPlatforms.length === 0
+                  ? "Pick at least one platform"
+                  : selectedKeywordIds?.length === 0
+                    ? "Pick at least one keyword"
+                    : undefined
             }
           >
             <Send className="w-3.5 h-3.5" />
