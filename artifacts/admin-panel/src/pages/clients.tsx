@@ -373,7 +373,9 @@ export default function Clients() {
         filterAccountType === "all" ||
         (c.accountType ?? "").toLowerCase() === filterAccountType;
       const statusMatch = filterStatus === "all" || c.status === filterStatus;
-      const planMatch = filterPlan === "all" || c.planName === filterPlan;
+      const planMatch =
+        filterPlan === "all" ||
+        ((c as any).planTypes ?? []).includes(filterPlan);
       return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
     })
     .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? ""));

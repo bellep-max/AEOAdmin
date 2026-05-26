@@ -32,6 +32,7 @@ router.get("/", async (req, res) => {
       number,
       { keywordCount: number; businessCount: number; campaignCount: number }
     >();
+    const planTypesMap = new Map<number, string[]>();
     if (ids.length > 0) {
       const kwRows = await db
         .select({
@@ -57,17 +58,31 @@ router.get("/", async (req, res) => {
         .from(clientAeoPlansTable)
         .where(inArray(clientAeoPlansTable.clientId, ids))
         .groupBy(clientAeoPlansTable.clientId);
+      const planTypeRows = await db
+        .select({
+          clientId: clientAeoPlansTable.clientId,
+          planType: clientAeoPlansTable.planType,
+        })
+        .from(clientAeoPlansTable)
+        .where(inArray(clientAeoPlansTable.clientId, ids));
       for (const id of ids)
         counts.set(id, { keywordCount: 0, businessCount: 0, campaignCount: 0 });
       for (const r of kwRows) counts.get(r.clientId)!.keywordCount = r.c;
       for (const r of bizRows) counts.get(r.clientId)!.businessCount = r.c;
       for (const r of campRows) counts.get(r.clientId)!.campaignCount = r.c;
+      for (const r of planTypeRows) {
+        if (!planTypesMap.has(r.clientId)) planTypesMap.set(r.clientId, []);
+        const pt = r.planType;
+        if (pt && !planTypesMap.get(r.clientId)!.includes(pt))
+          planTypesMap.get(r.clientId)!.push(pt);
+      }
     }
     const clients = baseClients.map((c) => ({
       ...c,
       keywordCount: counts.get(c.id)?.keywordCount ?? 0,
       businessCount: counts.get(c.id)?.businessCount ?? 0,
       campaignCount: counts.get(c.id)?.campaignCount ?? 0,
+      planTypes: planTypesMap.get(c.id) ?? [],
     }));
 
     const filtered = search
