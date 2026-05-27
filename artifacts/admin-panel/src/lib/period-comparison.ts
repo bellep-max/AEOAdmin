@@ -66,6 +66,11 @@ export interface PeriodFilters {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  /* Optional ET YYYY-MM-DD overrides. When set, that column's source row
+     is pinned to the audit on that exact date per (keyword, platform). */
+  firstDate?: string | null;
+  prevDate?: string | null;
+  currentDate?: string | null;
 }
 
 export function buildPeriodUrl(filters: PeriodFilters): string {
@@ -76,6 +81,9 @@ export function buildPeriodUrl(filters: PeriodFilters): string {
     params.set("businessId", String(filters.businessId));
   if (filters.aeoPlanId != null)
     params.set("aeoPlanId", String(filters.aeoPlanId));
+  if (filters.firstDate) params.set("firstDate", filters.firstDate);
+  if (filters.prevDate) params.set("prevDate", filters.prevDate);
+  if (filters.currentDate) params.set("currentDate", filters.currentDate);
   return `/api/ranking-reports/period-comparison?${params}`;
 }
 
@@ -87,6 +95,9 @@ export function usePeriodComparison(filters: PeriodFilters) {
       filters.clientId,
       filters.businessId,
       filters.aeoPlanId,
+      filters.firstDate ?? null,
+      filters.prevDate ?? null,
+      filters.currentDate ?? null,
     ],
     queryFn: async () => {
       const res = await rawFetch(buildPeriodUrl(filters));

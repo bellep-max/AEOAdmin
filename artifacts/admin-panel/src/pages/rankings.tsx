@@ -15,7 +15,14 @@ import {
   Download,
   FileDown,
   GitCompare,
+  Calendar as CalendarIcon,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
@@ -521,6 +528,16 @@ export default function Rankings() {
   );
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
+  /* Optional per-column date overrides (ET YYYY-MM-DD). When set, the
+     corresponding First/Prev/Current column reads the audit on that exact
+     date per (keyword, platform) instead of the period default. */
+  const [firstDateOverride, setFirstDateOverride] = useState<string | null>(
+    null,
+  );
+  const [prevDateOverride, setPrevDateOverride] = useState<string | null>(null);
+  const [currentDateOverride, setCurrentDateOverride] = useState<string | null>(
+    null,
+  );
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
   const [sendReportOpen, setSendReportOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -575,13 +592,19 @@ export default function Rankings() {
   const filtersActive =
     selectedClientId !== null ||
     selectedBusinessId !== null ||
-    selectedCampaignId !== null;
+    selectedCampaignId !== null ||
+    firstDateOverride !== null ||
+    prevDateOverride !== null ||
+    currentDateOverride !== null;
 
   const { data: periodData } = usePeriodComparison({
     period: effectivePeriod,
     clientId: selectedClientId,
     businessId: selectedBusinessId,
     aeoPlanId: selectedCampaignId,
+    firstDate: firstDateOverride,
+    prevDate: prevDateOverride,
+    currentDate: currentDateOverride,
   });
 
   const label = periodLabel(effectivePeriod);
@@ -780,6 +803,22 @@ export default function Rankings() {
           </SelectContent>
         </Select>
         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
+        <ColumnDatePicker
+          label="First"
+          value={firstDateOverride}
+          onChange={setFirstDateOverride}
+        />
+        <ColumnDatePicker
+          label="Prev"
+          value={prevDateOverride}
+          onChange={setPrevDateOverride}
+        />
+        <ColumnDatePicker
+          label="Current"
+          value={currentDateOverride}
+          onChange={setCurrentDateOverride}
+        />
+        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
         <Select value={auditDate} onValueChange={setAuditDate}>
           <SelectTrigger className="w-48 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
             <SelectValue placeholder="Audit date" />
@@ -794,6 +833,19 @@ export default function Rankings() {
             ))}
           </SelectContent>
         </Select>
+        <span
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200"
+          title="Rows showing (after filters) of total rows returned by the server"
+        >
+          <span className="text-slate-500 dark:text-slate-400">Showing</span>
+          <span className="tabular-nums">
+            {filteredRows.length.toLocaleString()}
+          </span>
+          <span className="text-slate-400">/</span>
+          <span className="tabular-nums">
+            {(periodData?.rows?.length ?? 0).toLocaleString()}
+          </span>
+        </span>
         {filtersActive && (
           <button
             type="button"
@@ -801,8 +853,11 @@ export default function Rankings() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setFirstDateOverride(null);
+              setPrevDateOverride(null);
+              setCurrentDateOverride(null);
             }}
-            className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
+            className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
           >
             <X className="w-4 h-4" /> Clear filters
           </button>
@@ -947,5 +1002,85 @@ export default function Rankings() {
         />
       )}
     </div>
+  );
+}
+
+interface ColumnDatePickerProps {
+  label: string;
+  value: string | null;
+  onChange: (next: string | null) => void;
+}
+
+/* Single-day picker that pins which audit date a column reads from.
+   Stores ET YYYY-MM-DD strings; null = use the default selection. */
+function ColumnDatePicker({ label, value, onChange }: ColumnDatePickerProps) {
+  const parsed = value
+    ? (() => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+        return m
+          ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+          : undefined;
+      })()
+    : undefined;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-10 gap-1.5 border-2 ${
+            value
+              ? "border-primary text-primary bg-primary/5"
+              : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+          } font-semibold`}
+        >
+          <CalendarIcon className="w-3.5 h-3.5" />
+          <span className="text-[11px] uppercase text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-xs">{value ? fmtDayET(value) : "Any"}</span>
+          {value ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onChange(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onChange(null);
+                }
+              }}
+              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+              aria-label={`Clear ${label} date`}
+            >
+              <X className="w-3 h-3" />
+            </span>
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={parsed}
+          onSelect={(d) => {
+            if (!d) {
+              onChange(null);
+              return;
+            }
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            onChange(`${y}-${m}-${day}`);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -613,6 +613,19 @@ router.get("/period-comparison", async (req, res) => {
       ? parseInt(req.query.aeoPlanId as string, 10)
       : null;
 
+    /* Optional date overrides — pin one column to a specific ET YYYY-MM-DD.
+       When present, that column ignores the period window and picks the
+       report whose `date` text matches per (keyword, platform). Empty / null /
+       malformed values are ignored. */
+    const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+    const parseYmd = (v: unknown): string | null => {
+      const s = typeof v === "string" ? v.trim() : "";
+      return ymdRe.test(s) ? s : null;
+    };
+    const firstDateOverride = parseYmd(req.query.firstDate);
+    const prevDateOverride = parseYmd(req.query.prevDate);
+    const currentDateOverride = parseYmd(req.query.currentDate);
+
     const isLifetime = period === "lifetime";
     const { curStart, curEnd, prevStart, prevEnd } = isLifetime
       ? {
@@ -716,19 +729,40 @@ router.get("/period-comparison", async (req, res) => {
       return map;
     };
 
+    /* Per-pair lookup by exact ET `date` text. Last match wins because
+       reports is asc-ordered, so when multiple audits share the same date
+       (rare — retries with different proxies) we pick the later one. */
+    const onDatePerPair = (ymd: string) => {
+      const map = new Map<PairKey, (typeof reports)[number]>();
+      for (const r of reports) {
+        if (!r.platform) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        if (r.date !== ymd) continue;
+        const key = `${r.keywordId}|${r.platform}`;
+        map.set(key, r);
+      }
+      return map;
+    };
+
     const ever = everLatest();
     const isWeekly = period === "weekly";
-    const current = isWeekly
-      ? ever
-      : isLifetime
+    const current = currentDateOverride
+      ? onDatePerPair(currentDateOverride)
+      : isWeekly
         ? ever
-        : latestInWindow(curStart, curEnd);
-    const previous = isWeekly
-      ? secondLatestPerPair()
-      : isLifetime
-        ? firstEver()
-        : latestInWindow(prevStart, prevEnd);
-    const first = firstEver();
+        : isLifetime
+          ? ever
+          : latestInWindow(curStart, curEnd);
+    const previous = prevDateOverride
+      ? onDatePerPair(prevDateOverride)
+      : isWeekly
+        ? secondLatestPerPair()
+        : isLifetime
+          ? firstEver()
+          : latestInWindow(prevStart, prevEnd);
+    const first = firstDateOverride
+      ? onDatePerPair(firstDateOverride)
+      : firstEver();
 
     const allKeys = new Set<PairKey>([
       ...current.keys(),
