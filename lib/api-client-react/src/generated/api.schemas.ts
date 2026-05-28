@@ -22,6 +22,11 @@ export interface DashboardSummary {
   sessionCapacityPerDay: number;
   completedToday: number;
   pendingToday: number;
+  totalKeywords: number;
+  activeKeywords: number;
+  keywordsWithErrors: number;
+  keywordsWithBacklinks: number;
+  totalBacklinksFound: number;
 }
 
 export interface SessionActivityPoint {
