@@ -1,0 +1,137 @@
+# Auto-deploy for the AEOAdmin API server (artifacts/api-server).
+#
+# NOTE: There is intentionally no companion workflow for the frontend.
+# Vercel is wired to this repo and auto-deploys the frontend on every push
+# to main on its own, so duplicating that here would only cause races.
+#
+# This workflow:
+#   1. Builds the api-server Docker image from the monorepo root
+#      (so pnpm workspace deps in lib/* resolve correctly).
+#   2. Pushes it to ECR tagged with both the commit SHA and `latest`.
+#   3. Tells App Runner to pull and roll out the new image.
+#   4. Waits for the rollout to reach RUNNING (or fails the job).
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   - AWS_ACCESS_KEY_ID
+#   - AWS_SECRET_ACCESS_KEY
+#   - APP_RUNNER_SERVICE_ARN   (kept secret because the ARN exposes the account ID)
+
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/api-server/**'
+      - 'lib/db/**'
+      - 'lib/api-spec/**'
+      - 'lib/api-client-react/**'
+      - 'lib/api-zod/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: aeo-admin-api
+  APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+
+jobs:
+  deploy:
+    name: Build, push, and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: artifacts/api-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger App Runner deployment
+        id: trigger
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_RUNNER_SERVICE_ARN:-}" ]; then
+            echo "::error::APP_RUNNER_SERVICE_ARN secret is not set."
+            exit 1
+          fi
+          deployment_id=$(aws apprunner start-deployment \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --query 'OperationId' \
+            --output text)
+          echo "Started App Runner deployment: $deployment_id"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for App Runner deployment to finish
+        run: |
+          set -euo pipefail
+          deployment_id="${{ steps.trigger.outputs.deployment_id }}"
+          echo "Waiting for App Runner deployment $deployment_id to reach RUNNING..."
+
+          # Poll for up to ~15 minutes (90 iterations * 10s).
+          # App Runner status values: CREATE_FAILED, RUNNING, DELETED, DELETE_FAILED,
+          # PAUSED, OPERATION_IN_PROGRESS, etc. We treat anything other than
+          # RUNNING / OPERATION_IN_PROGRESS as terminal failure.
+          max_iterations=90
+          iteration=0
+          while [ "$iteration" -lt "$max_iterations" ]; do
+            status=$(aws apprunner describe-service \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --query 'Service.Status' \
+              --output text)
+            echo "[$(date -u +%H:%M:%SZ)] deployment=$deployment_id status=$status"
+
+            case "$status" in
+              RUNNING)
+                echo "Deployment succeeded."
+                exit 0
+                ;;
+              OPERATION_IN_PROGRESS)
+                : # keep polling
+                ;;
+              *)
+                echo "::error::App Runner reached unexpected status: $status"
+                exit 1
+                ;;
+            esac
+
+            iteration=$((iteration + 1))
+            sleep 10
+          done
+
+          echo "::error::Timed out after ~15 minutes waiting for deployment to reach RUNNING."
+          exit 1

@@ -24,6 +24,7 @@ import keywordVariantsRouter from "./keyword-variants";
 import analyticsRouter from "./analytics";
 import llmRouter from "./llm";
 import rankingsEmailRouter from "./rankings-email";
+import portalRouter from "./portal";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(keywordVariantsRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/llm", llmRouter);
 router.use("/rankings", rankingsEmailRouter);
+router.use("/portal", portalRouter);
 
 export default router;
