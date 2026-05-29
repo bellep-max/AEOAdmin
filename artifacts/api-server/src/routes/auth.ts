@@ -291,7 +291,7 @@ router.post("/request-code", requestCodeLimiter, async (req, res) => {
 
     const client = await findClientByEmail(normalizedEmail);
     if (!client) {
-      return res.status(404).json({ error: NOT_A_CLIENT_MESSAGE });
+      return res.status(422).json({ error: NOT_A_CLIENT_MESSAGE });
     }
 
     // Rate limit: cap codes requested per email per window.
@@ -425,7 +425,7 @@ router.post("/verify-code", verifyCodeLimiter, async (req, res) => {
         )[0]
       : await findClientByEmail(normalizedEmail);
     if (!client) {
-      return res.status(404).json({ error: NOT_A_CLIENT_MESSAGE });
+      return res.status(422).json({ error: NOT_A_CLIENT_MESSAGE });
     }
 
     const name = client.accountUser?.trim() || normalizedEmail.split("@")[0];
@@ -515,7 +515,7 @@ router.post("/google", async (req, res) => {
     // matches an existing client. No self-signup / no new client is created.
     const client = await findClientByEmail(email);
     if (!client) {
-      return res.status(403).json({ error: NOT_A_CLIENT_MESSAGE });
+      return res.status(422).json({ error: NOT_A_CLIENT_MESSAGE });
     }
 
     const user = await findOrCreateCustomerUser(email, name, client.id);
