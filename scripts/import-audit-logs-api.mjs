@@ -88,6 +88,24 @@ for (const v of varRes.rows) variantById.set(String(v.id), v.variant_text);
 
 await db.end();
 
+// Accept both legacy "YYYY-MM-DD HH:MM:SS" (no tz) and full ISO-Z
+// ("...T..:..:..Z") timestamps. The old code blindly appended "Z", which
+// produced an invalid double-Z ("...ZZ") for already-ISO input.
+function toIsoZ(ts) {
+  if (!ts) return null;
+  const s = ts.trim().replace(" ", "T");
+  return /[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z";
+}
+
+// ranking_reports only tracks success/error (CLAUDE.md). A completed-but-
+// unranked audit ("no_rank") is a successful run; any other non-standard
+// status (e.g. flow_failed) is an error. audit_logs keeps the raw status.
+function toRankingStatus(raw) {
+  if (!raw) return null;
+  if (raw === "success" || raw === "error") return raw;
+  return raw === "no_rank" ? "success" : "error";
+}
+
 async function postJson(path, payload) {
   const res = await fetch(`${apiBase}${path}`, {
     method: "POST",
@@ -136,7 +154,7 @@ for (let i = 1; i < allRows.length; i++) {
 
   const platform = (v(row, "platform") || null);  // server lowercases
   const ts = v(row, "timestamp");
-  const timestamp = ts ? ts.replace(" ", "T") + "Z" : null;
+  const timestamp = toIsoZ(ts);
   const dateOnly = ts ? ts.slice(0, 10) : null;
   const rank = v(row, "rank_position");
   const rankTotal = v(row, "rank_total");
@@ -182,7 +200,7 @@ for (let i = 1; i < allRows.length; i++) {
     date:             dateOnly,
     platform,
     deviceIdentifier: v(row, "device") || null,
-    status:           v(row, "status") || null,
+    status:           toRankingStatus(v(row, "status")),
     durationSeconds:  dur ? parseFloat(dur) : null,
     rankingPosition:  rank && /^\d+$/.test(rank) ? parseInt(rank, 10) : null,
     rankingTotal:     rankTotal || null,
