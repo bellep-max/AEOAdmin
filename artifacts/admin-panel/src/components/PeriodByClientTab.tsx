@@ -107,6 +107,12 @@ export function PeriodByClientTab({
   });
   const label = periodLabel(period);
 
+  /* When a Current date is pinned, also drop rows that don't have an audit
+     on that date. Lets the operator pin Current=YYYY-MM-DD and see only the
+     keywords that actually ran on that day, not 2k blanks. */
+  const matchesCurrentPin = (cd: string | null): boolean =>
+    !currentDate || (cd ?? "").slice(0, 10) === currentDate;
+
   const filterCounts = useMemo(() => {
     let comparable = 0;
     let newOnly = 0;
@@ -118,11 +124,12 @@ export function PeriodByClientTab({
         (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
+      if (!matchesCurrentPin(r.currentDate)) continue;
       if (r.previousPosition == null) newOnly++;
       else comparable++;
     }
     return { comparable, newOnly, total: comparable + newOnly };
-  }, [data, search, auditDate]);
+  }, [data, search, auditDate, currentDate]);
 
   /* Loose rule: a keyword is "comparable" if AT LEAST ONE platform has a
      prior rank. Build the set once per data change so the per-row filter
@@ -145,6 +152,7 @@ export function PeriodByClientTab({
         (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
+      if (!matchesCurrentPin(r.currentDate)) continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
@@ -173,7 +181,7 @@ export function PeriodByClientTab({
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase()),
     );
-  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev]);
+  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev, currentDate]);
 
   if (isLoading) {
     return (

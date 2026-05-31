@@ -621,13 +621,16 @@ export default function Rankings() {
   }, [periodData]);
 
   /* Build the row set the page (and downloads) actually use. Stacks
-     audit-date filter then comparison-only filter. */
+     audit-date filter, Current-pin filter (drops rows with no Current on the
+     pinned date so the operator doesn't scroll past 2k blanks), and the
+     comparison-only filter. */
   const filteredRows = useMemo<PeriodRow[]>(() => {
     let rs = periodData?.rows ?? [];
     rs = filterByCurrentDate(rs, auditDate);
+    if (currentDateOverride) rs = filterByCurrentDate(rs, currentDateOverride);
     if (comparisonOnly) rs = filterComparisonOnly(rs);
     return rs;
-  }, [periodData, auditDate, comparisonOnly]);
+  }, [periodData, auditDate, currentDateOverride, comparisonOnly]);
   const hasFilteredRows = filteredRows.length > 0;
 
   const exportFilters: ExportFilters = useMemo(
@@ -807,16 +810,19 @@ export default function Rankings() {
           label="First"
           value={firstDateOverride}
           onChange={setFirstDateOverride}
+          availableDates={auditDates}
         />
         <ColumnDatePicker
           label="Prev"
           value={prevDateOverride}
           onChange={setPrevDateOverride}
+          availableDates={auditDates}
         />
         <ColumnDatePicker
           label="Current"
           value={currentDateOverride}
           onChange={setCurrentDateOverride}
+          availableDates={auditDates}
         />
         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
         <Select value={auditDate} onValueChange={setAuditDate}>
@@ -1012,19 +1018,35 @@ interface ColumnDatePickerProps {
   label: string;
   value: string | null;
   onChange: (next: string | null) => void;
+  /* YYYY-MM-DD strings of dates that actually have audits. The picker uses
+     this to (a) open on a useful default month and (b) gray out empty days
+     so the operator doesn't pin a column to a date with no data. */
+  availableDates: string[];
 }
+
+const ymdToDate = (s: string): Date | undefined => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : undefined;
+};
 
 /* Single-day picker that pins which audit date a column reads from.
    Stores ET YYYY-MM-DD strings; null = use the default selection. */
-function ColumnDatePicker({ label, value, onChange }: ColumnDatePickerProps) {
-  const parsed = value
-    ? (() => {
-        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-        return m
-          ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-          : undefined;
-      })()
-    : undefined;
+function ColumnDatePicker({
+  label,
+  value,
+  onChange,
+  availableDates,
+}: ColumnDatePickerProps) {
+  const parsed = value ? ymdToDate(value) : undefined;
+  const availableSet = useMemo(() => new Set(availableDates), [availableDates]);
+  /* Pick a sensible month for the calendar to open on so the operator
+     lands on real data instead of an empty future month. Order: selected
+     date > most recent audit date > today. */
+  const defaultMonth = useMemo(() => {
+    if (parsed) return parsed;
+    if (availableDates.length > 0) return ymdToDate(availableDates[0]);
+    return undefined;
+  }, [parsed, availableDates]);
 
   return (
     <Popover>
@@ -1071,6 +1093,13 @@ function ColumnDatePicker({ label, value, onChange }: ColumnDatePickerProps) {
         <Calendar
           mode="single"
           selected={parsed}
+          defaultMonth={defaultMonth}
+          disabled={(d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return !availableSet.has(`${y}-${m}-${day}`);
+          }}
           onSelect={(d) => {
             if (!d) {
               onChange(null);
