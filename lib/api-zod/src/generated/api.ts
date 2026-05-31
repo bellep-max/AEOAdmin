@@ -635,28 +635,74 @@ export const GetPlansResponseItem = zod.object({
 export const GetPlansResponse = zod.array(GetPlansResponseItem);
 
 /**
+ * Read endpoint for ranking data. Auth: admin session cookie OR
+`Authorization: Bearer <READ_API_TOKEN>` header (also accepts
+`X-API-Key`). Response is `{ meta, data }`.
+
  * @summary List ranking reports
  */
+export const getRankingReportsQueryLimitMax = 5000;
+
+export const getRankingReportsQueryOffsetMin = 0;
+
 export const GetRankingReportsQueryParams = zod.object({
   clientId: zod.coerce.number().optional(),
+  businessId: zod.coerce.number().optional(),
+  aeoPlanId: zod.coerce.number().optional(),
   keywordId: zod.coerce.number().optional(),
+  dateFrom: zod
+    .date()
+    .optional()
+    .describe("Inclusive lower bound, YYYY-MM-DD."),
+  dateTo: zod.date().optional().describe("Inclusive upper bound, YYYY-MM-DD."),
+  status: zod.enum(["success", "error"]).optional(),
+  platform: zod.coerce
+    .string()
+    .optional()
+    .describe("One platform, or comma-separated list (e.g. `chatgpt,gemini`)."),
+  isActive: zod
+    .enum(["true", "false"])
+    .optional()
+    .describe("Filter by `keywords.is_active`."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(getRankingReportsQueryLimitMax)
+    .optional()
+    .describe("Max rows to return. Default 1000, max 5000."),
+  offset: zod.coerce
+    .number()
+    .min(getRankingReportsQueryOffsetMin)
+    .optional()
+    .describe("Pagination offset. Default 0."),
 });
 
-export const GetRankingReportsResponseItem = zod.object({
-  id: zod.number(),
-  clientId: zod.number(),
-  keywordId: zod.number(),
-  rankingPosition: zod.number().nullish(),
-  reasonRecommended: zod.string().nullish(),
-  mapsPresence: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  clientName: zod.string().nullish(),
-  keywordText: zod.string().nullish(),
-  isInitialRanking: zod.boolean().nullish(),
+export const GetRankingReportsResponse = zod.object({
+  meta: zod
+    .object({
+      total: zod.number().optional(),
+      limit: zod.number().optional(),
+      offset: zod.number().optional(),
+      returned: zod.number().optional(),
+    })
+    .optional(),
+  data: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        clientId: zod.number(),
+        keywordId: zod.number(),
+        rankingPosition: zod.number().nullish(),
+        reasonRecommended: zod.string().nullish(),
+        mapsPresence: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        clientName: zod.string().nullish(),
+        keywordText: zod.string().nullish(),
+        isInitialRanking: zod.boolean().nullish(),
+      }),
+    )
+    .optional(),
 });
-export const GetRankingReportsResponse = zod.array(
-  GetRankingReportsResponseItem,
-);
 
 /**
  * @summary Create a ranking report

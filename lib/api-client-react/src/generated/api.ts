@@ -41,6 +41,7 @@ import type {
   GetKeywordVariantsParams,
   GetKeywordsParams,
   GetProxiesParams,
+  GetRankingReports200,
   GetRankingReportsParams,
   GetSessionAnalystContextParams,
   GetSessionsParams,
@@ -2609,6 +2610,10 @@ export function useGetPlans<
 }
 
 /**
+ * Read endpoint for ranking data. Auth: admin session cookie OR
+`Authorization: Bearer <READ_API_TOKEN>` header (also accepts
+`X-API-Key`). Response is `{ meta, data }`.
+
  * @summary List ranking reports
  */
 export const getGetRankingReportsUrl = (params?: GetRankingReportsParams) => {
@@ -2630,8 +2635,8 @@ export const getGetRankingReportsUrl = (params?: GetRankingReportsParams) => {
 export const getRankingReports = async (
   params?: GetRankingReportsParams,
   options?: RequestInit,
-): Promise<RankingReport[]> => {
-  return customFetch<RankingReport[]>(getGetRankingReportsUrl(params), {
+): Promise<GetRankingReports200> => {
+  return customFetch<GetRankingReports200>(getGetRankingReportsUrl(params), {
     ...options,
     method: "GET",
   });
@@ -2645,7 +2650,7 @@ export const getGetRankingReportsQueryKey = (
 
 export const getGetRankingReportsQueryOptions = <
   TData = Awaited<ReturnType<typeof getRankingReports>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
 >(
   params?: GetRankingReportsParams,
   options?: {
@@ -2676,7 +2681,7 @@ export const getGetRankingReportsQueryOptions = <
 export type GetRankingReportsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getRankingReports>>
 >;
-export type GetRankingReportsQueryError = ErrorType<unknown>;
+export type GetRankingReportsQueryError = ErrorType<void>;
 
 /**
  * @summary List ranking reports
@@ -2684,7 +2689,7 @@ export type GetRankingReportsQueryError = ErrorType<unknown>;
 
 export function useGetRankingReports<
   TData = Awaited<ReturnType<typeof getRankingReports>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
 >(
   params?: GetRankingReportsParams,
   options?: {

@@ -7,8 +7,9 @@ import {
   businessesTable,
   clientAeoPlansTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, gte, lte, inArray } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { requireApiToken } from "../middlewares/api-token";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -20,21 +21,62 @@ const s3Client = new S3Client({
   region: process.env.AWS_REGION ?? "us-east-1",
 });
 
-router.get("/", async (req, res) => {
+/* GET /api/ranking-reports
+   Read endpoint exposed to external teams via API token. The FE still works
+   via session cookie. Supports filters:
+     - clientId, businessId, aeoPlanId, keywordId  (numeric ids)
+     - dateFrom, dateTo                            (YYYY-MM-DD, inclusive)
+     - status                                      (success|error)
+     - platform                                    (chatgpt|gemini|perplexity, comma-separated ok)
+     - isActive                                    (true|false — joins keywords.is_active)
+     - limit (default 1000, max 5000) + offset    (pagination)
+   Filters are combined with AND. Sorted newest first. */
+const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+const intInRange = (raw: unknown, min: number, max: number, fallback: number) => {
+  const n = parseInt(String(raw ?? ""), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+};
+
+router.get("/", requireApiToken, async (req, res) => {
   try {
-    const { clientId, businessId, aeoPlanId, keywordId } = req.query as Record<
-      string,
-      string
-    >;
+    const q = req.query as Record<string, string | undefined>;
     const conditions: ReturnType<typeof eq>[] = [];
-    if (clientId)
-      conditions.push(eq(rankingReportsTable.clientId, parseInt(clientId)));
-    if (businessId)
-      conditions.push(eq(rankingReportsTable.businessId, parseInt(businessId)));
-    if (aeoPlanId)
-      conditions.push(eq(keywordsTable.aeoPlanId, parseInt(aeoPlanId)));
-    if (keywordId)
-      conditions.push(eq(rankingReportsTable.keywordId, parseInt(keywordId)));
+
+    if (q.clientId)
+      conditions.push(eq(rankingReportsTable.clientId, parseInt(q.clientId)));
+    if (q.businessId)
+      conditions.push(eq(rankingReportsTable.businessId, parseInt(q.businessId)));
+    if (q.aeoPlanId)
+      conditions.push(eq(keywordsTable.aeoPlanId, parseInt(q.aeoPlanId)));
+    if (q.keywordId)
+      conditions.push(eq(rankingReportsTable.keywordId, parseInt(q.keywordId)));
+
+    /* date is a TEXT column 'YYYY-MM-DD' — lexicographic compare works. */
+    if (q.dateFrom && ymdRe.test(q.dateFrom))
+      conditions.push(gte(rankingReportsTable.date, q.dateFrom));
+    if (q.dateTo && ymdRe.test(q.dateTo))
+      conditions.push(lte(rankingReportsTable.date, q.dateTo));
+
+    if (q.status === "success" || q.status === "error")
+      conditions.push(eq(rankingReportsTable.status, q.status));
+
+    if (q.platform) {
+      const platforms = q.platform
+        .split(",")
+        .map((p) => p.trim().toLowerCase())
+        .filter((p) => p === "chatgpt" || p === "gemini" || p === "perplexity");
+      if (platforms.length === 1)
+        conditions.push(eq(rankingReportsTable.platform, platforms[0]));
+      else if (platforms.length > 1)
+        conditions.push(inArray(rankingReportsTable.platform, platforms));
+    }
+
+    if (q.isActive === "true" || q.isActive === "false")
+      conditions.push(eq(keywordsTable.isActive, q.isActive === "true"));
+
+    const limit = intInRange(q.limit, 1, 5000, 1000);
+    const offset = intInRange(q.offset, 0, Number.MAX_SAFE_INTEGER, 0);
 
     const reports = await db
       .select({
@@ -93,16 +135,29 @@ router.get("/", async (req, res) => {
         eq(rankingReportsTable.keywordId, keywordsTable.id),
       )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(rankingReportsTable.createdAt));
+      .orderBy(desc(rankingReportsTable.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    res.json(
-      reports.map((r) => ({
+    const totalRows = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(rankingReportsTable)
+      .leftJoin(
+        keywordsTable,
+        eq(rankingReportsTable.keywordId, keywordsTable.id),
+      )
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    const total = totalRows[0]?.n ?? 0;
+
+    res.json({
+      meta: { total, limit, offset, returned: reports.length },
+      data: reports.map((r) => ({
         ...r,
         clientName: r.clientName ?? r.joinedClientName ?? null,
         bizName: r.bizName ?? r.joinedBusinessName ?? null,
         keyword: r.keyword ?? r.joinedKeywordText ?? null,
       })),
-    );
+    });
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
     res.status(500).json({ error: "Internal server error" });

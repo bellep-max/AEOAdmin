@@ -820,7 +820,65 @@ export const GetProxiesProxyType = {
 
 export type GetRankingReportsParams = {
   clientId?: number;
+  businessId?: number;
+  aeoPlanId?: number;
   keywordId?: number;
+  /**
+   * Inclusive lower bound, YYYY-MM-DD.
+   */
+  dateFrom?: string;
+  /**
+   * Inclusive upper bound, YYYY-MM-DD.
+   */
+  dateTo?: string;
+  status?: GetRankingReportsStatus;
+  /**
+   * One platform, or comma-separated list (e.g. `chatgpt,gemini`).
+   */
+  platform?: string;
+  /**
+   * Filter by `keywords.is_active`.
+   */
+  isActive?: GetRankingReportsIsActive;
+  /**
+   * Max rows to return. Default 1000, max 5000.
+   * @minimum 1
+   * @maximum 5000
+   */
+  limit?: number;
+  /**
+   * Pagination offset. Default 0.
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type GetRankingReportsStatus =
+  (typeof GetRankingReportsStatus)[keyof typeof GetRankingReportsStatus];
+
+export const GetRankingReportsStatus = {
+  success: "success",
+  error: "error",
+} as const;
+
+export type GetRankingReportsIsActive =
+  (typeof GetRankingReportsIsActive)[keyof typeof GetRankingReportsIsActive];
+
+export const GetRankingReportsIsActive = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type GetRankingReports200Meta = {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  returned?: number;
+};
+
+export type GetRankingReports200 = {
+  meta?: GetRankingReports200Meta;
+  data?: RankingReport[];
 };
 
 export type GetTasksParams = {

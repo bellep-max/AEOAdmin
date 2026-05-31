@@ -616,24 +616,79 @@ paths:
       operationId: getRankingReports
       tags: [ranking-reports]
       summary: List ranking reports
+      description: |
+        Read endpoint for ranking data. Auth: admin session cookie OR
+        `Authorization: Bearer <READ_API_TOKEN>` header (also accepts
+        `X-API-Key`). Response is `{ meta, data }`.
+      security:
+        - bearerAuth: []
+        - sessionAuth: []
       parameters:
         - name: clientId
           in: query
-          schema:
-            type: integer
+          schema: { type: integer }
+        - name: businessId
+          in: query
+          schema: { type: integer }
+        - name: aeoPlanId
+          in: query
+          schema: { type: integer }
         - name: keywordId
           in: query
+          schema: { type: integer }
+        - name: dateFrom
+          in: query
+          description: Inclusive lower bound, YYYY-MM-DD.
+          schema: { type: string, format: date }
+        - name: dateTo
+          in: query
+          description: Inclusive upper bound, YYYY-MM-DD.
+          schema: { type: string, format: date }
+        - name: status
+          in: query
           schema:
-            type: integer
+            type: string
+            enum: [success, error]
+        - name: platform
+          in: query
+          description: One platform, or comma-separated list (e.g. `chatgpt,gemini`).
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          description: Filter by `keywords.is_active`.
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: limit
+          in: query
+          description: Max rows to return. Default 1000, max 5000.
+          schema: { type: integer, minimum: 1, maximum: 5000 }
+        - name: offset
+          in: query
+          description: Pagination offset. Default 0.
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: Ranking reports
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/RankingReport"
+                type: object
+                properties:
+                  meta:
+                    type: object
+                    properties:
+                      total:    { type: integer }
+                      limit:    { type: integer }
+                      offset:   { type: integer }
+                      returned: { type: integer }
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RankingReport"
+        "401":
+          description: Not authenticated
     post:
       operationId: createRankingReport
       tags: [ranking-reports]
