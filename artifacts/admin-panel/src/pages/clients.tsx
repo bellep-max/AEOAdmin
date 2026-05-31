@@ -116,7 +116,9 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterAccountType, setFilterAccountType] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
+  /* Default to hiding archived/deactivated clients. Pick "inactive" or
+     "all" from the Status filter to surface them. */
+  const [filterStatus, setFilterStatus] = useState("active");
   const [filterPlan, setFilterPlan] = useState("all");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -218,10 +220,10 @@ export default function Clients() {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error("Failed");
-      toast({ title: "Client deleted" });
+      toast({ title: "Client archived" });
       refetch();
     } catch {
-      toast({ title: "Failed to delete client", variant: "destructive" });
+      toast({ title: "Failed to archive client", variant: "destructive" });
     } finally {
       setDeletingId(null);
       setConfirmDelete(null);
@@ -1116,11 +1118,14 @@ export default function Clients() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{confirmDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Archive "{confirmDelete?.name}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the client along with all of its
-              businesses, keywords, sessions, and ranking reports. This cannot
-              be undone.
+              Archives the client and deactivates its keywords. Historical
+              sessions, ranking reports, and screenshots are kept. The client
+              disappears from the default list but can be brought back by
+              switching the Status filter to "Inactive" and reactivating.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1134,7 +1139,7 @@ export default function Clients() {
                 if (confirmDelete) doDeleteClient(confirmDelete.id);
               }}
             >
-              Yes, delete
+              Yes, archive
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
