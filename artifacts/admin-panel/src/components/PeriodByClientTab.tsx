@@ -30,6 +30,12 @@ interface Props {
   /* "all" or a YYYY-MM-DD string (ET-anchored). When set, only keywords
      whose Current audit landed on that ET calendar day are shown. */
   auditDate?: string;
+  /* Optional ET YYYY-MM-DD overrides — pin First/Prev/Current columns to
+     a specific date per (keyword, platform). Forwarded to the BE so the
+     same row set drives the table that the page-level badge reflects. */
+  firstDate?: string | null;
+  prevDate?: string | null;
+  currentDate?: string | null;
 }
 
 interface CampaignGroup {
@@ -77,6 +83,9 @@ export function PeriodByClientTab({
   aeoPlanId,
   comparisonOnly = false,
   auditDate = "all",
+  firstDate = null,
+  prevDate = null,
+  currentDate = null,
 }: Props) {
   const [search, setSearch] = useState("");
   /* When set, opens the screenshot dialog for that ranking_reports row. */
@@ -92,6 +101,9 @@ export function PeriodByClientTab({
     clientId,
     businessId,
     aeoPlanId,
+    firstDate,
+    prevDate,
+    currentDate,
   });
   const label = periodLabel(period);
 

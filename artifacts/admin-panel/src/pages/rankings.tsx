@@ -917,6 +917,9 @@ export default function Rankings() {
         aeoPlanId={selectedCampaignId}
         comparisonOnly={comparisonOnly}
         auditDate={auditDate}
+        firstDate={firstDateOverride}
+        prevDate={prevDateOverride}
+        currentDate={currentDateOverride}
       />
 
       {/* Export dialog (PDF or CSV) — reviews/edits filters before generating */}
