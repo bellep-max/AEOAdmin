@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useGetClients, useCreateClient } from "@workspace/api-client-react";
+import {
+  useGetClients,
+  useCreateClient,
+  type GetClientsStatus,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Table,
@@ -122,7 +126,16 @@ export default function Clients() {
   const [filterPlan, setFilterPlan] = useState("all");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
-  const { data: clients, isLoading, refetch } = useGetClients();
+  /* Forward the Status filter to the API so flipping between Active /
+     Inactive / All re-fetches the matching set. The BE defaults to active
+     when status is omitted; pass it explicitly so toggling is honored. */
+  const {
+    data: clients,
+    isLoading,
+    refetch,
+  } = useGetClients({
+    status: filterStatus as GetClientsStatus,
+  });
   const createClient = useCreateClient();
   const queryClient = useQueryClient();
   const { toast } = useToast();

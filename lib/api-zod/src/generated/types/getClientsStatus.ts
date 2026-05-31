@@ -12,4 +12,5 @@ export type GetClientsStatus =
 export const GetClientsStatus = {
   active: "active",
   inactive: "inactive",
+  all: "all",
 } as const;

@@ -113,9 +113,13 @@ paths:
       parameters:
         - name: status
           in: query
+          description: |
+            Filter by status. Defaults to `active` so archived clients are
+            hidden from dropdowns. Pass `all` to return both, or `inactive`
+            to see only archived.
           schema:
             type: string
-            enum: [active, inactive]
+            enum: [active, inactive, all]
         - name: search
           in: query
           schema:
@@ -1097,7 +1101,16 @@ components:
           type: number
         uptime:
           type: number
-      required: [score, devicesOnline, devicesOffline, devicesInUse, activeProxies, sessionsPerHour, uptime]
+      required:
+        [
+          score,
+          devicesOnline,
+          devicesOffline,
+          devicesInUse,
+          activeProxies,
+          sessionsPerHour,
+          uptime,
+        ]
 
     Client:
       type: object
@@ -1171,7 +1184,7 @@ components:
         websiteLinkedOnGMB:
           type: string
           nullable: true
-        
+
         # Subscription Information
         plan:
           type: string
@@ -1191,7 +1204,7 @@ components:
         subscriptionId:
           type: string
           nullable: true
-        
+
         # Account Information
         accountUser:
           type: string
@@ -1211,7 +1224,7 @@ components:
           type: string
           maxLength: 4
           nullable: true
-        
+
         # Legacy/Optional fields
         status:
           type: string
@@ -1270,7 +1283,7 @@ components:
         websiteLinkedOnGMB:
           type: string
           nullable: true
-        
+
         # Subscription Information
         plan:
           type: string
@@ -1290,7 +1303,7 @@ components:
         subscriptionId:
           type: string
           nullable: true
-        
+
         # Account Information
         accountUser:
           type: string
@@ -1310,7 +1323,7 @@ components:
           type: string
           maxLength: 4
           nullable: true
-        
+
         # Legacy/Optional fields
         status:
           type: string
@@ -1451,7 +1464,19 @@ components:
           enum: [pending, verified, failed]
         avgScroll:
           type: integer
-      required: [id, clientId, keywordText, tierLabel, isActive, isPrimary, clickCount, last30DaysClickCount, backlinkCount, verificationStatus]
+      required:
+        [
+          id,
+          clientId,
+          keywordText,
+          tierLabel,
+          isActive,
+          isPrimary,
+          clickCount,
+          last30DaysClickCount,
+          backlinkCount,
+          verificationStatus,
+        ]
 
     CreateKeywordBody:
       type: object
@@ -1750,7 +1775,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Device"
-      required: [total, available, inUse, offline, retiredToday, averageSessionsPerDevice, maxSessionsPerDevicePerDay, currentUtilization, devices]
+      required:
+        [
+          total,
+          available,
+          inUse,
+          offline,
+          retiredToday,
+          averageSessionsPerDevice,
+          maxSessionsPerDevicePerDay,
+          currentUtilization,
+          devices,
+        ]
 
     Proxy:
       type: object
@@ -1812,7 +1848,17 @@ components:
           type: integer
         status:
           type: boolean
-      required: [id, planId, planName, cost, numberOfDays, noOfKeywords, noOfClicks, totalDailyClicks]
+      required:
+        [
+          id,
+          planId,
+          planName,
+          cost,
+          numberOfDays,
+          noOfKeywords,
+          noOfClicks,
+          totalDailyClicks,
+        ]
 
     RankingReport:
       type: object
@@ -2025,7 +2071,17 @@ components:
         notes:
           type: string
           nullable: true
-      required: [id, phase, targetDate, targetCompanies, currentCompanies, devicesNeeded, devicesAvailable, status]
+      required:
+        [
+          id,
+          phase,
+          targetDate,
+          targetCompanies,
+          currentCompanies,
+          devicesNeeded,
+          devicesAvailable,
+          status,
+        ]
 
     KeywordVariant:
       type: object
@@ -2146,25 +2202,39 @@ components:
           type: integer
         scope:
           $ref: "#/components/schemas/AnalystScope"
-        sessionSummary:    { $ref: "#/components/schemas/AnalystRowList" }
-        rankChanges:       { $ref: "#/components/schemas/AnalystRowList" }
-        rankHistory:       { $ref: "#/components/schemas/AnalystRowList" }
-        similarityFlags:   { $ref: "#/components/schemas/AnalystRowList" }
-        timeOfDay:         { $ref: "#/components/schemas/AnalystRowList" }
-        platformSkew:      { $ref: "#/components/schemas/AnalystRowList" }
-        gmbMismatches:     { $ref: "#/components/schemas/AnalystRowList" }
-        windowActivity:    { $ref: "#/components/schemas/AnalystRowList" }
-        movementCohort:    { $ref: "#/components/schemas/AnalystRowList" }
+        sessionSummary: { $ref: "#/components/schemas/AnalystRowList" }
+        rankChanges: { $ref: "#/components/schemas/AnalystRowList" }
+        rankHistory: { $ref: "#/components/schemas/AnalystRowList" }
+        similarityFlags: { $ref: "#/components/schemas/AnalystRowList" }
+        timeOfDay: { $ref: "#/components/schemas/AnalystRowList" }
+        platformSkew: { $ref: "#/components/schemas/AnalystRowList" }
+        gmbMismatches: { $ref: "#/components/schemas/AnalystRowList" }
+        windowActivity: { $ref: "#/components/schemas/AnalystRowList" }
+        movementCohort: { $ref: "#/components/schemas/AnalystRowList" }
         inputSummary:
           type: object
           properties:
-            sessionCount:       { type: integer }
-            declineCount:       { type: integer }
-            improvementCount:   { type: integer }
-            similarPairs:       { type: integer }
-            gmbMismatches:      { type: integer }
+            sessionCount: { type: integer }
+            declineCount: { type: integer }
+            improvementCount: { type: integer }
+            similarPairs: { type: integer }
+            gmbMismatches: { type: integer }
             windowSessionCount: { type: integer }
-      required: [reportDate, scope, sessionSummary, rankChanges, rankHistory, similarityFlags, timeOfDay, platformSkew, gmbMismatches, windowActivity, movementCohort, inputSummary]
+      required:
+        [
+          reportDate,
+          scope,
+          sessionSummary,
+          rankChanges,
+          rankHistory,
+          similarityFlags,
+          timeOfDay,
+          platformSkew,
+          gmbMismatches,
+          windowActivity,
+          movementCohort,
+          inputSummary,
+        ]
 
     SessionAnalystContext:
       type: object
@@ -2175,13 +2245,21 @@ components:
         scope:
           $ref: "#/components/schemas/AnalystScope"
         sessionSummary: { $ref: "#/components/schemas/AnalystRowList" }
-        timeOfDay:      { $ref: "#/components/schemas/AnalystRowList" }
-        platformSkew:   { $ref: "#/components/schemas/AnalystRowList" }
+        timeOfDay: { $ref: "#/components/schemas/AnalystRowList" }
+        platformSkew: { $ref: "#/components/schemas/AnalystRowList" }
         inputSummary:
           type: object
           properties:
             sessionCount: { type: integer }
-      required: [reportDate, scope, sessionSummary, timeOfDay, platformSkew, inputSummary]
+      required:
+        [
+          reportDate,
+          scope,
+          sessionSummary,
+          timeOfDay,
+          platformSkew,
+          inputSummary,
+        ]
 
     AuditAnalystContext:
       type: object
@@ -2193,18 +2271,29 @@ components:
           type: integer
         scope:
           $ref: "#/components/schemas/AnalystScope"
-        rankChanges:     { $ref: "#/components/schemas/AnalystRowList" }
-        rankHistory:     { $ref: "#/components/schemas/AnalystRowList" }
+        rankChanges: { $ref: "#/components/schemas/AnalystRowList" }
+        rankHistory: { $ref: "#/components/schemas/AnalystRowList" }
         similarityFlags: { $ref: "#/components/schemas/AnalystRowList" }
-        gmbMismatches:   { $ref: "#/components/schemas/AnalystRowList" }
-        windowActivity:  { $ref: "#/components/schemas/AnalystRowList" }
-        movementCohort:  { $ref: "#/components/schemas/AnalystRowList" }
+        gmbMismatches: { $ref: "#/components/schemas/AnalystRowList" }
+        windowActivity: { $ref: "#/components/schemas/AnalystRowList" }
+        movementCohort: { $ref: "#/components/schemas/AnalystRowList" }
         inputSummary:
           type: object
           properties:
-            declineCount:       { type: integer }
-            improvementCount:   { type: integer }
-            similarPairs:       { type: integer }
-            gmbMismatches:      { type: integer }
+            declineCount: { type: integer }
+            improvementCount: { type: integer }
+            similarPairs: { type: integer }
+            gmbMismatches: { type: integer }
             windowSessionCount: { type: integer }
-      required: [reportDate, scope, rankChanges, rankHistory, similarityFlags, gmbMismatches, windowActivity, movementCohort, inputSummary]
+      required:
+        [
+          reportDate,
+          scope,
+          rankChanges,
+          rankHistory,
+          similarityFlags,
+          gmbMismatches,
+          windowActivity,
+          movementCohort,
+          inputSummary,
+        ]

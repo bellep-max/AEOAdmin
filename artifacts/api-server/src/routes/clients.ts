@@ -18,8 +18,13 @@ router.get("/", async (req, res) => {
     const { status, search } = req.query as Record<string, string>;
     let query = db.select().from(clientsTable);
     const conditions: ReturnType<typeof eq>[] = [];
-    if (status === "active" || status === "inactive") {
-      conditions.push(eq(clientsTable.status, status));
+    /* Default to hiding archived clients (status='inactive') from every
+       consumer (Rankings filter, Sessions filter, etc.). Pass status=all
+       to surface everything, or status=inactive to see only archived. */
+    const statusFilter =
+      status === "all" ? null : status === "inactive" ? "inactive" : "active";
+    if (statusFilter) {
+      conditions.push(eq(clientsTable.status, statusFilter));
     }
     const baseClients = await db
       .select()

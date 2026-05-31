@@ -75,7 +75,12 @@ export const GetNetworkHealthResponse = zod.object({
  * @summary List all clients
  */
 export const GetClientsQueryParams = zod.object({
-  status: zod.enum(["active", "inactive"]).optional(),
+  status: zod
+    .enum(["active", "inactive", "all"])
+    .optional()
+    .describe(
+      "Filter by status. Defaults to `active` so archived clients are\nhidden from dropdowns. Pass `all` to return both, or `inactive`\nto see only archived.\n",
+    ),
   search: zod.coerce.string().optional(),
 });
 

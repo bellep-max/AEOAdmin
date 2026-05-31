@@ -752,6 +752,12 @@ export interface AuditAnalystContext {
 }
 
 export type GetClientsParams = {
+  /**
+ * Filter by status. Defaults to `active` so archived clients are
+hidden from dropdowns. Pass `all` to return both, or `inactive`
+to see only archived.
+
+ */
   status?: GetClientsStatus;
   search?: string;
 };
@@ -762,6 +768,7 @@ export type GetClientsStatus =
 export const GetClientsStatus = {
   active: "active",
   inactive: "inactive",
+  all: "all",
 } as const;
 
 export type GetKeywordsParams = {
