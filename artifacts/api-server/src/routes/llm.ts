@@ -28,6 +28,7 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireOwner, requireExecutorOrOwner } from "../middlewares/role-auth";
+import { requireSession } from "../middlewares/session-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
 import {
@@ -35,12 +36,25 @@ import {
   runAuditReport,
   type AnalystScope,
 } from "../services/daily-analyst";
-import { buildSession, buildSessionStatic, type VoiceKey } from "../services/session-prompt-builder";
-import { buildAuditPrompt, buildAuditPromptStatic } from "../services/audit-prompt-builder";
+import {
+  buildSession,
+  buildSessionStatic,
+  type VoiceKey,
+} from "../services/session-prompt-builder";
+import {
+  buildAuditPrompt,
+  buildAuditPromptStatic,
+} from "../services/audit-prompt-builder";
 
 const router = Router();
 
-const VALID_VOICES: ReadonlyArray<VoiceKey> = ["observer", "researcher", "rec_seeker", "local", "quick_asker"];
+const VALID_VOICES: ReadonlyArray<VoiceKey> = [
+  "observer",
+  "researcher",
+  "rec_seeker",
+  "local",
+  "quick_asker",
+];
 const VALID_PLATFORMS = new Set(["chatgpt", "gemini", "perplexity"]);
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -60,15 +74,15 @@ router.get("/variants-overview", requireOwner, async (req, res) => {
   try {
     const rows = await db
       .select({
-        keywordId:    keywordsTable.id,
-        keywordText:  keywordsTable.keywordText,
-        clientId:     keywordsTable.clientId,
-        clientName:   clientsTable.businessName,
-        businessId:   keywordsTable.businessId,
+        keywordId: keywordsTable.id,
+        keywordText: keywordsTable.keywordText,
+        clientId: keywordsTable.clientId,
+        clientName: clientsTable.businessName,
+        businessId: keywordsTable.businessId,
         businessName: businessesTable.name,
-        aeoPlanId:    keywordsTable.aeoPlanId,
+        aeoPlanId: keywordsTable.aeoPlanId,
         campaignName: clientAeoPlansTable.name,
-        isActive:     keywordsTable.isActive,
+        isActive: keywordsTable.isActive,
         activeVariants: sql<number>`(
           SELECT COUNT(*)::int FROM keyword_variants kv
           WHERE kv.keyword_id = ${keywordsTable.id} AND kv.is_active = true
@@ -88,8 +102,14 @@ router.get("/variants-overview", requireOwner, async (req, res) => {
       })
       .from(keywordsTable)
       .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
-      .leftJoin(clientAeoPlansTable, eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(keywordsTable.businessId, businessesTable.id),
+      )
+      .leftJoin(
+        clientAeoPlansTable,
+        eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
+      )
       .where(eq(keywordsTable.isActive, true))
       .orderBy(keywordsTable.id);
     res.json({ rows, total: rows.length });
@@ -103,12 +123,16 @@ router.get("/variants-overview", requireOwner, async (req, res) => {
 router.get("/variants/:keywordId", async (req, res) => {
   try {
     const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId)) return res.status(400).json({ error: "Invalid keywordId" });
+    if (Number.isNaN(keywordId))
+      return res.status(400).json({ error: "Invalid keywordId" });
 
     const includeInactive = req.query.includeInactive === "true";
     const where = includeInactive
       ? eq(keywordVariantsTable.keywordId, keywordId)
-      : and(eq(keywordVariantsTable.keywordId, keywordId), eq(keywordVariantsTable.isActive, true));
+      : and(
+          eq(keywordVariantsTable.keywordId, keywordId),
+          eq(keywordVariantsTable.isActive, true),
+        );
 
     const rows = await db
       .select()
@@ -126,7 +150,8 @@ router.get("/variants/:keywordId", async (req, res) => {
 router.post("/variants/:keywordId/regenerate", async (req, res) => {
   try {
     const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId)) return res.status(400).json({ error: "Invalid keywordId" });
+    if (Number.isNaN(keywordId))
+      return res.status(400).json({ error: "Invalid keywordId" });
 
     const body = (req.body ?? {}) as { count?: number };
     const count = body.count != null ? Number(body.count) : undefined;
@@ -144,36 +169,47 @@ router.post("/variants/:keywordId/regenerate", async (req, res) => {
 });
 
 /* GET /api/llm/variants/:keywordId/random — pick + bump times_used */
-router.get("/variants/:keywordId/random", requireExecutorToken, async (req, res) => {
-  try {
-    const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId)) return res.status(400).json({ error: "Invalid keywordId" });
+router.get(
+  "/variants/:keywordId/random",
+  requireExecutorToken,
+  async (req, res) => {
+    try {
+      const keywordId = Number(req.params.keywordId);
+      if (Number.isNaN(keywordId))
+        return res.status(400).json({ error: "Invalid keywordId" });
 
-    const [pick] = await db
-      .select()
-      .from(keywordVariantsTable)
-      .where(and(
-        eq(keywordVariantsTable.keywordId, keywordId),
-        eq(keywordVariantsTable.isActive, true),
-      ))
-      .orderBy(sql`RANDOM()`)
-      .limit(1);
+      const [pick] = await db
+        .select()
+        .from(keywordVariantsTable)
+        .where(
+          and(
+            eq(keywordVariantsTable.keywordId, keywordId),
+            eq(keywordVariantsTable.isActive, true),
+          ),
+        )
+        .orderBy(sql`RANDOM()`)
+        .limit(1);
 
-    if (!pick) return res.status(404).json({ error: "No active variants for keyword" });
+      if (!pick)
+        return res
+          .status(404)
+          .json({ error: "No active variants for keyword" });
 
-    await db.update(keywordVariantsTable)
-      .set({
-        timesUsed: sql`${keywordVariantsTable.timesUsed} + 1`,
-        lastUsedAt: new Date(),
-      })
-      .where(eq(keywordVariantsTable.id, pick.id));
+      await db
+        .update(keywordVariantsTable)
+        .set({
+          timesUsed: sql`${keywordVariantsTable.timesUsed} + 1`,
+          lastUsedAt: new Date(),
+        })
+        .where(eq(keywordVariantsTable.id, pick.id));
 
-    res.json({ ...pick, timesUsed: pick.timesUsed + 1 });
-  } catch (err) {
-    req.log.error({ err }, "Error picking random variant");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      res.json({ ...pick, timesUsed: pick.timesUsed + 1 });
+    } catch (err) {
+      req.log.error({ err }, "Error picking random variant");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* DELETE /api/llm/variants/by-id/:id — admin override delete */
 router.delete("/variants/by-id/:id", async (req, res) => {
@@ -194,45 +230,54 @@ router.delete("/variants/by-id/:id", async (req, res) => {
 });
 
 /* POST /api/llm/variants/regenerate-all — weekly cron entry. Owner UI also calls. */
-router.post("/variants/regenerate-all", requireExecutorOrOwner, async (req, res) => {
-  try {
-    const body = (req.body ?? {}) as { campaignId?: number; count?: number };
-    const campaignId = body.campaignId != null ? Number(body.campaignId) : null;
-    const count = body.count != null ? Number(body.count) : undefined;
+router.post(
+  "/variants/regenerate-all",
+  requireExecutorOrOwner,
+  async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { campaignId?: number; count?: number };
+      const campaignId =
+        body.campaignId != null ? Number(body.campaignId) : null;
+      const count = body.count != null ? Number(body.count) : undefined;
 
-    const conditions = [eq(keywordsTable.isActive, true)];
-    if (campaignId != null) conditions.push(eq(keywordsTable.aeoPlanId, campaignId));
+      const conditions = [eq(keywordsTable.isActive, true)];
+      if (campaignId != null)
+        conditions.push(eq(keywordsTable.aeoPlanId, campaignId));
 
-    const keywords = await db
-      .select({ id: keywordsTable.id, keywordText: keywordsTable.keywordText })
-      .from(keywordsTable)
-      .where(and(...conditions));
+      const keywords = await db
+        .select({
+          id: keywordsTable.id,
+          keywordText: keywordsTable.keywordText,
+        })
+        .from(keywordsTable)
+        .where(and(...conditions));
 
-    const succeeded: number[] = [];
-    const failed: { keywordId: number; error: string }[] = [];
+      const succeeded: number[] = [];
+      const failed: { keywordId: number; error: string }[] = [];
 
-    for (const kw of keywords) {
-      try {
-        await regenerateForKeyword(kw.id, count);
-        succeeded.push(kw.id);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        req.log.error({ keywordId: kw.id, err }, "Variant regen failed");
-        failed.push({ keywordId: kw.id, error: message });
+      for (const kw of keywords) {
+        try {
+          await regenerateForKeyword(kw.id, count);
+          succeeded.push(kw.id);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          req.log.error({ keywordId: kw.id, err }, "Variant regen failed");
+          failed.push({ keywordId: kw.id, error: message });
+        }
       }
-    }
 
-    res.json({
-      total: keywords.length,
-      succeeded: succeeded.length,
-      failed: failed.length,
-      failures: failed.slice(0, 50),
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error in regenerate-all");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      res.json({
+        total: keywords.length,
+        succeeded: succeeded.length,
+        failed: failed.length,
+        failures: failed.slice(0, 50),
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error in regenerate-all");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* ════════════════════════════════════════════════════════════════════════
    /api/llm/build-session — single-call session prompt builder
@@ -256,19 +301,28 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
 
     const keywordId = Number(body.keyword_id ?? body.keywordId);
     if (!Number.isFinite(keywordId) || keywordId <= 0) {
-      return res.status(400).json({ error: "keyword_id is required and must be a positive integer" });
+      return res.status(400).json({
+        error: "keyword_id is required and must be a positive integer",
+      });
     }
 
     const platformRaw = (body.platform ?? "").toString().toLowerCase();
     if (!VALID_PLATFORMS.has(platformRaw)) {
-      return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+      return res.status(400).json({
+        error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}`,
+      });
     }
 
     const voiceRaw = body.voice;
     let voice: VoiceKey | undefined;
     if (voiceRaw != null && voiceRaw !== "") {
-      if (typeof voiceRaw !== "string" || !VALID_VOICES.includes(voiceRaw as VoiceKey)) {
-        return res.status(400).json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
+      if (
+        typeof voiceRaw !== "string" ||
+        !VALID_VOICES.includes(voiceRaw as VoiceKey)
+      ) {
+        return res
+          .status(400)
+          .json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
       }
       voice = voiceRaw as VoiceKey;
     }
@@ -306,21 +360,28 @@ router.post("/build-audit", requireExecutorToken, async (req, res) => {
 
     const keywordId = Number(body.keyword_id ?? body.keywordId);
     if (!Number.isFinite(keywordId) || keywordId <= 0) {
-      return res.status(400).json({ error: "keyword_id is required and must be a positive integer" });
+      return res.status(400).json({
+        error: "keyword_id is required and must be a positive integer",
+      });
     }
 
     let platform: string | null = null;
     if (body.platform != null && body.platform !== "") {
       platform = String(body.platform).toLowerCase();
       if (!VALID_PLATFORMS.has(platform)) {
-        return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+        return res.status(400).json({
+          error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}`,
+        });
       }
     }
 
     const variantIdRaw = body.variant_id ?? body.variantId;
-    const variantId = variantIdRaw != null && variantIdRaw !== "" ? Number(variantIdRaw) : null;
+    const variantId =
+      variantIdRaw != null && variantIdRaw !== "" ? Number(variantIdRaw) : null;
     if (variantId != null && (!Number.isFinite(variantId) || variantId <= 0)) {
-      return res.status(400).json({ error: "variant_id must be a positive integer" });
+      return res
+        .status(400)
+        .json({ error: "variant_id must be a positive integer" });
     }
 
     const start = Date.now();
@@ -348,52 +409,79 @@ router.post("/build-session-static", requireExecutorToken, async (req, res) => {
 
     const keywordText = body.keyword_text ?? body.keywordText;
     if (typeof keywordText !== "string" || keywordText.trim() === "") {
-      return res.status(400).json({ error: "keyword_text is required and must be a non-empty string" });
+      return res.status(400).json({
+        error: "keyword_text is required and must be a non-empty string",
+      });
     }
 
     let platform: string | undefined;
     if (body.platform != null && body.platform !== "") {
       platform = String(body.platform).toLowerCase();
       if (!VALID_PLATFORMS.has(platform)) {
-        return res.status(400).json({ error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}` });
+        return res.status(400).json({
+          error: `platform must be one of ${[...VALID_PLATFORMS].join(", ")}`,
+        });
       }
     }
 
     let voice: VoiceKey | undefined;
     if (body.voice != null && body.voice !== "") {
-      if (typeof body.voice !== "string" || !VALID_VOICES.includes(body.voice as VoiceKey)) {
-        return res.status(400).json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
+      if (
+        typeof body.voice !== "string" ||
+        !VALID_VOICES.includes(body.voice as VoiceKey)
+      ) {
+        return res
+          .status(400)
+          .json({ error: `voice must be one of ${VALID_VOICES.join(", ")}` });
       }
       voice = body.voice as VoiceKey;
     }
 
-    let backlinks: Array<{ url: string | null; link_type_label?: string | null; embedded_url?: string | null }> | undefined;
+    let backlinks:
+      | Array<{
+          url: string | null;
+          link_type_label?: string | null;
+          embedded_url?: string | null;
+        }>
+      | undefined;
     if (body.backlinks != null) {
       if (!Array.isArray(body.backlinks)) {
         return res.status(400).json({ error: "backlinks must be an array" });
       }
-      backlinks = body.backlinks as Array<{ url: string | null; link_type_label?: string | null; embedded_url?: string | null }>;
+      backlinks = body.backlinks as Array<{
+        url: string | null;
+        link_type_label?: string | null;
+        embedded_url?: string | null;
+      }>;
     }
 
     const variantText = body.variant_text ?? body.variantText;
     const optStr = (v: unknown): string | null | undefined =>
-      v == null ? undefined : (typeof v === "string" ? (v === "" ? null : v) : null);
+      v == null
+        ? undefined
+        : typeof v === "string"
+          ? v === ""
+            ? null
+            : v
+          : null;
 
     const start = Date.now();
     const out = await buildSessionStatic({
-      keyword_text:      keywordText,
-      variant_text:      typeof variantText === "string" ? variantText : undefined,
+      keyword_text: keywordText,
+      variant_text: typeof variantText === "string" ? variantText : undefined,
       platform,
       voice,
-      biz_name:          optStr(body.biz_name ?? body.bizName),
-      biz_category:      optStr(body.biz_category ?? body.bizCategory),
-      city:              optStr(body.city),
-      state:             optStr(body.state),
-      zip:               optStr(body.zip),
-      published_address: optStr(body.published_address ?? body.publishedAddress),
-      search_address:    optStr(body.search_address ?? body.searchAddress),
-      gmb_url:           optStr(body.gmb_url ?? body.gmbUrl),
-      website_url:       optStr(body.website_url ?? body.websiteUrl),
+      biz_name: optStr(body.biz_name ?? body.bizName),
+      biz_category: optStr(body.biz_category ?? body.bizCategory),
+      city: optStr(body.city),
+      state: optStr(body.state),
+      zip: optStr(body.zip),
+      published_address: optStr(
+        body.published_address ?? body.publishedAddress,
+      ),
+      search_address: optStr(body.search_address ?? body.searchAddress),
+      gmb_url: optStr(body.gmb_url ?? body.gmbUrl),
+      website_url: optStr(body.website_url ?? body.websiteUrl),
       backlinks,
     });
     res.json({ ...out, _elapsedMs: Date.now() - start });
@@ -410,19 +498,27 @@ router.post("/build-audit-static", requireExecutorToken, async (req, res) => {
 
     const keywordPhrase = body.keyword_phrase ?? body.keywordPhrase;
     if (typeof keywordPhrase !== "string" || keywordPhrase.trim() === "") {
-      return res.status(400).json({ error: "keyword_phrase is required and must be a non-empty string" });
+      return res.status(400).json({
+        error: "keyword_phrase is required and must be a non-empty string",
+      });
     }
 
     const optStr = (v: unknown): string | null | undefined =>
-      v == null ? undefined : (typeof v === "string" ? (v === "" ? null : v) : null);
+      v == null
+        ? undefined
+        : typeof v === "string"
+          ? v === ""
+            ? null
+            : v
+          : null;
 
     const start = Date.now();
     const out = buildAuditPromptStatic({
       keyword_phrase: keywordPhrase,
-      city:           optStr(body.city),
-      state:          optStr(body.state),
-      biz_name:       optStr(body.biz_name ?? body.bizName),
-      biz_url:        optStr(body.biz_url  ?? body.bizUrl),
+      city: optStr(body.city),
+      state: optStr(body.state),
+      biz_name: optStr(body.biz_name ?? body.bizName),
+      biz_url: optStr(body.biz_url ?? body.bizUrl),
     });
     res.json({ ...out, _elapsedMs: Date.now() - start });
   } catch (err) {
@@ -442,17 +538,19 @@ interface ParsedQuery {
   lookbackDays: number | undefined;
 }
 
-function parseQuery(q: Record<string, string>): ParsedQuery | { error: string } {
+function parseQuery(
+  q: Record<string, string>,
+): ParsedQuery | { error: string } {
   const { date, clientId, businessId, campaignId, lookbackDays } = q;
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return { error: "date query param required (YYYY-MM-DD)" };
   }
   const scope: AnalystScope = {};
-  if (clientId   != null) scope.clientId   = Number(clientId);
+  if (clientId != null) scope.clientId = Number(clientId);
   if (businessId != null) scope.businessId = Number(businessId);
   if (campaignId != null) scope.campaignId = Number(campaignId);
   if (
-    (scope.clientId   != null && Number.isNaN(scope.clientId))   ||
+    (scope.clientId != null && Number.isNaN(scope.clientId)) ||
     (scope.businessId != null && Number.isNaN(scope.businessId)) ||
     (scope.campaignId != null && Number.isNaN(scope.campaignId))
   ) {
@@ -471,7 +569,10 @@ function parseQuery(q: Record<string, string>): ParsedQuery | { error: string } 
 /* POST /api/llm/audit-report/run — run analyst, persist (or dryRun). Owner UI + executor. */
 router.post("/audit-report/run", requireExecutorOrOwner, async (req, res) => {
   try {
-    const src = { ...(req.query as Record<string, string>), ...(req.body as Record<string, string>) };
+    const src = {
+      ...(req.query as Record<string, string>),
+      ...(req.body as Record<string, string>),
+    };
     const parsed = parseQuery(src);
     if ("error" in parsed) return res.status(400).json({ error: parsed.error });
 
@@ -485,32 +586,49 @@ router.post("/audit-report/run", requireExecutorOrOwner, async (req, res) => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Error running audit report");
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
 });
 
 /* GET /api/llm/audit-reports — list (owner only) */
 router.get("/audit-reports", requireOwner, async (req, res) => {
   try {
-    const { scope: scopeKind, scopeId, from, to, limit = "50" } = req.query as Record<string, string>;
+    const {
+      scope: scopeKind,
+      scopeId,
+      from,
+      to,
+      limit = "50",
+    } = req.query as Record<string, string>;
     const conditions = [] as ReturnType<typeof eq>[];
     if (scopeKind) conditions.push(eq(dailyReportsTable.scope, scopeKind));
-    if (scopeId && !Number.isNaN(Number(scopeId))) conditions.push(eq(dailyReportsTable.scopeId, Number(scopeId)));
-    if (from) conditions.push(sql`${dailyReportsTable.reportDate} >= ${from}` as ReturnType<typeof eq>);
-    if (to)   conditions.push(sql`${dailyReportsTable.reportDate} <= ${to}` as ReturnType<typeof eq>);
+    if (scopeId && !Number.isNaN(Number(scopeId)))
+      conditions.push(eq(dailyReportsTable.scopeId, Number(scopeId)));
+    if (from)
+      conditions.push(
+        sql`${dailyReportsTable.reportDate} >= ${from}` as ReturnType<
+          typeof eq
+        >,
+      );
+    if (to)
+      conditions.push(
+        sql`${dailyReportsTable.reportDate} <= ${to}` as ReturnType<typeof eq>,
+      );
 
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
     const rows = await db
       .select({
-        id:           dailyReportsTable.id,
-        reportDate:   dailyReportsTable.reportDate,
-        scope:        dailyReportsTable.scope,
-        scopeId:      dailyReportsTable.scopeId,
-        modelUsed:    dailyReportsTable.modelUsed,
+        id: dailyReportsTable.id,
+        reportDate: dailyReportsTable.reportDate,
+        scope: dailyReportsTable.scope,
+        scopeId: dailyReportsTable.scopeId,
+        modelUsed: dailyReportsTable.modelUsed,
         inputSummary: dailyReportsTable.inputSummary,
-        generatedAt:  dailyReportsTable.generatedAt,
-        durationMs:   dailyReportsTable.durationMs,
-        costUsd:      dailyReportsTable.costUsd,
+        generatedAt: dailyReportsTable.generatedAt,
+        durationMs: dailyReportsTable.durationMs,
+        costUsd: dailyReportsTable.costUsd,
       })
       .from(dailyReportsTable)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
@@ -519,7 +637,9 @@ router.get("/audit-reports", requireOwner, async (req, res) => {
     res.json({ reports: rows, total: rows.length });
   } catch (err) {
     req.log.error({ err }, "Error listing audit reports");
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
 });
 
@@ -538,7 +658,9 @@ router.get("/audit-reports/:id", requireOwner, async (req, res) => {
     res.json(row);
   } catch (err) {
     req.log.error({ err }, "Error fetching audit report");
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
 });
 
@@ -556,7 +678,9 @@ router.delete("/audit-reports/:id", requireOwner, async (req, res) => {
     res.json({ ok: true, deletedId: deleted.id });
   } catch (err) {
     req.log.error({ err }, "Error deleting audit report");
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "Unknown error" });
   }
 });
 
@@ -569,23 +693,99 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
     if ("error" in parsed) return res.status(400).json({ error: parsed.error });
 
     const start = Date.now();
-    const ctx = await assembleContext(parsed.date, parsed.scope, parsed.lookbackDays);
+    const ctx = await assembleContext(
+      parsed.date,
+      parsed.scope,
+      parsed.lookbackDays,
+    );
     res.json({
-      reportDate:      ctx.reportDate,
-      scope:           ctx.scope,
-      lookbackDays:    ctx.lookbackDays,
-      rankChanges:     ctx.rankChanges,
-      rankHistory:     ctx.rankHistory,
+      reportDate: ctx.reportDate,
+      scope: ctx.scope,
+      lookbackDays: ctx.lookbackDays,
+      rankChanges: ctx.rankChanges,
+      rankHistory: ctx.rankHistory,
       similarityFlags: ctx.similarityFlags,
-      gmbMismatches:   ctx.gmbMismatches,
-      windowActivity:  ctx.windowActivity,
-      movementCohort:  ctx.movementCohort,
-      inputSummary:    ctx.inputSummary,
-      _elapsedMs:      Date.now() - start,
+      gmbMismatches: ctx.gmbMismatches,
+      windowActivity: ctx.windowActivity,
+      movementCohort: ctx.movementCohort,
+      inputSummary: ctx.inputSummary,
+      _elapsedMs: Date.now() - start,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching audit context");
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* POST /api/llm/aeo-reporter/stream
+   Browser-facing proxy for the AEO Reporter page so it doesn't ship the
+   DeepSeek key to the client. Forwards `{ prompt }` to DeepSeek's chat
+   completions API as a streamed (SSE) request and pipes the raw bytes
+   back so the FE's existing `data: {...}` parser continues to work
+   unchanged. Auth is a logged-in admin session (no executor token; this
+   is a UI feature, not a runner). */
+router.post("/aeo-reporter/stream", requireSession, async (req, res) => {
+  try {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: "DEEPSEEK_API_KEY not configured" });
+    }
+    const body = req.body as { prompt?: unknown };
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+    if (!prompt) {
+      return res.status(400).json({ error: "prompt required" });
+    }
+
+    const upstream = await fetch(
+      "https://api.deepseek.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [{ role: "user", content: prompt }],
+          stream: true,
+        }),
+      },
+    );
+
+    if (!upstream.ok || !upstream.body) {
+      const errText = await upstream.text().catch(() => "");
+      return res.status(upstream.status || 502).json({
+        error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`,
+      });
+    }
+
+    /* Pipe the SSE stream straight through. Express's res supports
+       writing chunks; we manually set the headers DeepSeek sends so the
+       FE's reader sees the same wire format. */
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    const reader = upstream.body.getReader();
+    req.on("close", () => reader.cancel().catch(() => {}));
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+  } catch (err) {
+    req.log.error({ err }, "Error streaming AEO Reporter response");
+    if (!res.headersSent) {
+      res
+        .status(500)
+        .json({ error: err instanceof Error ? err.message : "Unknown error" });
+    } else {
+      res.end();
+    }
   }
 });
 
