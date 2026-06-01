@@ -5,8 +5,40 @@
  * Signal AEO Admin Panel API
  * OpenAPI spec version: 0.1.0
  */
+import type { GetRankingReportsIsActive } from "./getRankingReportsIsActive";
+import type { GetRankingReportsStatus } from "./getRankingReportsStatus";
 
 export type GetRankingReportsParams = {
   clientId?: number;
+  businessId?: number;
+  aeoPlanId?: number;
   keywordId?: number;
+  /**
+   * Inclusive lower bound, YYYY-MM-DD.
+   */
+  dateFrom?: Date;
+  /**
+   * Inclusive upper bound, YYYY-MM-DD.
+   */
+  dateTo?: Date;
+  status?: GetRankingReportsStatus;
+  /**
+   * One platform, or comma-separated list (e.g. `chatgpt,gemini`).
+   */
+  platform?: string;
+  /**
+   * Filter by `keywords.is_active`.
+   */
+  isActive?: GetRankingReportsIsActive;
+  /**
+   * Max rows to return. Default 1000, max 5000.
+   * @minimum 1
+   * @maximum 5000
+   */
+  limit?: number;
+  /**
+   * Pagination offset. Default 0.
+   * @minimum 0
+   */
+  offset?: number;
 };

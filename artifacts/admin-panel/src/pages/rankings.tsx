@@ -15,7 +15,14 @@ import {
   Download,
   FileDown,
   GitCompare,
+  Calendar as CalendarIcon,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
@@ -521,6 +528,16 @@ export default function Rankings() {
   );
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
+  /* Optional per-column date overrides (ET YYYY-MM-DD). When set, the
+     corresponding First/Prev/Current column reads the audit on that exact
+     date per (keyword, platform) instead of the period default. */
+  const [firstDateOverride, setFirstDateOverride] = useState<string | null>(
+    null,
+  );
+  const [prevDateOverride, setPrevDateOverride] = useState<string | null>(null);
+  const [currentDateOverride, setCurrentDateOverride] = useState<string | null>(
+    null,
+  );
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
   const [sendReportOpen, setSendReportOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -575,13 +592,19 @@ export default function Rankings() {
   const filtersActive =
     selectedClientId !== null ||
     selectedBusinessId !== null ||
-    selectedCampaignId !== null;
+    selectedCampaignId !== null ||
+    firstDateOverride !== null ||
+    prevDateOverride !== null ||
+    currentDateOverride !== null;
 
   const { data: periodData } = usePeriodComparison({
     period: effectivePeriod,
     clientId: selectedClientId,
     businessId: selectedBusinessId,
     aeoPlanId: selectedCampaignId,
+    firstDate: firstDateOverride,
+    prevDate: prevDateOverride,
+    currentDate: currentDateOverride,
   });
 
   const label = periodLabel(effectivePeriod);
@@ -598,13 +621,16 @@ export default function Rankings() {
   }, [periodData]);
 
   /* Build the row set the page (and downloads) actually use. Stacks
-     audit-date filter then comparison-only filter. */
+     audit-date filter, Current-pin filter (drops rows with no Current on the
+     pinned date so the operator doesn't scroll past 2k blanks), and the
+     comparison-only filter. */
   const filteredRows = useMemo<PeriodRow[]>(() => {
     let rs = periodData?.rows ?? [];
     rs = filterByCurrentDate(rs, auditDate);
+    if (currentDateOverride) rs = filterByCurrentDate(rs, currentDateOverride);
     if (comparisonOnly) rs = filterComparisonOnly(rs);
     return rs;
-  }, [periodData, auditDate, comparisonOnly]);
+  }, [periodData, auditDate, currentDateOverride, comparisonOnly]);
   const hasFilteredRows = filteredRows.length > 0;
 
   const exportFilters: ExportFilters = useMemo(
@@ -780,6 +806,25 @@ export default function Rankings() {
           </SelectContent>
         </Select>
         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
+        <ColumnDatePicker
+          label="First"
+          value={firstDateOverride}
+          onChange={setFirstDateOverride}
+          availableDates={auditDates}
+        />
+        <ColumnDatePicker
+          label="Prev"
+          value={prevDateOverride}
+          onChange={setPrevDateOverride}
+          availableDates={auditDates}
+        />
+        <ColumnDatePicker
+          label="Current"
+          value={currentDateOverride}
+          onChange={setCurrentDateOverride}
+          availableDates={auditDates}
+        />
+        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
         <Select value={auditDate} onValueChange={setAuditDate}>
           <SelectTrigger className="w-48 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
             <SelectValue placeholder="Audit date" />
@@ -794,6 +839,19 @@ export default function Rankings() {
             ))}
           </SelectContent>
         </Select>
+        <span
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200"
+          title="Rows showing (after filters) of total rows returned by the server"
+        >
+          <span className="text-slate-500 dark:text-slate-400">Showing</span>
+          <span className="tabular-nums">
+            {filteredRows.length.toLocaleString()}
+          </span>
+          <span className="text-slate-400">/</span>
+          <span className="tabular-nums">
+            {(periodData?.rows?.length ?? 0).toLocaleString()}
+          </span>
+        </span>
         {filtersActive && (
           <button
             type="button"
@@ -801,8 +859,11 @@ export default function Rankings() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setFirstDateOverride(null);
+              setPrevDateOverride(null);
+              setCurrentDateOverride(null);
             }}
-            className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
+            className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
           >
             <X className="w-4 h-4" /> Clear filters
           </button>
@@ -862,6 +923,9 @@ export default function Rankings() {
         aeoPlanId={selectedCampaignId}
         comparisonOnly={comparisonOnly}
         auditDate={auditDate}
+        firstDate={firstDateOverride}
+        prevDate={prevDateOverride}
+        currentDate={currentDateOverride}
       />
 
       {/* Export dialog (PDF or CSV) — reviews/edits filters before generating */}
@@ -947,5 +1011,108 @@ export default function Rankings() {
         />
       )}
     </div>
+  );
+}
+
+interface ColumnDatePickerProps {
+  label: string;
+  value: string | null;
+  onChange: (next: string | null) => void;
+  /* YYYY-MM-DD strings of dates that actually have audits. The picker uses
+     this to (a) open on a useful default month and (b) gray out empty days
+     so the operator doesn't pin a column to a date with no data. */
+  availableDates: string[];
+}
+
+const ymdToDate = (s: string): Date | undefined => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : undefined;
+};
+
+/* Single-day picker that pins which audit date a column reads from.
+   Stores ET YYYY-MM-DD strings; null = use the default selection. */
+function ColumnDatePicker({
+  label,
+  value,
+  onChange,
+  availableDates,
+}: ColumnDatePickerProps) {
+  const parsed = value ? ymdToDate(value) : undefined;
+  const availableSet = useMemo(() => new Set(availableDates), [availableDates]);
+  /* Pick a sensible month for the calendar to open on so the operator
+     lands on real data instead of an empty future month. Order: selected
+     date > most recent audit date > today. */
+  const defaultMonth = useMemo(() => {
+    if (parsed) return parsed;
+    if (availableDates.length > 0) return ymdToDate(availableDates[0]);
+    return undefined;
+  }, [parsed, availableDates]);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-10 gap-1.5 border-2 ${
+            value
+              ? "border-primary text-primary bg-primary/5"
+              : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+          } font-semibold`}
+        >
+          <CalendarIcon className="w-3.5 h-3.5" />
+          <span className="text-[11px] uppercase text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-xs">{value ? fmtDayET(value) : "Any"}</span>
+          {value ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onChange(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onChange(null);
+                }
+              }}
+              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+              aria-label={`Clear ${label} date`}
+            >
+              <X className="w-3 h-3" />
+            </span>
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={parsed}
+          defaultMonth={defaultMonth}
+          disabled={(d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return !availableSet.has(`${y}-${m}-${day}`);
+          }}
+          onSelect={(d) => {
+            if (!d) {
+              onChange(null);
+              return;
+            }
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            onChange(`${y}-${m}-${day}`);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

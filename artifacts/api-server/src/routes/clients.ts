@@ -18,8 +18,13 @@ router.get("/", async (req, res) => {
     const { status, search } = req.query as Record<string, string>;
     let query = db.select().from(clientsTable);
     const conditions: ReturnType<typeof eq>[] = [];
-    if (status === "active" || status === "inactive") {
-      conditions.push(eq(clientsTable.status, status));
+    /* Default to hiding archived clients (status='inactive') from every
+       consumer (Rankings filter, Sessions filter, etc.). Pass status=all
+       to surface everything, or status=inactive to see only archived. */
+    const statusFilter =
+      status === "all" ? null : status === "inactive" ? "inactive" : "active";
+    if (statusFilter) {
+      conditions.push(eq(clientsTable.status, statusFilter));
     }
     const baseClients = await db
       .select()
@@ -285,13 +290,45 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
+/* Soft-delete: archive the client by flipping status -> 'inactive' and
+   cascading is_active=false to its keywords + keyword_links. Preserves
+   all historical sessions / ranking_reports / audit_logs. Re-deleting an
+   already-inactive client is a no-op (idempotent). */
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    await db.delete(clientsTable).where(eq(clientsTable.id, id));
+
+    const [client] = await db
+      .update(clientsTable)
+      .set({ status: "inactive" })
+      .where(eq(clientsTable.id, id))
+      .returning();
+    if (!client) return res.status(404).json({ error: "Not found" });
+
+    await db
+      .update(keywordsTable)
+      .set({ isActive: false })
+      .where(eq(keywordsTable.clientId, id));
+
+    const clientKwIds = await db
+      .select({ id: keywordsTable.id })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.clientId, id));
+    if (clientKwIds.length > 0) {
+      await db
+        .update(keywordLinksTable)
+        .set({ linkActive: false })
+        .where(
+          inArray(
+            keywordLinksTable.keywordId,
+            clientKwIds.map((k) => k.id),
+          ),
+        );
+    }
+
     res.status(204).send();
   } catch (err) {
-    req.log.error({ err }, "Error deleting client");
+    req.log.error({ err }, "Error archiving client");
     res.status(500).json({ error: "Internal server error" });
   }
 });

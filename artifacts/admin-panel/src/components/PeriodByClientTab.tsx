@@ -30,6 +30,12 @@ interface Props {
   /* "all" or a YYYY-MM-DD string (ET-anchored). When set, only keywords
      whose Current audit landed on that ET calendar day are shown. */
   auditDate?: string;
+  /* Optional ET YYYY-MM-DD overrides — pin First/Prev/Current columns to
+     a specific date per (keyword, platform). Forwarded to the BE so the
+     same row set drives the table that the page-level badge reflects. */
+  firstDate?: string | null;
+  prevDate?: string | null;
+  currentDate?: string | null;
 }
 
 interface CampaignGroup {
@@ -77,6 +83,9 @@ export function PeriodByClientTab({
   aeoPlanId,
   comparisonOnly = false,
   auditDate = "all",
+  firstDate = null,
+  prevDate = null,
+  currentDate = null,
 }: Props) {
   const [search, setSearch] = useState("");
   /* When set, opens the screenshot dialog for that ranking_reports row. */
@@ -92,8 +101,17 @@ export function PeriodByClientTab({
     clientId,
     businessId,
     aeoPlanId,
+    firstDate,
+    prevDate,
+    currentDate,
   });
   const label = periodLabel(period);
+
+  /* When a Current date is pinned, also drop rows that don't have an audit
+     on that date. Lets the operator pin Current=YYYY-MM-DD and see only the
+     keywords that actually ran on that day, not 2k blanks. */
+  const matchesCurrentPin = (cd: string | null): boolean =>
+    !currentDate || (cd ?? "").slice(0, 10) === currentDate;
 
   const filterCounts = useMemo(() => {
     let comparable = 0;
@@ -106,11 +124,12 @@ export function PeriodByClientTab({
         (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
+      if (!matchesCurrentPin(r.currentDate)) continue;
       if (r.previousPosition == null) newOnly++;
       else comparable++;
     }
     return { comparable, newOnly, total: comparable + newOnly };
-  }, [data, search, auditDate]);
+  }, [data, search, auditDate, currentDate]);
 
   /* Loose rule: a keyword is "comparable" if AT LEAST ONE platform has a
      prior rank. Build the set once per data change so the per-row filter
@@ -133,6 +152,7 @@ export function PeriodByClientTab({
         (r.currentDate ?? "").slice(0, 10) !== auditDate
       )
         continue;
+      if (!matchesCurrentPin(r.currentDate)) continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
@@ -161,7 +181,7 @@ export function PeriodByClientTab({
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase()),
     );
-  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev]);
+  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev, currentDate]);
 
   if (isLoading) {
     return (

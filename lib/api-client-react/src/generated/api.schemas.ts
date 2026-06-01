@@ -24,9 +24,9 @@ export interface DashboardSummary {
   pendingToday: number;
   totalKeywords: number;
   activeKeywords: number;
-  keywordsWithErrors: number;
   keywordsWithBacklinks: number;
   totalBacklinksFound: number;
+  keywordsWithErrors: number;
 }
 
 export interface SessionActivityPoint {
@@ -757,6 +757,12 @@ export interface AuditAnalystContext {
 }
 
 export type GetClientsParams = {
+  /**
+ * Filter by status. Defaults to `active` so archived clients are
+hidden from dropdowns. Pass `all` to return both, or `inactive`
+to see only archived.
+
+ */
   status?: GetClientsStatus;
   search?: string;
 };
@@ -767,6 +773,7 @@ export type GetClientsStatus =
 export const GetClientsStatus = {
   active: "active",
   inactive: "inactive",
+  all: "all",
 } as const;
 
 export type GetKeywordsParams = {
@@ -818,7 +825,65 @@ export const GetProxiesProxyType = {
 
 export type GetRankingReportsParams = {
   clientId?: number;
+  businessId?: number;
+  aeoPlanId?: number;
   keywordId?: number;
+  /**
+   * Inclusive lower bound, YYYY-MM-DD.
+   */
+  dateFrom?: string;
+  /**
+   * Inclusive upper bound, YYYY-MM-DD.
+   */
+  dateTo?: string;
+  status?: GetRankingReportsStatus;
+  /**
+   * One platform, or comma-separated list (e.g. `chatgpt,gemini`).
+   */
+  platform?: string;
+  /**
+   * Filter by `keywords.is_active`.
+   */
+  isActive?: GetRankingReportsIsActive;
+  /**
+   * Max rows to return. Default 1000, max 5000.
+   * @minimum 1
+   * @maximum 5000
+   */
+  limit?: number;
+  /**
+   * Pagination offset. Default 0.
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type GetRankingReportsStatus =
+  (typeof GetRankingReportsStatus)[keyof typeof GetRankingReportsStatus];
+
+export const GetRankingReportsStatus = {
+  success: "success",
+  error: "error",
+} as const;
+
+export type GetRankingReportsIsActive =
+  (typeof GetRankingReportsIsActive)[keyof typeof GetRankingReportsIsActive];
+
+export const GetRankingReportsIsActive = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type GetRankingReports200Meta = {
+  total?: number;
+  limit?: number;
+  offset?: number;
+  returned?: number;
+};
+
+export type GetRankingReports200 = {
+  meta?: GetRankingReports200Meta;
+  data?: RankingReport[];
 };
 
 export type GetTasksParams = {
