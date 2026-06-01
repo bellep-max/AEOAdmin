@@ -117,6 +117,7 @@ const EMPTY_FORM: PlanFormData = {
   subscriptionStartDate: "",
   nextBillingDate: "",
   cardLast4: "",
+  createdBy: "",
 };
 
 /* ── Plan form used for both Add and Edit ─────────────────── */
@@ -565,6 +566,7 @@ export default function ClientAeoPlans({
       subscriptionStartDate: plan.subscriptionStartDate ?? "",
       nextBillingDate:       plan.nextBillingDate ?? "",
       cardLast4:             plan.cardLast4 ?? "",
+      createdBy:             plan.createdBy,
     });
     setClientLocData({
       publishedAddress:      client?.publishedAddress      ?? "",

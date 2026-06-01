@@ -1099,6 +1099,16 @@ components:
           type: integer
         pendingToday:
           type: integer
+        totalKeywords:
+          type: integer
+        activeKeywords:
+          type: integer
+        keywordsWithBacklinks:
+          type: integer
+        totalBacklinksFound:
+          type: integer
+        keywordsWithErrors:
+          type: integer
       required:
         - totalClients
         - activeClients
@@ -1112,6 +1122,11 @@ components:
         - sessionCapacityPerDay
         - completedToday
         - pendingToday
+        - totalKeywords
+        - activeKeywords
+        - keywordsWithBacklinks
+        - totalBacklinksFound
+        - keywordsWithErrors
 
     SessionActivityPoint:
       type: object

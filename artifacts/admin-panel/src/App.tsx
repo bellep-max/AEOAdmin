@@ -29,6 +29,7 @@ import Prompts from "@/pages/prompts";
 import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
 import AdminVariants from "@/pages/admin-variants";
+import AeoReporter from "@/pages/aeo-reporter";
 
 import type { ComponentType } from "react";
 
@@ -97,6 +98,7 @@ function ProtectedRoutes() {
         <Route path="/reports">
           <OwnerGate component={Reports} />
         </Route>
+        <Route path="/aeo-reporter" component={AeoReporter} />
         <Route path="/admin/prompts" component={Prompts} />
         <Route path="/admin/variants">
           <OwnerGate component={AdminVariants} />

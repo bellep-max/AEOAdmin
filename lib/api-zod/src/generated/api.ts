@@ -30,6 +30,11 @@ export const GetDashboardSummaryResponse = zod.object({
   sessionCapacityPerDay: zod.number(),
   completedToday: zod.number(),
   pendingToday: zod.number(),
+  totalKeywords: zod.number(),
+  activeKeywords: zod.number(),
+  keywordsWithBacklinks: zod.number(),
+  totalBacklinksFound: zod.number(),
+  keywordsWithErrors: zod.number(),
 });
 
 /**

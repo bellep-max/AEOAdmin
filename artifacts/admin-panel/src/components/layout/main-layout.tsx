@@ -40,6 +40,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/scaling": "Scaling Plan",
   "/tasks": "Tasks",
   "/plans": "Plans",
+  "/aeo-reporter": "AEO Reporter",
 };
 
 export function Layout({ children }: { children: React.ReactNode }) {
