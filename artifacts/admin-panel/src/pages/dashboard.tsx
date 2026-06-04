@@ -21,7 +21,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
-const RANKING_API_BASE  = "https://jjm59vpn3y.us-east-1.awsapprunner.com";
+// Derive from env (Vercel rewrites /api/* to the API server) — no hardcoded host.
+const RANKING_API_BASE  = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 const RANKING_API_TOKEN = import.meta.env.VITE_AEO_API_TOKEN ?? "";
 
 type DashPlatform = "chatgpt" | "gemini" | "perplexity" | "all";

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { keywordsTable, keywordLinksTable, keywordVariantsTable, clientAeoPlansTable, clientsTable, businessesTable, sessionsTable, auditLogsTable } from "@workspace/db/schema";
 import { eq, and, inArray, sql, desc, isNull } from "drizzle-orm";
 import { generateVariants } from "../services/variant-generator";
+import { rotateWinners } from "../services/keyword-rotation";
 
 const router = Router();
 
@@ -549,6 +550,28 @@ router.post("/:id/variants/generate", async (req, res) => {
     res.json({ variants: inserted, total: inserted.length });
   } catch (err) {
     req.log.error({ err }, "Error generating variants");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/rotate-winners
+   Auto-lock-on-win: scan active keywords (optionally one client),
+   archive any that held top-3 for >=5 of their last 7 runs, and
+   rotate in an AI-generated replacement. Pass {dryRun:true} to preview.
+   Body: { clientId?: number, dryRun?: boolean }
+──────────────────────────────────────────────────────────── */
+router.post("/rotate-winners", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { clientId?: number; dryRun?: boolean };
+    const clientId = body.clientId != null ? Number(body.clientId) : undefined;
+    if (clientId != null && Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId must be a number" });
+    }
+    const result = await rotateWinners({ clientId, dryRun: body.dryRun === true });
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error rotating winning keywords");
     res.status(500).json({ error: "Internal server error" });
   }
 });

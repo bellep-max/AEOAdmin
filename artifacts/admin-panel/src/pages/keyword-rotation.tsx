@@ -23,10 +23,13 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   if (BASE.includes("ngrok")) h["ngrok-skip-browser-warning"] = "true";
   return fetch(BASE + path, { ...init, headers: h });
 }
-const RANKING_API_BASE  = "https://jjm59vpn3y.us-east-1.awsapprunner.com";
+// ranking-reports uses api-token auth (not the session cookie); route it through the same
+// env-based BASE (Vercel rewrites /api/* to the API server) — no hardcoded host.
 const RANKING_API_TOKEN = import.meta.env.VITE_AEO_API_TOKEN ?? "";
 function rankingFetch(path: string) {
-  return fetch(RANKING_API_BASE + path, { headers: { Authorization: `Bearer ${RANKING_API_TOKEN}` } });
+  const h: Record<string, string> = { Authorization: `Bearer ${RANKING_API_TOKEN}` };
+  if (BASE.includes("ngrok")) h["ngrok-skip-browser-warning"] = "true";
+  return fetch(BASE + path, { headers: h });
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
