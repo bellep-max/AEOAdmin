@@ -358,15 +358,28 @@ router.patch("/:id", async (req, res) => {
 
 /* ────────────────────────────────────────────────────────────
    DELETE /api/keywords/:id
-   Remove a keyword and its linked data
+   Soft-archive the keyword (sets isActive=false + archivedAt).
+   Mirrors the clients soft-delete behavior so archived keywords
+   show up on /keyword-rotation/archived and can be restored.
 ──────────────────────────────────────────────────────────── */
 router.delete("/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-    await db.delete(keywordsTable).where(eq(keywordsTable.id, id));
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    await db
+      .update(keywordsTable)
+      .set({
+        isActive: false,
+        archivedAt: new Date(),
+        archiveReason: "Archived from keyword list",
+      })
+      .where(and(eq(keywordsTable.id, id), isNull(keywordsTable.archivedAt)));
+
+    // 204 whether or not a row was updated — idempotent from the FE's perspective.
     res.status(204).send();
   } catch (err) {
-    req.log.error({ err }, "Error deleting keyword");
+    req.log.error({ err }, "Error archiving keyword");
     res.status(500).json({ error: "Internal server error" });
   }
 });

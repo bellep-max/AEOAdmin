@@ -891,8 +891,8 @@ export default function Keywords() {
     try {
       await rawFetch(`/api/keywords/${id}`, { method: "DELETE", credentials: "include" });
       await queryClient.invalidateQueries({ queryKey: ["/api/keywords"] });
-      toast({ title: "Keyword deleted" });
-    } catch { toast({ title: "Delete failed", variant: "destructive" }); }
+      toast({ title: "Keyword archived", description: "Moved to Archived Keywords. You can restore it from there." });
+    } catch { toast({ title: "Archive failed", variant: "destructive" }); }
   }
 
   function requestCreate(data: KwRecord) {
@@ -1459,15 +1459,14 @@ export default function Keywords() {
       <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this keyword?</AlertDialogTitle>
+            <AlertDialogTitle>Archive this keyword?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>"{confirmDeleteKw?.keywordText as string}"</strong> and any associated links. This action cannot be undone.
+              <strong>"{confirmDeleteKw?.keywordText as string}"</strong> will be moved to <strong>Archived Keywords</strong> and excluded from future audits. You can restore it from there at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (confirmDeleteKw) {
                   const id = confirmDeleteKw.id as number;
@@ -1476,7 +1475,7 @@ export default function Keywords() {
                 }
               }}
             >
-              Yes, delete
+              Yes, archive
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
