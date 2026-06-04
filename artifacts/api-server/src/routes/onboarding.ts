@@ -6,8 +6,9 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { requireOnboardingToken } from "../middlewares/onboarding-auth";
+import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
 
 const router = Router();
 
@@ -21,19 +22,34 @@ interface OnboardingBody {
   subscriptionId: string;
 }
 
-function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: false; error: string } {
-  if (!raw || typeof raw !== "object") return { ok: false, error: "Body must be a JSON object" };
+function validate(
+  raw: unknown,
+): { ok: true; body: OnboardingBody } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "object")
+    return { ok: false, error: "Body must be a JSON object" };
   const r = raw as Record<string, unknown>;
-  const isStr = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
-  if (!isStr(r.customerName))           return { ok: false, error: "customerName is required" };
-  if (!isStr(r.customerEmail))          return { ok: false, error: "customerEmail is required" };
+  const isStr = (v: unknown): v is string =>
+    typeof v === "string" && v.trim().length > 0;
+  if (!isStr(r.customerName))
+    return { ok: false, error: "customerName is required" };
+  if (!isStr(r.customerEmail))
+    return { ok: false, error: "customerEmail is required" };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.customerEmail as string)) {
     return { ok: false, error: "customerEmail is not a valid email" };
   }
-  if (!isStr(r.businessName))           return { ok: false, error: "businessName is required" };
-  if (!isStr(r.subscriptionId))  return { ok: false, error: "subscriptionId is required" };
-  if (!Array.isArray(r.keywords) || r.keywords.length === 0 || !r.keywords.every(isStr)) {
-    return { ok: false, error: "keywords must be a non-empty array of strings" };
+  if (!isStr(r.businessName))
+    return { ok: false, error: "businessName is required" };
+  if (!isStr(r.subscriptionId))
+    return { ok: false, error: "subscriptionId is required" };
+  if (
+    !Array.isArray(r.keywords) ||
+    r.keywords.length === 0 ||
+    !r.keywords.every(isStr)
+  ) {
+    return {
+      ok: false,
+      error: "keywords must be a non-empty array of strings",
+    };
   }
   if (r.gmbUrl != null && typeof r.gmbUrl !== "string") {
     return { ok: false, error: "gmbUrl must be a string if provided" };
@@ -44,12 +60,20 @@ function validate(raw: unknown): { ok: true; body: OnboardingBody } | { ok: fals
   return {
     ok: true,
     body: {
-      customerName:          (r.customerName as string).trim(),
-      customerEmail:         (r.customerEmail as string).trim(),
-      businessName:          (r.businessName as string).trim(),
-      gmbUrl:                typeof r.gmbUrl === "string" && r.gmbUrl.trim() ? r.gmbUrl.trim() : null,
-      businessAddress:       typeof r.businessAddress === "string" && r.businessAddress.trim() ? r.businessAddress.trim() : null,
-      keywords:              (r.keywords as string[]).map((k) => k.trim()).filter((k) => k.length > 0),
+      customerName: (r.customerName as string).trim(),
+      customerEmail: (r.customerEmail as string).trim(),
+      businessName: (r.businessName as string).trim(),
+      gmbUrl:
+        typeof r.gmbUrl === "string" && r.gmbUrl.trim()
+          ? r.gmbUrl.trim()
+          : null,
+      businessAddress:
+        typeof r.businessAddress === "string" && r.businessAddress.trim()
+          ? r.businessAddress.trim()
+          : null,
+      keywords: (r.keywords as string[])
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0),
       subscriptionId: (r.subscriptionId as string).trim(),
     },
   };
@@ -153,6 +177,159 @@ router.post("/", requireOnboardingToken, async (req, res) => {
     res.status(201).json({ ok: true, ...result });
   } catch (err) {
     req.log.error({ err }, "Error creating onboarding record");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── Free-trial signup intake (external marketing site) ──
+interface FreeTrialBody {
+  businessName: string;
+  email: string;
+  keywords: string[];
+  address: string | null;
+  website: string | null;
+}
+
+function validateFreeTrial(
+  raw: unknown,
+): { ok: true; body: FreeTrialBody } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "object")
+    return { ok: false, error: "Body must be a JSON object" };
+  const r = raw as Record<string, unknown>;
+  const isStr = (v: unknown): v is string =>
+    typeof v === "string" && v.trim().length > 0;
+  if (!isStr(r.businessName))
+    return { ok: false, error: "businessName is required" };
+  if (!isStr(r.email)) return { ok: false, error: "email is required" };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) {
+    return { ok: false, error: "email is not a valid email" };
+  }
+  if (
+    !Array.isArray(r.keywords) ||
+    r.keywords.length === 0 ||
+    !r.keywords.every(isStr)
+  ) {
+    return {
+      ok: false,
+      error: "keywords must be a non-empty array of strings",
+    };
+  }
+  if (r.address != null && typeof r.address !== "string") {
+    return { ok: false, error: "address must be a string if provided" };
+  }
+  if (r.website != null && typeof r.website !== "string") {
+    return { ok: false, error: "website must be a string if provided" };
+  }
+  return {
+    ok: true,
+    body: {
+      businessName: r.businessName.trim(),
+      email: r.email.trim().toLowerCase(),
+      keywords: (r.keywords as string[])
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0),
+      address: isStr(r.address) ? r.address.trim() : null,
+      website: isStr(r.website) ? r.website.trim() : null,
+    },
+  };
+}
+
+router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
+  const parsed = validateFreeTrial(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
+  }
+  const body = parsed.body;
+
+  try {
+    // Idempotency: if the email already belongs to a client (any email field),
+    // don't create a duplicate — return the existing client. This keeps retries
+    // safe and prevents a trial signup from cloning an existing customer.
+    const [existing] = await db
+      .select({ id: clientsTable.id })
+      .from(clientsTable)
+      .where(
+        or(
+          sql`lower(${clientsTable.contactEmail}) = ${body.email}`,
+          sql`lower(${clientsTable.accountEmail}) = ${body.email}`,
+          sql`lower(${clientsTable.billingEmail}) = ${body.email}`,
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      return res
+        .status(200)
+        .json({ ok: true, idempotent: true, clientId: existing.id });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [client] = await tx
+        .insert(clientsTable)
+        .values({
+          businessName: body.businessName,
+          websiteUrl: body.website,
+          publishedAddress: body.address,
+          contactEmail: body.email,
+          accountEmail: body.email,
+          status: "active",
+          accountType: "Free Trial",
+          planName: "Free Trial",
+          createdBy: "free-trial-signup",
+        })
+        .returning({ id: clientsTable.id });
+
+      const [business] = await tx
+        .insert(businessesTable)
+        .values({
+          clientId: client.id,
+          name: body.businessName,
+          websiteUrl: body.website,
+          publishedAddress: body.address,
+          status: "active",
+          createdBy: "free-trial-signup",
+        })
+        .returning({ id: businessesTable.id });
+
+      const [plan] = await tx
+        .insert(clientAeoPlansTable)
+        .values({
+          clientId: client.id,
+          businessId: business.id,
+          name: "Free Trial",
+          businessName: body.businessName,
+          planType: "Free Trial Plans",
+          searchAddress: body.address,
+          createdBy: "free-trial-signup",
+        })
+        .returning({ id: clientAeoPlansTable.id });
+
+      const insertedKws = await tx
+        .insert(keywordsTable)
+        .values(
+          body.keywords.map((text, idx) => ({
+            clientId: client.id,
+            businessId: business.id,
+            aeoPlanId: plan.id,
+            keywordText: text,
+            keywordType: 3,
+            isActive: true,
+            isPrimary: idx === 0 ? 1 : 0,
+          })),
+        )
+        .returning({ id: keywordsTable.id });
+
+      return {
+        clientId: client.id,
+        businessId: business.id,
+        campaignId: plan.id,
+        keywordIds: insertedKws.map((k) => k.id),
+      };
+    });
+
+    res.status(201).json({ ok: true, ...result });
+  } catch (err) {
+    req.log.error({ err }, "Error creating free-trial signup");
     res.status(500).json({ error: "Internal server error" });
   }
 });
