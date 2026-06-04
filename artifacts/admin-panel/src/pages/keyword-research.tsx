@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,8 +35,9 @@ interface RunResponse {
   run: { id: number; costUsd: number | null };
   ideas: Idea[];
 }
-interface ClientRow { id: number; name?: string; businessName?: string }
-interface CampaignRow { id: number; name?: string; planName?: string; label?: string }
+interface ClientRow { id: number; businessName?: string; name?: string }
+interface BusinessRow { id: number; name?: string; city?: string | null; state?: string | null; zipCode?: string | null; category?: string | null }
+interface CampaignRow { id: number; name?: string; planType?: string }
 
 function intentVariant(intent: string | null): "default" | "secondary" | "outline" {
   if (intent === "transactional" || intent === "commercial") return "default";
@@ -53,8 +54,10 @@ function lvsColor(lvs: number | null): string {
 export default function KeywordResearch() {
   const { toast } = useToast();
   const [seed, setSeed] = useState("");
+  const [seedTouched, setSeedTouched] = useState(false);
   const [location, setLocation] = useState("");
   const [clientId, setClientId] = useState<string>("");
+  const [businessId, setBusinessId] = useState<string>("");
   const [campaignId, setCampaignId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -71,21 +74,60 @@ export default function KeywordResearch() {
     },
   });
 
-  const { data: campaigns } = useQuery<CampaignRow[]>({
-    queryKey: ["/api/clients", clientId, "aeo-plans"],
+  // Businesses for the selected client — drives location + seed auto-fill.
+  const { data: businesses } = useQuery<BusinessRow[]>({
+    queryKey: ["/api/businesses", { clientId }],
     enabled: !!clientId,
     queryFn: async () => {
-      const r = await rawFetch(`/api/clients/${clientId}/aeo-plans`);
+      const r = await rawFetch(`/api/businesses?clientId=${clientId}`);
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : (data.businesses ?? []);
+    },
+  });
+
+  // Campaigns scoped to the selected business (promote target).
+  const { data: campaigns } = useQuery<CampaignRow[]>({
+    queryKey: ["/api/clients", clientId, "aeo-plans", { businessId }],
+    enabled: !!clientId,
+    queryFn: async () => {
+      const q = businessId ? `?businessId=${businessId}` : "";
+      const r = await rawFetch(`/api/clients/${clientId}/aeo-plans${q}`);
       if (!r.ok) return [];
       const data = await r.json();
       return Array.isArray(data) ? data : (data.plans ?? data.aeoPlans ?? []);
     },
   });
 
+  // Auto-select the only campaign when a business has exactly one.
+  useEffect(() => {
+    if (!campaignId && campaigns && campaigns.length === 1) {
+      setCampaignId(String(campaigns[0].id));
+    }
+  }, [campaigns, campaignId]);
+
+  function onClientChange(v: string) {
+    setClientId(v);
+    setBusinessId("");
+    setCampaignId("");
+  }
+
+  function onBusinessChange(v: string) {
+    setBusinessId(v);
+    setCampaignId("");
+    const biz = (businesses ?? []).find((b) => String(b.id) === v);
+    if (!biz) return;
+    // Auto-fill location from the business's city/state (fallback to zip).
+    const loc = [biz.city, biz.state].filter(Boolean).join(", ") || biz.zipCode || "";
+    if (loc) setLocation(loc);
+    // Suggest a seed from the business category, unless the user already typed one.
+    if (!seedTouched && biz.category) setSeed(biz.category.toLowerCase());
+  }
+
   async function runResearch() {
     const s = seed.trim();
     if (!s) {
-      toast({ title: "Enter a seed keyword", variant: "destructive" });
+      toast({ title: "Enter or pick a seed keyword", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -99,6 +141,7 @@ export default function KeywordResearch() {
           seed: s,
           location: location.trim() || undefined,
           clientId: clientId ? Number(clientId) : undefined,
+          businessId: businessId ? Number(businessId) : undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Research failed");
@@ -115,7 +158,7 @@ export default function KeywordResearch() {
 
   async function promote(idea: Idea) {
     if (!campaignId) {
-      toast({ title: "Pick a campaign first", description: "Select a client + campaign to promote into.", variant: "destructive" });
+      toast({ title: "Pick a campaign first", description: "Select a client, business and campaign to promote into.", variant: "destructive" });
       return;
     }
     setPromoting(idea.id);
@@ -214,7 +257,7 @@ export default function KeywordResearch() {
           <Sparkles className="w-6 h-6 text-primary" /> Keyword Research
         </h1>
         <p className="text-muted-foreground">
-          Discover local keywords from a seed + location, scored by Local Value Score (LVS). Promote the best ones into a campaign.
+          Pick a business to auto-fill its location, then discover local keywords scored by Local Value Score (LVS). Promote the best ones into a campaign.
         </p>
       </div>
 
@@ -223,27 +266,28 @@ export default function KeywordResearch() {
           <CardTitle className="text-base">New research</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Step 1: pick client + business (drives location + seed) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="seed">Seed keyword</Label>
-              <Input id="seed" placeholder="e.g. childcare" value={seed} onChange={(e) => setSeed(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && runResearch()} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="location">Location</Label>
-              <Input id="location" placeholder="e.g. San Francisco, California" value={location}
-                onChange={(e) => setLocation(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runResearch()} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Client (optional — for promoting)</Label>
-              <Select value={clientId} onValueChange={(v) => { setClientId(v); setCampaignId(""); }}>
+              <Label>Client</Label>
+              <Select value={clientId} onValueChange={onClientChange}>
                 <SelectTrigger><SelectValue placeholder="Select a client" /></SelectTrigger>
                 <SelectContent>
                   {(clients ?? []).map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.businessName ?? `Client #${c.id}`}</SelectItem>
+                    <SelectItem key={c.id} value={String(c.id)}>{c.businessName ?? c.name ?? `Client #${c.id}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Business</Label>
+              <Select value={businessId} onValueChange={onBusinessChange} disabled={!clientId}>
+                <SelectTrigger><SelectValue placeholder={clientId ? "Select a business" : "Pick a client first"} /></SelectTrigger>
+                <SelectContent>
+                  {(businesses ?? []).map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.name ?? `Business #${b.id}`}{b.city ? ` — ${b.city}${b.state ? ", " + b.state : ""}` : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -254,10 +298,25 @@ export default function KeywordResearch() {
                 <SelectTrigger><SelectValue placeholder={clientId ? "Select a campaign" : "Pick a client first"} /></SelectTrigger>
                 <SelectContent>
                   {(campaigns ?? []).map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planName ?? c.label ?? `Campaign #${c.id}`}</SelectItem>
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name ?? c.planType ?? `Campaign #${c.id}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* Step 2: seed + location (auto-filled from the business, still editable) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="seed">Seed keyword <span className="text-muted-foreground font-normal">(auto-suggested from category)</span></Label>
+              <Input id="seed" placeholder="e.g. childcare" value={seed}
+                onChange={(e) => { setSeed(e.target.value); setSeedTouched(true); }}
+                onKeyDown={(e) => e.key === "Enter" && runResearch()} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="location">Location <span className="text-muted-foreground font-normal">(auto-filled from business)</span></Label>
+              <Input id="location" placeholder="e.g. San Francisco, California" value={location}
+                onChange={(e) => setLocation(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runResearch()} />
             </div>
           </div>
 
