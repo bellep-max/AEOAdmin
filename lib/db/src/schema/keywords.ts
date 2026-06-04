@@ -32,6 +32,10 @@ export const keywordsTable = pgTable("keywords", {
   initialRankReportLink: varchar("initial_rank_report_link", { length: 512 }),
   currentRankReportLink: varchar("current_rank_report_link", { length: 512 }),
   createdAt: timestamp("created_at").defaultNow(),
+  // Archiving
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archiveReason: text("archive_reason"),
+  replacementSuggestion: text("replacement_suggestion"),
 });
 
 export const insertKeywordSchema = createInsertSchema(keywordsTable).omit({ id: true });
