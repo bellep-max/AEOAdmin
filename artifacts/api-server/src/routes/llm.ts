@@ -335,7 +335,7 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
       .where(eq(keywordsTable.id, keywordId));
     if (!kwRow) return res.status(404).json({ error: "keyword not found" });
     if (kwRow.archivedAt != null || kwRow.isActive === false) {
-      return res.json({ skip: true, reason: "keyword archived/locked — not ranking" });
+      return res.json({ skip: true, reason: "keyword locked/inactive — not ranking" });
     }
 
     const start = Date.now();
@@ -347,6 +347,58 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
     res.status(500).json({ error: message });
   }
 });
+
+/* ════════════════════════════════════════════════════════════════════════
+   /api/llm/keyword/:id/rank-eligibility — lock enforcement for audit jobs
+   ════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * GET /api/llm/keyword/:id/rank-eligibility
+ *
+ * Lightweight gate for ranking/audit jobs, which never hit build-session and
+ * so don't pass through its enforcement guard. A locked keyword
+ * (archivedAt != null OR isActive === false) must NOT be dispatched for
+ * ranking. Mirrors the build-session guard's select.
+ *
+ * Response: { keywordId, skip, reason? }
+ *   skip=true when the keyword is not found, archived, or inactive.
+ *   Never 500s on a missing keyword — returns { skip:true, reason:"not found" }.
+ */
+router.get(
+  "/keyword/:id/rank-eligibility",
+  requireExecutorToken,
+  async (req, res) => {
+    try {
+      const keywordId = Number(req.params.id);
+      if (!Number.isFinite(keywordId) || keywordId <= 0) {
+        return res.json({ keywordId, skip: true, reason: "not found" });
+      }
+
+      const [kwRow] = await db
+        .select({
+          archivedAt: keywordsTable.archivedAt,
+          isActive: keywordsTable.isActive,
+        })
+        .from(keywordsTable)
+        .where(eq(keywordsTable.id, keywordId));
+
+      if (!kwRow) {
+        return res.json({ keywordId, skip: true, reason: "not found" });
+      }
+      if (kwRow.archivedAt != null || kwRow.isActive === false) {
+        return res.json({
+          keywordId,
+          skip: true,
+          reason: "keyword locked/inactive — not ranking",
+        });
+      }
+      res.json({ keywordId, skip: false });
+    } catch (err) {
+      req.log.error({ err }, "Error checking rank eligibility");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* ════════════════════════════════════════════════════════════════════════
    /api/llm/build-audit — render audit-ranking prompt with variant rotation

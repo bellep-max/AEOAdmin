@@ -34,8 +34,10 @@ function rankingFetch(path: string) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+// Lock rule (rework): a keyword locks the moment its CURRENT rank is Top-3 on ANY ONE
+// of the 3 platforms (chatgpt OR gemini OR perplexity). No sustained window. The
+// at-risk/stale feature still uses the run-window constants below.
 const TOP3_THRESHOLD = 3;
-const LOCK_MIN_RUNS  = 5;
 const WINDOW_RUNS    = 7;
 const STALE_RUNS     = 5;
 const FETCH_DAYS     = 90;
@@ -46,6 +48,7 @@ const PLATFORMS: { value: Platform; label: string; color: string; dot: string }[
   { value: "gemini",     label: "Gemini",     color: "text-blue-500",    dot: "bg-blue-500"    },
   { value: "perplexity", label: "Perplexity", color: "text-amber-500",   dot: "bg-amber-500"   },
 ];
+const ALL_PLATFORMS: Platform[] = ["chatgpt", "gemini", "perplexity"];
 
 function getDateRange() {
   const today = new Date();
@@ -62,6 +65,9 @@ interface Entry {
   kw: Kw; top3Runs: number; stability: number; currentRank: number | null; firstRank: number | null;
   history: (number | null)[]; runDates: string[]; windowSize: number;
   locked: boolean; atRisk: boolean; trend: "up" | "down" | "flat" | "none";
+  // Lock rule: most-recent rank is Top-3 on ANY platform. These describe the platform
+  // that triggered the lock (strongest current Top-3 across all 3 platforms).
+  triggerPlatform: Platform | null; triggerPosition: number | null;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -377,12 +383,29 @@ export default function KeywordRotation() {
     },
   });
 
+  // Lock detection needs the CURRENT rank on ANY platform, so fetch all 3 platforms'
+  // reports (not just the selected one) and reduce to the latest position per platform.
+  const { data: allPlatformReports = {} as Record<Platform, RankReport[]> } = useQuery({
+    queryKey: ["ranking-rotation-all", clientId, dateFrom, dateTo],
+    enabled: !!clientId && keywords.length > 0,
+    queryFn: async () => {
+      const byPlatform = {} as Record<Platform, RankReport[]>;
+      await Promise.all(ALL_PLATFORMS.map(async (plt) => {
+        const p = new URLSearchParams({ clientId, platform: plt, status: "success", dateFrom, dateTo, limit: "500" });
+        const r = await rankingFetch(`/api/ranking-reports?${p}`);
+        const b = r.ok ? await r.json() : {};
+        byPlatform[plt] = (b.data ?? b ?? []) as RankReport[];
+      }));
+      return byPlatform;
+    },
+  });
+
   const isLoading = kwLoading || ranksLoading;
 
   // ── Run rotation (auto-lock winners) with dry-run preview ──────────────────
   const [rotateOpen, setRotateOpen] = useState(false);
   const [rotatePreview, setRotatePreview] = useState<
-    { keywordId: number; keywordText: string; top3Runs: number; windowRuns: number }[] | null
+    { keywordId: number; keywordText: string; triggerPlatform: string; triggerPosition: number; replacement: string; newKeywordId: number | null }[] | null
   >(null);
 
   async function postRotate(dryRun: boolean) {
@@ -393,7 +416,7 @@ export default function KeywordRotation() {
       body: JSON.stringify({ clientId: clientId ? Number(clientId) : undefined, dryRun }),
     });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Rotation request failed");
-    return r.json() as Promise<{ scanned: number; locked: typeof rotatePreview & object[] }>;
+    return r.json() as Promise<{ scanned: number; locked: NonNullable<typeof rotatePreview>; dryRun: boolean }>;
   }
 
   const previewRotation = useMutation({
@@ -420,10 +443,23 @@ export default function KeywordRotation() {
 
   // ── Compute entries ─────────────────────────────────────────────────────────
   const entries: Entry[] = useMemo(() => {
+    // Latest position per (keyword, platform) across all 3 platforms — drives the lock rule.
+    // A keyword locks when its most-recent position on ANY platform is in [1, TOP3_THRESHOLD].
+    const matchesKw = (r: RankReport, kw: Kw) =>
+      (r.keyword ?? r.keywordText ?? "").toLowerCase() === kw.keywordText.toLowerCase() || r.keywordId === kw.id;
+    const latestPosOnPlatform = (kw: Kw, plt: Platform): number | null => {
+      const reps = (allPlatformReports[plt] ?? []).filter((r) => matchesKw(r, kw));
+      let bestTs = -Infinity, pos: number | null = null;
+      reps.forEach((r) => {
+        if (r.rankingPosition === null || r.rankingPosition < 1) return;
+        const ts = new Date(r.date ?? r.timestamp ?? r.createdAt ?? 0).getTime();
+        if (ts >= bestTs) { bestTs = ts; pos = r.rankingPosition; }
+      });
+      return pos;
+    };
+
     return keywords.filter((kw) => kw.isActive && !kw.archivedAt).map((kw) => {
-      const reports = rankingReports.filter(
-        (r) => (r.keyword ?? r.keywordText ?? "").toLowerCase() === kw.keywordText.toLowerCase() || r.keywordId === kw.id,
-      );
+      const reports = rankingReports.filter((r) => matchesKw(r, kw));
       const dayMap = new Map<string, number>();
       reports.forEach((r) => {
         const d = (r.date ?? r.timestamp ?? r.createdAt ?? "").slice(0, 10);
@@ -437,12 +473,25 @@ export default function KeywordRotation() {
       const currentRank = runDates.length > 0 ? (dayMap.get(runDates[runDates.length - 1]) ?? null) : null;
       const firstRank   = runDates.length > 0 ? (dayMap.get(runDates[0]) ?? null) : null;
       const recent      = history.slice(-STALE_RUNS).filter((v): v is number => v !== null);
-      const atRisk      = top3Runs < LOCK_MIN_RUNS && recent.length >= 2 && recent[recent.length - 1] >= recent[0];
+
+      // Lock = current top-3 on ANY platform. Pick the strongest (smallest position; ties → first).
+      let triggerPlatform: Platform | null = null;
+      let triggerPosition: number | null = null;
+      for (const plt of ALL_PLATFORMS) {
+        const pos = latestPosOnPlatform(kw, plt);
+        if (pos !== null && pos <= TOP3_THRESHOLD && (triggerPosition === null || pos < triggerPosition)) {
+          triggerPlatform = plt; triggerPosition = pos;
+        }
+      }
+      const locked = triggerPlatform !== null;
+
+      // At-risk/stale feature unchanged: only applies to non-locked keywords.
+      const atRisk      = !locked && recent.length >= 2 && recent[recent.length - 1] >= recent[0];
       const trend: Entry["trend"] = firstRank === null || currentRank === null ? "none"
         : currentRank < firstRank ? "up" : currentRank > firstRank ? "down" : "flat";
-      return { kw, top3Runs, stability: top3Runs / windowSize, currentRank, firstRank, history, runDates, windowSize, locked: top3Runs >= LOCK_MIN_RUNS, atRisk, trend };
+      return { kw, top3Runs, stability: top3Runs / windowSize, currentRank, firstRank, history, runDates, windowSize, locked, atRisk, trend, triggerPlatform, triggerPosition };
     });
-  }, [keywords, rankingReports]);
+  }, [keywords, rankingReports, allPlatformReports]);
 
   const locked  = entries.filter((e) => e.locked);
   const atRisk  = entries.filter((e) => e.atRisk && !e.locked);
@@ -477,10 +526,10 @@ export default function KeywordRotation() {
         variant: "destructive", duration: 7000,
       }), 900 + i * 600);
     });
-    locked.filter((e) => e.top3Runs >= LOCK_MIN_RUNS).forEach((e, i) => {
+    locked.forEach((e, i) => {
       setTimeout(() => toast({
         title: "🔒 Keyword locked — variants included",
-        description: `"${e.kw.keywordText}" is consistently Top ${TOP3_THRESHOLD}. Variants now active in rotation.`,
+        description: `"${e.kw.keywordText}" is Top ${TOP3_THRESHOLD}${e.triggerPlatform ? ` on ${e.triggerPlatform}` : ""}. Variants now active in rotation.`,
         duration: 5000,
       }), 1800 + i * 400);
     });
@@ -503,7 +552,7 @@ export default function KeywordRotation() {
             <RotateCcw className="w-6 h-6 text-primary" /> Keyword Rotation Dashboard
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Top-3 for {LOCK_MIN_RUNS}/{WINDOW_RUNS} runs → locked + variants included · {STALE_RUNS} stale runs → archive &amp; replace · all 3 AI platforms
+            Top-3 on any platform → locked &amp; rotated · {STALE_RUNS} stale runs → archive &amp; replace · all 3 AI platforms
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -588,7 +637,7 @@ export default function KeywordRotation() {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard icon={<Target className="w-5 h-5 text-muted-foreground" />} label="Total Keywords" value={entries.length} sub="active & tracked" color="bg-muted" />
-            <StatCard icon={<Lock className="w-5 h-5 text-emerald-600" />} label="Locked" value={locked.length} sub={`Top-${TOP3_THRESHOLD} for ${LOCK_MIN_RUNS}+ runs`} color="bg-emerald-50 dark:bg-emerald-900/30" />
+            <StatCard icon={<Lock className="w-5 h-5 text-emerald-600" />} label="Locked" value={locked.length} sub={`Top-${TOP3_THRESHOLD} on any platform`} color="bg-emerald-50 dark:bg-emerald-900/30" />
             <StatCard icon={<Unlock className="w-5 h-5 text-amber-600" />} label="Active" value={healthy.length} sub="in rotation queue" color="bg-amber-50 dark:bg-amber-900/30" />
             <StatCard icon={<ShieldAlert className="w-5 h-5 text-destructive" />} label="At Risk" value={atRisk.length} sub="stalled → auto-archive" color="bg-red-50 dark:bg-red-900/30" />
           </div>
@@ -664,7 +713,7 @@ export default function KeywordRotation() {
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
                 <div>
                   <p className="font-medium text-sm text-emerald-700 dark:text-emerald-400">All keywords locked</p>
-                  <p className="text-xs text-muted-foreground">All keywords are in Top {TOP3_THRESHOLD} for ≥{LOCK_MIN_RUNS} runs. Variants auto-included.</p>
+                  <p className="text-xs text-muted-foreground">All keywords are Top {TOP3_THRESHOLD} on at least one platform. Variants auto-included.</p>
                 </div>
               </CardContent>
             </Card>
@@ -790,8 +839,8 @@ export default function KeywordRotation() {
             <DialogTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-primary" /> Run rotation — preview</DialogTitle>
             <DialogDescription>
               {rotatePreview && rotatePreview.length > 0
-                ? `${rotatePreview.length} keyword(s) have held Top-${TOP3_THRESHOLD} for ≥${LOCK_MIN_RUNS}/${WINDOW_RUNS} runs. Confirming archives them (they stop getting ranking sessions) and creates an AI-generated replacement for each.`
-                : "No keywords currently qualify for rotation (none sustained Top-3 long enough)."}
+                ? `${rotatePreview.length} keyword(s) are currently Top-${TOP3_THRESHOLD} on at least one platform. Confirming archives them (they stop getting ranking sessions) and creates an AI-generated replacement for each.`
+                : "No keywords currently qualify for rotation (none Top-3 on any platform right now)."}
             </DialogDescription>
           </DialogHeader>
 
@@ -799,8 +848,11 @@ export default function KeywordRotation() {
             <div className="max-h-72 overflow-y-auto divide-y rounded-md border">
               {rotatePreview.map((l) => (
                 <div key={l.keywordId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                  <span className="font-medium truncate">{l.keywordText}</span>
-                  <Badge variant="outline" className="shrink-0">Top-{TOP3_THRESHOLD} in {l.top3Runs}/{l.windowRuns}</Badge>
+                  <div className="min-w-0">
+                    <span className="font-medium truncate block">{l.keywordText}</span>
+                    {l.replacement && <span className="text-xs text-muted-foreground truncate block">→ {l.replacement}</span>}
+                  </div>
+                  <Badge variant="outline" className="shrink-0">Top-{TOP3_THRESHOLD} on {l.triggerPlatform} (#{l.triggerPosition})</Badge>
                 </div>
               ))}
             </div>

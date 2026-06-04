@@ -93,8 +93,8 @@ export default function ArchivedKeywords() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
             Keywords archived after {" "}
-            <span className="font-medium">5+ stale runs</span> with no ranking improvement.
-            Restore or permanently delete them here.
+            <span className="font-medium">locking Top-3 on any platform</span> (auto-rotated) or
+            after stalling with no ranking improvement. Restore or permanently delete them here.
           </p>
         </div>
         <Badge variant="outline" className="text-sm px-3 py-1">
@@ -144,7 +144,7 @@ export default function ArchivedKeywords() {
           <CheckCircle2 className="w-12 h-12 opacity-20" />
           <p className="text-base font-medium">No archived keywords</p>
           <p className="text-sm opacity-60">
-            Keywords are archived automatically when they stall for 5+ consecutive runs without improvement.
+            Keywords are archived automatically when they lock Top-3 on any platform, or after stalling without improvement.
           </p>
         </div>
       )}
