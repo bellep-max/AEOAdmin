@@ -227,6 +227,33 @@ async function generateAiSearch(
   }
 }
 
+/** Derive a likely core service search term from a business name (used to pre-fill the
+ *  seed when the business has no category/keywords). Returns null on any failure. */
+export async function suggestSeedFromName(businessName: string, hint?: string): Promise<string | null> {
+  const name = (businessName ?? "").trim();
+  if (!name) return null;
+  try {
+    const result = await chatCompletion({
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Given a local business name, return the single core service search term (1-3 words, " +
+            'lowercase) a customer would type into Google. Respond with ONLY JSON: {"seed":"..."}.',
+        },
+        { role: "user", content: `Business: ${name}${hint ? `\nContext: ${hint}` : ""}` },
+      ],
+      temperature: 0.2,
+    });
+    const parsed = parseJsonLoose(result.content) as { seed?: string };
+    const seed = (parsed.seed ?? "").trim().toLowerCase();
+    return seed || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── 3. scoring ──────────────────────────────────────────────────────────────────
 
 function computeLvs(
