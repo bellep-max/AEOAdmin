@@ -5,10 +5,11 @@ import {
   keywordResearchIdeasTable,
   keywordsTable,
   clientAeoPlansTable,
+  businessesTable,
 } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { requireSession } from "../middlewares/session-auth";
-import { runKeywordResearch, DEFAULT_WEIGHTS, type ScoringWeights } from "../services/keyword-research";
+import { runKeywordResearch, suggestSeedFromName, DEFAULT_WEIGHTS, type ScoringWeights } from "../services/keyword-research";
 
 const router = Router();
 
@@ -93,6 +94,45 @@ router.post("/runs", requireSession, async (req, res) => {
     req.log.error({ err }, "keyword-research: run failed");
     const message = err instanceof Error ? err.message : "Internal server error";
     res.status(500).json({ error: message });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   GET /api/keyword-research/suggest-seed?businessId=
+   Pre-fill the seed + location for a business so the user doesn't
+   have to think one up. Source order: category -> existing keyword
+   -> AI-derived from the business name.
+──────────────────────────────────────────────────────────── */
+router.get("/suggest-seed", requireSession, async (req, res) => {
+  try {
+    const businessId = Number(req.query.businessId);
+    if (Number.isNaN(businessId)) return res.status(400).json({ error: "businessId is required" });
+
+    const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
+    if (!biz) return res.status(404).json({ error: "Business not found" });
+
+    const location = [biz.city, biz.state].filter(Boolean).join(", ") || biz.zipCode || "";
+
+    // 1. category (rarely populated, but cheapest + most accurate when present)
+    if (biz.category && biz.category.trim()) {
+      return res.json({ seed: biz.category.trim().toLowerCase(), source: "category", location });
+    }
+    // 2. an existing keyword on this business (primary first) — researching to expand
+    const [kw] = await db
+      .select({ keywordText: keywordsTable.keywordText })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.businessId, businessId))
+      .orderBy(desc(keywordsTable.isPrimary))
+      .limit(1);
+    if (kw?.keywordText) {
+      return res.json({ seed: kw.keywordText, source: "existing-keyword", location });
+    }
+    // 3. derive from the business name via DeepSeek (every business has a name)
+    const aiSeed = await suggestSeedFromName(biz.name, biz.websiteUrl ?? undefined);
+    return res.json({ seed: aiSeed ?? "", source: aiSeed ? "ai" : "none", location });
+  } catch (err) {
+    req.log.error({ err }, "keyword-research: suggest-seed failed");
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

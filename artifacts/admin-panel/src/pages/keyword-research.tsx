@@ -60,6 +60,7 @@ export default function KeywordResearch() {
   const [businessId, setBusinessId] = useState<string>("");
   const [campaignId, setCampaignId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [seedLoading, setSeedLoading] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [promoting, setPromoting] = useState<number | null>(null);
@@ -112,7 +113,7 @@ export default function KeywordResearch() {
     setCampaignId("");
   }
 
-  function onBusinessChange(v: string) {
+  async function onBusinessChange(v: string) {
     setBusinessId(v);
     setCampaignId("");
     const biz = (businesses ?? []).find((b) => String(b.id) === v);
@@ -120,8 +121,22 @@ export default function KeywordResearch() {
     // Auto-fill location from the business's city/state (fallback to zip).
     const loc = [biz.city, biz.state].filter(Boolean).join(", ") || biz.zipCode || "";
     if (loc) setLocation(loc);
-    // Suggest a seed from the business category, unless the user already typed one.
-    if (!seedTouched && biz.category) setSeed(biz.category.toLowerCase());
+    // Auto-suggest a seed (server: category -> existing keyword -> AI from business name),
+    // unless the user has already typed one.
+    if (seedTouched) return;
+    setSeedLoading(true);
+    try {
+      const r = await rawFetch(`/api/keyword-research/suggest-seed?businessId=${v}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.seed && !seedTouched) setSeed(d.seed);
+        if (d.location && !loc) setLocation(d.location);
+      }
+    } catch {
+      /* non-fatal — user can still type a seed */
+    } finally {
+      setSeedLoading(false);
+    }
   }
 
   async function runResearch() {
@@ -308,8 +323,11 @@ export default function KeywordResearch() {
           {/* Step 2: seed + location (auto-filled from the business, still editable) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="seed">Seed keyword <span className="text-muted-foreground font-normal">(auto-suggested from category)</span></Label>
-              <Input id="seed" placeholder="e.g. childcare" value={seed}
+              <Label htmlFor="seed" className="flex items-center gap-1.5">
+                Seed keyword <span className="text-muted-foreground font-normal">(auto-suggested)</span>
+                {seedLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+              </Label>
+              <Input id="seed" placeholder={seedLoading ? "Suggesting…" : "e.g. childcare"} value={seed}
                 onChange={(e) => { setSeed(e.target.value); setSeedTouched(true); }}
                 onKeyDown={(e) => e.key === "Enter" && runResearch()} />
             </div>
