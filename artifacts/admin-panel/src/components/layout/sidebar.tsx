@@ -88,6 +88,7 @@ const navGroups: NavGroup[] = [
         children: [
           { name: "Keywords by Business", href: "/keywords", icon: Key },
           { name: "All Keywords", href: "/keywords/all", icon: List },
+          { name: "Keyword Research", href: "/keyword-research", icon: Sparkles },
         ],
       },
       { name: "Plans", href: "/packages", icon: Box },
