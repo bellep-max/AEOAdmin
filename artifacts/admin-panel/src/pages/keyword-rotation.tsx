@@ -22,15 +22,19 @@ const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   const h: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
   if (BASE.includes("ngrok")) h["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers: h });
+  // Always send the session cookie — the API is cross-origin (App Runner) and
+  // CORS is configured with credentials:true for the panel origin.
+  return fetch(BASE + path, { credentials: "include", ...init, headers: h });
 }
-// ranking-reports uses api-token auth (not the session cookie); route it through the same
-// env-based BASE (Vercel rewrites /api/* to the API server) — no hardcoded host.
+// ranking-reports accepts either the admin session OR a Bearer token (requireApiToken).
+// Send BOTH: credentials:"include" so the logged-in session authenticates cross-origin,
+// plus the optional read token if one is configured for the build.
 const RANKING_API_TOKEN = import.meta.env.VITE_AEO_API_TOKEN ?? "";
 function rankingFetch(path: string) {
-  const h: Record<string, string> = { Authorization: `Bearer ${RANKING_API_TOKEN}` };
+  const h: Record<string, string> = {};
+  if (RANKING_API_TOKEN) h["Authorization"] = `Bearer ${RANKING_API_TOKEN}`;
   if (BASE.includes("ngrok")) h["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { headers: h });
+  return fetch(BASE + path, { credentials: "include", headers: h });
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -393,8 +397,10 @@ export default function KeywordRotation() {
       await Promise.all(ALL_PLATFORMS.map(async (plt) => {
         const p = new URLSearchParams({ clientId, platform: plt, status: "success", dateFrom, dateTo, limit: "500" });
         const r = await rankingFetch(`/api/ranking-reports?${p}`);
-        const b = r.ok ? await r.json() : {};
-        byPlatform[plt] = (b.data ?? b ?? []) as RankReport[];
+        const b = r.ok ? await r.json() : null;
+        // Always store an array — a failed/401 response must never leave a
+        // non-array here (it would crash the entries useMemo's .filter).
+        byPlatform[plt] = (Array.isArray(b) ? b : Array.isArray(b?.data) ? b.data : []) as RankReport[];
       }));
       return byPlatform;
     },
@@ -448,7 +454,8 @@ export default function KeywordRotation() {
     const matchesKw = (r: RankReport, kw: Kw) =>
       (r.keyword ?? r.keywordText ?? "").toLowerCase() === kw.keywordText.toLowerCase() || r.keywordId === kw.id;
     const latestPosOnPlatform = (kw: Kw, plt: Platform): number | null => {
-      const reps = (allPlatformReports[plt] ?? []).filter((r) => matchesKw(r, kw));
+      const all = allPlatformReports[plt];
+      const reps = (Array.isArray(all) ? all : []).filter((r) => matchesKw(r, kw));
       let bestTs = -Infinity, pos: number | null = null;
       reps.forEach((r) => {
         if (r.rankingPosition === null || r.rankingPosition < 1) return;
