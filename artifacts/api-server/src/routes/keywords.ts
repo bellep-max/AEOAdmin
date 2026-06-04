@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { keywordsTable, keywordLinksTable, clientAeoPlansTable, clientsTable, businessesTable, sessionsTable, auditLogsTable } from "@workspace/db/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { keywordsTable, keywordLinksTable, keywordVariantsTable, clientAeoPlansTable, clientsTable, businessesTable, sessionsTable, auditLogsTable } from "@workspace/db/schema";
+import { eq, and, inArray, sql, desc, isNull } from "drizzle-orm";
+import { generateVariants } from "../services/variant-generator";
+import { rotateWinners } from "../services/keyword-rotation";
 
 const router = Router();
 
@@ -11,11 +13,13 @@ const router = Router();
 ──────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   try {
-    const { clientId, businessId, aeoPlanId } = req.query as Record<string, string>;
+    const { clientId, businessId, aeoPlanId, includeArchived } = req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
     if (clientId)   conditions.push(eq(keywordsTable.clientId,   parseInt(clientId)));
     if (businessId) conditions.push(eq(keywordsTable.businessId, parseInt(businessId)));
     if (aeoPlanId)  conditions.push(eq(keywordsTable.aeoPlanId,  parseInt(aeoPlanId)));
+    // By default exclude archived; pass includeArchived=true to see them
+    if (includeArchived !== "true") conditions.push(isNull(keywordsTable.archivedAt));
     const keywords = await db
       .select({
         id: keywordsTable.id,
@@ -44,6 +48,9 @@ router.get("/", async (req, res) => {
         initialRankReportLink: keywordsTable.initialRankReportLink,
         currentRankReportLink: keywordsTable.currentRankReportLink,
         createdAt: keywordsTable.createdAt,
+        archivedAt: keywordsTable.archivedAt,
+        archiveReason: keywordsTable.archiveReason,
+        replacementSuggestion: keywordsTable.replacementSuggestion,
         joinedClientName: clientsTable.businessName,
         joinedBusinessName: businessesTable.name,
         joinedCampaignName: clientAeoPlansTable.name,
@@ -360,6 +367,211 @@ router.delete("/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error deleting keyword");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/:id/archive
+   Soft-archive a keyword (sets isActive=false + records reason)
+   Body: { reason?: string }
+──────────────────────────────────────────────────────────── */
+router.post("/:id/archive", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const reason = (req.body as { reason?: string })?.reason ?? "Manually archived via rotation dashboard";
+
+    const [kw] = await db
+      .update(keywordsTable)
+      .set({ isActive: false, archivedAt: new Date(), archiveReason: reason })
+      .where(eq(keywordsTable.id, id))
+      .returning();
+
+    if (!kw) return res.status(404).json({ error: "Keyword not found" });
+    res.json({ success: true, keyword: kw });
+  } catch (err) {
+    req.log.error({ err }, "Error archiving keyword");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/:id/generate-replacement
+   Archive this keyword + use AI to generate a replacement keyword
+   and optionally create it in the DB.
+   Body: { createKeyword?: boolean, reason?: string }
+──────────────────────────────────────────────────────────── */
+router.post("/:id/generate-replacement", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const body = (req.body ?? {}) as { createKeyword?: boolean; reason?: string };
+    const reason = body.reason ?? "No ranking improvement after 5 runs — auto-replaced";
+
+    // Load keyword + business context
+    const [row] = await db
+      .select({
+        kw:           keywordsTable,
+        businessName: businessesTable.name,
+        city:         businessesTable.city,
+        state:        businessesTable.state,
+      })
+      .from(keywordsTable)
+      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .where(eq(keywordsTable.id, id));
+
+    if (!row) return res.status(404).json({ error: "Keyword not found" });
+
+    // Generate AI variant suggestions (reuse existing variant generator)
+    const suggestions = await generateVariants({
+      keyword:      row.kw.keywordText,
+      businessName: row.businessName ?? undefined,
+      city:         row.city ?? undefined,
+      state:        row.state ?? undefined,
+      count:        5,
+    });
+
+    // generateVariants returns { variants: string[], ... }
+    const variantList = suggestions.variants;
+    const replacement = variantList[0] ?? `best ${row.kw.keywordText}`;
+
+    // Archive original keyword
+    await db
+      .update(keywordsTable)
+      .set({ isActive: false, archivedAt: new Date(), archiveReason: reason, replacementSuggestion: replacement })
+      .where(eq(keywordsTable.id, id));
+
+    // Optionally auto-create the replacement keyword
+    let newKeyword = null;
+    if (body.createKeyword) {
+      [newKeyword] = await db
+        .insert(keywordsTable)
+        .values({
+          clientId:    row.kw.clientId,
+          businessId:  row.kw.businessId,
+          aeoPlanId:   row.kw.aeoPlanId,
+          keywordText: replacement,
+          keywordType: row.kw.keywordType,
+          isActive:    true,
+          status:      "new",
+          notes:       `Auto-generated as replacement for "${row.kw.keywordText}"`,
+        })
+        .returning();
+    }
+
+    res.json({
+      archived:       true,
+      replacement,
+      allSuggestions: variantList,
+      newKeyword,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error generating replacement keyword");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   GET /api/keywords/:id/variants
+   List variants for a keyword (active only by default)
+──────────────────────────────────────────────────────────── */
+router.get("/:id/variants", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const includeInactive = req.query.includeInactive === "true";
+
+    const rows = await db
+      .select()
+      .from(keywordVariantsTable)
+      .where(
+        includeInactive
+          ? eq(keywordVariantsTable.keywordId, id)
+          : and(eq(keywordVariantsTable.keywordId, id), eq(keywordVariantsTable.isActive, true)),
+      )
+      .orderBy(desc(keywordVariantsTable.generatedAt));
+
+    res.json({ variants: rows, total: rows.length });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching variants");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/:id/variants/generate
+   Generate fresh AI variants for a Top-1/3 keyword and store them.
+   Body: { count?: number }
+──────────────────────────────────────────────────────────── */
+router.post("/:id/variants/generate", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const count = Math.min(Number((req.body as { count?: number })?.count ?? 5), 20);
+
+    const [row] = await db
+      .select({ kw: keywordsTable, businessName: businessesTable.name, city: businessesTable.city, state: businessesTable.state })
+      .from(keywordsTable)
+      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .where(eq(keywordsTable.id, id));
+
+    if (!row) return res.status(404).json({ error: "Keyword not found" });
+
+    const genResult = await generateVariants({
+      keyword:      row.kw.keywordText,
+      businessName: row.businessName ?? undefined,
+      city:         row.city ?? undefined,
+      state:        row.state ?? undefined,
+      count,
+    });
+
+    // Deactivate old variants, insert new batch
+    await db
+      .update(keywordVariantsTable)
+      .set({ isActive: false })
+      .where(eq(keywordVariantsTable.keywordId, id));
+
+    const inserted = await db
+      .insert(keywordVariantsTable)
+      .values(
+        genResult.variants.map((v) => ({
+          keywordId:   id,
+          variantText: v,
+          isActive:    true,
+          sourceModel: "deepseek-chat",
+          weekOf:      new Date().toISOString().slice(0, 10),
+        })),
+      )
+      .returning();
+
+    res.json({ variants: inserted, total: inserted.length });
+  } catch (err) {
+    req.log.error({ err }, "Error generating variants");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/keywords/rotate-winners
+   Auto-lock-on-win: scan active keywords (optionally one client),
+   archive any that held top-3 for >=5 of their last 7 runs, and
+   rotate in an AI-generated replacement. Pass {dryRun:true} to preview.
+   Body: { clientId?: number, dryRun?: boolean }
+──────────────────────────────────────────────────────────── */
+router.post("/rotate-winners", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { clientId?: number; dryRun?: boolean };
+    const clientId = body.clientId != null ? Number(body.clientId) : undefined;
+    if (clientId != null && Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId must be a number" });
+    }
+    const result = await rotateWinners({ clientId, dryRun: body.dryRun === true });
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error rotating winning keywords");
     res.status(500).json({ error: "Internal server error" });
   }
 });

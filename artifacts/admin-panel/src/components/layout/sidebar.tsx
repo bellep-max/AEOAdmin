@@ -48,6 +48,8 @@ import {
   ScrollText,
   Sparkles,
   BrainCircuit,
+  RefreshCw,
+  Archive,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -131,6 +133,15 @@ const navGroups: NavGroup[] = [
     label: "Admin",
     items: [
       { name: "AEO Reporter", href: "/aeo-reporter", icon: BrainCircuit },
+      {
+        name: "Keyword Rotation",
+        href: "/keyword-rotation",
+        icon: RefreshCw,
+        children: [
+          { name: "Rotation Dashboard", href: "/keyword-rotation", icon: RefreshCw },
+          { name: "Archived Keywords",  href: "/keyword-rotation/archived", icon: Archive },
+        ],
+      },
       { name: "Prompts", href: "/admin/prompts", icon: FileText },
       {
         name: "Variants",

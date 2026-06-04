@@ -327,6 +327,17 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
       voice = voiceRaw as VoiceKey;
     }
 
+    // Archived/locked keywords must not be ranked. This is the enforcement point:
+    // every ranking job is enriched here first, so a "skip" stops it being dispatched.
+    const [kwRow] = await db
+      .select({ archivedAt: keywordsTable.archivedAt, isActive: keywordsTable.isActive })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!kwRow) return res.status(404).json({ error: "keyword not found" });
+    if (kwRow.archivedAt != null || kwRow.isActive === false) {
+      return res.json({ skip: true, reason: "keyword archived/locked — not ranking" });
+    }
+
     const start = Date.now();
     const out = await buildSession({ keywordId, platform: platformRaw, voice });
     res.json({ ...out, _elapsedMs: Date.now() - start });
