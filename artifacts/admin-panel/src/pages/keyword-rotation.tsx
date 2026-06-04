@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -378,6 +379,45 @@ export default function KeywordRotation() {
 
   const isLoading = kwLoading || ranksLoading;
 
+  // ── Run rotation (auto-lock winners) with dry-run preview ──────────────────
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotatePreview, setRotatePreview] = useState<
+    { keywordId: number; keywordText: string; top3Runs: number; windowRuns: number }[] | null
+  >(null);
+
+  async function postRotate(dryRun: boolean) {
+    const r = await rawFetch("/api/keywords/rotate-winners", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId: clientId ? Number(clientId) : undefined, dryRun }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Rotation request failed");
+    return r.json() as Promise<{ scanned: number; locked: typeof rotatePreview & object[] }>;
+  }
+
+  const previewRotation = useMutation({
+    mutationFn: () => postRotate(true),
+    onSuccess: (d: any) => { setRotatePreview(d.locked ?? []); setRotateOpen(true); },
+    onError: (e: Error) => toast({ title: "Preview failed", description: e.message, variant: "destructive" }),
+  });
+
+  const confirmRotation = useMutation({
+    mutationFn: () => postRotate(false),
+    onSuccess: (d: any) => {
+      const n = (d.locked ?? []).length;
+      toast({
+        title: n ? `Locked & rotated ${n} keyword(s)` : "Nothing to rotate",
+        description: (d.locked ?? []).map((l: any) => l.keywordText).slice(0, 3).join(", "),
+      });
+      setRotateOpen(false);
+      setRotatePreview(null);
+      qc.invalidateQueries({ queryKey: ["kw-rotation", clientId] });
+      refetch();
+    },
+    onError: (e: Error) => toast({ title: "Rotation failed", description: e.message, variant: "destructive" }),
+  });
+
   // ── Compute entries ─────────────────────────────────────────────────────────
   const entries: Entry[] = useMemo(() => {
     return keywords.filter((kw) => kw.isActive && !kw.archivedAt).map((kw) => {
@@ -471,6 +511,12 @@ export default function KeywordRotation() {
           {clientId && (
             <Button variant="outline" size="sm" onClick={() => { notifiedRef.current = ""; refetch(); toast({ title: "Refreshing rankings…" }); }} disabled={isLoading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoading ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          )}
+          {clientId && (
+            <Button size="sm" onClick={() => previewRotation.mutate()} disabled={previewRotation.isPending || isLoading}>
+              {previewRotation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Lock className="w-4 h-4 mr-1.5" />}
+              Run rotation
             </Button>
           )}
         </div>
@@ -733,10 +779,46 @@ export default function KeywordRotation() {
             <div className="flex items-center gap-1.5"><Lock className="w-3.5 h-3.5 text-emerald-500" />Locked → variants auto-included in rotation</div>
             <div className="flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5 text-destructive" />At risk → archive &amp; replace with AI keyword</div>
             <div className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-primary" />Variants expand reach for Top-{TOP3_THRESHOLD} keywords</div>
-            <div className="flex items-center gap-1.5 ml-auto"><Info className="w-3.5 h-3.5" /><code className="font-mono bg-muted px-1 py-0.5 rounded">scripts/keyword-rotation/keyword_rotation.py</code></div>
           </div>
         </>
       )}
+
+      {/* Run-rotation dry-run preview */}
+      <Dialog open={rotateOpen} onOpenChange={setRotateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Lock className="w-5 h-5 text-primary" /> Run rotation — preview</DialogTitle>
+            <DialogDescription>
+              {rotatePreview && rotatePreview.length > 0
+                ? `${rotatePreview.length} keyword(s) have held Top-${TOP3_THRESHOLD} for ≥${LOCK_MIN_RUNS}/${WINDOW_RUNS} runs. Confirming archives them (they stop getting ranking sessions) and creates an AI-generated replacement for each.`
+                : "No keywords currently qualify for rotation (none sustained Top-3 long enough)."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {rotatePreview && rotatePreview.length > 0 && (
+            <div className="max-h-72 overflow-y-auto divide-y rounded-md border">
+              {rotatePreview.map((l) => (
+                <div key={l.keywordId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="font-medium truncate">{l.keywordText}</span>
+                  <Badge variant="outline" className="shrink-0">Top-{TOP3_THRESHOLD} in {l.top3Runs}/{l.windowRuns}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRotateOpen(false)} disabled={confirmRotation.isPending}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!rotatePreview?.length || confirmRotation.isPending}
+              onClick={() => confirmRotation.mutate()}
+            >
+              {confirmRotation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Lock className="w-4 h-4 mr-1.5" />}
+              Confirm — lock &amp; rotate {rotatePreview?.length ?? 0}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
