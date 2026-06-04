@@ -557,7 +557,7 @@ router.post("/:id/variants/generate", async (req, res) => {
 /* ────────────────────────────────────────────────────────────
    POST /api/keywords/rotate-winners
    Auto-lock-on-win: scan active keywords (optionally one client),
-   archive any that held top-3 for >=5 of their last 7 runs, and
+   archive any that hold top-3 on any platform (current rank), and
    rotate in an AI-generated replacement. Pass {dryRun:true} to preview.
    Body: { clientId?: number, dryRun?: boolean }
 ──────────────────────────────────────────────────────────── */
