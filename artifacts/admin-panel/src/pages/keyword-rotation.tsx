@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { BulkLockWinners } from "@/components/BulkLockWinners";
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -577,6 +578,16 @@ export default function KeywordRotation() {
           )}
         </div>
       </div>
+
+      {/* Bulk lock current winners — global scan across all clients */}
+      <BulkLockWinners
+        clients={clients}
+        onLocked={() => {
+          qc.invalidateQueries({ queryKey: ["kw-rotation"] });
+          qc.invalidateQueries({ queryKey: ["ranking-rotation"] });
+          qc.invalidateQueries({ queryKey: ["ranking-rotation-all"] });
+        }}
+      />
 
       {/* Client selector */}
       <Card>
