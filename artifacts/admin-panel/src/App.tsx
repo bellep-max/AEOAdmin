@@ -31,6 +31,7 @@ import ReportDetail from "@/pages/report-detail";
 import AdminVariants from "@/pages/admin-variants";
 import AeoReporter from "@/pages/aeo-reporter";
 import KeywordRotation from "@/pages/keyword-rotation";
+import RotationOverview from "@/pages/rotation-overview";
 import ArchivedKeywords from "@/pages/archived-keywords";
 
 import type { ComponentType } from "react";
@@ -102,6 +103,7 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/aeo-reporter" component={AeoReporter} />
         <Route path="/keyword-rotation" component={KeywordRotation} />
+        <Route path="/keyword-rotation/overview" component={RotationOverview} />
         <Route path="/keyword-rotation/archived" component={ArchivedKeywords} />
         <Route path="/admin/prompts" component={Prompts} />
         <Route path="/admin/variants">
