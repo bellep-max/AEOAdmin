@@ -50,6 +50,7 @@ import {
   BrainCircuit,
   RefreshCw,
   Archive,
+  Lock,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
