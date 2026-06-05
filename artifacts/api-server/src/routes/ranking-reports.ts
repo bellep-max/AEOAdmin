@@ -12,8 +12,28 @@ import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireApiToken } from "../middlewares/api-token";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
+import { logger } from "../lib/logger";
 
 const router = Router();
+
+/* Auto-lock-on-win: when a ranking report records a top-3 position for a
+   keyword, immediately lock it (archive + status='locked') and rotate in an
+   AI replacement. Fire-and-forget so it never blocks/fails report ingestion;
+   rotateWinners is idempotent (it only touches active, non-archived keywords). */
+function maybeAutoLock(keywordId: unknown, rankingPosition: unknown): void {
+  const kid = Number(keywordId);
+  const pos = Number(rankingPosition);
+  if (!Number.isFinite(kid) || kid <= 0) return;
+  if (!Number.isFinite(pos) || pos < 1 || pos > TOP3_THRESHOLD) return;
+  rotateWinners({ keywordId: kid, dryRun: false })
+    .then((r) => {
+      if (r.locked.length > 0) {
+        logger.info({ keywordId: kid, locked: r.locked }, "auto-rotation: locked keyword on win");
+      }
+    })
+    .catch((err) => logger.warn({ err, keywordId: kid }, "auto-rotation: lock-on-win failed"));
+}
 
 /* Shared S3 client. Credentials are resolved from the App Runner instance role
    in prod or AWS_PROFILE/env vars locally. Region defaults to us-east-1. */
@@ -240,7 +260,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
         })
         .where(eq(rankingReportsTable.id, existing[0].id))
         .returning();
-      return res.status(200).json({ ...updated, upserted: true });
+      res.status(200).json({ ...updated, upserted: true });
+      maybeAutoLock(body.keywordId, body.rankingPosition);
+      return;
     }
 
     const [report] = await db
@@ -288,6 +310,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
       })
       .returning();
     res.status(201).json(report);
+    maybeAutoLock(body.keywordId, body.rankingPosition);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
     res.status(500).json({ error: "Internal server error" });
