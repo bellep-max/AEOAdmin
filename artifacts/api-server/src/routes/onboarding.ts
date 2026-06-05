@@ -6,7 +6,7 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, or, and, ne, sql } from "drizzle-orm";
 import { requireOnboardingToken } from "../middlewares/onboarding-auth";
 import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
 
@@ -188,6 +188,9 @@ interface FreeTrialBody {
   keywords: string[];
   address: string | null;
   website: string | null;
+  brand: string | null;
+  leadRef: string | null;
+  source: string | null;
 }
 
 function validateFreeTrial(
@@ -214,11 +217,10 @@ function validateFreeTrial(
       error: "keywords must be a non-empty array of strings",
     };
   }
-  if (r.address != null && typeof r.address !== "string") {
-    return { ok: false, error: "address must be a string if provided" };
-  }
-  if (r.website != null && typeof r.website !== "string") {
-    return { ok: false, error: "website must be a string if provided" };
+  for (const opt of ["address", "website", "brand", "leadRef", "source"]) {
+    if (r[opt] != null && typeof r[opt] !== "string") {
+      return { ok: false, error: `${opt} must be a string if provided` };
+    }
   }
   return {
     ok: true,
@@ -230,7 +232,56 @@ function validateFreeTrial(
         .filter((k) => k.length > 0),
       address: isStr(r.address) ? r.address.trim() : null,
       website: isStr(r.website) ? r.website.trim() : null,
+      brand: isStr(r.brand) ? r.brand.trim() : null,
+      leadRef: isStr(r.leadRef) ? r.leadRef.trim() : null,
+      source: isStr(r.source) ? r.source.trim() : null,
     },
+  };
+}
+
+/** URL-safe slug from a business name; empty input falls back to "client". */
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/['’]/g, "") // drop apostrophes so "joe's" -> "joes", not "joe-s"
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "client"
+  );
+}
+
+/** The CRM match payload for an existing free-trial client (ids + slug). */
+async function buildProofResponse(clientId: number) {
+  const [client] = await db
+    .select({ slug: clientsTable.slug })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId))
+    .limit(1);
+  const [business] = await db
+    .select({ id: businessesTable.id })
+    .from(businessesTable)
+    .where(eq(businessesTable.clientId, clientId))
+    .orderBy(businessesTable.id)
+    .limit(1);
+  const [plan] = await db
+    .select({ id: clientAeoPlansTable.id })
+    .from(clientAeoPlansTable)
+    .where(eq(clientAeoPlansTable.clientId, clientId))
+    .orderBy(clientAeoPlansTable.id)
+    .limit(1);
+  const kws = await db
+    .select({ id: keywordsTable.id })
+    .from(keywordsTable)
+    .where(eq(keywordsTable.clientId, clientId))
+    .orderBy(keywordsTable.id);
+  return {
+    clientId,
+    businessId: business?.id ?? null,
+    campaignId: plan?.id ?? null,
+    keywordIds: kws.map((k) => k.id),
+    proofClientSlug: client?.slug ?? null,
   };
 }
 
@@ -241,11 +292,28 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
   }
   const body = parsed.body;
 
+  // Idempotency key: explicit X-Idempotency-Key header wins, else "brand:leadRef".
+  const headerKey = req.header("x-idempotency-key")?.trim() || null;
+  const idempotencyKey =
+    headerKey ||
+    (body.brand && body.leadRef ? `${body.brand}:${body.leadRef}` : null);
+
   try {
-    // Idempotency: if the email already belongs to a client (any email field),
-    // don't create a duplicate — return the existing client. This keeps retries
-    // safe and prevents a trial signup from cloning an existing customer.
-    const [existing] = await db
+    // 1. Idempotency by explicit lead key (preferred).
+    if (idempotencyKey) {
+      const [byKey] = await db
+        .select({ id: clientsTable.id })
+        .from(clientsTable)
+        .where(eq(clientsTable.idempotencyKey, idempotencyKey))
+        .limit(1);
+      if (byKey) {
+        const proof = await buildProofResponse(byKey.id);
+        return res.status(200).json({ ok: true, idempotent: true, ...proof });
+      }
+    }
+
+    // 2. Idempotency by email (the floor — never duplicate a client per email).
+    const [byEmail] = await db
       .select({ id: clientsTable.id })
       .from(clientsTable)
       .where(
@@ -256,13 +324,12 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         ),
       )
       .limit(1);
-
-    if (existing) {
-      return res
-        .status(200)
-        .json({ ok: true, idempotent: true, clientId: existing.id });
+    if (byEmail) {
+      const proof = await buildProofResponse(byEmail.id);
+      return res.status(200).json({ ok: true, idempotent: true, ...proof });
     }
 
+    // 3. Create.
     const result = await db.transaction(async (tx) => {
       const [client] = await tx
         .insert(clientsTable)
@@ -275,9 +342,27 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           status: "active",
           accountType: "Free Trial",
           planName: "Free Trial",
+          brand: body.brand,
+          leadRef: body.leadRef,
+          source: body.source,
+          idempotencyKey,
           createdBy: "free-trial-signup",
         })
         .returning({ id: clientsTable.id });
+
+      // Permanent proof slug from the business name; append the id only on a
+      // collision so the common case stays clean ("joes-plumbing").
+      const base = slugify(body.businessName);
+      const [clash] = await tx
+        .select({ id: clientsTable.id })
+        .from(clientsTable)
+        .where(and(eq(clientsTable.slug, base), ne(clientsTable.id, client.id)))
+        .limit(1);
+      const slug = clash ? `${base}-${client.id}` : base;
+      await tx
+        .update(clientsTable)
+        .set({ slug })
+        .where(eq(clientsTable.id, client.id));
 
       const [business] = await tx
         .insert(businessesTable)
@@ -324,10 +409,13 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         businessId: business.id,
         campaignId: plan.id,
         keywordIds: insertedKws.map((k) => k.id),
+        proofClientSlug: slug,
       };
     });
 
-    res.status(201).json({ ok: true, ...result });
+    res
+      .status(201)
+      .json({ ok: true, ...result, brand: body.brand, leadRef: body.leadRef });
   } catch (err) {
     req.log.error({ err }, "Error creating free-trial signup");
     res.status(500).json({ error: "Internal server error" });
