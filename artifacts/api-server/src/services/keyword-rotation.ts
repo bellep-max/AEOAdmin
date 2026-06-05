@@ -39,7 +39,7 @@ export interface RotationResult {
  * Scan active keywords (optionally for one client), lock the winners and rotate
  * in replacements. Pass dryRun=true to preview without mutating.
  */
-export async function rotateWinners(opts: { clientId?: number; businessId?: number; aeoPlanId?: number; dryRun?: boolean } = {}): Promise<RotationResult> {
+export async function rotateWinners(opts: { clientId?: number; businessId?: number; aeoPlanId?: number; keywordId?: number; dryRun?: boolean } = {}): Promise<RotationResult> {
   const dryRun = opts.dryRun === true;
   const conds = [eq(keywordsTable.isActive, true), isNull(keywordsTable.archivedAt)];
   if (opts.clientId != null) conds.push(eq(keywordsTable.clientId, opts.clientId));
@@ -47,6 +47,9 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
   // campaign level, not just per client.
   if (opts.businessId != null) conds.push(eq(keywordsTable.businessId, opts.businessId));
   if (opts.aeoPlanId != null) conds.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
+  // Scope to a single keyword — used by the auto-lock-on-win hook that fires
+  // when a ranking report lands a top-3 for one keyword.
+  if (opts.keywordId != null) conds.push(eq(keywordsTable.id, opts.keywordId));
 
   const keywords = await db.select().from(keywordsTable).where(and(...conds));
   const locked: RotationLock[] = [];
@@ -109,6 +112,7 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
         .update(keywordsTable)
         .set({
           isActive: false,
+          status: "locked", // distinct "Locked/Won" state (vs a manual archive)
           archivedAt: new Date(),
           archiveReason: `locked (won): top-3 on ${triggerPlatform} (#${triggerPosition}) — auto-rotation`,
           replacementSuggestion: replacement,

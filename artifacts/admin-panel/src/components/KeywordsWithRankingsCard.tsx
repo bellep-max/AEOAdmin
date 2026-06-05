@@ -152,8 +152,19 @@ export function KeywordsWithRankingsCard({
         byKeyword.set(k.id, { keywordId: k.id, keywordText: k.keywordText, platforms: [] });
       }
     }
-    return [...byKeyword.values()].sort((a, b) => a.keywordText.localeCompare(b.keywordText));
-  }, [data, extraKeywords]);
+    const list = [...byKeyword.values()];
+    if (showRotation && extraKeywords) {
+      // Conveyor belt: only ACTIVE keywords show here — locked/archived ones drop
+      // off (they're absent from extraKeywords, which is the active set for this
+      // scope, even though their rank history still comes back in `data.rows`).
+      const activeIds = new Set(extraKeywords.map((k) => k.id));
+      return list
+        .filter((g) => activeIds.has(g.keywordId))
+        // Oldest first, newest (AI replacements) at the bottom.
+        .sort((a, b) => a.keywordId - b.keywordId);
+    }
+    return list.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
+  }, [data, extraKeywords, showRotation]);
 
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
 
