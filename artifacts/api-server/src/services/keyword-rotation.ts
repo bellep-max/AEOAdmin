@@ -15,7 +15,7 @@
  */
 import { db } from "@workspace/db";
 import { keywordsTable, rankingReportsTable, businessesTable } from "@workspace/db/schema";
-import { and, eq, isNull, desc } from "drizzle-orm";
+import { and, eq, isNull, desc, inArray } from "drizzle-orm";
 import { generateVariants } from "./variant-generator";
 import { logger } from "../lib/logger";
 
@@ -24,6 +24,7 @@ export const TOP3_THRESHOLD = 3;
 export interface RotationLock {
   keywordId: number;
   keywordText: string;
+  clientId: number;          // for grouping winners by client in the bulk-lock UI
   triggerPlatform: string;   // platform that triggered the lock, e.g. "perplexity"
   triggerPosition: number;   // the top-3 position on that platform (1..3)
   replacement: string;
@@ -39,10 +40,12 @@ export interface RotationResult {
  * Scan active keywords (optionally for one client), lock the winners and rotate
  * in replacements. Pass dryRun=true to preview without mutating.
  */
-export async function rotateWinners(opts: { clientId?: number; businessId?: number; aeoPlanId?: number; keywordId?: number; dryRun?: boolean } = {}): Promise<RotationResult> {
+export async function rotateWinners(opts: { clientId?: number; businessId?: number; aeoPlanId?: number; keywordId?: number; keywordIds?: number[]; dryRun?: boolean } = {}): Promise<RotationResult> {
   const dryRun = opts.dryRun === true;
   const conds = [eq(keywordsTable.isActive, true), isNull(keywordsTable.archivedAt)];
   if (opts.clientId != null) conds.push(eq(keywordsTable.clientId, opts.clientId));
+  // Lock an explicit set of keywords — used by the "lock selected" bulk action.
+  if (opts.keywordIds != null && opts.keywordIds.length > 0) conds.push(inArray(keywordsTable.id, opts.keywordIds));
   // Scope to a single business/campaign (aeoPlan) so rotation can run at the
   // campaign level, not just per client.
   if (opts.businessId != null) conds.push(eq(keywordsTable.businessId, opts.businessId));
@@ -136,7 +139,7 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
       newKeywordId = nk?.id ?? null;
     }
 
-    locked.push({ keywordId: kw.id, keywordText: kw.keywordText, triggerPlatform, triggerPosition, replacement, newKeywordId });
+    locked.push({ keywordId: kw.id, keywordText: kw.keywordText, clientId: kw.clientId, triggerPlatform, triggerPosition, replacement, newKeywordId });
   }
 
   return { scanned: keywords.length, locked, dryRun };

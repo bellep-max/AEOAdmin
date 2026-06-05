@@ -577,7 +577,7 @@ router.post("/:id/variants/generate", async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 router.post("/rotate-winners", async (req, res) => {
   try {
-    const body = (req.body ?? {}) as { clientId?: number; businessId?: number; aeoPlanId?: number; dryRun?: boolean };
+    const body = (req.body ?? {}) as { clientId?: number; businessId?: number; aeoPlanId?: number; keywordIds?: unknown; dryRun?: boolean };
     const clientId = body.clientId != null ? Number(body.clientId) : undefined;
     const businessId = body.businessId != null ? Number(body.businessId) : undefined;
     const aeoPlanId = body.aeoPlanId != null ? Number(body.aeoPlanId) : undefined;
@@ -586,7 +586,14 @@ router.post("/rotate-winners", async (req, res) => {
         return res.status(400).json({ error: `${name} must be a number` });
       }
     }
-    const result = await rotateWinners({ clientId, businessId, aeoPlanId, dryRun: body.dryRun === true });
+    let keywordIds: number[] | undefined;
+    if (body.keywordIds != null) {
+      if (!Array.isArray(body.keywordIds)) {
+        return res.status(400).json({ error: "keywordIds must be an array" });
+      }
+      keywordIds = body.keywordIds.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    }
+    const result = await rotateWinners({ clientId, businessId, aeoPlanId, keywordIds, dryRun: body.dryRun === true });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Error rotating winning keywords");
