@@ -25,6 +25,7 @@ interface ArchivedKw {
   keywordText: string;
   clientId: number;
   businessId: number | null;
+  status: string | null;
   archivedAt: string;
   archiveReason: string | null;
   replacementSuggestion: string | null;
@@ -54,8 +55,9 @@ export default function ArchivedKeywords() {
       const r = await rawFetch(`/api/keywords?${params}`);
       const b = await r.json();
       const all = (b.data ?? b) as ArchivedKw[];
-      // Filter to only archived ones (isActive=false + archivedAt set)
-      return all.filter((k) => k.archivedAt);
+      // Archived = inactive (archivedAt set) but NOT "won" — locked/won keywords
+      // live on their own Locked Keywords page (status='locked').
+      return all.filter((k) => k.archivedAt && k.status !== "locked");
     },
   });
 
@@ -92,9 +94,9 @@ export default function ArchivedKeywords() {
             Archived Keywords
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Keywords archived after {" "}
-            <span className="font-medium">locking Top-3 on any platform</span> (auto-rotated) or
-            after stalling with no ranking improvement. Restore or permanently delete them here.
+            Keywords removed from rotation — manually archived or stalled with no ranking
+            improvement. Won keywords (Top-3 locks) live under{" "}
+            <span className="font-medium">Locked Keywords</span>. Restore or delete them here.
           </p>
         </div>
         <Badge variant="outline" className="text-sm px-3 py-1">
@@ -144,7 +146,7 @@ export default function ArchivedKeywords() {
           <CheckCircle2 className="w-12 h-12 opacity-20" />
           <p className="text-base font-medium">No archived keywords</p>
           <p className="text-sm opacity-60">
-            Keywords are archived automatically when they lock Top-3 on any platform, or after stalling without improvement.
+            Keywords show up here after being manually archived or stalling without improvement. Won keywords are under Locked Keywords.
           </p>
         </div>
       )}
