@@ -14,7 +14,7 @@
  * run from a cron/the orchestrator and produce the same result headless.
  */
 import { db } from "@workspace/db";
-import { keywordsTable, rankingReportsTable, businessesTable } from "@workspace/db/schema";
+import { keywordsTable, rankingReportsTable, businessesTable, keywordVariantsTable } from "@workspace/db/schema";
 import { and, eq, isNull, desc, inArray } from "drizzle-orm";
 import { generateVariants } from "./variant-generator";
 import { logger } from "../lib/logger";
@@ -137,6 +137,29 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
         })
         .returning();
       newKeywordId = nk?.id ?? null;
+
+      // Generate + store a variant set for the new keyword so it's audit-ready
+      // immediately (the audit/ranking rotation cycles through these phrasings).
+      if (nk?.id != null) {
+        const nkId = nk.id;
+        try {
+          const vg = await generateVariants({ keyword: replacement, businessName: bizName, city, state, count: 5 });
+          const variants = (vg.variants ?? []).filter((v): v is string => !!v);
+          if (variants.length > 0) {
+            await db.insert(keywordVariantsTable).values(
+              variants.map((v) => ({
+                keywordId: nkId,
+                variantText: v,
+                isActive: true,
+                sourceModel: "deepseek-chat",
+                weekOf: new Date().toISOString().slice(0, 10),
+              })),
+            );
+          }
+        } catch (err) {
+          logger.warn({ err, keywordId: nkId }, "rotation: variant generation for replacement failed");
+        }
+      }
     }
 
     locked.push({ keywordId: kw.id, keywordText: kw.keywordText, clientId: kw.clientId, triggerPlatform, triggerPosition, replacement, newKeywordId });
