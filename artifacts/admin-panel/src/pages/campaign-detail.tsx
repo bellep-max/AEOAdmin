@@ -373,6 +373,8 @@ export default function CampaignDetail() {
         }}
         onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
         extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
+        showRotation
+        onRotated={() => { refetchKeywords(); }}
       />
 
       <KeywordDialog

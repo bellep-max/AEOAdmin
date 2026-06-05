@@ -572,16 +572,21 @@ router.post("/:id/variants/generate", async (req, res) => {
    Auto-lock-on-win: scan active keywords (optionally one client),
    archive any that hold top-3 on any platform (current rank), and
    rotate in an AI-generated replacement. Pass {dryRun:true} to preview.
-   Body: { clientId?: number, dryRun?: boolean }
+   Body: { clientId?, businessId?, aeoPlanId?, dryRun? } — businessId/aeoPlanId
+   scope rotation to a single campaign.
 ──────────────────────────────────────────────────────────── */
 router.post("/rotate-winners", async (req, res) => {
   try {
-    const body = (req.body ?? {}) as { clientId?: number; dryRun?: boolean };
+    const body = (req.body ?? {}) as { clientId?: number; businessId?: number; aeoPlanId?: number; dryRun?: boolean };
     const clientId = body.clientId != null ? Number(body.clientId) : undefined;
-    if (clientId != null && Number.isNaN(clientId)) {
-      return res.status(400).json({ error: "clientId must be a number" });
+    const businessId = body.businessId != null ? Number(body.businessId) : undefined;
+    const aeoPlanId = body.aeoPlanId != null ? Number(body.aeoPlanId) : undefined;
+    for (const [name, val] of [["clientId", clientId], ["businessId", businessId], ["aeoPlanId", aeoPlanId]] as const) {
+      if (val != null && Number.isNaN(val)) {
+        return res.status(400).json({ error: `${name} must be a number` });
+      }
     }
-    const result = await rotateWinners({ clientId, dryRun: body.dryRun === true });
+    const result = await rotateWinners({ clientId, businessId, aeoPlanId, dryRun: body.dryRun === true });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Error rotating winning keywords");
