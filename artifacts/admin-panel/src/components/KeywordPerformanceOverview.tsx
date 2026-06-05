@@ -4,7 +4,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Trophy, TrendingUp, Archive, RotateCcw, ShieldAlert, Lock, ArrowRight } from "lucide-react";
+import { Trophy, TrendingUp, RotateCcw, ShieldAlert, Lock, ArrowRight } from "lucide-react";
 
 // Cross-origin API (App Runner). Read endpoints accept the admin session, so we
 // send credentials; the read token is optional/additive if configured.
@@ -78,8 +78,11 @@ function useDashboardRankingStats(platform: DashPlatform) {
         fetch(`${RANKING_API_BASE}/api/keywords?includeArchived=true`, { credentials: "include" }).then(r => r.json()),
       ]);
       const activeList   = (active.data   ?? active)   as { id: number }[];
-      const archivedList = (archived.data ?? archived) as { id: number; archivedAt?: string }[];
-      return { totalActive: activeList.length, totalArchived: archivedList.filter((k) => k.archivedAt).length };
+      const archivedList = (archived.data ?? archived) as { id: number; archivedAt?: string; status?: string }[];
+      // "Locked/won" = archived via rotation (status='locked'); "archived" = manual/stalled.
+      const totalLocked   = archivedList.filter((k) => k.archivedAt && k.status === "locked").length;
+      const totalArchived = archivedList.filter((k) => k.archivedAt && k.status !== "locked").length;
+      return { totalActive: activeList.length, totalArchived, totalLocked };
     },
   });
 
@@ -92,7 +95,7 @@ function useDashboardRankingStats(platform: DashPlatform) {
       const platformList: string[] = platform === "all" ? ["chatgpt", "gemini", "perplexity"] : [platform];
       const allReports = (await Promise.all(
         platformList.map(async (plt) => {
-          const p = new URLSearchParams({ platform: plt, status: "success", dateFrom: thirtyAgo, dateTo: today, limit: "5000" });
+          const p = new URLSearchParams({ platform: plt, status: "success", isActive: "true", dateFrom: thirtyAgo, dateTo: today, limit: "5000" });
           const r = await fetch(`${RANKING_API_BASE}/api/ranking-reports?${p}`, { credentials: "include", headers: authHeaders });
           if (!r.ok) return [];
           const b = await r.json();
@@ -123,7 +126,7 @@ export function KeywordPerformanceOverview() {
       <div className="flex items-center justify-between gap-4 mb-3 flex-wrap">
         <div>
           <h2 className="text-base font-semibold text-foreground">Keyword Performance Overview</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Current rank per keyword · scans from the last 30 days</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Current rank of active keywords · scans from the last 30 days (excludes locked/won)</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
@@ -195,12 +198,12 @@ export function KeywordPerformanceOverview() {
           <div className="absolute top-0 left-0 right-0 h-0.5 gradient-bar-amber" />
           <CardContent className="p-5">
             <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center"><Archive className="w-4 h-4 text-amber-400" /></div>
-              <Link href="/keyword-rotation/archived"><Badge variant="outline" className="text-xs text-amber-400 border-amber-400/30 hover:bg-amber-400/10 cursor-pointer transition-colors">View</Badge></Link>
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center"><Lock className="w-4 h-4 text-emerald-500" /></div>
+              <Link href="/keyword-rotation/locked"><Badge variant="outline" className="text-xs text-emerald-500 border-emerald-400/30 hover:bg-emerald-400/10 cursor-pointer transition-colors">View</Badge></Link>
             </div>
-            {!kwData ? <Skeleton className="h-8 w-16 mb-1" /> : <p className="text-3xl font-bold text-foreground tabular-nums">{kwData.totalArchived}</p>}
-            <p className="text-xs text-muted-foreground mt-1">Archived keywords</p>
-            {kwData && <p className="text-xs font-medium text-amber-400 mt-0.5">{kwData.totalActive} still active</p>}
+            {!kwData ? <Skeleton className="h-8 w-16 mb-1" /> : <p className="text-3xl font-bold text-foreground tabular-nums">{kwData.totalLocked}</p>}
+            <p className="text-xs text-muted-foreground mt-1">Locked (won) keywords</p>
+            {kwData && <p className="text-xs font-medium text-emerald-500 mt-0.5">{kwData.totalActive} active · {kwData.totalArchived} archived</p>}
           </CardContent>
         </Card>
 
@@ -247,7 +250,7 @@ export function KeywordPerformanceOverview() {
                   </div>
                 ))}
                 <div className="pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Total tracked: <span className="font-bold text-foreground">{rankData.total}</span> keywords</span>
+                  <span>Active keywords with a current ranking: <span className="font-bold text-foreground">{rankData.total}</span></span>
                   <span className="text-emerald-400 font-medium">{rankData.pctTop3}% in Top 3 ✓</span>
                 </div>
               </div>
