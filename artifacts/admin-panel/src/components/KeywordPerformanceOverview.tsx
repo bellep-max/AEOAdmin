@@ -20,24 +20,39 @@ const DASH_PLATFORMS: { value: DashPlatform; label: string; dot: string }[] = [
   { value: "perplexity", label: "Perplexity", dot: "bg-amber-500"   },
 ];
 
-function computeRankStats(reports: { keyword: string; rankingPosition: number | null; clientId: number }[]) {
-  const bestRank = new Map<string, number>();
-  reports.forEach((r) => {
-    if (r.rankingPosition === null) return;
-    const key = `${r.clientId}::${r.keyword}`;
-    const prev = bestRank.get(key);
-    if (prev === undefined || r.rankingPosition < prev) bestRank.set(key, r.rankingPosition);
-  });
-  const ranks  = Array.from(bestRank.values());
+type Rep = { keyword: string; rankingPosition: number | null; clientId: number; platform: string; date?: string | null; timestamp?: string | null; createdAt?: string | null };
+
+function computeRankStats(reports: Rep[]) {
+  // CURRENT rank: the position from each keyword's most-recent scan per platform
+  // (not best-ever). Matches the rotation lock rule.
+  const latest = new Map<string, { ts: number; pos: number | null }>(); // clientId::keyword::platform
+  for (const r of reports) {
+    const key = `${r.clientId}::${r.keyword}::${r.platform}`;
+    const ts = new Date(r.date ?? r.timestamp ?? r.createdAt ?? 0).getTime();
+    const cur = latest.get(key);
+    if (!cur || ts >= cur.ts) latest.set(key, { ts, pos: r.rankingPosition });
+  }
+  // Per keyword, current rank = best (lowest) of its latest-per-platform positions
+  // → "Top-3 on ANY platform", consistent with locking. Ignore null/failed scans.
+  const currentByKw = new Map<string, number>(); // clientId::keyword
+  for (const [key, v] of latest) {
+    if (v.pos === null || v.pos < 1) continue;
+    const kwKey = key.slice(0, key.lastIndexOf("::"));
+    const prev = currentByKw.get(kwKey);
+    if (prev === undefined || v.pos < prev) currentByKw.set(kwKey, v.pos);
+  }
+  const ranks  = Array.from(currentByKw.values());
   const total  = ranks.length;
   const top1   = ranks.filter((v) => v === 1).length;
   const top3   = ranks.filter((v) => v <= 3).length;
   const top10  = ranks.filter((v) => v <= 10).length;
   const clientTop3 = new Map<number, number>();
-  reports.forEach((r) => {
-    if (r.rankingPosition !== null && r.rankingPosition <= 3)
-      clientTop3.set(r.clientId, (clientTop3.get(r.clientId) ?? 0) + 1);
-  });
+  for (const [kwKey, pos] of currentByKw) {
+    if (pos <= 3) {
+      const cid = Number(kwKey.split("::")[0]);
+      clientTop3.set(cid, (clientTop3.get(cid) ?? 0) + 1);
+    }
+  }
   return { total, top1, top3, top10,
     pctTop1:  total ? Math.round(top1  / total * 100) : 0,
     pctTop3:  total ? Math.round(top3  / total * 100) : 0,
@@ -77,11 +92,11 @@ function useDashboardRankingStats(platform: DashPlatform) {
       const platformList: string[] = platform === "all" ? ["chatgpt", "gemini", "perplexity"] : [platform];
       const allReports = (await Promise.all(
         platformList.map(async (plt) => {
-          const p = new URLSearchParams({ platform: plt, status: "success", dateFrom: thirtyAgo, dateTo: today, limit: "1000" });
+          const p = new URLSearchParams({ platform: plt, status: "success", dateFrom: thirtyAgo, dateTo: today, limit: "5000" });
           const r = await fetch(`${RANKING_API_BASE}/api/ranking-reports?${p}`, { credentials: "include", headers: authHeaders });
           if (!r.ok) return [];
           const b = await r.json();
-          return (b.data ?? b) as { keyword: string; rankingPosition: number | null; clientId: number; platform: string }[];
+          return (b.data ?? b) as Rep[];
         }),
       )).flat();
 
@@ -108,7 +123,7 @@ export function KeywordPerformanceOverview() {
       <div className="flex items-center justify-between gap-4 mb-3 flex-wrap">
         <div>
           <h2 className="text-base font-semibold text-foreground">Keyword Performance Overview</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Last 30 days · best rank per keyword</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Current rank per keyword · scans from the last 30 days</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
