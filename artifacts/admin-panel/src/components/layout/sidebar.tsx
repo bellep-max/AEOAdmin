@@ -140,6 +140,7 @@ const navGroups: NavGroup[] = [
         children: [
           { name: "Overview",           href: "/keyword-rotation/overview", icon: LayoutDashboard },
           { name: "Rotation Dashboard", href: "/keyword-rotation", icon: RefreshCw },
+          { name: "Locked Keywords",    href: "/keyword-rotation/locked", icon: Lock },
           { name: "Archived Keywords",  href: "/keyword-rotation/archived", icon: Archive },
         ],
       },

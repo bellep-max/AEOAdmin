@@ -318,6 +318,10 @@ router.patch("/:id", async (req, res) => {
     if (body.clientId         !== undefined) allowed.clientId         = Number(body.clientId);
     if (body.verificationStatus !== undefined) allowed.verificationStatus = body.verificationStatus === null ? null : String(body.verificationStatus);
     if (body.status            !== undefined) allowed.status            = body.status === null ? null : String(body.status);
+    // Archive/lock fields — needed to unlock/restore a keyword back into rotation.
+    if (body.archivedAt        !== undefined) allowed.archivedAt        = body.archivedAt === null ? null : new Date(body.archivedAt as string);
+    if (body.archiveReason     !== undefined) allowed.archiveReason     = body.archiveReason === null ? null : String(body.archiveReason);
+    if (body.replacementSuggestion !== undefined) allowed.replacementSuggestion = body.replacementSuggestion === null ? null : String(body.replacementSuggestion);
     if (body.notes             !== undefined) allowed.notes             = body.notes === null ? null : String(body.notes);
     if (body.implementedBy     !== undefined) allowed.implementedBy     = body.implementedBy === null ? null : String(body.implementedBy);
     if (body.linkTypeLabel    !== undefined) allowed.linkTypeLabel    = body.linkTypeLabel === null ? null : String(body.linkTypeLabel);
