@@ -14,8 +14,12 @@ import {
   rankingReportsTable,
   clientsTable,
   keywordsTable,
+  clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { and, asc, between, eq, gte, isNotNull } from "drizzle-orm";
+
+const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
+const DEFAULT_BRAND = "signalaeo";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
@@ -39,12 +43,14 @@ router.get("/", requireFreeTrialToken, async (req, res) => {
     const limit = Math.min(Math.max(Number(q.limit) || 500, 1), 2000);
 
     const conds = [
-      isNotNull(clientsTable.brand),
+      eq(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE),
       between(rankingReportsTable.rankingPosition, 1, 3),
       isNotNull(rankingReportsTable.screenshotUrl),
     ];
     if (q.brand) conds.push(eq(clientsTable.brand, q.brand));
     if (q.leadRef) conds.push(eq(clientsTable.leadRef, q.leadRef));
+    if (q.email)
+      conds.push(eq(clientsTable.contactEmail, q.email.toLowerCase()));
     if (q.clientId && /^\d+$/.test(q.clientId)) {
       conds.push(eq(rankingReportsTable.clientId, Number(q.clientId)));
     }
@@ -64,6 +70,7 @@ router.get("/", requireFreeTrialToken, async (req, res) => {
         screenshotUrl: rankingReportsTable.screenshotUrl,
         brand: clientsTable.brand,
         leadRef: clientsTable.leadRef,
+        email: clientsTable.contactEmail,
         slug: clientsTable.slug,
         businessName: clientsTable.businessName,
         campaignId: keywordsTable.aeoPlanId,
@@ -76,6 +83,10 @@ router.get("/", requireFreeTrialToken, async (req, res) => {
       .innerJoin(
         keywordsTable,
         eq(keywordsTable.id, rankingReportsTable.keywordId),
+      )
+      .innerJoin(
+        clientAeoPlansTable,
+        eq(clientAeoPlansTable.id, keywordsTable.aeoPlanId),
       )
       .where(and(...conds))
       .orderBy(asc(rankingReportsTable.rankingPosition));
@@ -100,9 +111,11 @@ router.get("/", requireFreeTrialToken, async (req, res) => {
           { expiresIn: 3600 },
         );
       }
+      const brand = r.brand ?? DEFAULT_BRAND;
       proofs.push({
-        brand: r.brand,
+        brand,
         leadRef: r.leadRef ?? null,
+        email: r.email ?? null,
         proofClientSlug: r.slug ?? null,
         clientId: r.clientId,
         businessId: r.businessId ?? null,
@@ -114,7 +127,7 @@ router.get("/", requireFreeTrialToken, async (req, res) => {
         date: r.date,
         capturedAt: (r.timestamp ?? r.createdAt ?? new Date()).toISOString(),
         screenshotKey: proofScreenshotKey({
-          brand: r.brand as string,
+          brand,
           clientId: r.clientId,
           campaignId: r.campaignId,
           keywordId: r.keywordId,
@@ -144,7 +157,7 @@ router.post("/backfill", requireFreeTrialToken, async (req, res) => {
         : null;
 
     const conds = [
-      isNotNull(clientsTable.brand),
+      eq(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE),
       between(rankingReportsTable.rankingPosition, 1, 3),
       isNotNull(rankingReportsTable.screenshotUrl),
     ];
@@ -157,8 +170,12 @@ router.post("/backfill", requireFreeTrialToken, async (req, res) => {
       })
       .from(rankingReportsTable)
       .innerJoin(
-        clientsTable,
-        eq(clientsTable.id, rankingReportsTable.clientId),
+        keywordsTable,
+        eq(keywordsTable.id, rankingReportsTable.keywordId),
+      )
+      .innerJoin(
+        clientAeoPlansTable,
+        eq(clientAeoPlansTable.id, keywordsTable.aeoPlanId),
       )
       .where(and(...conds));
 

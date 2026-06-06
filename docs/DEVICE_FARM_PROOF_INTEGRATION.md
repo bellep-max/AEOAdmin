@@ -73,6 +73,7 @@ signalaeo/clients/159/campaigns/185/keywords/1532/2026-06-12/screenshot.png
 {
   "brand": "signalaeo",
   "leadRef": "lead_abc123",
+  "email": "joe@example.com",
   "proofClientSlug": "joes-plumbing",
   "clientId": 159,
   "businessId": 181,
@@ -106,7 +107,9 @@ GET https://jjm59vpn3y.us-east-1.awsapprunner.com/api/proofs
 X-Free-Trial-Token: <FREE_TRIAL_TOKEN>
 ```
 
-**Query params (all optional):** `brand`, `leadRef`, `clientId`, `since` (YYYY-MM-DD), `limit` (default 500).
+**Query params (all optional):** `brand`, `leadRef`, `email`, `clientId`, `since` (YYYY-MM-DD), `limit` (default 500).
+
+> **Matching note:** CRM-posted leads match by `leadRef`. Free-trial leads entered into admin **manually** (no `leadRef`) match by **`email`** (the lead's email) or by `clientId`. Both are in the response/manifest. Manual leads default to `brand: "signalaeo"`.
 
 **Response:**
 

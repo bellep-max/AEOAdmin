@@ -24,16 +24,22 @@ import {
   rankingReportsTable,
   clientsTable,
   keywordsTable,
+  clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { and, asc, between, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 const PROOF_BUCKET = process.env.PROOF_BUCKET ?? "aeo-rank-screenshots";
+const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
+// Free-trial leads entered manually (vs via the CRM endpoint) have no brand;
+// default to the primary brand so the proof path/manifest are still complete.
+const DEFAULT_BRAND = "signalaeo";
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? "us-east-1" });
 
 export interface ProofManifest {
   brand: string;
   leadRef: string | null;
+  email: string | null;
   proofClientSlug: string | null;
   clientId: number;
   businessId: number | null;
@@ -103,16 +109,22 @@ export async function writeProofForKeywordDate(
       screenshotUrl: rankingReportsTable.screenshotUrl,
       brand: clientsTable.brand,
       leadRef: clientsTable.leadRef,
+      email: clientsTable.contactEmail,
       slug: clientsTable.slug,
       businessName: clientsTable.businessName,
       campaignId: keywordsTable.aeoPlanId,
       keywordText: keywordsTable.keywordText,
+      planType: clientAeoPlansTable.planType,
     })
     .from(rankingReportsTable)
     .innerJoin(clientsTable, eq(clientsTable.id, rankingReportsTable.clientId))
     .innerJoin(
       keywordsTable,
       eq(keywordsTable.id, rankingReportsTable.keywordId),
+    )
+    .innerJoin(
+      clientAeoPlansTable,
+      eq(clientAeoPlansTable.id, keywordsTable.aeoPlanId),
     )
     .where(
       and(
@@ -123,10 +135,11 @@ export async function writeProofForKeywordDate(
     )
     .orderBy(asc(rankingReportsTable.rankingPosition));
 
-  // Only CRM free-trial clients (brand set) with a real S3 screenshot qualify.
+  // Any free-trial-plan keyword (manual or CRM-posted) with a real S3
+  // screenshot and a non-branded term qualifies.
   const best = rows.find(
     (r) =>
-      r.brand &&
+      r.planType === FREE_TRIAL_PLAN_TYPE &&
       r.screenshotUrl &&
       parseS3Uri(r.screenshotUrl) &&
       r.keyword &&
@@ -134,9 +147,10 @@ export async function writeProofForKeywordDate(
   );
   if (!best) return null;
 
+  const brand = best.brand ?? DEFAULT_BRAND;
   const src = parseS3Uri(best.screenshotUrl as string)!;
   const prefix = proofPrefix({
-    brand: best.brand as string,
+    brand,
     clientId: best.clientId,
     campaignId: best.campaignId,
     keywordId,
@@ -151,8 +165,9 @@ export async function writeProofForKeywordDate(
   ).toISOString();
 
   const manifest: ProofManifest = {
-    brand: best.brand as string,
+    brand,
     leadRef: best.leadRef ?? null,
+    email: best.email ?? null,
     proofClientSlug: best.slug ?? null,
     clientId: best.clientId,
     businessId: best.businessId ?? null,
