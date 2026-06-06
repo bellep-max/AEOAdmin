@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Building2, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -233,16 +233,21 @@ export default function Clients() {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error("Failed");
-      // Optimistically drop the row from every cached /api/clients query so
-      // the table updates the instant the DELETE returns, instead of waiting
-      // on the refetch round-trip. setQueriesData (predicate form) matches
-      // all queries whose key starts with ["/api/clients"], covering every
-      // status-filter variant the page uses.
+      // Optimistically flip the row's status to 'inactive' in every cached
+      // /api/clients query. We don't remove the row outright because the user
+      // might be viewing Status='All' or 'Inactive', in which case the row
+      // should stay (with the Inactive badge) instead of vanishing and
+      // reappearing on refetch. The secondary FE filter (statusMatch) hides
+      // it from the Active view automatically.
       queryClient.setQueriesData<unknown[]>(
         { queryKey: ["/api/clients"] },
         (old) =>
           Array.isArray(old)
-            ? old.filter((c) => (c as { id: number }).id !== clientId)
+            ? old.map((c) =>
+                (c as { id: number }).id === clientId
+                  ? { ...(c as object), status: "inactive" }
+                  : c,
+              )
             : old,
       );
       toast({ title: "Client archived" });
@@ -259,10 +264,20 @@ export default function Clients() {
     const newStatus = currentStatus === "active" ? "inactive" : "active";
     setTogglingId(clientId);
     // Optimistic update
-    queryClient.setQueryData(["/api/clients"], (old: any) =>
-      old?.map((c: any) =>
-        c.id === clientId ? { ...c, status: newStatus } : c,
-      ),
+    // setQueriesData with the prefix queryKey matches every cached
+    // /api/clients variant (active/inactive/all) so the optimistic update
+    // actually reaches the right cache entry. Plain setQueryData with the
+    // literal key was a no-op because the real cache key includes the params.
+    queryClient.setQueriesData<unknown[]>(
+      { queryKey: ["/api/clients"] },
+      (old) =>
+        Array.isArray(old)
+          ? old.map((c) =>
+              (c as { id: number }).id === clientId
+                ? { ...(c as object), status: newStatus }
+                : c,
+            )
+          : old,
     );
     try {
       const res = await rawFetch(`/api/clients/${clientId}`, {
@@ -280,10 +295,16 @@ export default function Clients() {
       });
     } catch {
       // Revert
-      queryClient.setQueryData(["/api/clients"], (old: any) =>
-        old?.map((c: any) =>
-          c.id === clientId ? { ...c, status: currentStatus } : c,
-        ),
+      queryClient.setQueriesData<unknown[]>(
+        { queryKey: ["/api/clients"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.map((c) =>
+                (c as { id: number }).id === clientId
+                  ? { ...(c as object), status: currentStatus }
+                  : c,
+              )
+            : old,
       );
       toast({ title: "Failed to update status", variant: "destructive" });
     } finally {
@@ -970,20 +991,39 @@ export default function Clients() {
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </Link>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
-                        onClick={() =>
-                          setConfirmDelete({
-                            id: client.id,
-                            name: client.businessName,
-                          })
-                        }
-                        title="Delete Client"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {client.status === "inactive" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-emerald-600"
+                          onClick={() =>
+                            toggleStatus(
+                              client.id,
+                              client.status,
+                              client.businessName,
+                            )
+                          }
+                          disabled={togglingId === client.id}
+                          title="Restore Client"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
+                          onClick={() =>
+                            setConfirmDelete({
+                              id: client.id,
+                              name: client.businessName,
+                            })
+                          }
+                          title="Archive Client"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
