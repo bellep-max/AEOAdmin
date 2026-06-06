@@ -83,7 +83,19 @@ const navGroups: NavGroup[] = [
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients", href: "/clients", icon: Users },
+      {
+        name: "Clients",
+        href: "/clients",
+        icon: Users,
+        children: [
+          { name: "All Clients", href: "/clients", icon: Users },
+          {
+            name: "Archived Clients",
+            href: "/clients/archived",
+            icon: Archive,
+          },
+        ],
+      },
       {
         name: "Keywords",
         href: "/keywords",
@@ -139,10 +151,26 @@ const navGroups: NavGroup[] = [
         href: "/keyword-rotation",
         icon: RefreshCw,
         children: [
-          { name: "Overview",           href: "/keyword-rotation/overview", icon: LayoutDashboard },
-          { name: "Rotation Dashboard", href: "/keyword-rotation", icon: RefreshCw },
-          { name: "Locked Keywords",    href: "/keyword-rotation/locked", icon: Lock },
-          { name: "Archived Keywords",  href: "/keyword-rotation/archived", icon: Archive },
+          {
+            name: "Overview",
+            href: "/keyword-rotation/overview",
+            icon: LayoutDashboard,
+          },
+          {
+            name: "Rotation Dashboard",
+            href: "/keyword-rotation",
+            icon: RefreshCw,
+          },
+          {
+            name: "Locked Keywords",
+            href: "/keyword-rotation/locked",
+            icon: Lock,
+          },
+          {
+            name: "Archived Keywords",
+            href: "/keyword-rotation/archived",
+            icon: Archive,
+          },
         ],
       },
       { name: "Prompts", href: "/admin/prompts", icon: FileText },
