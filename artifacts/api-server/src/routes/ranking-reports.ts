@@ -325,6 +325,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
       .returning();
     res.status(201).json(report);
     maybeAutoLock(body.keywordId, body.rankingPosition);
+    exportProofIfQualifies(body.keywordId, body.date);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
     res.status(500).json({ error: "Internal server error" });
