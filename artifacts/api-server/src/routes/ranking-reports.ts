@@ -13,6 +13,7 @@ import { requireApiToken } from "../middlewares/api-token";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
+import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -29,10 +30,15 @@ function maybeAutoLock(keywordId: unknown, rankingPosition: unknown): void {
   rotateWinners({ keywordId: kid, dryRun: false })
     .then((r) => {
       if (r.locked.length > 0) {
-        logger.info({ keywordId: kid, locked: r.locked }, "auto-rotation: locked keyword on win");
+        logger.info(
+          { keywordId: kid, locked: r.locked },
+          "auto-rotation: locked keyword on win",
+        );
       }
     })
-    .catch((err) => logger.warn({ err, keywordId: kid }, "auto-rotation: lock-on-win failed"));
+    .catch((err) =>
+      logger.warn({ err, keywordId: kid }, "auto-rotation: lock-on-win failed"),
+    );
 }
 
 /* Shared S3 client. Credentials are resolved from the App Runner instance role
@@ -52,7 +58,12 @@ const s3Client = new S3Client({
      - limit (default 1000, max 5000) + offset    (pagination)
    Filters are combined with AND. Sorted newest first. */
 const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
-const intInRange = (raw: unknown, min: number, max: number, fallback: number) => {
+const intInRange = (
+  raw: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+) => {
   const n = parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
@@ -66,7 +77,9 @@ router.get("/", requireApiToken, async (req, res) => {
     if (q.clientId)
       conditions.push(eq(rankingReportsTable.clientId, parseInt(q.clientId)));
     if (q.businessId)
-      conditions.push(eq(rankingReportsTable.businessId, parseInt(q.businessId)));
+      conditions.push(
+        eq(rankingReportsTable.businessId, parseInt(q.businessId)),
+      );
     if (q.aeoPlanId)
       conditions.push(eq(keywordsTable.aeoPlanId, parseInt(q.aeoPlanId)));
     if (q.keywordId)
@@ -262,6 +275,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         .returning();
       res.status(200).json({ ...updated, upserted: true });
       maybeAutoLock(body.keywordId, body.rankingPosition);
+      exportProofIfQualifies(body.keywordId, body.date);
       return;
     }
 
