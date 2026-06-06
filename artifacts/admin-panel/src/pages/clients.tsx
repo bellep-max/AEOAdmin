@@ -233,6 +233,18 @@ export default function Clients() {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error("Failed");
+      // Optimistically drop the row from every cached /api/clients query so
+      // the table updates the instant the DELETE returns, instead of waiting
+      // on the refetch round-trip. setQueriesData (predicate form) matches
+      // all queries whose key starts with ["/api/clients"], covering every
+      // status-filter variant the page uses.
+      queryClient.setQueriesData<unknown[]>(
+        { queryKey: ["/api/clients"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.filter((c) => (c as { id: number }).id !== clientId)
+            : old,
+      );
       toast({ title: "Client archived" });
       refetch();
     } catch {
