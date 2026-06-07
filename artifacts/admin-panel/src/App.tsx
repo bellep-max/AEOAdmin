@@ -33,9 +33,7 @@ import AeoReporter from "@/pages/aeo-reporter";
 import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
-import ArchivedKeywords from "@/pages/archived-keywords";
-import ArchivedClients from "@/pages/archived-clients";
-import LockedClients from "@/pages/locked-clients";
+import Archived from "@/pages/archived";
 
 import type { ComponentType } from "react";
 
@@ -75,9 +73,8 @@ function ProtectedRoutes() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/archived" component={Archived} />
         <Route path="/clients" component={Clients} />
-        <Route path="/clients/archived" component={ArchivedClients} />
-        <Route path="/clients/locked" component={LockedClients} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
           path="/clients/:clientId/businesses/:businessId"
@@ -110,7 +107,6 @@ function ProtectedRoutes() {
         <Route path="/keyword-rotation" component={KeywordRotation} />
         <Route path="/keyword-rotation/overview" component={RotationOverview} />
         <Route path="/keyword-rotation/locked" component={LockedKeywords} />
-        <Route path="/keyword-rotation/archived" component={ArchivedKeywords} />
         <Route path="/admin/prompts" component={Prompts} />
         <Route path="/admin/variants">
           <OwnerGate component={AdminVariants} />

@@ -83,7 +83,6 @@ export default function LockedKeywords() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["locked-keywords"] });
       qc.invalidateQueries({ queryKey: ["kw-rotation"] });
-      qc.invalidateQueries({ queryKey: ["archived-keywords"] });
       toast({ title: "Keyword unlocked", description: "Moved back into active rotation." });
     },
     onError: () => toast({ title: "Failed to unlock", variant: "destructive" }),

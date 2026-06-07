@@ -83,24 +83,8 @@ const navGroups: NavGroup[] = [
   {
     label: "Infrastructure",
     items: [
-      {
-        name: "Clients",
-        href: "/clients",
-        icon: Users,
-        children: [
-          { name: "All Clients", href: "/clients", icon: Users },
-          {
-            name: "Archived Clients",
-            href: "/clients/archived",
-            icon: Archive,
-          },
-          {
-            name: "Locked / Won Clients",
-            href: "/clients/locked",
-            icon: Trophy,
-          },
-        ],
-      },
+      { name: "Clients", href: "/clients", icon: Users },
+      { name: "Archived", href: "/archived", icon: Archive },
       {
         name: "Keywords",
         href: "/keywords",
@@ -170,11 +154,6 @@ const navGroups: NavGroup[] = [
             name: "Locked Keywords",
             href: "/keyword-rotation/locked",
             icon: Lock,
-          },
-          {
-            name: "Archived Keywords",
-            href: "/keyword-rotation/archived",
-            icon: Archive,
           },
         ],
       },

@@ -426,7 +426,7 @@ export default function Clients() {
       const planMatch =
         filterPlan === "all" ||
         ((c as any).planTypes ?? []).includes(filterPlan);
-      // Archived rows live on /clients/archived; hide them here so an
+      // Archived rows live on /archived; hide them here so an
       // optimistic stamp from doDeleteClient takes effect immediately even
       // before refetch returns the filtered list from the BE.
       const archivedMatch = !(c as any).archivedAt;
