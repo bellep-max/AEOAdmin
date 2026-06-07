@@ -26,6 +26,7 @@ import analyticsRouter from "./analytics";
 import llmRouter from "./llm";
 import rankingsEmailRouter from "./rankings-email";
 import portalRouter from "./portal";
+import locationRouter from "./location";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use("/analytics", analyticsRouter);
 router.use("/llm", llmRouter);
 router.use("/rankings", rankingsEmailRouter);
 router.use("/portal", portalRouter);
+router.use("/location", locationRouter);
 
 export default router;
