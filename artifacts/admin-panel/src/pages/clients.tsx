@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Plus, Pencil, Trash2, Building2, RotateCcw } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Building2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -991,39 +991,20 @@ export default function Clients() {
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </Link>
-                      {client.status === "inactive" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-slate-600 hover:text-emerald-600"
-                          onClick={() =>
-                            toggleStatus(
-                              client.id,
-                              client.status,
-                              client.businessName,
-                            )
-                          }
-                          disabled={togglingId === client.id}
-                          title="Restore Client"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
-                          onClick={() =>
-                            setConfirmDelete({
-                              id: client.id,
-                              name: client.businessName,
-                            })
-                          }
-                          title="Archive Client"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
+                        onClick={() =>
+                          setConfirmDelete({
+                            id: client.id,
+                            name: client.businessName,
+                          })
+                        }
+                        title="Archive Client"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
