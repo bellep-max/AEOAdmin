@@ -1,17 +1,14 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Archive,
-  RotateCcw,
+  Trophy,
   Search,
+  Calendar,
   ChevronRight,
-  Loader2,
-  CheckCircle2,
   Building2,
   MapPin,
-  Calendar,
+  Archive,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -22,7 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 import { format } from "date-fns";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -34,7 +31,7 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(BASE + path, { ...init, headers: h });
 }
 
-interface ArchivedClient {
+interface LockedClient {
   id: number;
   businessName: string;
   city: string | null;
@@ -42,52 +39,28 @@ interface ArchivedClient {
   planName: string | null;
   status: string | null;
   archivedAt: string | null;
-  archiveReason: string | null;
   lockedAt: string | null;
   keywordCount: number;
   businessCount: number;
   campaignCount: number;
 }
 
-export default function ArchivedClients() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
+export default function LockedClients() {
   const [search, setSearch] = useState("");
 
+  // Locked = at least one keyword on this client hit top-3 in the past.
+  // We show ALL locked clients (status filter passed through so archived
+  // ones still appear with the Archived badge).
   const { data: clients = [], isLoading } = useQuery({
-    queryKey: ["archived-clients"],
+    queryKey: ["locked-clients"],
     queryFn: async () => {
-      // The BE returns rows where archived_at IS NOT NULL, regardless of
-      // status — archive is its own dimension now, separate from the Switch.
-      const r = await rawFetch("/api/clients?archived=true&status=all");
-      if (!r.ok) throw new Error("Failed to load archived clients");
+      const r = await rawFetch(
+        "/api/clients?locked=true&archived=all&status=all",
+      );
+      if (!r.ok) throw new Error("Failed to load locked clients");
       const b = await r.json();
-      return (b.data ?? b) as ArchivedClient[];
+      return (b.data ?? b) as LockedClient[];
     },
-  });
-
-  const restore = useMutation({
-    mutationFn: async (id: number) => {
-      const r = await rawFetch(`/api/clients/${id}/restore`, {
-        method: "POST",
-      });
-      if (!r.ok) throw new Error("Failed to restore");
-      return r.json();
-    },
-    onSuccess: () => {
-      // Invalidate every cached /api/clients variant so the row hops back to
-      // /clients and disappears from here in one shot.
-      qc.invalidateQueries({ queryKey: ["archived-clients"] });
-      qc.invalidateQueries({ queryKey: ["locked-clients"] });
-      qc.invalidateQueries({ queryKey: ["/api/clients"] });
-      qc.invalidateQueries({ queryKey: ["/api/keywords"] });
-      toast({
-        title: "Client restored",
-        description: "Client + all its keywords are running again.",
-      });
-    },
-    onError: () =>
-      toast({ title: "Failed to restore", variant: "destructive" }),
   });
 
   const filtered = clients.filter((c) => {
@@ -99,23 +72,36 @@ export default function ArchivedClients() {
     );
   });
 
+  const stillRunning = clients.filter((c) => !c.archivedAt).length;
+  const alreadyArchived = clients.length - stillRunning;
+
   return (
     <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Archive className="w-6 h-6 text-muted-foreground" />
-            Archived Clients
+            <Trophy className="w-6 h-6 text-amber-500" />
+            Locked / Won Clients
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Clients moved out of the active list via the trash icon. Sessions,
-            audits, and ranking history are preserved. Restoring un-archives the
-            client and re-activates all its keywords.
+            Clients that have at least one keyword ranking top-3 on any
+            platform. Set automatically by the rotation service the first time a
+            keyword wins. Free-trial clients here are graduation candidates —
+            archive them from the Clients page when you're ready to wind down
+            the trial.
           </p>
         </div>
-        <Badge variant="outline" className="text-sm px-3 py-1">
-          {clients.length} archived
-        </Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge
+            variant="outline"
+            className="text-sm px-3 py-1 border-amber-400 text-amber-700"
+          >
+            {clients.length} locked
+          </Badge>
+          <div className="text-xs text-muted-foreground">
+            {stillRunning} running · {alreadyArchived} already archived
+          </div>
+        </div>
       </div>
 
       <Card>
@@ -144,10 +130,11 @@ export default function ArchivedClients() {
 
       {!isLoading && filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center text-muted-foreground gap-3">
-          <CheckCircle2 className="w-12 h-12 opacity-20" />
-          <p className="text-base font-medium">No archived clients</p>
+          <Trophy className="w-12 h-12 opacity-20" />
+          <p className="text-base font-medium">No locked clients yet</p>
           <p className="text-sm opacity-60">
-            Clients show up here after being archived from the Clients page.
+            Clients show up here the first time any of their keywords hits
+            top-3.
           </p>
         </div>
       )}
@@ -155,10 +142,10 @@ export default function ArchivedClients() {
       {!isLoading && filtered.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Archived Clients</CardTitle>
+            <CardTitle className="text-base">Locked Clients</CardTitle>
             <CardDescription>
               {filtered.length} client{filtered.length !== 1 ? "s" : ""} ·
-              sorted by archive date
+              sorted by most recently won
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -166,21 +153,16 @@ export default function ArchivedClients() {
               <div className="flex-1">Client</div>
               <div className="w-36 flex-shrink-0">Location</div>
               <div className="w-28 flex-shrink-0">Plan</div>
-              <div className="w-32 flex-shrink-0">Archived</div>
+              <div className="w-32 flex-shrink-0">First Won</div>
               <div className="w-40 flex-shrink-0">Inventory</div>
-              <div className="w-24 flex-shrink-0 text-right">Actions</div>
+              <div className="w-24 flex-shrink-0 text-right">State</div>
             </div>
 
             <div className="divide-y">
               {filtered
                 .sort((a, b) => {
-                  // Most recently archived first; rows without a stamp fall to the bottom.
-                  const ad = a.archivedAt
-                    ? new Date(a.archivedAt).getTime()
-                    : 0;
-                  const bd = b.archivedAt
-                    ? new Date(b.archivedAt).getTime()
-                    : 0;
+                  const ad = a.lockedAt ? new Date(a.lockedAt).getTime() : 0;
+                  const bd = b.lockedAt ? new Date(b.lockedAt).getTime() : 0;
                   return bd - ad;
                 })
                 .map((c) => (
@@ -191,26 +173,15 @@ export default function ArchivedClients() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium text-sm truncate">
-                          {c.businessName}
-                        </span>
-                        {c.lockedAt && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] border-amber-400 text-amber-700"
-                          >
-                            Won
-                          </Badge>
-                        )}
+                        <Link href={`/clients/${c.id}`}>
+                          <span className="font-medium text-sm truncate hover:underline cursor-pointer">
+                            {c.businessName}
+                          </span>
+                        </Link>
                       </div>
                       <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                         <ChevronRight className="w-3 h-3" />
                         <span>ID #{c.id}</span>
-                        {c.archiveReason && (
-                          <span className="italic truncate ml-2">
-                            {c.archiveReason}
-                          </span>
-                        )}
                       </div>
                     </div>
 
@@ -238,10 +209,10 @@ export default function ArchivedClients() {
                     </div>
 
                     <div className="w-32 flex-shrink-0">
-                      {c.archivedAt ? (
+                      {c.lockedAt ? (
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Calendar className="w-3 h-3" />
-                          {format(new Date(c.archivedAt), "MMM d, yyyy")}
+                          {format(new Date(c.lockedAt), "MMM d, yyyy")}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -260,20 +231,26 @@ export default function ArchivedClients() {
                     </div>
 
                     <div className="w-24 flex-shrink-0 flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                        onClick={() => restore.mutate(c.id)}
-                        disabled={restore.isPending}
-                      >
-                        {restore.isPending ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <RotateCcw className="w-3 h-3" />
-                        )}
-                        Restore
-                      </Button>
+                      {c.archivedAt ? (
+                        <Badge variant="outline" className="text-[10px] gap-1">
+                          <Archive className="w-2.5 h-2.5" />
+                          Archived
+                        </Badge>
+                      ) : c.status === "inactive" ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-slate-600"
+                        >
+                          Paused
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-emerald-700 border-emerald-300"
+                        >
+                          Active
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 ))}

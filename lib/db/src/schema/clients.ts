@@ -51,6 +51,17 @@ export const clientsTable = pgTable("clients", {
   createdBy: text("created_by"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  /* ── Lifecycle (mirrors keywords) ──
+     status     → active/inactive (Switch toggle, manual pause)
+     archivedAt → trash icon stamped this; row hides from /clients
+                  and appears on /clients/archived
+     lockedAt   → set by the rotation service the first time any
+                  keyword on this client hits top-3; row appears on
+                  /clients/locked. Archive ≠ Lock — a client can be
+                  in both, neither, or just one. */
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archiveReason: text("archive_reason"),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
 });
 
 export const insertClientSchema = createInsertSchema(clientsTable).omit({

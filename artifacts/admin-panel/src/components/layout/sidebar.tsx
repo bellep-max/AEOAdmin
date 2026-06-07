@@ -94,6 +94,11 @@ const navGroups: NavGroup[] = [
             href: "/clients/archived",
             icon: Archive,
           },
+          {
+            name: "Locked / Won Clients",
+            href: "/clients/locked",
+            icon: Trophy,
+          },
         ],
       },
       {

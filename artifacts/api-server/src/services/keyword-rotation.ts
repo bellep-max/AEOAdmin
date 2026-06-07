@@ -14,8 +14,14 @@
  * run from a cron/the orchestrator and produce the same result headless.
  */
 import { db } from "@workspace/db";
-import { keywordsTable, rankingReportsTable, businessesTable, keywordVariantsTable } from "@workspace/db/schema";
-import { and, eq, isNull, desc, inArray } from "drizzle-orm";
+import {
+  keywordsTable,
+  rankingReportsTable,
+  businessesTable,
+  keywordVariantsTable,
+  clientsTable,
+} from "@workspace/db/schema";
+import { and, eq, isNull, desc, inArray, sql } from "drizzle-orm";
 import { generateVariants } from "./variant-generator";
 import { logger } from "../lib/logger";
 
@@ -24,9 +30,9 @@ export const TOP3_THRESHOLD = 3;
 export interface RotationLock {
   keywordId: number;
   keywordText: string;
-  clientId: number;          // for grouping winners by client in the bulk-lock UI
-  triggerPlatform: string;   // platform that triggered the lock, e.g. "perplexity"
-  triggerPosition: number;   // the top-3 position on that platform (1..3)
+  clientId: number; // for grouping winners by client in the bulk-lock UI
+  triggerPlatform: string; // platform that triggered the lock, e.g. "perplexity"
+  triggerPosition: number; // the top-3 position on that platform (1..3)
   replacement: string;
   newKeywordId: number | null;
 }
@@ -40,29 +46,54 @@ export interface RotationResult {
  * Scan active keywords (optionally for one client), lock the winners and rotate
  * in replacements. Pass dryRun=true to preview without mutating.
  */
-export async function rotateWinners(opts: { clientId?: number; businessId?: number; aeoPlanId?: number; keywordId?: number; keywordIds?: number[]; dryRun?: boolean } = {}): Promise<RotationResult> {
+export async function rotateWinners(
+  opts: {
+    clientId?: number;
+    businessId?: number;
+    aeoPlanId?: number;
+    keywordId?: number;
+    keywordIds?: number[];
+    dryRun?: boolean;
+  } = {},
+): Promise<RotationResult> {
   const dryRun = opts.dryRun === true;
-  const conds = [eq(keywordsTable.isActive, true), isNull(keywordsTable.archivedAt)];
-  if (opts.clientId != null) conds.push(eq(keywordsTable.clientId, opts.clientId));
+  const conds = [
+    eq(keywordsTable.isActive, true),
+    isNull(keywordsTable.archivedAt),
+  ];
+  if (opts.clientId != null)
+    conds.push(eq(keywordsTable.clientId, opts.clientId));
   // Lock an explicit set of keywords — used by the "lock selected" bulk action.
-  if (opts.keywordIds != null && opts.keywordIds.length > 0) conds.push(inArray(keywordsTable.id, opts.keywordIds));
+  if (opts.keywordIds != null && opts.keywordIds.length > 0)
+    conds.push(inArray(keywordsTable.id, opts.keywordIds));
   // Scope to a single business/campaign (aeoPlan) so rotation can run at the
   // campaign level, not just per client.
-  if (opts.businessId != null) conds.push(eq(keywordsTable.businessId, opts.businessId));
-  if (opts.aeoPlanId != null) conds.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
+  if (opts.businessId != null)
+    conds.push(eq(keywordsTable.businessId, opts.businessId));
+  if (opts.aeoPlanId != null)
+    conds.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
   // Scope to a single keyword — used by the auto-lock-on-win hook that fires
   // when a ranking report lands a top-3 for one keyword.
   if (opts.keywordId != null) conds.push(eq(keywordsTable.id, opts.keywordId));
 
-  const keywords = await db.select().from(keywordsTable).where(and(...conds));
+  const keywords = await db
+    .select()
+    .from(keywordsTable)
+    .where(and(...conds));
   const locked: RotationLock[] = [];
 
   for (const kw of keywords) {
     const recent = await db
-      .select({ platform: rankingReportsTable.platform, pos: rankingReportsTable.rankingPosition })
+      .select({
+        platform: rankingReportsTable.platform,
+        pos: rankingReportsTable.rankingPosition,
+      })
       .from(rankingReportsTable)
       .where(eq(rankingReportsTable.keywordId, kw.id))
-      .orderBy(desc(rankingReportsTable.createdAt), desc(rankingReportsTable.id));
+      .orderBy(
+        desc(rankingReportsTable.createdAt),
+        desc(rankingReportsTable.id),
+      );
 
     if (recent.length === 0) continue; // no reports → cannot win
 
@@ -74,7 +105,8 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
     const latestByPlatform = new Map<string, number>();
     for (const r of recent) {
       if (r.platform == null || r.pos == null || r.pos < 1) continue;
-      if (!latestByPlatform.has(r.platform)) latestByPlatform.set(r.platform, r.pos);
+      if (!latestByPlatform.has(r.platform))
+        latestByPlatform.set(r.platform, r.pos);
     }
 
     // pick the strongest current top-3 across platforms (smallest position wins)
@@ -93,10 +125,16 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
 
     if (!dryRun) {
       // business context for a better AI replacement
-      let bizName: string | undefined, city: string | undefined, state: string | undefined;
+      let bizName: string | undefined,
+        city: string | undefined,
+        state: string | undefined;
       if (kw.businessId != null) {
         const [biz] = await db
-          .select({ name: businessesTable.name, city: businessesTable.city, state: businessesTable.state })
+          .select({
+            name: businessesTable.name,
+            city: businessesTable.city,
+            state: businessesTable.state,
+          })
           .from(businessesTable)
           .where(eq(businessesTable.id, kw.businessId));
         bizName = biz?.name ?? undefined;
@@ -104,10 +142,19 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
         state = biz?.state ?? undefined;
       }
       try {
-        const sug = await generateVariants({ keyword: kw.keywordText, businessName: bizName, city, state, count: 5 });
+        const sug = await generateVariants({
+          keyword: kw.keywordText,
+          businessName: bizName,
+          city,
+          state,
+          count: 5,
+        });
         replacement = sug.variants?.[0] ?? replacement;
       } catch (err) {
-        logger.warn({ err, keywordId: kw.id }, "rotation: variant generation failed, using fallback replacement");
+        logger.warn(
+          { err, keywordId: kw.id },
+          "rotation: variant generation failed, using fallback replacement",
+        );
       }
 
       // LOCK the winner (archive → drops out of ranking via build-session guard)
@@ -121,6 +168,14 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
           replacementSuggestion: replacement,
         })
         .where(eq(keywordsTable.id, kw.id));
+
+      // Stamp the client's locked_at the first time any of its keywords wins.
+      // COALESCE keeps the original stamp on subsequent wins so locked_at
+      // reflects "first graduation," not "most recent win."
+      await db
+        .update(clientsTable)
+        .set({ lockedAt: sql`COALESCE(${clientsTable.lockedAt}, now())` })
+        .where(eq(clientsTable.id, kw.clientId));
 
       // ROTATE in the replacement, same business/campaign
       const [nk] = await db
@@ -143,7 +198,13 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
       if (nk?.id != null) {
         const nkId = nk.id;
         try {
-          const vg = await generateVariants({ keyword: replacement, businessName: bizName, city, state, count: 5 });
+          const vg = await generateVariants({
+            keyword: replacement,
+            businessName: bizName,
+            city,
+            state,
+            count: 5,
+          });
           const variants = (vg.variants ?? []).filter((v): v is string => !!v);
           if (variants.length > 0) {
             await db.insert(keywordVariantsTable).values(
@@ -157,12 +218,23 @@ export async function rotateWinners(opts: { clientId?: number; businessId?: numb
             );
           }
         } catch (err) {
-          logger.warn({ err, keywordId: nkId }, "rotation: variant generation for replacement failed");
+          logger.warn(
+            { err, keywordId: nkId },
+            "rotation: variant generation for replacement failed",
+          );
         }
       }
     }
 
-    locked.push({ keywordId: kw.id, keywordText: kw.keywordText, clientId: kw.clientId, triggerPlatform, triggerPosition, replacement, newKeywordId });
+    locked.push({
+      keywordId: kw.id,
+      keywordText: kw.keywordText,
+      clientId: kw.clientId,
+      triggerPlatform,
+      triggerPosition,
+      replacement,
+      newKeywordId,
+    });
   }
 
   return { scanned: keywords.length, locked, dryRun };

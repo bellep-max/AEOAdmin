@@ -35,6 +35,7 @@ import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
 import ArchivedKeywords from "@/pages/archived-keywords";
 import ArchivedClients from "@/pages/archived-clients";
+import LockedClients from "@/pages/locked-clients";
 
 import type { ComponentType } from "react";
 
@@ -76,6 +77,7 @@ function ProtectedRoutes() {
         <Route path="/" component={Dashboard} />
         <Route path="/clients" component={Clients} />
         <Route path="/clients/archived" component={ArchivedClients} />
+        <Route path="/clients/locked" component={LockedClients} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
           path="/clients/:clientId/businesses/:businessId"

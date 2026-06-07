@@ -9,23 +9,61 @@ import {
   rankingReportsTable,
   clientAeoPlansTable,
 } from "@workspace/db/schema";
-import { eq, and, ilike, sql, desc, inArray } from "drizzle-orm";
+import {
+  eq,
+  and,
+  ilike,
+  sql,
+  desc,
+  inArray,
+  isNull,
+  isNotNull,
+} from "drizzle-orm";
 
 const router = Router();
 
+/*
+ * Client lifecycle has three independent dimensions:
+ *   - status          'active' | 'inactive'   → Switch toggle (pause / resume)
+ *   - archived_at     timestamptz | null      → Trash icon (move to Archived)
+ *   - locked_at       timestamptz | null      → Auto-set by rotation when any
+ *                                                keyword on this client hits top-3
+ *
+ * Three views the FE asks for:
+ *   GET /api/clients                 → not archived  (default Clients page)
+ *   GET /api/clients?archived=true   → archived_at IS NOT NULL
+ *   GET /api/clients?locked=true     → locked_at   IS NOT NULL
+ *
+ * The legacy status=active/inactive/all param still works on top — useful
+ * for the Status switch filter on the main page, which only wants to see
+ * paused vs running.
+ */
 router.get("/", async (req, res) => {
   try {
-    const { status, search } = req.query as Record<string, string>;
-    let query = db.select().from(clientsTable);
+    const { status, search, archived, locked } = req.query as Record<
+      string,
+      string
+    >;
     const conditions: ReturnType<typeof eq>[] = [];
-    /* Default to hiding archived clients (status='inactive') from every
-       consumer (Rankings filter, Sessions filter, etc.). Pass status=all
-       to surface everything, or status=inactive to see only archived. */
-    const statusFilter =
-      status === "all" ? null : status === "inactive" ? "inactive" : "active";
-    if (statusFilter) {
-      conditions.push(eq(clientsTable.status, statusFilter));
+
+    // archived dimension (default: hide archived rows)
+    if (archived === "true") {
+      conditions.push(isNotNull(clientsTable.archivedAt));
+    } else if (archived !== "all") {
+      conditions.push(isNull(clientsTable.archivedAt));
     }
+
+    // locked dimension (optional; defaults to no filter)
+    if (locked === "true") conditions.push(isNotNull(clientsTable.lockedAt));
+    else if (locked === "false") conditions.push(isNull(clientsTable.lockedAt));
+
+    // status filter still applies on top
+    if (status === "active" || status === "inactive") {
+      conditions.push(eq(clientsTable.status, status));
+    } else if (!status || status === "all") {
+      // no status filter — both active and inactive are returned
+    }
+
     const baseClients = await db
       .select()
       .from(clientsTable)
@@ -290,21 +328,30 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-/* Soft-delete: archive the client by flipping status -> 'inactive' and
-   cascading is_active=false to its keywords + keyword_links. Preserves
-   all historical sessions / ranking_reports / audit_logs. Re-deleting an
-   already-inactive client is a no-op (idempotent). */
+/* Archive: stamp archived_at on the client and cascade is_active=false to
+   its keywords + keyword_links so audits stop running. status is left
+   alone — that's the Switch's column (pause vs running). Re-archiving an
+   already-archived client is a no-op (COALESCE keeps the original stamp). */
 router.delete("/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const reason =
+      (req.body as { reason?: string } | undefined)?.reason ??
+      "Archived from Clients page";
 
     const [client] = await db
       .update(clientsTable)
-      .set({ status: "inactive" })
+      .set({
+        archivedAt: sql`COALESCE(${clientsTable.archivedAt}, now())`,
+        archiveReason: sql`COALESCE(${clientsTable.archiveReason}, ${reason})`,
+      })
       .where(eq(clientsTable.id, id))
       .returning();
     if (!client) return res.status(404).json({ error: "Not found" });
 
+    // Cascade: stop ranking work for this client's keywords + links.
     await db
       .update(keywordsTable)
       .set({ isActive: false })
@@ -329,6 +376,49 @@ router.delete("/:id", async (req, res) => {
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error archiving client");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* Restore the inverse of DELETE: clear archived_at + archive_reason and
+   flip status back to 'active' so the client is running again. locked_at
+   is left alone — graduation history shouldn't reset on restore. */
+router.post("/:id/restore", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const [client] = await db
+      .update(clientsTable)
+      .set({ archivedAt: null, archiveReason: null, status: "active" })
+      .where(eq(clientsTable.id, id))
+      .returning();
+    if (!client) return res.status(404).json({ error: "Not found" });
+
+    await db
+      .update(keywordsTable)
+      .set({ isActive: true })
+      .where(eq(keywordsTable.clientId, id));
+
+    const clientKwIds = await db
+      .select({ id: keywordsTable.id })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.clientId, id));
+    if (clientKwIds.length > 0) {
+      await db
+        .update(keywordLinksTable)
+        .set({ linkActive: true })
+        .where(
+          inArray(
+            keywordLinksTable.keywordId,
+            clientKwIds.map((k) => k.id),
+          ),
+        );
+    }
+
+    res.json({ success: true, client });
+  } catch (err) {
+    req.log.error({ err }, "Error restoring client");
     res.status(500).json({ error: "Internal server error" });
   }
 });

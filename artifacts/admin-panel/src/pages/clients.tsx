@@ -233,24 +233,26 @@ export default function Clients() {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error("Failed");
-      // Optimistically flip the row's status to 'inactive' in every cached
-      // /api/clients query. We don't remove the row outright because the user
-      // might be viewing Status='All' or 'Inactive', in which case the row
-      // should stay (with the Inactive badge) instead of vanishing and
-      // reappearing on refetch. The secondary FE filter (statusMatch) hides
-      // it from the Active view automatically.
+      // Optimistically stamp archivedAt on every cached /api/clients row.
+      // The secondary FE filter (archivedMatch) excludes any row with an
+      // archivedAt, so the row vanishes from the table instantly without
+      // waiting on refetch. Refetch then reconciles with server truth.
+      const stampedAt = new Date().toISOString();
       queryClient.setQueriesData<unknown[]>(
         { queryKey: ["/api/clients"] },
         (old) =>
           Array.isArray(old)
             ? old.map((c) =>
                 (c as { id: number }).id === clientId
-                  ? { ...(c as object), status: "inactive" }
+                  ? { ...(c as object), archivedAt: stampedAt }
                   : c,
               )
             : old,
       );
-      toast({ title: "Client archived" });
+      toast({
+        title: "Client archived",
+        description: "Moved to Archived Clients. Restore from there.",
+      });
       refetch();
     } catch {
       toast({ title: "Failed to archive client", variant: "destructive" });
@@ -424,7 +426,18 @@ export default function Clients() {
       const planMatch =
         filterPlan === "all" ||
         ((c as any).planTypes ?? []).includes(filterPlan);
-      return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
+      // Archived rows live on /clients/archived; hide them here so an
+      // optimistic stamp from doDeleteClient takes effect immediately even
+      // before refetch returns the filtered list from the BE.
+      const archivedMatch = !(c as any).archivedAt;
+      return (
+        nameMatch &&
+        locMatch &&
+        typeMatch &&
+        statusMatch &&
+        planMatch &&
+        archivedMatch
+      );
     })
     .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? ""));
 
