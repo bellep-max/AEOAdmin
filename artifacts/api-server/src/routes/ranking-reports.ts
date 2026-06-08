@@ -21,8 +21,13 @@ const router = Router();
 /* Auto-lock-on-win: when a ranking report records a top-3 position for a
    keyword, immediately lock it (archive + status='locked') and rotate in an
    AI replacement. Fire-and-forget so it never blocks/fails report ingestion;
-   rotateWinners is idempotent (it only touches active, non-archived keywords). */
+   rotateWinners is idempotent (it only touches active, non-archived keywords).
+
+   Kill switch: set AUTO_ROTATION_DISABLED=1 (any truthy value) to no-op this
+   call. Used to suppress retroactive rotation during back-fill imports — the
+   rotation otherwise stamps `now()` regardless of the rank's actual date. */
 function maybeAutoLock(keywordId: unknown, rankingPosition: unknown): void {
+  if (process.env.AUTO_ROTATION_DISABLED) return;
   const kid = Number(keywordId);
   const pos = Number(rankingPosition);
   if (!Number.isFinite(kid) || kid <= 0) return;
