@@ -157,8 +157,13 @@ export async function rotateWinners(
         );
       }
 
-      // LOCK the winner (archive → drops out of ranking via build-session guard)
-      await db
+      // LOCK the winner atomically. The WHERE re-checks is_active + archived_at
+      // so that two concurrent rotation calls on the same keyword don't both
+      // succeed (caught: a 504-timed-out POST + a retry batched call locking
+      // the same parents twice and double-inserting replacements). RETURNING
+      // .id lets us detect the conflict and skip the rest of the per-keyword
+      // work if another caller already did it.
+      const locked = await db
         .update(keywordsTable)
         .set({
           isActive: false,
@@ -167,7 +172,15 @@ export async function rotateWinners(
           archiveReason: `locked (won): top-3 on ${triggerPlatform} (#${triggerPosition}) — auto-rotation`,
           replacementSuggestion: replacement,
         })
-        .where(eq(keywordsTable.id, kw.id));
+        .where(
+          and(
+            eq(keywordsTable.id, kw.id),
+            eq(keywordsTable.isActive, true),
+            isNull(keywordsTable.archivedAt),
+          ),
+        )
+        .returning({ id: keywordsTable.id });
+      if (locked.length === 0) continue; // another concurrent caller won the race
 
       // Stamp the client's locked_at the first time any of its keywords wins.
       // COALESCE keeps the original stamp on subsequent wins so locked_at
