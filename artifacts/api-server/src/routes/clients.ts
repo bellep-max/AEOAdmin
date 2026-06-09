@@ -19,8 +19,13 @@ import {
   isNull,
   isNotNull,
 } from "drizzle-orm";
+import { getSalesPlanFilter, requireRoles } from "../middlewares/role-auth";
 
 const router = Router();
+
+// Sales/admin/owner can browse clients. Sales sessions get the plan_type
+// filter injected automatically by getSalesPlanFilter; admin/owner see all.
+const requireClientReader = requireRoles("sales", "admin", "owner");
 
 /*
  * Client lifecycle has three independent dimensions:
@@ -38,13 +43,26 @@ const router = Router();
  * for the Status switch filter on the main page, which only wants to see
  * paused vs running.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireClientReader, async (req, res) => {
   try {
     const { status, search, archived, locked } = req.query as Record<
       string,
       string
     >;
     const conditions: ReturnType<typeof eq>[] = [];
+
+    // Sales sessions are scoped to free-trial clients only. Pre-fetch the
+    // eligible client IDs and intersect with the other filters below.
+    const salesPlanFilter = getSalesPlanFilter(req);
+    if (salesPlanFilter) {
+      const eligible = await db
+        .select({ clientId: clientAeoPlansTable.clientId })
+        .from(clientAeoPlansTable)
+        .where(eq(clientAeoPlansTable.planType, salesPlanFilter));
+      const eligibleIds = [...new Set(eligible.map((e) => e.clientId))];
+      if (eligibleIds.length === 0) return res.json([]);
+      conditions.push(inArray(clientsTable.id, eligibleIds));
+    }
 
     // archived dimension (default: hide archived rows)
     if (archived === "true") {

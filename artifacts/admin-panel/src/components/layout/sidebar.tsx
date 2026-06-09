@@ -63,6 +63,12 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
+  /**
+   * Sales role sees only items flagged salesAllowed. Without the flag, the
+   * item is hidden for sales sessions. Items without ownerOnly+salesAllowed
+   * are visible to admin/owner only.
+   */
+  salesAllowed?: boolean;
 }
 
 interface NavGroupItem extends NavItem {
@@ -78,12 +84,12 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard }],
+    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard, salesAllowed: true }],
   },
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients", href: "/clients", icon: Users },
+      { name: "Clients", href: "/clients", icon: Users, salesAllowed: true },
       { name: "Archived", href: "/archived", icon: Archive },
       {
         name: "Keywords",
@@ -118,12 +124,14 @@ const navGroups: NavGroup[] = [
         name: "Rankings",
         href: "/rankings",
         icon: Trophy,
+        salesAllowed: true,
         children: [
-          { name: "Period Comparison", href: "/rankings", icon: BarChart3 },
+          { name: "Period Comparison", href: "/rankings", icon: BarChart3, salesAllowed: true },
           {
             name: "Bi-Weekly Report",
             href: "/rankings/bi-weekly",
             icon: Calendar,
+            salesAllowed: true,
           },
         ],
       },
@@ -134,7 +142,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Admin",
     items: [
-      { name: "AEO Reporter", href: "/aeo-reporter", icon: BrainCircuit },
+      { name: "AEO Reporter", href: "/aeo-reporter", icon: BrainCircuit, salesAllowed: true },
       {
         name: "Keyword Rotation",
         href: "/keyword-rotation",
@@ -171,17 +179,27 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout, isOwner } = useAuth();
+  const { user, logout, isOwner, isSales } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  // Visibility rule:
+  //   sales role  → only items flagged salesAllowed
+  //   non-owner   → everything except ownerOnly items (existing behavior)
+  //   owner       → everything
+  const isVisible = (item: { ownerOnly?: boolean; salesAllowed?: boolean }) => {
+    if (isSales) return !!item.salesAllowed;
+    if (!isOwner && item.ownerOnly) return false;
+    return true;
+  };
 
   const visibleGroups = navGroups
     .map((g) => ({
       ...g,
       items: g.items
-        .filter((it) => isOwner || !it.ownerOnly)
+        .filter(isVisible)
         .map((it) => ({
           ...it,
-          children: it.children?.filter((c) => isOwner || !c.ownerOnly),
+          children: it.children?.filter(isVisible),
         })),
     }))
     .filter((g) => (isOwner || !g.ownerOnly) && g.items.length > 0);

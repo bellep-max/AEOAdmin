@@ -27,7 +27,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireOwner, requireExecutorOrOwner } from "../middlewares/role-auth";
+import { requireOwner, requireExecutorOrOwner, requireRoles } from "../middlewares/role-auth";
 import { requireSession } from "../middlewares/session-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
@@ -799,7 +799,7 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
    back so the FE's existing `data: {...}` parser continues to work
    unchanged. Auth is a logged-in admin session (no executor token; this
    is a UI feature, not a runner). */
-router.post("/aeo-reporter/stream", requireOwner, async (req, res) => {
+router.post("/aeo-reporter/stream", requireRoles("owner", "sales"), async (req, res) => {
   try {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
