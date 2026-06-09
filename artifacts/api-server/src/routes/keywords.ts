@@ -20,6 +20,7 @@ import {
   requireEditor,
   requireAdmin,
 } from "../middlewares/role-auth";
+import { assertSalesAccessToClient } from "../lib/sales-scope";
 
 const router = Router();
 
@@ -155,6 +156,7 @@ router.get("/:id", requireSalesAllowed, async (req, res) => {
       )
       .where(eq(keywordsTable.id, id));
     if (!row) return res.status(404).json({ error: "Not found" });
+    if (!(await assertSalesAccessToClient(req, res, row.kw.clientId))) return;
     const links = await db
       .select()
       .from(keywordLinksTable)

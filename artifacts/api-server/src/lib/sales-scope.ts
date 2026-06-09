@@ -11,11 +11,11 @@
  * every route, and keeps the policy easy to change if sales' scope ever
  * widens to more plan types.
  */
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable } from "@workspace/db/schema";
-import { getSalesPlanFilter } from "../middlewares/role-auth";
+import { getSalesPlanFilter, isSales } from "../middlewares/role-auth";
 
 /**
  * Returns the list of client IDs a sales session is allowed to see (clients
@@ -35,4 +35,32 @@ export async function getSalesEligibleClientIds(
     .from(clientAeoPlansTable)
     .where(eq(clientAeoPlansTable.planType, planFilter));
   return [...new Set(rows.map((r) => r.clientId))];
+}
+
+/**
+ * Inline gate helper for per-row endpoints. Looks up the entity's clientId
+ * (caller-provided) and 404s the response if sales is requesting an entity
+ * outside their eligible set. Non-sales sessions pass through unchanged.
+ *
+ * Returns true when the handler should continue, false when it has already
+ * sent a 404. Always check the return value:
+ *
+ *   if (!(await assertSalesAccessToClient(req, res, biz.clientId))) return;
+ */
+export async function assertSalesAccessToClient(
+  req: Request,
+  res: Response,
+  clientId: number | null,
+): Promise<boolean> {
+  if (!isSales(req)) return true;
+  if (clientId == null) {
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
+  const eligibleIds = await getSalesEligibleClientIds(req);
+  if (!eligibleIds || !eligibleIds.includes(clientId)) {
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
+  return true;
 }

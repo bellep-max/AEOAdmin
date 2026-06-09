@@ -11,7 +11,7 @@ import { eq, and, desc, count, gte, lte, like, sql } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireSession } from "../middlewares/session-auth";
-import { requireOwner } from "../middlewares/role-auth";
+import { requireOwner, requireViewer } from "../middlewares/role-auth";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -41,7 +41,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
 /* ────────────────────────────────────────────────────────────
    GET /api/audit-logs
 ──────────────────────────────────────────────────────────── */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const {
       clientId,
@@ -312,7 +312,7 @@ router.delete("/:id", requireSession, async (req, res) => {
        Structured-field matching (rather than basename) is required because
        S3 keys use a renamed scheme `{date}_rank{N}_{trend}.png` that has
        no relation to the original `kw{id}_{platform}_{unix_ts}.png` file. */
-router.get("/:id/screenshot-url", async (req, res) => {
+router.get("/:id/screenshot-url", requireViewer, async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "invalid id" });

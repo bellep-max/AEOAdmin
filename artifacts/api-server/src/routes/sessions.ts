@@ -23,6 +23,7 @@ import {
 } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireSession } from "../middlewares/session-auth";
+import { requireAdmin, requireViewer } from "../middlewares/role-auth";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -72,7 +73,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
    GET /api/sessions
    Daily session log listing with filters + pagination.
 ──────────────────────────────────────────────────────────── */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const {
       clientId,
@@ -483,7 +484,7 @@ router.patch("/:id/screenshot", async (req, res) => {
        screenshot_url has the same basename — if THAT one is in s3, sign that.
        Lets the sessions detail dialog see the screenshot we uploaded via the
        ranking_reports pipeline without needing a separate sync. */
-router.get("/:id/screenshot-url", async (req, res) => {
+router.get("/:id/screenshot-url", requireViewer, async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "invalid id" });
@@ -579,7 +580,7 @@ router.delete("/:id", requireSession, async (req, res) => {
   }
 });
 
-router.get("/stress-test", async (req, res) => {
+router.get("/stress-test", requireViewer, async (req, res) => {
   try {
     const [deviceCount] = await db
       .select({ count: count() })
@@ -670,7 +671,7 @@ router.get("/stress-test", async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 router.post(
   "/import",
-  requireSession,
+  requireAdmin,
   upload.single("file"),
   async (req, res) => {
     try {
