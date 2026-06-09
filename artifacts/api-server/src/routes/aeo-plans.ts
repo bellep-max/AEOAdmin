@@ -12,6 +12,7 @@ import { db } from "@workspace/db";
 import { clientAeoPlansTable } from "@workspace/db/schema";
 import { clientsTable } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { requireViewer } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -19,34 +20,34 @@ const router = Router();
  * GET /api/aeo-plans
  * Returns all AEO plans across all clients, joined with client businessName.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const plans = await db
       .select({
-        id:                     clientAeoPlansTable.id,
-        clientId:               clientAeoPlansTable.clientId,
-        businessId:             clientAeoPlansTable.businessId,
-        name:                   clientAeoPlansTable.name,
-        clientBusinessName:     clientsTable.businessName,
-        businessName:           clientAeoPlansTable.businessName,
-        planType:               clientAeoPlansTable.planType,
-        sampleQuestion1:        clientAeoPlansTable.sampleQuestion1,
-        sampleQuestion2:        clientAeoPlansTable.sampleQuestion2,
-        sampleQuestion3:        clientAeoPlansTable.sampleQuestion3,
-        sampleQuestion4:        clientAeoPlansTable.sampleQuestion4,
-        sampleQuestion5:        clientAeoPlansTable.sampleQuestion5,
-        sampleQuestion6:        clientAeoPlansTable.sampleQuestion6,
-        sampleQuestion7:        clientAeoPlansTable.sampleQuestion7,
-        sampleQuestion8:        clientAeoPlansTable.sampleQuestion8,
-        sampleQuestion9:        clientAeoPlansTable.sampleQuestion9,
-        sampleQuestion10:       clientAeoPlansTable.sampleQuestion10,
-        currentAnswerPresence:  clientAeoPlansTable.currentAnswerPresence,
-        searchBoostTarget:      clientAeoPlansTable.searchBoostTarget,
-        monthlyAeoBudget:       clientAeoPlansTable.monthlyAeoBudget,
-        schemaImplementor:      clientAeoPlansTable.schemaImplementor,
-        searchAddress:          clientAeoPlansTable.searchAddress,
-        createdAt:              clientAeoPlansTable.createdAt,
-        updatedAt:              clientAeoPlansTable.updatedAt,
+        id: clientAeoPlansTable.id,
+        clientId: clientAeoPlansTable.clientId,
+        businessId: clientAeoPlansTable.businessId,
+        name: clientAeoPlansTable.name,
+        clientBusinessName: clientsTable.businessName,
+        businessName: clientAeoPlansTable.businessName,
+        planType: clientAeoPlansTable.planType,
+        sampleQuestion1: clientAeoPlansTable.sampleQuestion1,
+        sampleQuestion2: clientAeoPlansTable.sampleQuestion2,
+        sampleQuestion3: clientAeoPlansTable.sampleQuestion3,
+        sampleQuestion4: clientAeoPlansTable.sampleQuestion4,
+        sampleQuestion5: clientAeoPlansTable.sampleQuestion5,
+        sampleQuestion6: clientAeoPlansTable.sampleQuestion6,
+        sampleQuestion7: clientAeoPlansTable.sampleQuestion7,
+        sampleQuestion8: clientAeoPlansTable.sampleQuestion8,
+        sampleQuestion9: clientAeoPlansTable.sampleQuestion9,
+        sampleQuestion10: clientAeoPlansTable.sampleQuestion10,
+        currentAnswerPresence: clientAeoPlansTable.currentAnswerPresence,
+        searchBoostTarget: clientAeoPlansTable.searchBoostTarget,
+        monthlyAeoBudget: clientAeoPlansTable.monthlyAeoBudget,
+        schemaImplementor: clientAeoPlansTable.schemaImplementor,
+        searchAddress: clientAeoPlansTable.searchAddress,
+        createdAt: clientAeoPlansTable.createdAt,
+        updatedAt: clientAeoPlansTable.updatedAt,
       })
       .from(clientAeoPlansTable)
       .leftJoin(clientsTable, eq(clientAeoPlansTable.clientId, clientsTable.id))
@@ -55,8 +56,9 @@ router.get("/", async (req, res) => {
     res.json(
       plans.map((p) => ({
         ...p,
-        monthlyAeoBudget: p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
-      }))
+        monthlyAeoBudget:
+          p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
+      })),
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching all AEO plans");

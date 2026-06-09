@@ -18,6 +18,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { tasksTable, subtasksTable } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { requireViewer, requireEditor } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -30,13 +31,13 @@ const router = Router();
  * Multiple filters are ANDed together.
  * Results are ordered newest-first (descending createdAt).
  */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const { status, priority } = req.query as Record<string, string>;
 
     // Build dynamic WHERE conditions from provided query params
     const conditions: ReturnType<typeof eq>[] = [];
-    if (status)   conditions.push(eq(tasksTable.status,   status));
+    if (status) conditions.push(eq(tasksTable.status, status));
     if (priority) conditions.push(eq(tasksTable.priority, priority));
 
     const tasks = await db
@@ -69,16 +70,16 @@ router.get("/", async (req, res) => {
  *
  * Body: { title, category?, status?, priority?, notes? }
  */
-router.post("/", async (req, res) => {
+router.post("/", requireEditor, async (req, res) => {
   try {
     const [task] = await db
       .insert(tasksTable)
       .values({
-        title:    req.body.title,
-        category: req.body.category  ?? null,
-        status:   req.body.status    ?? "todo",
-        priority: req.body.priority  ?? "medium",
-        notes:    req.body.notes     ?? null,
+        title: req.body.title,
+        category: req.body.category ?? null,
+        status: req.body.status ?? "todo",
+        priority: req.body.priority ?? "medium",
+        notes: req.body.notes ?? null,
       })
       .returning();
 
@@ -97,7 +98,7 @@ router.post("/", async (req, res) => {
  * Returns the updated task with its current subtask list so the UI can
  * replace the stale task in state without a full refetch.
  */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
@@ -128,9 +129,11 @@ router.patch("/:id", async (req, res) => {
  * removed if the schema has a CASCADE foreign key; otherwise they become
  * orphaned (frontend filters them out via the missing parent).
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireEditor, async (req, res) => {
   try {
-    await db.delete(tasksTable).where(eq(tasksTable.id, parseInt(req.params.id)));
+    await db
+      .delete(tasksTable)
+      .where(eq(tasksTable.id, parseInt(req.params.id)));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error deleting task");
@@ -143,7 +146,7 @@ router.delete("/:id", async (req, res) => {
  * Appends a new checklist item to an existing task.
  * Body: { title, done? }
  */
-router.post("/:id/subtasks", async (req, res) => {
+router.post("/:id/subtasks", requireEditor, async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
 
@@ -152,7 +155,7 @@ router.post("/:id/subtasks", async (req, res) => {
       .values({
         taskId,
         title: req.body.title,
-        done:  req.body.done ?? false, // New subtasks default to unchecked
+        done: req.body.done ?? false, // New subtasks default to unchecked
       })
       .returning();
 
@@ -168,22 +171,26 @@ router.post("/:id/subtasks", async (req, res) => {
  * Updates a single checklist item — typically toggling `done` or renaming it.
  * Body: { title?, done? }
  */
-router.patch("/:taskId/subtasks/:subtaskId", async (req, res) => {
-  try {
-    const subtaskId = parseInt(req.params.subtaskId);
+router.patch(
+  "/:taskId/subtasks/:subtaskId",
+  requireEditor,
+  async (req, res) => {
+    try {
+      const subtaskId = parseInt(req.params.subtaskId);
 
-    const [subtask] = await db
-      .update(subtasksTable)
-      .set(req.body)
-      .where(eq(subtasksTable.id, subtaskId))
-      .returning();
+      const [subtask] = await db
+        .update(subtasksTable)
+        .set(req.body)
+        .where(eq(subtasksTable.id, subtaskId))
+        .returning();
 
-    if (!subtask) return res.status(404).json({ error: "Not found" });
-    res.json(subtask);
-  } catch (err) {
-    req.log.error({ err }, "Error updating subtask");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      if (!subtask) return res.status(404).json({ error: "Not found" });
+      res.json(subtask);
+    } catch (err) {
+      req.log.error({ err }, "Error updating subtask");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 export default router;

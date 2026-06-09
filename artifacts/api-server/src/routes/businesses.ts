@@ -6,10 +6,15 @@ import {
   clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import {
+  requireAdmin,
+  requireEditor,
+  requireSalesAllowed,
+} from "../middlewares/role-auth";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
     const query = db
@@ -62,7 +67,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", requireSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const [business] = await db
@@ -77,7 +82,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   try {
     const body = req.body;
     if (!body.clientId || !body.name) {
@@ -134,7 +139,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { searchAddress: _ignored, ...rest } = req.body ?? {};
@@ -184,7 +189,7 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     await db.delete(businessesTable).where(eq(businessesTable.id, id));

@@ -13,7 +13,13 @@ import {
 import { eq, and, inArray, sql, desc, isNull } from "drizzle-orm";
 import { generateVariants } from "../services/variant-generator";
 import { rotateWinners } from "../services/keyword-rotation";
-import { requireOwner } from "../middlewares/role-auth";
+import {
+  requireOwner,
+  requireSalesAllowed,
+  requireViewer,
+  requireEditor,
+  requireAdmin,
+} from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -21,7 +27,7 @@ const router = Router();
    GET /api/keywords
    Returns all AEO keywords, optionally filtered by clientId
 ──────────────────────────────────────────────────────────── */
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const { clientId, businessId, aeoPlanId, includeArchived } =
       req.query as Record<string, string>;
@@ -126,7 +132,7 @@ router.get("/", async (req, res) => {
    GET /api/keywords/:id
    Returns a single keyword with its links inline
 ──────────────────────────────────────────────────────────── */
-router.get("/:id", async (req, res) => {
+router.get("/:id", requireSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -171,7 +177,7 @@ router.get("/:id", async (req, res) => {
    POST /api/keywords
    Create a new keyword for a business
 ──────────────────────────────────────────────────────────── */
-router.post("/", async (req, res) => {
+router.post("/", requireEditor, async (req, res) => {
   try {
     const body = req.body;
     if (!body.keywordText?.trim()) {
@@ -244,7 +250,7 @@ router.post("/", async (req, res) => {
    GET /api/keywords/:id/links
    Returns all associated links for a keyword
 ──────────────────────────────────────────────────────────── */
-router.get("/:id/links", async (req, res) => {
+router.get("/:id/links", requireSalesAllowed, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
     const links = await db
@@ -263,7 +269,7 @@ router.get("/:id/links", async (req, res) => {
    POST /api/keywords/:id/links
    Add a new associated link to a keyword
 ──────────────────────────────────────────────────────────── */
-router.post("/:id/links", async (req, res) => {
+router.post("/:id/links", requireEditor, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
     const body = req.body;
@@ -295,7 +301,7 @@ router.post("/:id/links", async (req, res) => {
    PATCH /api/keywords/:id/links/:linkId
    Update an associated link
 ──────────────────────────────────────────────────────────── */
-router.patch("/:id/links/:linkId", async (req, res) => {
+router.patch("/:id/links/:linkId", requireEditor, async (req, res) => {
   try {
     const linkId = parseInt(req.params.linkId);
     const body = req.body as Record<string, unknown>;
@@ -331,7 +337,7 @@ router.patch("/:id/links/:linkId", async (req, res) => {
    DELETE /api/keywords/:id/links/:linkId
    Remove an associated link from a keyword
 ──────────────────────────────────────────────────────────── */
-router.delete("/:id/links/:linkId", async (req, res) => {
+router.delete("/:id/links/:linkId", requireEditor, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
     const linkId = parseInt(req.params.linkId);
@@ -358,7 +364,7 @@ router.delete("/:id/links/:linkId", async (req, res) => {
    PATCH /api/keywords/:id
    Update keyword fields
 ──────────────────────────────────────────────────────────── */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const body = req.body as Record<string, unknown>;
@@ -487,7 +493,7 @@ router.patch("/:id", async (req, res) => {
    Mirrors the clients soft-delete behavior so archived keywords
    show up on /keyword-rotation/archived and can be restored.
 ──────────────────────────────────────────────────────────── */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -514,7 +520,7 @@ router.delete("/:id", async (req, res) => {
    Soft-archive a keyword (sets isActive=false + records reason)
    Body: { reason?: string }
 ──────────────────────────────────────────────────────────── */
-router.post("/:id/archive", async (req, res) => {
+router.post("/:id/archive", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -629,7 +635,7 @@ router.post("/:id/generate-replacement", requireOwner, async (req, res) => {
    GET /api/keywords/:id/variants
    List variants for a keyword (active only by default)
 ──────────────────────────────────────────────────────────── */
-router.get("/:id/variants", async (req, res) => {
+router.get("/:id/variants", requireViewer, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

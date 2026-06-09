@@ -2,11 +2,12 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { customPackagesTable, PACKAGE_CREATORS } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { requireViewer, requireAdmin } from "../middlewares/role-auth";
 
 const router = Router();
 
 /* GET /api/packages — list all custom packages */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const rows = await db
       .select()
@@ -20,9 +21,10 @@ router.get("/", async (req, res) => {
 });
 
 /* POST /api/packages — create a new custom package */
-router.post("/", async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   try {
-    const { name, description, target, features, color, tier, createdBy } = req.body;
+    const { name, description, target, features, color, tier, createdBy } =
+      req.body;
 
     if (!name?.trim()) {
       return res.status(400).json({ error: "Package name is required" });
@@ -30,8 +32,13 @@ router.post("/", async (req, res) => {
     if (!color?.trim()) {
       return res.status(400).json({ error: "Color is required" });
     }
-    if (!createdBy || !(PACKAGE_CREATORS as readonly string[]).includes(createdBy)) {
-      return res.status(400).json({ error: `createdBy must be one of: ${PACKAGE_CREATORS.join(", ")}` });
+    if (
+      !createdBy ||
+      !(PACKAGE_CREATORS as readonly string[]).includes(createdBy)
+    ) {
+      return res.status(400).json({
+        error: `createdBy must be one of: ${PACKAGE_CREATORS.join(", ")}`,
+      });
     }
 
     const [pkg] = await db
@@ -55,7 +62,7 @@ router.post("/", async (req, res) => {
 });
 
 /* DELETE /api/packages/:id — remove a custom package */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

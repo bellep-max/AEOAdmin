@@ -15,6 +15,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clientsTable } from "@workspace/db/schema";
 import { count, eq } from "drizzle-orm";
+import { requireViewer } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -32,7 +33,7 @@ const router = Router();
  *  - status          "active" | "upcoming" | "complete"
  *  - notes           Human notes describing scope and procurement tasks
  */
-router.get("/plan", async (req, res) => {
+router.get("/plan", requireViewer, async (req, res) => {
   try {
     // Count active clients live so progress bars stay accurate on every load
     const [activeClients] = await db
@@ -50,10 +51,11 @@ router.get("/plan", async (req, res) => {
         targetDate: new Date("2026-04-02T00:00:00Z"),
         targetCompanies: 20,
         currentCompanies: currentCount,
-        devicesNeeded: 100,        // 5 devices × 20 companies
+        devicesNeeded: 100, // 5 devices × 20 companies
         devicesAvailable: 0,
         status: "active" as const,
-        notes: "Fully testing current network with 20 companies. 1 search per device per day. Confirming setup and scaling from 1 search per day.",
+        notes:
+          "Fully testing current network with 20 companies. 1 search per device per day. Confirming setup and scaling from 1 search per day.",
       },
       {
         id: 2,
@@ -61,10 +63,11 @@ router.get("/plan", async (req, res) => {
         targetDate: new Date("2026-04-07T00:00:00Z"),
         targetCompanies: 50,
         currentCompanies: currentCount,
-        devicesNeeded: 250,        // 5 devices × 50 companies
+        devicesNeeded: 250, // 5 devices × 50 companies
         devicesAvailable: 0,
         status: "upcoming" as const,
-        notes: "Add 50 companies in first week of April. Hardware procurement begins. 5 AEO keywords per company.",
+        notes:
+          "Add 50 companies in first week of April. Hardware procurement begins. 5 AEO keywords per company.",
       },
       {
         id: 3,
@@ -72,10 +75,11 @@ router.get("/plan", async (req, res) => {
         targetDate: new Date("2026-04-14T00:00:00Z"),
         targetCompanies: 80,
         currentCompanies: currentCount,
-        devicesNeeded: 400,        // 5 devices × 80 companies
+        devicesNeeded: 400, // 5 devices × 80 companies
         devicesAvailable: 0,
         status: "upcoming" as const,
-        notes: "Second week of April: scale to 80 companies. Find and purchase hardware for 80-company operation. Budget for Android device farm expansion.",
+        notes:
+          "Second week of April: scale to 80 companies. Find and purchase hardware for 80-company operation. Budget for Android device farm expansion.",
       },
       {
         id: 4,
@@ -83,10 +87,11 @@ router.get("/plan", async (req, res) => {
         targetDate: new Date("2026-05-01T00:00:00Z"),
         targetCompanies: 150,
         currentCompanies: currentCount,
-        devicesNeeded: 750,        // 5 devices × 150 companies
+        devicesNeeded: 750, // 5 devices × 150 companies
         devicesAvailable: 0,
         status: "upcoming" as const,
-        notes: "May 2026 target: 150 local SEO companies. Full hardware procurement complete. All local SEO companies onboarded.",
+        notes:
+          "May 2026 target: 150 local SEO companies. Full hardware procurement complete. All local SEO companies onboarded.",
       },
     ];
 

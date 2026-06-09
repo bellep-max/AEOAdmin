@@ -19,13 +19,37 @@ import {
   isNull,
   isNotNull,
 } from "drizzle-orm";
-import { getSalesPlanFilter, requireRoles } from "../middlewares/role-auth";
+import {
+  getSalesPlanFilter,
+  isSales,
+  requireAdmin,
+  requireEditor,
+  requireSalesAllowed,
+} from "../middlewares/role-auth";
+import { getSalesEligibleClientIds } from "../lib/sales-scope";
+import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
 
-// Sales/admin/owner can browse clients. Sales sessions get the plan_type
-// filter injected automatically by getSalesPlanFilter; admin/owner see all.
-const requireClientReader = requireRoles("sales", "admin", "owner");
+/**
+ * For sales sessions on /:id sub-routes, 404 if the targeted client isn't
+ * free-trial-eligible. Non-sales sessions pass through unchanged. The handler
+ * still runs its own ownership/auth as needed.
+ */
+async function gateClientForSales(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!isSales(req)) return next();
+  const targetId = Number(req.params.id);
+  if (Number.isNaN(targetId)) return next();
+  const eligibleIds = await getSalesEligibleClientIds(req);
+  if (!eligibleIds || !eligibleIds.includes(targetId)) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  next();
+}
 
 /*
  * Client lifecycle has three independent dimensions:
@@ -43,7 +67,7 @@ const requireClientReader = requireRoles("sales", "admin", "owner");
  * for the Status switch filter on the main page, which only wants to see
  * paused vs running.
  */
-router.get("/", requireClientReader, async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const { status, search, archived, locked } = req.query as Record<
       string,
@@ -161,7 +185,7 @@ router.get("/", requireClientReader, async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   try {
     const body = req.body;
 
@@ -227,22 +251,27 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
-    if (!client) return res.status(404).json({ error: "Not found" });
-    res.json(client);
-  } catch (err) {
-    req.log.error({ err }, "Error fetching client");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+router.get(
+  "/:id",
+  requireSalesAllowed,
+  gateClientForSales,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
+      res.json(client);
+    } catch (err) {
+      req.log.error({ err }, "Error fetching client");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const body = req.body;
@@ -350,7 +379,7 @@ router.patch("/:id", async (req, res) => {
    its keywords + keyword_links so audits stop running. status is left
    alone — that's the Switch's column (pause vs running). Re-archiving an
    already-archived client is a no-op (COALESCE keeps the original stamp). */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -401,7 +430,7 @@ router.delete("/:id", async (req, res) => {
 /* Restore the inverse of DELETE: clear archived_at + archive_reason and
    flip status back to 'active' so the client is running again. locked_at
    is left alone — graduation history shouldn't reset on restore. */
-router.post("/:id/restore", async (req, res) => {
+router.post("/:id/restore", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -441,140 +470,150 @@ router.post("/:id/restore", async (req, res) => {
   }
 });
 
-router.get("/:id/gbp-snippet", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
-    if (!client) return res.status(404).json({ error: "Not found" });
-
-    // Get most recent ranking report for maps presence
-    const [latestReport] = await db
-      .select({
-        mapsPresence: rankingReportsTable.mapsPresence,
-        createdAt: rankingReportsTable.createdAt,
-      })
-      .from(rankingReportsTable)
-      .where(eq(rankingReportsTable.clientId, id))
-      .orderBy(desc(rankingReportsTable.createdAt))
-      .limit(1);
-
-    const keywords = await db
-      .select()
-      .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, id));
-
-    const verificationStatus =
-      keywords.length > 0 &&
-      keywords.every((k) => k.verificationStatus === "verified")
-        ? "verified"
-        : keywords.some((k) => k.verificationStatus === "failed")
-          ? "failed"
-          : "pending";
-
-    res.json({
-      clientId: client.id,
-      businessName: client.businessName,
-      gmbUrl: client.gmbUrl,
-      placeId: client.placeId,
-      verificationStatus,
-      publishedAddress: client.publishedAddress,
-      city: client.city,
-      state: client.state,
-      mapsPresence: latestReport?.mapsPresence ?? null,
-      lastChecked: latestReport?.createdAt ?? null,
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error fetching GBP snippet");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/:id/aeo-summary", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
-    if (!client) return res.status(404).json({ error: "Not found" });
-
-    const keywords = await db
-      .select()
-      .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, id));
-
-    const keywordIds = keywords.map((k) => k.id);
-
-    // Get initial and current rankings for each keyword
-    const rankingData: Record<
-      number,
-      {
-        initial?: typeof rankingReportsTable.$inferSelect;
-        current?: typeof rankingReportsTable.$inferSelect;
-      }
-    > = {};
-    for (const kwId of keywordIds) {
-      const reports = await db
+router.get(
+  "/:id/gbp-snippet",
+  requireSalesAllowed,
+  gateClientForSales,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
         .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
+
+      // Get most recent ranking report for maps presence
+      const [latestReport] = await db
+        .select({
+          mapsPresence: rankingReportsTable.mapsPresence,
+          createdAt: rankingReportsTable.createdAt,
+        })
         .from(rankingReportsTable)
-        .where(
-          and(
-            eq(rankingReportsTable.clientId, id),
-            eq(rankingReportsTable.keywordId, kwId),
-          ),
-        )
-        .orderBy(rankingReportsTable.createdAt);
+        .where(eq(rankingReportsTable.clientId, id))
+        .orderBy(desc(rankingReportsTable.createdAt))
+        .limit(1);
 
-      rankingData[kwId] = {
-        initial: reports.find((r) => r.isInitialRanking) ?? reports[0],
-        current: reports[reports.length - 1],
-      };
+      const keywords = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.clientId, id));
+
+      const verificationStatus =
+        keywords.length > 0 &&
+        keywords.every((k) => k.verificationStatus === "verified")
+          ? "verified"
+          : keywords.some((k) => k.verificationStatus === "failed")
+            ? "failed"
+            : "pending";
+
+      res.json({
+        clientId: client.id,
+        businessName: client.businessName,
+        gmbUrl: client.gmbUrl,
+        placeId: client.placeId,
+        verificationStatus,
+        publishedAddress: client.publishedAddress,
+        city: client.city,
+        state: client.state,
+        mapsPresence: latestReport?.mapsPresence ?? null,
+        lastChecked: latestReport?.createdAt ?? null,
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error fetching GBP snippet");
+      res.status(500).json({ error: "Internal server error" });
     }
+  },
+);
 
-    const totalClicks = 0;
-    const allReportPositions = Object.values(rankingData)
-      .map((r) => r.current?.rankingPosition)
-      .filter((p): p is number => p != null);
-    const avgPos = allReportPositions.length
-      ? allReportPositions.reduce((a, b) => a + b, 0) /
-        allReportPositions.length
-      : null;
+router.get(
+  "/:id/aeo-summary",
+  requireSalesAllowed,
+  gateClientForSales,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
 
-    // Sessions for date range
-    const sessions = await db
-      .select({ timestamp: sessionsTable.timestamp })
-      .from(sessionsTable)
-      .where(eq(sessionsTable.clientId, id))
-      .orderBy(sessionsTable.timestamp);
+      const keywords = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.clientId, id));
 
-    const aeoKeywords = keywords.map((k) => ({
-      keywordId: k.id,
-      keywordText: k.keywordText,
-      initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
-      initialRankingPosition:
-        rankingData[k.id]?.initial?.rankingPosition ?? null,
-      currentRankingPosition:
-        rankingData[k.id]?.current?.rankingPosition ?? null,
-      clicksDelivered: 0,
-      verificationStatus: k.verificationStatus,
-    }));
+      const keywordIds = keywords.map((k) => k.id);
 
-    res.json({
-      clientId: client.id,
-      businessName: client.businessName,
-      aeoKeywords,
-      totalClicksDelivered: totalClicks,
-      averageRankingPosition: avgPos,
-      startDate: sessions[0]?.timestamp ?? null,
-      lastSessionDate: sessions[sessions.length - 1]?.timestamp ?? null,
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error fetching AEO summary");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      // Get initial and current rankings for each keyword
+      const rankingData: Record<
+        number,
+        {
+          initial?: typeof rankingReportsTable.$inferSelect;
+          current?: typeof rankingReportsTable.$inferSelect;
+        }
+      > = {};
+      for (const kwId of keywordIds) {
+        const reports = await db
+          .select()
+          .from(rankingReportsTable)
+          .where(
+            and(
+              eq(rankingReportsTable.clientId, id),
+              eq(rankingReportsTable.keywordId, kwId),
+            ),
+          )
+          .orderBy(rankingReportsTable.createdAt);
+
+        rankingData[kwId] = {
+          initial: reports.find((r) => r.isInitialRanking) ?? reports[0],
+          current: reports[reports.length - 1],
+        };
+      }
+
+      const totalClicks = 0;
+      const allReportPositions = Object.values(rankingData)
+        .map((r) => r.current?.rankingPosition)
+        .filter((p): p is number => p != null);
+      const avgPos = allReportPositions.length
+        ? allReportPositions.reduce((a, b) => a + b, 0) /
+          allReportPositions.length
+        : null;
+
+      // Sessions for date range
+      const sessions = await db
+        .select({ timestamp: sessionsTable.timestamp })
+        .from(sessionsTable)
+        .where(eq(sessionsTable.clientId, id))
+        .orderBy(sessionsTable.timestamp);
+
+      const aeoKeywords = keywords.map((k) => ({
+        keywordId: k.id,
+        keywordText: k.keywordText,
+        initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
+        initialRankingPosition:
+          rankingData[k.id]?.initial?.rankingPosition ?? null,
+        currentRankingPosition:
+          rankingData[k.id]?.current?.rankingPosition ?? null,
+        clicksDelivered: 0,
+        verificationStatus: k.verificationStatus,
+      }));
+
+      res.json({
+        clientId: client.id,
+        businessName: client.businessName,
+        aeoKeywords,
+        totalClicksDelivered: totalClicks,
+        averageRankingPosition: avgPos,
+        startDate: sessions[0]?.timestamp ?? null,
+        lastSessionDate: sessions[sessions.length - 1]?.timestamp ?? null,
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error fetching AEO summary");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 export default router;

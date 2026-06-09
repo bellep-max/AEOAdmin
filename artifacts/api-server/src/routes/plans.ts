@@ -17,6 +17,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { plansTable } from "@workspace/db/schema";
+import { requireViewer } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -25,7 +26,7 @@ const router = Router();
  * Returns all service plan rows with `cost` cast to a JavaScript number.
  * Used by the Plans page and anywhere plan pricing is displayed.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const plans = await db.select().from(plansTable);
 
@@ -35,7 +36,7 @@ router.get("/", async (req, res) => {
         // Postgres numeric columns arrive as strings via node-postgres;
         // convert to number so frontend formatters (currency, charts) work
         cost: Number(p.cost),
-      }))
+      })),
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching plans");

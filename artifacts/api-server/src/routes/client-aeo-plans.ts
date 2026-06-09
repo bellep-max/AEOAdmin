@@ -2,6 +2,11 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable, keywordsTable } from "@workspace/db/schema";
 import { and, eq, asc, inArray, sql } from "drizzle-orm";
+import {
+  requireSalesAllowed,
+  requireEditor,
+  requireAdmin,
+} from "../middlewares/role-auth";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -9,7 +14,7 @@ const router = Router({ mergeParams: true }); // gives access to :clientId from 
  * GET /api/clients/:clientId/aeo-plans
  * Returns all AEO plans for a client.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     if (isNaN(clientId))
@@ -70,7 +75,7 @@ router.get("/", async (req, res) => {
 /**
  * GET /api/clients/:clientId/aeo-plans/:planId
  */
-router.get("/:planId", async (req, res) => {
+router.get("/:planId", requireSalesAllowed, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     const planId = parseInt(req.params.planId);
@@ -101,7 +106,7 @@ router.get("/:planId", async (req, res) => {
  * POST /api/clients/:clientId/aeo-plans
  * Create a new AEO plan for a client.
  */
-router.post("/", async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     if (isNaN(clientId))
@@ -190,7 +195,7 @@ router.post("/", async (req, res) => {
  * PATCH /api/clients/:clientId/aeo-plans/:planId
  * Update a specific AEO plan.
  */
-router.patch("/:planId", async (req, res) => {
+router.patch("/:planId", requireEditor, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     const planId = parseInt(req.params.planId);
@@ -297,7 +302,7 @@ router.patch("/:planId", async (req, res) => {
  * DELETE /api/clients/:clientId/aeo-plans/:planId
  * Delete a specific AEO plan.
  */
-router.delete("/:planId", async (req, res) => {
+router.delete("/:planId", requireAdmin, async (req, res) => {
   try {
     const planId = parseInt(req.params.planId);
     if (isNaN(planId)) return res.status(400).json({ error: "Invalid planId" });

@@ -14,8 +14,10 @@ import type { Request, Response, NextFunction } from "express";
  */
 export function requireOwner(req: Request, res: Response, next: NextFunction) {
   const session = req.session as unknown as Record<string, unknown>;
-  if (!session.userId) return res.status(401).json({ error: "Not authenticated" });
-  if (session.userRole !== "owner") return res.status(403).json({ error: "Forbidden" });
+  if (!session.userId)
+    return res.status(401).json({ error: "Not authenticated" });
+  if (session.userRole !== "owner")
+    return res.status(403).json({ error: "Forbidden" });
   next();
 }
 
@@ -39,7 +41,8 @@ export function isSales(req: Request): boolean {
 export function requireRoles(...allowedRoles: string[]) {
   return function (req: Request, res: Response, next: NextFunction) {
     const session = req.session as unknown as Record<string, unknown>;
-    if (!session.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (!session.userId)
+      return res.status(401).json({ error: "Not authenticated" });
     const role = session.userRole as string | undefined;
     if (!role || !allowedRoles.includes(role)) {
       return res.status(403).json({ error: "Forbidden" });
@@ -47,6 +50,45 @@ export function requireRoles(...allowedRoles: string[]) {
     next();
   };
 }
+
+/**
+ * Subsumptive admin-panel role hierarchy:
+ *
+ *   viewer  → read-only across the admin panel
+ *   editor  → viewer + operational writes (update keywords, sessions, etc.)
+ *   admin   → editor + destructive ops (create/delete clients, businesses,
+ *             campaigns; bulk import; config writes)
+ *   owner   → admin + beta features (AEO Reporter, Variants, Bi-Weekly
+ *             Report, manual rotation)
+ *
+ * Each gate ALSO accepts every role above it. requireViewer accepts admin
+ * and owner; requireEditor accepts admin and owner; etc.
+ *
+ * `sales` is parallel to this chain (it's tag-gated free-trial-only access),
+ * not a tier. requireSalesAllowed() lists the routes a sales user can hit
+ * alongside the admin/owner tier — used on /clients, /dashboard, /rankings,
+ * /llm/aeo-reporter/stream. Pure admin-panel routes (other clients pages,
+ * audit logs, sessions, etc.) intentionally do NOT include sales.
+ *
+ * `customer` is also parallel — it's the portal role, gated by the portal
+ * middleware (requirePortalAuth + requireLinkedClient). It does not appear
+ * in any of these hierarchies.
+ */
+export const requireViewer = requireRoles("viewer", "editor", "admin", "owner");
+export const requireEditor = requireRoles("editor", "admin", "owner");
+export const requireAdmin = requireRoles("admin", "owner");
+
+/**
+ * For endpoints reachable by sales AND the read-only chain. Includes sales
+ * + viewer + editor + admin + owner. Used on the 4 sales-facing screens.
+ */
+export const requireSalesAllowed = requireRoles(
+  "sales",
+  "viewer",
+  "editor",
+  "admin",
+  "owner",
+);
 
 /**
  * If the session is a sales user, return the plan_type their view must be
@@ -68,7 +110,11 @@ export function getSalesPlanFilter(req: Request): string | null {
  * session (admin UI flow). Use this on endpoints that runners + the owner UI
  * both call — e.g. audit-report/run, audit-context, variants regenerate-all.
  */
-export function requireExecutorOrOwner(req: Request, res: Response, next: NextFunction) {
+export function requireExecutorOrOwner(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   const expected = process.env.EXECUTOR_TOKEN;
   const provided = req.header("x-executor-token");
   if (expected && provided && provided === expected) return next();
@@ -76,5 +122,7 @@ export function requireExecutorOrOwner(req: Request, res: Response, next: NextFu
   const session = req.session as unknown as Record<string, unknown>;
   if (session.userId && session.userRole === "owner") return next();
 
-  return res.status(401).json({ error: "Requires executor token or owner session" });
+  return res
+    .status(401)
+    .json({ error: "Requires executor token or owner session" });
 }
