@@ -11,6 +11,8 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
+import { requireSession } from "../middlewares/session-auth";
+import { requireOwner } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -559,7 +561,7 @@ router.get("/email-config", (_req, res) => {
   });
 });
 
-router.get("/email-recipients/:clientId", async (req, res) => {
+router.get("/email-recipients/:clientId", requireSession, async (req, res) => {
   const id = Number.parseInt(req.params.clientId, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
   try {
@@ -599,7 +601,7 @@ function parseFilterQuery(req: {
 }
 
 /* GET /api/rankings/email-preview */
-router.get("/email-preview", async (req, res) => {
+router.get("/email-preview", requireSession, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
   try {
@@ -670,7 +672,7 @@ router.get("/email-preview", async (req, res) => {
 });
 
 /* GET /api/rankings/email-templates */
-router.get("/email-templates", async (req, res) => {
+router.get("/email-templates", requireSession, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
   try {
@@ -765,7 +767,7 @@ Let me know if anything needs attention.`,
    Body: { clientId, businessId?, aeoPlanId?, instruction? }
    Calls DeepSeek with a compact summary of the bi-weekly data + (optional)
    instruction hint, returns a generated email body the user can edit. */
-router.post("/email-ai-suggest", async (req, res) => {
+router.post("/email-ai-suggest", requireOwner, async (req, res) => {
   const body = req.body as Partial<RankingFilter> & { instruction?: string };
   if (!body.clientId)
     return res.status(400).json({ error: "clientId required" });
@@ -884,7 +886,7 @@ interface SendReportBody {
 }
 
 /* POST /api/rankings/send-report */
-router.post("/send-report", async (req, res) => {
+router.post("/send-report", requireOwner, async (req, res) => {
   const body = req.body as Partial<SendReportBody>;
   if (
     !body.clientId ||
@@ -1015,7 +1017,7 @@ router.post("/send-report", async (req, res) => {
 });
 
 /* GET /api/rankings/email-sends?clientId= */
-router.get("/email-sends", async (req, res) => {
+router.get("/email-sends", requireSession, async (req, res) => {
   try {
     const clientId = req.query.clientId
       ? Number.parseInt(String(req.query.clientId), 10)

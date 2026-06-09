@@ -10,6 +10,8 @@ import {
 import { eq, and, desc, count, gte, lte, like, sql } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import { requireSession } from "../middlewares/session-auth";
+import { requireOwner } from "../middlewares/role-auth";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -221,7 +223,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
    Backfills audit_logs from ranking_reports for rows that
    don't have a matching audit_log entry yet.
 ──────────────────────────────────────────────────────────── */
-router.post("/sync", async (req, res) => {
+router.post("/sync", requireOwner, async (req, res) => {
   try {
     const { from, to, dryRun } = req.query as Record<string, string>;
     const isDryRun = dryRun === "true" || dryRun === "1";
@@ -285,7 +287,7 @@ router.post("/sync", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireSession, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

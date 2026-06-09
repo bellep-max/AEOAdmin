@@ -147,26 +147,30 @@ router.get("/variants/:keywordId", async (req, res) => {
 });
 
 /* POST /api/llm/variants/:keywordId/regenerate — refresh variants for one keyword */
-router.post("/variants/:keywordId/regenerate", async (req, res) => {
-  try {
-    const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId))
-      return res.status(400).json({ error: "Invalid keywordId" });
+router.post(
+  "/variants/:keywordId/regenerate",
+  requireOwner,
+  async (req, res) => {
+    try {
+      const keywordId = Number(req.params.keywordId);
+      if (Number.isNaN(keywordId))
+        return res.status(400).json({ error: "Invalid keywordId" });
 
-    const body = (req.body ?? {}) as { count?: number };
-    const count = body.count != null ? Number(body.count) : undefined;
-    if (count != null && (Number.isNaN(count) || count <= 0 || count > 100)) {
-      return res.status(400).json({ error: "count must be 1-100" });
+      const body = (req.body ?? {}) as { count?: number };
+      const count = body.count != null ? Number(body.count) : undefined;
+      if (count != null && (Number.isNaN(count) || count <= 0 || count > 100)) {
+        return res.status(400).json({ error: "count must be 1-100" });
+      }
+
+      const out = await regenerateForKeyword(keywordId, count);
+      res.json(out);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      req.log.error({ err }, "Error regenerating variants");
+      res.status(500).json({ error: message });
     }
-
-    const out = await regenerateForKeyword(keywordId, count);
-    res.json(out);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    req.log.error({ err }, "Error regenerating variants");
-    res.status(500).json({ error: message });
-  }
-});
+  },
+);
 
 /* GET /api/llm/variants/:keywordId/random — pick + bump times_used */
 router.get(
@@ -212,7 +216,7 @@ router.get(
 );
 
 /* DELETE /api/llm/variants/by-id/:id — admin override delete */
-router.delete("/variants/by-id/:id", async (req, res) => {
+router.delete("/variants/by-id/:id", requireSession, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -330,12 +334,18 @@ router.post("/build-session", requireExecutorToken, async (req, res) => {
     // Archived/locked keywords must not be ranked. This is the enforcement point:
     // every ranking job is enriched here first, so a "skip" stops it being dispatched.
     const [kwRow] = await db
-      .select({ archivedAt: keywordsTable.archivedAt, isActive: keywordsTable.isActive })
+      .select({
+        archivedAt: keywordsTable.archivedAt,
+        isActive: keywordsTable.isActive,
+      })
       .from(keywordsTable)
       .where(eq(keywordsTable.id, keywordId));
     if (!kwRow) return res.status(404).json({ error: "keyword not found" });
     if (kwRow.archivedAt != null || kwRow.isActive === false) {
-      return res.json({ skip: true, reason: "keyword locked/inactive — not ranking" });
+      return res.json({
+        skip: true,
+        reason: "keyword locked/inactive — not ranking",
+      });
     }
 
     const start = Date.now();
@@ -789,7 +799,7 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
    back so the FE's existing `data: {...}` parser continues to work
    unchanged. Auth is a logged-in admin session (no executor token; this
    is a UI feature, not a runner). */
-router.post("/aeo-reporter/stream", requireSession, async (req, res) => {
+router.post("/aeo-reporter/stream", requireOwner, async (req, res) => {
   try {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
