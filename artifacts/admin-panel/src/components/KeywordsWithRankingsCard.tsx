@@ -22,6 +22,7 @@ import {
 } from "@/lib/period-comparison";
 import { StatusBadge, ChangeCell } from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
+import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
 /** A keyword "wins" (locks) when its current rank is Top-3 on ANY one platform. */
 function lockTrigger(platforms: PeriodRow[]): { platform: string; position: number } | null {
@@ -33,6 +34,28 @@ function lockTrigger(platforms: PeriodRow[]): { platform: string; position: numb
     }
   }
   return best;
+}
+
+/** Best (lowest) current rank across all platforms for this keyword. Returns
+ *  Infinity when the keyword has no ranking data yet, so unranked keywords
+ *  naturally fall to the bottom of an ascending sort. */
+function bestCurrentRank(platforms: PeriodRow[]): number {
+  let best = Infinity;
+  for (const p of platforms) {
+    const pos = p.currentPosition;
+    if (pos != null && pos >= 1 && pos < best) best = pos;
+  }
+  return best;
+}
+
+/** Open the screenshot dialog with the (rankingReportId, keyword, platform,
+ *  position, date) context for the rank chip the user clicked. */
+interface ScreenshotTarget {
+  reportId: number;
+  keywordText: string;
+  platform: string;
+  position: number | null;
+  date: string | null;
 }
 
 interface RotationLock {
@@ -60,11 +83,59 @@ interface Props {
   onRotated?: () => void;
 }
 
-function PlatformChip({ row }: { row: PeriodRow }) {
+function PlatformChip({
+  row,
+  onClick,
+}: {
+  row: PeriodRow;
+  /** When provided AND the row has a currentReportId, the chip becomes a
+   *  button that opens the screenshot dialog. */
+  onClick?: (target: ScreenshotTarget) => void;
+}) {
   const cls = PLATFORM_COLORS[row.platform] ?? "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
   const arrow = row.change == null ? "" : row.change > 0 ? " ↑" : row.change < 0 ? " ↓" : " =";
+  const clickable = onClick != null && row.currentReportId != null;
+  const interactive = clickable
+    ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-shadow"
+    : "";
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}>
+    <span
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={
+        clickable
+          ? (e) => {
+              e.stopPropagation();
+              onClick!({
+                reportId: row.currentReportId!,
+                keywordText: row.keywordText,
+                platform: row.platform,
+                position: row.currentPosition,
+                date: row.currentDate,
+              });
+            }
+          : undefined
+      }
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onClick!({
+                  reportId: row.currentReportId!,
+                  keywordText: row.keywordText,
+                  platform: row.platform,
+                  position: row.currentPosition,
+                  date: row.currentDate,
+                });
+              }
+            }
+          : undefined
+      }
+      title={clickable ? "Click to view screenshot" : undefined}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
+    >
       <span className="capitalize">{row.platform}</span>
       <span className="font-bold">{fmtPos(row.currentPosition)}{arrow}</span>
     </span>
@@ -85,6 +156,9 @@ export function KeywordsWithRankingsCard({
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // Screenshot dialog target. Null when the dialog is closed.
+  const [screenshotTarget, setScreenshotTarget] =
+    useState<ScreenshotTarget | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -153,17 +227,24 @@ export function KeywordsWithRankingsCard({
       }
     }
     const list = [...byKeyword.values()];
-    if (showRotation && extraKeywords) {
-      // Conveyor belt: only ACTIVE keywords show here — locked/archived ones drop
-      // off (they're absent from extraKeywords, which is the active set for this
-      // scope, even though their rank history still comes back in `data.rows`).
-      const activeIds = new Set(extraKeywords.map((k) => k.id));
-      return list
-        .filter((g) => activeIds.has(g.keywordId))
-        // Oldest first, newest (AI replacements) at the bottom.
-        .sort((a, b) => a.keywordId - b.keywordId);
-    }
-    return list.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
+    // Conveyor belt for rotation mode: drop locked/archived keywords. They're
+    // absent from extraKeywords (the active set for this scope) even though
+    // their rank history still comes back in `data.rows`.
+    const filtered =
+      showRotation && extraKeywords
+        ? list.filter((g) =>
+            new Set(extraKeywords.map((k) => k.id)).has(g.keywordId),
+          )
+        : list;
+    // Sort by best (lowest) current rank across all platforms, ascending.
+    // Unranked / "New" keywords land at the bottom; among unranked, keep
+    // alphabetical order so the bottom is stable across renders.
+    return filtered.sort((a, b) => {
+      const ra = bestCurrentRank(a.platforms);
+      const rb = bestCurrentRank(b.platforms);
+      if (ra !== rb) return ra - rb;
+      return a.keywordText.localeCompare(b.keywordText);
+    });
   }, [data, extraKeywords, showRotation]);
 
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
@@ -278,7 +359,11 @@ export function KeywordsWithRankingsCard({
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                       {sorted.map((p) => (
-                        <PlatformChip key={`chip-${p.keywordId}-${p.platform}`} row={p} />
+                        <PlatformChip
+                          key={`chip-${p.keywordId}-${p.platform}`}
+                          row={p}
+                          onClick={setScreenshotTarget}
+                        />
                       ))}
                     </div>
                     {onEditKeyword && (
@@ -321,7 +406,28 @@ export function KeywordsWithRankingsCard({
                             <div className="col-span-2 capitalize font-semibold">{p.platform}</div>
                             <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
                             <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                            <div className="col-span-2 font-semibold">{fmtPos(p.currentPosition)}</div>
+                            <div className="col-span-2 font-semibold">
+                              {p.currentReportId != null ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setScreenshotTarget({
+                                      reportId: p.currentReportId!,
+                                      keywordText: p.keywordText,
+                                      platform: p.platform,
+                                      position: p.currentPosition,
+                                      date: p.currentDate,
+                                    })
+                                  }
+                                  className="text-primary hover:underline cursor-pointer"
+                                  title="Click to view screenshot"
+                                >
+                                  {fmtPos(p.currentPosition)}
+                                </button>
+                              ) : (
+                                <span>{fmtPos(p.currentPosition)}</span>
+                              )}
+                            </div>
                             <div className="col-span-2"><ChangeCell change={p.change} /></div>
                             <div className="col-span-2"><StatusBadge status={p.status} /></div>
                           </div>
@@ -374,6 +480,20 @@ export function KeywordsWithRankingsCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RankingScreenshotDialog
+        recordId={screenshotTarget?.reportId ?? null}
+        endpoint="/api/ranking-reports/{id}/screenshot-url"
+        onClose={() => setScreenshotTarget(null)}
+        title="Rank screenshot"
+        subtitle={
+          screenshotTarget
+            ? `${screenshotTarget.keywordText} · ${screenshotTarget.platform}`
+            : undefined
+        }
+        rank={screenshotTarget?.position ?? null}
+        date={screenshotTarget?.date ?? null}
+      />
     </Card>
   );
 }
