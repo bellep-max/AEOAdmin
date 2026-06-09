@@ -20,8 +20,14 @@ import {
   businessesTable,
   keywordVariantsTable,
   clientsTable,
+  clientAeoPlansTable,
 } from "@workspace/db/schema";
-import { and, eq, isNull, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, desc, inArray, notInArray, or, sql } from "drizzle-orm";
+
+// Plan type that opts a campaign out of rotation entirely. Free-trial clients
+// never auto-lock and never get replacement keywords inserted; rotation is a
+// retained-client behavior. Matches client_aeo_plans.plan_type values.
+const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
 import { generateVariants } from "./variant-generator";
 import { logger } from "../lib/logger";
 
@@ -75,6 +81,24 @@ export async function rotateWinners(
   // Scope to a single keyword — used by the auto-lock-on-win hook that fires
   // when a ranking report lands a top-3 for one keyword.
   if (opts.keywordId != null) conds.push(eq(keywordsTable.id, opts.keywordId));
+
+  // Free-trial campaigns are excluded from rotation by policy. Pre-fetch the
+  // free-trial plan IDs and filter out keywords belonging to them. Keywords
+  // with a null aeo_plan_id (legacy / unassigned) stay eligible — we only
+  // skip when we know the plan is free-trial.
+  const freeTrialPlans = await db
+    .select({ id: clientAeoPlansTable.id })
+    .from(clientAeoPlansTable)
+    .where(eq(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE));
+  const freeTrialPlanIds = freeTrialPlans.map((p) => p.id);
+  if (freeTrialPlanIds.length > 0) {
+    conds.push(
+      or(
+        isNull(keywordsTable.aeoPlanId),
+        notInArray(keywordsTable.aeoPlanId, freeTrialPlanIds),
+      )!,
+    );
+  }
 
   const keywords = await db
     .select()
