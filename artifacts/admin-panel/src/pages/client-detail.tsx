@@ -37,6 +37,7 @@ import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -74,6 +75,7 @@ export default function ClientDetail() {
   const clientId    = Number(params?.id);
   const queryClient = useQueryClient();
   const { toast }   = useToast();
+  const { isEditor } = useAuth();
 
   const [editBizOpen,  setEditBizOpen]  = useState(false);
   const [editAccOpen,  setEditAccOpen]  = useState(false);
@@ -273,13 +275,15 @@ export default function ClientDetail() {
               <Briefcase className="w-4 h-4 text-primary" />
               Client Details
             </CardTitle>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setEditAccOpen(true)}
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </Button>
+            {isEditor && (
+              <Button
+                variant="ghost" size="sm"
+                className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setEditAccOpen(true)}
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </Button>
+            )}
           </CardHeader>
 
           <CardContent>
@@ -1215,6 +1219,7 @@ interface BusinessRow {
 function BusinessesSection({ clientId, clientName }: { clientId: number; clientName: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin, isEditor } = useAuth();
   const [addOpen, setAddOpen] = useState(false);
   const [editBiz, setEditBiz] = useState<BusinessRow | null>(null);
   const [confirmDeleteBiz, setConfirmDeleteBiz] = useState<BusinessRow | null>(null);
@@ -1250,9 +1255,11 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
             <Building2 className="w-4 h-4 text-primary" />
             Businesses {businesses ? <span className="text-muted-foreground font-normal">({businesses.length})</span> : null}
           </CardTitle>
-          <Button size="sm" className="h-8 gap-1" onClick={() => setAddOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Add Business
-          </Button>
+          {isAdmin && (
+            <Button size="sm" className="h-8 gap-1" onClick={() => setAddOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Add Business
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -1306,24 +1313,28 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
-                      onClick={() => setEditBiz(b)}
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => setConfirmDeleteBiz(b)}
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {isEditor && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
+                        onClick={() => setEditBiz(b)}
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setConfirmDeleteBiz(b)}
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

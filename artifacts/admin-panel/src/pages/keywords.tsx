@@ -30,6 +30,7 @@ import { format } from "date-fns";
 import jsPDF       from "jspdf";
 import autoTable   from "jspdf-autotable";
 import { KeywordDialog } from "@/components/KeywordDialog";
+import { useAuth } from "@/lib/auth";
 
 const BASE       = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -343,13 +344,15 @@ function LinkDialog({
 }
 
 function KeywordCard({
-  kw, onEdit, onDelete, onToggleActive, ranks,
+  kw, onEdit, onDelete, onToggleActive, ranks, canEdit = true, canDelete = true,
 }: {
   kw: KwRecord;
   onEdit: () => void;
   onDelete: () => void;
   ranks?: Partial<Record<string, RankCell>>;
   onToggleActive: (v: boolean) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }) {
   const { toast } = useToast();
   const initialLinks = ((kw as unknown as { links?: KeywordLink[] }).links ?? null);
@@ -486,14 +489,18 @@ function KeywordCard({
               </span>
             </div>
           )}
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors">
-            <Pencil className="w-4 h-4" />
-          </button>
-          <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-600 hover:bg-red-100 transition-colors">
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {canEdit && (
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors">
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+          {canDelete && (
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-600 hover:bg-red-100 transition-colors">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -736,6 +743,7 @@ function SearchableSelect({
    MAIN PAGE
 ═══════════════════════════════════════════════════════════ */
 export default function Keywords() {
+  const { isAdmin, isEditor } = useAuth();
   const [search,             setSearch]             = useState("");
   const [typeFilter,         setTypeFilter]         = useState<string>("all");
   const [selectedClientId,   setSelectedClientId]   = useState<number | null>(null);
@@ -1000,11 +1008,13 @@ export default function Keywords() {
             onClick={exportAllPDF} disabled={filteredKws.length === 0}>
             <FileDown className="w-3.5 h-3.5" /> PDF
           </Button>
-          <Button size="sm" className="gap-2"
-            style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
-            onClick={() => setAddOpen(true)}>
-            <Plus className="w-4 h-4" /> Add Keyword
-          </Button>
+          {isEditor && (
+            <Button size="sm" className="gap-2"
+              style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
+              onClick={() => setAddOpen(true)}>
+              <Plus className="w-4 h-4" /> Add Keyword
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1149,10 +1159,12 @@ export default function Keywords() {
         <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 gap-3">
           <Key className="w-12 h-12 opacity-100" />
           <p className="text-xl font-semibold">No keywords found</p>
-          <Button size="lg" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-lg px-6 py-4 font-bold"
-            onClick={() => setAddOpen(true)}>
-            <Plus className="w-5 h-5" /> Add first keyword
-          </Button>
+          {isEditor && (
+            <Button size="lg" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-lg px-6 py-4 font-bold"
+              onClick={() => setAddOpen(true)}>
+              <Plus className="w-5 h-5" /> Add first keyword
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -1279,7 +1291,7 @@ export default function Keywords() {
                       className="flex items-center gap-2 text-base text-red-600 hover:text-red-700 font-bold border-2 border-red-300 hover:border-red-400 rounded-lg px-4 py-2 hover:bg-red-50 transition-all">
                       <FileDown className="w-5 h-5" /> PDF
                     </button>
-                    {biz && (
+                    {biz && isEditor && (
                       <button onClick={(e) => { e.stopPropagation(); setAddForBusiness({ clientId, businessId }); }}
                         className="flex items-center gap-2 text-base text-emerald-600 hover:text-emerald-700 font-bold border-2 border-emerald-300 hover:border-emerald-400 rounded-lg px-4 py-2 hover:bg-emerald-50 transition-all">
                         <Plus className="w-5 h-5" /> Add Keyword
@@ -1366,6 +1378,8 @@ export default function Keywords() {
                                     onEdit={() => setEditKw({ ...kw })}
                                     onDelete={() => setConfirmDeleteKw(kw)}
                                     onToggleActive={(v) => toggleActive(kw, v)}
+                                    canEdit={isEditor}
+                                    canDelete={isAdmin}
                                   />
                                 </div>
                               ))}

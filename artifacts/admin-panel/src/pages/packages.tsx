@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Box, Plus, Trash2, Calendar, User, Palette } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 import { PLAN_META } from "@/lib/plan-meta";
 import { format } from "date-fns";
 
@@ -72,6 +73,7 @@ function getColorOption(hex: string) {
 
 export default function Packages() {
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [customPkgs, setCustomPkgs]   = useState<CustomPkg[]>([]);
   const [loading,    setLoading]      = useState(true);
   const [addOpen,    setAddOpen]      = useState(false);
@@ -150,9 +152,11 @@ export default function Packages() {
             <p className="text-sm text-muted-foreground">All available service plans offered to clients</p>
           </div>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-2 font-bold">
-          <Plus className="w-4 h-4" /> Add Plan
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setAddOpen(true)} className="gap-2 font-bold">
+            <Plus className="w-4 h-4" /> Add Plan
+          </Button>
+        )}
       </div>
 
       {/* -- Standard plans -- COMMENTED OUT
@@ -277,12 +281,14 @@ export default function Packages() {
                         </div>
                       </TableCell>
                       <TableCell className="align-top py-4 text-right">
-                        <button
-                          onClick={() => setDeleteTarget(pkg)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setDeleteTarget(pkg)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

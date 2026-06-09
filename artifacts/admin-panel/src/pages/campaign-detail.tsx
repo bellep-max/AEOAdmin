@@ -18,6 +18,7 @@ import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard"
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
 import { CampaignAuditRankingsCard } from "@/components/CampaignAuditRankingsCard";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -85,6 +86,7 @@ export default function CampaignDetail() {
   const campaignId = Number(params?.campaignId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin, isEditor } = useAuth();
   const [, navigate] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
@@ -262,17 +264,21 @@ export default function CampaignDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setConfirmDeleteCampaign(true)}
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </Button>
+          {isEditor && (
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </Button>
+          )}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setConfirmDeleteCampaign(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -359,19 +365,33 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         addButton={
-          <Button size="sm" className="h-8 gap-1" onClick={() => setKwDialogOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Add Keyword
-          </Button>
+          isEditor ? (
+            <Button size="sm" className="h-8 gap-1" onClick={() => setKwDialogOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Add Keyword
+            </Button>
+          ) : undefined
         }
-        onEditKeyword={(id) => {
-          const kw = (keywords ?? []).find((k) => k.id === id);
-          if (!kw) {
-            toast({ title: "Keyword not found", variant: "destructive" });
-            return;
-          }
-          setEditingKw(kw as unknown as KwRecord);
-        }}
-        onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
+        onEditKeyword={
+          isEditor
+            ? (id) => {
+                const kw = (keywords ?? []).find((k) => k.id === id);
+                if (!kw) {
+                  toast({ title: "Keyword not found", variant: "destructive" });
+                  return;
+                }
+                setEditingKw(kw as unknown as KwRecord);
+              }
+            : undefined
+        }
+        onDeleteKeyword={
+          isAdmin
+            ? (id) => {
+                const kw = (keywords ?? []).find((k) => k.id === id);
+                if (kw) setConfirmDeleteKw(kw);
+                else deleteKeyword(id);
+              }
+            : undefined
+        }
         extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
         showRotation
         onRotated={() => { refetchKeywords(); }}

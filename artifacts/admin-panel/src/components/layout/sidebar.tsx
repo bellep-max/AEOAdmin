@@ -64,9 +64,14 @@ interface NavItem {
   icon: LucideIcon;
   ownerOnly?: boolean;
   /**
+   * Hides the item from anyone whose role is below admin. Use for pages where
+   * the whole purpose of the page is destructive / config-level (archived
+   * restore, plan catalog management, prompts).
+   */
+  adminOnly?: boolean;
+  /**
    * Sales role sees only items flagged salesAllowed. Without the flag, the
-   * item is hidden for sales sessions. Items without ownerOnly+salesAllowed
-   * are visible to admin/owner only.
+   * item is hidden for sales sessions.
    */
   salesAllowed?: boolean;
 }
@@ -90,7 +95,7 @@ const navGroups: NavGroup[] = [
     label: "Infrastructure",
     items: [
       { name: "Clients", href: "/clients", icon: Users, salesAllowed: true },
-      { name: "Archived", href: "/archived", icon: Archive },
+      { name: "Archived", href: "/archived", icon: Archive, adminOnly: true },
       {
         name: "Keywords",
         href: "/keywords",
@@ -100,7 +105,7 @@ const navGroups: NavGroup[] = [
           { name: "All Keywords", href: "/keywords/all", icon: List },
         ],
       },
-      { name: "Plans", href: "/packages", icon: Box },
+      { name: "Plans", href: "/packages", icon: Box, adminOnly: true },
     ],
   },
   {
@@ -165,7 +170,7 @@ const navGroups: NavGroup[] = [
           },
         ],
       },
-      { name: "Prompts", href: "/admin/prompts", icon: FileText },
+      { name: "Prompts", href: "/admin/prompts", icon: FileText, adminOnly: true },
       {
         name: "Variants",
         href: "/admin/variants",
@@ -179,16 +184,22 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout, isOwner, isSales } = useAuth();
+  const { user, logout, isOwner, isSales, isAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  // Visibility rule:
+  // Visibility rule, evaluated in order:
   //   sales role  → only items flagged salesAllowed
-  //   non-owner   → everything except ownerOnly items (existing behavior)
-  //   owner       → everything
-  const isVisible = (item: { ownerOnly?: boolean; salesAllowed?: boolean }) => {
+  //   ownerOnly   → owner only
+  //   adminOnly   → admin or owner only
+  //   default     → all signed-in admin-panel users (viewer/editor/admin/owner)
+  const isVisible = (item: {
+    ownerOnly?: boolean;
+    adminOnly?: boolean;
+    salesAllowed?: boolean;
+  }) => {
     if (isSales) return !!item.salesAllowed;
-    if (!isOwner && item.ownerOnly) return false;
+    if (item.ownerOnly && !isOwner) return false;
+    if (item.adminOnly && !isAdmin) return false;
     return true;
   };
 

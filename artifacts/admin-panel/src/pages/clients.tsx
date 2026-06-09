@@ -61,6 +61,7 @@ import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { BulkAddKeywordsDialog } from "@/components/BulkAddKeywordsDialog";
 import { CreatedByField } from "@/components/CreatedByField";
+import { useAuth } from "@/lib/auth";
 
 const businessFormSchema = z.object({
   // Business Information
@@ -117,6 +118,7 @@ const businessFormSchema = z.object({
 });
 
 export default function Clients() {
+  const { isAdmin, isEditor } = useAuth();
   const [search, setSearch] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterAccountType, setFilterAccountType] = useState("all");
@@ -461,12 +463,14 @@ export default function Clients() {
         </div>
 
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
-          <DialogTrigger asChild>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Client
-            </Button>
-          </DialogTrigger>
+          {isAdmin && (
+            <DialogTrigger asChild>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Client
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-[1200px] bg-white max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-black">
@@ -952,18 +956,20 @@ export default function Clients() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={client.status === "active"}
-                        onCheckedChange={() =>
-                          toggleStatus(
-                            client.id,
-                            client.status,
-                            client.businessName,
-                          )
-                        }
-                        className="data-[state=checked]:bg-emerald-500"
-                        disabled={togglingId === client.id}
-                      />
+                      {isEditor && (
+                        <Switch
+                          checked={client.status === "active"}
+                          onCheckedChange={() =>
+                            toggleStatus(
+                              client.id,
+                              client.status,
+                              client.businessName,
+                            )
+                          }
+                          className="data-[state=checked]:bg-emerald-500"
+                          disabled={togglingId === client.id}
+                        />
+                      )}
                       <span
                         className={`text-xs font-semibold ${
                           client.status === "active"
@@ -980,44 +986,50 @@ export default function Clients() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
-                        onClick={() =>
-                          setAddBusinessFor({
-                            clientId: client.id,
-                            clientName: client.businessName,
-                          })
-                        }
-                        title="Add Business"
-                      >
-                        <Building2 className="h-4 w-4" />
-                      </Button>
-                      <Link href={`/clients/${client.id}?edit=biz`}>
+                      {isAdmin && (
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
-                          title="Edit Client"
+                          onClick={() =>
+                            setAddBusinessFor({
+                              clientId: client.id,
+                              clientName: client.businessName,
+                            })
+                          }
+                          title="Add Business"
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Building2 className="h-4 w-4" />
                         </Button>
-                      </Link>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
-                        onClick={() =>
-                          setConfirmDelete({
-                            id: client.id,
-                            name: client.businessName,
-                          })
-                        }
-                        title="Archive Client"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      )}
+                      {isEditor && (
+                        <Link href={`/clients/${client.id}?edit=biz`}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
+                            title="Edit Client"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
+                          onClick={() =>
+                            setConfirmDelete({
+                              id: client.id,
+                              name: client.businessName,
+                            })
+                          }
+                          title="Archive Client"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

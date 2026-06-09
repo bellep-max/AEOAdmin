@@ -17,6 +17,7 @@ import {
 import { useLocation } from "wouter";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -83,6 +84,7 @@ export default function BusinessDetail() {
   const businessId = Number(params?.businessId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin, isEditor } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null);
@@ -187,9 +189,11 @@ export default function BusinessDetail() {
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </Button>
+        {isEditor && (
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </Button>
+        )}
       </div>
 
       <Card className="border-border/50">
@@ -221,13 +225,15 @@ export default function BusinessDetail() {
             <ClipboardList className="w-4 h-4 text-primary" />
             Campaigns {campaigns ? <span className="text-muted-foreground font-normal">({campaigns.length})</span> : null}
           </CardTitle>
-          <Button
-            variant="outline" size="sm"
-            className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
-            onClick={() => { setEditingCampaign(null); setCampaignDialogOpen(true); }}
-          >
-            <Plus className="w-3 h-3" /> Add Campaign
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline" size="sm"
+              className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
+              onClick={() => { setEditingCampaign(null); setCampaignDialogOpen(true); }}
+            >
+              <Plus className="w-3 h-3" /> Add Campaign
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {!campaigns || campaigns.length === 0 ? (
@@ -284,20 +290,24 @@ export default function BusinessDetail() {
                         <TableCell className="text-sm">{c.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                              onClick={() => { setEditingCampaign(c); setCampaignDialogOpen(true); }}
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                              onClick={() => setDeletingCampaign(c)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                            {isEditor && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => { setEditingCampaign(c); setCampaignDialogOpen(true); }}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                                onClick={() => setDeletingCampaign(c)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

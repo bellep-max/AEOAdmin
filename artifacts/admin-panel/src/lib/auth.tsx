@@ -10,8 +10,17 @@ interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
+  /** True only for role === "owner" — for owner-gated beta features. */
   isOwner: boolean;
+  /** True for role === "sales" — narrowed to free-trial-only views. */
   isSales: boolean;
+  /** True when the user can perform destructive / create-top-level actions.
+   *  Subsumes owner. Use to gate Add/Delete buttons that should not appear
+   *  for editor or viewer roles. */
+  isAdmin: boolean;
+  /** True when the user can edit existing entities. Subsumes admin + owner.
+   *  Use to gate Edit / Patch buttons that should not appear for viewer. */
+  isEditor: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -87,8 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isOwner = user?.role === "owner";
   const isSales = user?.role === "sales";
+  // Subsumptive: admin includes owner; editor includes admin + owner. Matches
+  // the BE hierarchy in middlewares/role-auth.ts.
+  const isAdmin = user?.role === "admin" || isOwner;
+  const isEditor = user?.role === "editor" || isAdmin;
 
-  return <AuthContext.Provider value={{ user, isLoading, isOwner, isSales, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, isLoading, isOwner, isSales, isAdmin, isEditor, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
