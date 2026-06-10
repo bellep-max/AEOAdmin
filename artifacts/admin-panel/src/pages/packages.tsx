@@ -37,7 +37,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Box, Plus, Trash2, Calendar, User, Palette } from "lucide-react";
+import {
+  Box,
+  Plus,
+  Pencil,
+  Trash2,
+  Calendar,
+  User,
+  Palette,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { PLAN_META } from "@/lib/plan-meta";
 import { format } from "date-fns";
@@ -229,8 +237,11 @@ export default function Packages() {
   const [customPkgs, setCustomPkgs] = useState<CustomPkg[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<CustomPkg | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CustomPkg | null>(null);
+  const dialogOpen = addOpen || editTarget != null;
+  const isEditMode = editTarget != null;
 
   // Form state
   const [form, setForm] = useState({
@@ -262,7 +273,46 @@ export default function Packages() {
     fetchCustom();
   }, []);
 
-  async function handleAdd() {
+  function openEdit(pkg: CustomPkg) {
+    let featuresStr = "";
+    try {
+      const parsed = pkg.features ? JSON.parse(pkg.features) : null;
+      if (Array.isArray(parsed)) featuresStr = parsed.join(", ");
+    } catch {
+      featuresStr = pkg.features ?? "";
+    }
+    setForm({
+      name: pkg.name ?? "",
+      description: pkg.description ?? "",
+      target: pkg.target ?? "",
+      features: featuresStr,
+      tier: pkg.tier ?? "",
+      color: pkg.color ?? COLOR_OPTIONS[0].hex,
+      createdBy: pkg.createdBy ?? "",
+    });
+    setEditTarget(pkg);
+  }
+
+  function resetForm() {
+    setForm({
+      name: "",
+      description: "",
+      target: "",
+      features: "",
+      tier: "",
+      color: COLOR_OPTIONS[0].hex,
+      createdBy: "",
+    });
+  }
+
+  function closeDialog() {
+    if (saving) return;
+    setAddOpen(false);
+    setEditTarget(null);
+    resetForm();
+  }
+
+  async function handleSave() {
     if (!form.name.trim()) {
       toast({ title: "Plan name is required", variant: "destructive" });
       return;
@@ -282,34 +332,31 @@ export default function Packages() {
             .map((f) => f.trim())
             .filter(Boolean)
         : [];
-      const r = await rawFetch("/api/packages", {
-        method: "POST",
-        body: JSON.stringify({
-          name: form.name.trim(),
-          description: form.description.trim() || null,
-          target: form.target.trim() || null,
-          features,
-          color: form.color,
-          tier: form.tier.trim() || null,
-          createdBy: form.createdBy,
-        }),
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        target: form.target.trim() || null,
+        features,
+        color: form.color,
+        tier: form.tier.trim() || null,
+        createdBy: form.createdBy,
+      };
+      const url = isEditMode
+        ? `/api/packages/${editTarget!.id}`
+        : "/api/packages";
+      const r = await rawFetch(url, {
+        method: isEditMode ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
-      toast({ title: "Plan added successfully" });
+      toast({ title: isEditMode ? "Plan updated" : "Plan added successfully" });
       setAddOpen(false);
-      setForm({
-        name: "",
-        description: "",
-        target: "",
-        features: "",
-        tier: "",
-        color: COLOR_OPTIONS[0].hex,
-        createdBy: "",
-      });
+      setEditTarget(null);
+      resetForm();
       await fetchCustom();
     } catch (err) {
       toast({
-        title: "Failed to add plan",
+        title: isEditMode ? "Failed to update plan" : "Failed to add plan",
         description: err instanceof Error ? err.message : "",
         variant: "destructive",
       });
@@ -512,12 +559,22 @@ export default function Packages() {
                       </TableCell>
                       <TableCell className="align-top py-4 text-right">
                         {isAdmin && (
-                          <button
-                            onClick={() => setDeleteTarget(pkg)}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openEdit(pkg)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-foreground hover:bg-slate-100 transition-colors"
+                              aria-label={`Edit ${pkg.name}`}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteTarget(pkg)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              aria-label={`Delete ${pkg.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -534,13 +591,11 @@ export default function Packages() {
         {PLAN_META.length + customPkgs.length} total plans
       </p>
 
-      {/* -- Add Plan Dialog -- */}
+      {/* -- Add / Edit Plan Dialog -- */}
       <Dialog
-        open={addOpen}
+        open={dialogOpen}
         onOpenChange={(o) => {
-          if (!o && !saving) {
-            setAddOpen(false);
-          }
+          if (!o) closeDialog();
         }}
       >
         <DialogContent className="w-[95vw] max-w-[820px] max-h-[92vh] overflow-y-auto">
@@ -550,12 +605,15 @@ export default function Packages() {
                 <Box className="w-5 h-5 text-primary" />
               </div>
               <DialogTitle className="text-lg font-bold">
-                Add Custom Plan
+                {isEditMode ? "Edit Plan" : "Add Custom Plan"}
               </DialogTitle>
             </div>
             <DialogDescription>
-              Create a new service plan. Fields marked{" "}
-              <span className="text-red-500">*</span> are required.
+              {isEditMode
+                ? "Update the plan fields below and save."
+                : "Create a new service plan."}{" "}
+              Fields marked <span className="text-red-500">*</span> are
+              required.
             </DialogDescription>
           </DialogHeader>
 
@@ -687,7 +745,7 @@ export default function Packages() {
             <Button
               variant="outline"
               className="flex-1 h-11 font-bold"
-              onClick={() => setAddOpen(false)}
+              onClick={closeDialog}
               disabled={saving}
             >
               Cancel
@@ -695,10 +753,14 @@ export default function Packages() {
             <Button
               className="flex-1 h-11 font-bold gap-2"
               disabled={saving || !form.name.trim() || !form.createdBy}
-              onClick={handleAdd}
+              onClick={handleSave}
             >
               {saving ? (
                 "Saving..."
+              ) : isEditMode ? (
+                <>
+                  <Pencil className="w-4 h-4" /> Save Changes
+                </>
               ) : (
                 <>
                   <Plus className="w-4 h-4" /> Add Plan

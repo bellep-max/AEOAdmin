@@ -74,6 +74,72 @@ router.post("/", requireAdmin, async (req, res) => {
   }
 });
 
+/* PATCH /api/packages/:id — update a custom package.
+   Accepts any subset of: name, description, target, features (array),
+   color, tier, createdBy. Other fields are left untouched. */
+router.patch("/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const body = req.body as Record<string, unknown>;
+    const update: Record<string, unknown> = {};
+
+    if ("name" in body) {
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name)
+        return res.status(400).json({ error: "Package name is required" });
+      update.name = name;
+    }
+    if ("description" in body)
+      update.description =
+        typeof body.description === "string"
+          ? body.description.trim() || null
+          : null;
+    if ("target" in body)
+      update.target =
+        typeof body.target === "string" ? body.target.trim() || null : null;
+    if ("features" in body)
+      update.features = Array.isArray(body.features)
+        ? JSON.stringify(body.features)
+        : null;
+    if ("color" in body) {
+      const color = typeof body.color === "string" ? body.color.trim() : "";
+      if (!color) return res.status(400).json({ error: "Color is required" });
+      update.color = color;
+    }
+    if ("tier" in body)
+      update.tier =
+        typeof body.tier === "string" ? body.tier.trim() || null : null;
+    if ("createdBy" in body) {
+      if (
+        typeof body.createdBy !== "string" ||
+        !(PACKAGE_CREATORS as readonly string[]).includes(body.createdBy)
+      ) {
+        return res.status(400).json({
+          error: `createdBy must be one of: ${PACKAGE_CREATORS.join(", ")}`,
+        });
+      }
+      update.createdBy = body.createdBy;
+    }
+
+    if (Object.keys(update).length === 0)
+      return res.status(400).json({ error: "No fields to update" });
+
+    const [pkg] = await db
+      .update(customPackagesTable)
+      .set(update as Partial<typeof customPackagesTable.$inferInsert>)
+      .where(eq(customPackagesTable.id, id))
+      .returning();
+
+    if (!pkg) return res.status(404).json({ error: "Not found" });
+    res.json(pkg);
+  } catch (err) {
+    req.log.error({ err }, "Error updating custom package");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* DELETE /api/packages/:id — remove a custom package */
 router.delete("/:id", requireAdmin, async (req, res) => {
   try {
