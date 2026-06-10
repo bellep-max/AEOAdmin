@@ -3,20 +3,59 @@ import jsPDF from "jspdf";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Settings, Eye, EyeOff, Download, Copy, RefreshCw, AlertCircle, Search, BrainCircuit, Zap, Sparkles, ArrowLeft, History, Trash2, X, ChevronRight } from "lucide-react";
+import {
+  Download,
+  Copy,
+  RefreshCw,
+  AlertCircle,
+  Search,
+  BrainCircuit,
+  Zap,
+  Sparkles,
+  ArrowLeft,
+  History,
+  Trash2,
+  X,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const RANK_OPTIONS = ["Not ranked", "Top 1", "Top 3", "Top 5", "Top 10", "Top 20"] as const;
+const RANK_OPTIONS = [
+  "Not ranked",
+  "Top 1",
+  "Top 3",
+  "Top 5",
+  "Top 10",
+  "Top 20",
+] as const;
 
 type ServiceType = "seo" | "aeo" | "hybrid" | "auto";
 
@@ -28,6 +67,9 @@ interface HistoryEntry {
   report: string;
   createdAt: string;
 }
+
+const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const AEO_REPORTER_STREAM_URL = `${BASE}/api/llm/aeo-reporter/stream`;
 
 const HISTORY_KEY = "aeo_report_history";
 
@@ -41,7 +83,10 @@ function loadHistory(): HistoryEntry[] {
 
 function saveToHistory(entry: HistoryEntry) {
   const history = loadHistory();
-  localStorage.setItem(HISTORY_KEY, JSON.stringify([entry, ...history].slice(0, 50)));
+  localStorage.setItem(
+    HISTORY_KEY,
+    JSON.stringify([entry, ...history].slice(0, 50)),
+  );
 }
 
 const SERVICE_TYPES: {
@@ -60,7 +105,8 @@ const SERVICE_TYPES: {
     icon: <Search className="w-5 h-5" />,
     color: "border-border hover:border-blue-400 hover:bg-blue-50/50",
     activeColor: "border-blue-500 bg-blue-50 ring-2 ring-blue-500/20",
-    description: "Traditional search engine optimization — rank higher on Google for typed queries.",
+    description:
+      "Traditional search engine optimization — rank higher on Google for typed queries.",
   },
   {
     id: "aeo",
@@ -69,7 +115,8 @@ const SERVICE_TYPES: {
     icon: <BrainCircuit className="w-5 h-5" />,
     color: "border-border hover:border-primary/60 hover:bg-primary/5",
     activeColor: "border-primary bg-primary/5 ring-2 ring-primary/20",
-    description: "Get your business cited as the answer on ChatGPT, Gemini, and Perplexity.",
+    description:
+      "Get your business cited as the answer on ChatGPT, Gemini, and Perplexity.",
   },
   {
     id: "hybrid",
@@ -78,7 +125,8 @@ const SERVICE_TYPES: {
     icon: <Zap className="w-5 h-5" />,
     color: "border-border hover:border-amber-400 hover:bg-amber-50/50",
     activeColor: "border-amber-500 bg-amber-50 ring-2 ring-amber-500/20",
-    description: "Full-spectrum strategy combining both traditional SEO and answer engine optimization.",
+    description:
+      "Full-spectrum strategy combining both traditional SEO and answer engine optimization.",
   },
   {
     id: "auto",
@@ -87,14 +135,17 @@ const SERVICE_TYPES: {
     icon: <Sparkles className="w-5 h-5" />,
     color: "border-border hover:border-violet-400 hover:bg-violet-50/50",
     activeColor: "border-violet-500 bg-violet-50 ring-2 ring-violet-500/20",
-    description: "Paste your business description and let AI determine the right service type.",
+    description:
+      "Paste your business description and let AI determine the right service type.",
   },
 ];
 
 const formSchema = z.object({
   businessName: z.string().min(1, "Business Name is required"),
   businessDescription: z.string().optional(),
-  websiteUrl: z.union([z.string().url("Must be a valid URL"), z.literal("")]).optional(),
+  websiteUrl: z
+    .union([z.string().url("Must be a valid URL"), z.literal("")])
+    .optional(),
   gmbUrl: z.string().optional(),
   location: z.string().min(1, "Location is required"),
   keyword1: z.string().optional(),
@@ -140,36 +191,44 @@ const LOADING_MESSAGES: Record<ServiceType, string[]> = {
 };
 
 function buildKeywordLines(values: FormValues): string {
-  const pairs = [1, 2, 3, 4, 5].map((n) => {
-    const kw = values[`keyword${n}` as keyof FormValues] as string;
-    const rank = values[`keyword${n}Rank` as keyof FormValues] as string;
-    if (!kw?.trim()) return null;
-    const rankLabel = rank && rank !== "Not ranked" ? ` (currently ${rank})` : "";
-    return `- "${kw}"${rankLabel}`;
-  }).filter(Boolean);
+  const pairs = [1, 2, 3, 4, 5]
+    .map((n) => {
+      const kw = values[`keyword${n}` as keyof FormValues] as string;
+      const rank = values[`keyword${n}Rank` as keyof FormValues] as string;
+      if (!kw?.trim()) return null;
+      const rankLabel =
+        rank && rank !== "Not ranked" ? ` (currently ${rank})` : "";
+      return `- "${kw}"${rankLabel}`;
+    })
+    .filter(Boolean);
   return pairs.length > 0 ? pairs.join("\n") : "(none provided)";
 }
 
 function buildPrompt(values: FormValues, serviceType: ServiceType): string {
   const serviceLabel =
-    serviceType === "seo" ? "SEO"
-    : serviceType === "aeo" ? "AEO"
-    : serviceType === "hybrid" ? "Hybrid SEO + AEO"
-    : "the most suitable service (SEO, AEO, or Hybrid — determine from context)";
+    serviceType === "seo"
+      ? "SEO"
+      : serviceType === "aeo"
+        ? "AEO"
+        : serviceType === "hybrid"
+          ? "Hybrid SEO + AEO"
+          : "the most suitable service (SEO, AEO, or Hybrid — determine from context)";
 
   const keywordLines = buildKeywordLines(values);
   const platforms = values.aiPlatforms ?? [];
-  const platformLine = platforms.length > 0
-    ? `AI platforms where they currently appear: ${platforms.join(", ")}`
-    : "";
+  const platformLine =
+    platforms.length > 0
+      ? `AI platforms where they currently appear: ${platforms.join(", ")}`
+      : "";
 
-  const aeoContext = (serviceType === "aeo" || serviceType === "hybrid" || serviceType === "auto")
-    ? `
+  const aeoContext =
+    serviceType === "aeo" || serviceType === "hybrid" || serviceType === "auto"
+      ? `
 AEO CONTEXT (internal guidance — do NOT use these exact terms in the report):
 - AEO means getting the business cited as the authoritative answer when users ask questions on AI platforms like ChatGPT, Gemini, and Perplexity.
 - This works by building authoritative content that AI models reference, earning high-quality backlinks, and structuring information so AI engines pull from it when users ask relevant follow-up questions.
 - Do NOT mention "voice search" anywhere in the report.`
-    : "";
+      : "";
 
   return `You are a concise digital marketing expert writing a short, punchy client-facing report. Use ONLY the structure below. No preamble, no extra sections, no jargon.
 
@@ -236,11 +295,13 @@ type Segment = { text: string; bold: boolean };
 
 function parseSegments(raw: string): Segment[] {
   const parts = raw.split(/(\*\*.*?\*\*)/g);
-  return parts.map((p) =>
-    p.startsWith("**") && p.endsWith("**")
-      ? { text: p.slice(2, -2), bold: true }
-      : { text: p.replace(/\*(.*?)\*/g, "$1"), bold: false }
-  ).filter((s) => s.text !== "");
+  return parts
+    .map((p) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? { text: p.slice(2, -2), bold: true }
+        : { text: p.replace(/\*(.*?)\*/g, "$1"), bold: false },
+    )
+    .filter((s) => s.text !== "");
 }
 
 function renderSegments(
@@ -305,7 +366,10 @@ function segmentHeight(
   doc.setFontSize(fontSize);
   let cx = x;
   let lines = 1;
-  const spaceW = () => { doc.setFont("helvetica", "normal"); return doc.getTextWidth(" "); };
+  const spaceW = () => {
+    doc.setFont("helvetica", "normal");
+    return doc.getTextWidth(" ");
+  };
   for (const seg of segments) {
     const words = seg.text.split(" ").filter((w) => w !== "");
     for (const word of words) {
@@ -324,11 +388,23 @@ function segmentHeight(
   return lines * lineH;
 }
 
-function downloadPdf(reportText: string, businessName: string, location: string, serviceLabel: string) {
-  const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
+function downloadPdf(
+  reportText: string,
+  businessName: string,
+  location: string,
+  serviceLabel: string,
+) {
+  const doc = new jsPDF({
+    unit: "pt",
+    format: "letter",
+    orientation: "portrait",
+  });
   const PW = doc.internal.pageSize.getWidth();
   const PH = doc.internal.pageSize.getHeight();
-  const ML = 50, MR = 50, MT = 50, MB = 70;
+  const ML = 50,
+    MR = 50,
+    MT = 50,
+    MB = 70;
   const CW = PW - ML - MR;
   let y = MT;
   const LINE_H = 15;
@@ -357,7 +433,16 @@ function downloadPdf(reportText: string, businessName: string, location: string,
   doc.setTextColor(...MUTED);
   doc.setFont("helvetica", "normal");
   doc.text("Signal AEO", ML, y);
-  doc.text(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), PW - MR, y, { align: "right" });
+  doc.text(
+    new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    PW - MR,
+    y,
+    { align: "right" },
+  );
   y += 10;
   doc.setDrawColor(...BORDER);
   doc.setLineWidth(0.5);
@@ -470,7 +555,9 @@ function downloadPdf(reportText: string, businessName: string, location: string,
   // doc.text("contact@signalaeo.com  ·  (123) 456-2942", PW / 2, cy, { align: "center" });
 
   // Page numbers
-  const totalPages = (doc.internal as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
+  const totalPages = (
+    doc.internal as unknown as { getNumberOfPages: () => number }
+  ).getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
@@ -485,10 +572,6 @@ function downloadPdf(reportText: string, businessName: string, location: string,
 }
 
 export default function AeoReporter() {
-  const [apiKey, setApiKey] = useState("");
-  const [draftApiKey, setDraftApiKey] = useState("");
-  const [showDraftKey, setShowDraftKey] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [serviceType, setServiceType] = useState<ServiceType>("aeo");
@@ -498,7 +581,8 @@ export default function AeoReporter() {
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [report, setReport] = useState("");
-  const [reportServiceType, setReportServiceType] = useState<ServiceType>("aeo");
+  const [reportServiceType, setReportServiceType] =
+    useState<ServiceType>("aeo");
   const [error, setError] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
@@ -526,12 +610,6 @@ export default function AeoReporter() {
   });
 
   useEffect(() => {
-    const savedKey = localStorage.getItem("deepseek_api_key");
-    if (savedKey) {
-      setApiKey(savedKey);
-    } else {
-      setIsSettingsOpen(true);
-    }
     setHistory(loadHistory());
   }, []);
 
@@ -557,28 +635,6 @@ export default function AeoReporter() {
     return () => clearInterval(timer);
   }, [isGenerating]);
 
-  const openSettings = () => {
-    setDraftApiKey("");
-    setShowDraftKey(false);
-    setIsSettingsOpen(true);
-  };
-
-  const saveApiKey = () => {
-    const trimmed = draftApiKey.trim();
-    if (!trimmed) return;
-    setApiKey(trimmed);
-    localStorage.setItem("deepseek_api_key", trimmed);
-    setDraftApiKey("");
-    setShowDraftKey(false);
-    setIsSettingsOpen(false);
-  };
-
-  const cancelApiKey = () => {
-    setDraftApiKey("");
-    setShowDraftKey(false);
-    setIsSettingsOpen(false);
-  };
-
   const deleteHistoryEntry = (id: string) => {
     const updated = history.filter((e) => e.id !== id);
     setHistory(updated);
@@ -603,13 +659,10 @@ export default function AeoReporter() {
   };
 
   const generateReport = async (values: FormValues) => {
-    if (!apiKey) {
-      setError("Please enter your DeepSeek API key in the settings panel.");
-      setIsSettingsOpen(true);
-      return;
-    }
     if (serviceType === "auto" && !values.businessDescription?.trim()) {
-      form.setError("businessDescription", { message: "Business description is required for Auto-Detect mode." });
+      form.setError("businessDescription", {
+        message: "Business description is required for Auto-Detect mode.",
+      });
       return;
     }
 
@@ -627,23 +680,21 @@ export default function AeoReporter() {
     const prompt = buildPrompt(values, serviceType);
 
     try {
-      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      const response = await fetch(AEO_REPORTER_STREAM_URL, {
         method: "POST",
         signal: controller.signal,
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [{ role: "user", content: prompt }],
-          stream: true,
-        }),
+        body: JSON.stringify({ prompt }),
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errText || response.statusText}`);
+        throw new Error(
+          `API Error ${response.status}: ${errText || response.statusText}`,
+        );
       }
 
       if (!response.body) throw new Error("No response body");
@@ -689,7 +740,11 @@ export default function AeoReporter() {
       setHistory(loadHistory());
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "Failed to generate report. Please check your API key and try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to generate report. Please check your API key and try again.",
+      );
       setIsGenerating(false);
       setIsStreaming(false);
     }
@@ -734,7 +789,9 @@ export default function AeoReporter() {
             <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
               A
             </div>
-            <h1 className="font-bold text-lg text-foreground tracking-tight">AEO Reporter</h1>
+            <h1 className="font-bold text-lg text-foreground tracking-tight">
+              AEO Reporter
+            </h1>
           </div>
 
           <div className="flex items-center gap-2">
@@ -750,7 +807,12 @@ export default function AeoReporter() {
                 New Report
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="gap-2 relative" onClick={() => setIsHistoryOpen(true)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 relative"
+              onClick={() => setIsHistoryOpen(true)}
+            >
               <History className="w-4 h-4" />
               History
               {history.length > 0 && (
@@ -759,85 +821,30 @@ export default function AeoReporter() {
                 </span>
               )}
             </Button>
-            <Button variant="ghost" size="sm" className="gap-2" data-testid="button-settings" onClick={openSettings}>
-              <Settings className="w-4 h-4" />
-              Settings
-            </Button>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto max-w-5xl px-4 py-8">
-        {/* Settings Panel */}
-        <div className="no-print">
-          <Collapsible open={isSettingsOpen} onOpenChange={() => cancelApiKey()}>
-            <CollapsibleContent className="mb-8">
-              <Card className="border-primary/20 bg-muted/30">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-primary" />
-                    Configuration
-                  </CardTitle>
-                  <CardDescription>
-                    {apiKey
-                      ? "Your API key is saved. Enter a new key below to replace it."
-                      : "Enter your DeepSeek API key to generate reports. It is stored locally in your browser and never sent anywhere else."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {apiKey && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                      API key saved — ending in <span className="font-mono font-semibold">···{apiKey.slice(-4)}</span>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="apiKey">{apiKey ? "Replace API Key" : "DeepSeek API Key"}</Label>
-                    <div className="relative">
-                      <Input
-                        id="apiKey"
-                        data-testid="input-api-key"
-                        type={showDraftKey ? "text" : "password"}
-                        value={draftApiKey}
-                        onChange={(e) => setDraftApiKey(e.target.value)}
-                        placeholder={apiKey ? "Enter new key to replace…" : "sk-…"}
-                        className="pr-10"
-                        autoComplete="off"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowDraftKey(!showDraftKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showDraftKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 justify-end pt-1">
-                    <Button variant="outline" size="sm" onClick={cancelApiKey}>
-                      Cancel
-                    </Button>
-                    <Button size="sm" onClick={saveApiKey} disabled={!draftApiKey.trim()}>
-                      Save Key
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-
         {/* Error */}
         {error && (
-          <div className="mb-8 p-4 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-3 no-print" data-testid="status-error">
+          <div
+            className="mb-8 p-4 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-3 no-print"
+            data-testid="status-error"
+          >
             <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="font-semibold text-destructive">Generation Failed</h3>
+              <h3 className="font-semibold text-destructive">
+                Generation Failed
+              </h3>
               <p className="text-sm text-destructive/80 mt-1">{error}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setError("")} className="text-destructive/60 hover:text-destructive -mt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setError("")}
+              className="text-destructive/60 hover:text-destructive -mt-1"
+            >
               Dismiss
             </Button>
           </div>
@@ -847,16 +854,24 @@ export default function AeoReporter() {
         {showForm && (
           <div className="no-print">
             <div className="mb-8">
-              <h2 className="text-3xl font-bold text-foreground mb-2">New Report</h2>
+              <h2 className="text-3xl font-bold text-foreground mb-2">
+                New Report
+              </h2>
               <p className="text-muted-foreground text-lg">
-                Select a service type, fill in the client details, and generate a comprehensive analysis.
+                Select a service type, fill in the client details, and generate
+                a comprehensive analysis.
               </p>
             </div>
 
             {/* Service Type Selector */}
             <div className="mb-8">
-              <p className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">Service Type</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="service-type-selector">
+              <p className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">
+                Service Type
+              </p>
+              <div
+                className="grid grid-cols-2 md:grid-cols-4 gap-3"
+                data-testid="service-type-selector"
+              >
                 {SERVICE_TYPES.map((svc) => (
                   <button
                     key={svc.id}
@@ -867,17 +882,26 @@ export default function AeoReporter() {
                       serviceType === svc.id ? svc.activeColor : svc.color
                     }`}
                   >
-                    <div className={`p-1.5 rounded-lg ${serviceType === svc.id ? "bg-white/80 shadow-sm" : "bg-muted"}`}>
+                    <div
+                      className={`p-1.5 rounded-lg ${serviceType === svc.id ? "bg-white/80 shadow-sm" : "bg-muted"}`}
+                    >
                       {svc.icon}
                     </div>
                     <div>
-                      <p className="font-bold text-foreground text-sm leading-tight">{svc.label}</p>
-                      <p className="text-muted-foreground text-xs">{svc.sublabel}</p>
+                      <p className="font-bold text-foreground text-sm leading-tight">
+                        {svc.label}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {svc.sublabel}
+                      </p>
                     </div>
                   </button>
                 ))}
               </div>
-              <p className="mt-3 text-sm text-muted-foreground pl-1" data-testid="text-service-description">
+              <p
+                className="mt-3 text-sm text-muted-foreground pl-1"
+                data-testid="text-service-description"
+              >
                 {activeService.description}
               </p>
             </div>
@@ -885,23 +909,33 @@ export default function AeoReporter() {
             <Card className="shadow-sm">
               <CardContent className="p-6">
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(generateReport)} className="space-y-8">
-
+                  <form
+                    onSubmit={form.handleSubmit(generateReport)}
+                    className="space-y-8"
+                  >
                     {serviceType === "auto" && (
                       <div className="rounded-xl border-2 border-violet-200 bg-violet-50/50 p-5 space-y-3">
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-violet-600" />
-                          <p className="font-semibold text-violet-900 text-sm">Auto-Detect Mode</p>
+                          <p className="font-semibold text-violet-900 text-sm">
+                            Auto-Detect Mode
+                          </p>
                         </div>
                         <p className="text-xs text-violet-700 leading-relaxed">
-                          Paste a full description of the business below. AI will determine whether SEO, AEO, or a hybrid approach is right, then extract keywords and build a tailored strategy.
+                          Paste a full description of the business below. AI
+                          will determine whether SEO, AEO, or a hybrid approach
+                          is right, then extract keywords and build a tailored
+                          strategy.
                         </p>
                         <FormField
                           control={form.control}
                           name="businessDescription"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel className="text-violet-900">Business Description <span className="text-destructive">*</span></FormLabel>
+                              <FormLabel className="text-violet-900">
+                                Business Description{" "}
+                                <span className="text-destructive">*</span>
+                              </FormLabel>
                               <FormControl>
                                 <Textarea
                                   data-testid="textarea-business-description"
@@ -922,7 +956,9 @@ export default function AeoReporter() {
                       {/* Left column: Business Details */}
                       <div className="space-y-6">
                         <h3 className="font-semibold text-foreground border-b pb-2 flex items-center gap-2">
-                          <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                          <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                            1
+                          </span>
                           Business Details
                         </h3>
 
@@ -933,7 +969,11 @@ export default function AeoReporter() {
                             <FormItem>
                               <FormLabel>Business Name</FormLabel>
                               <FormControl>
-                                <Input data-testid="input-business-name" placeholder="Acme Corp" {...field} />
+                                <Input
+                                  data-testid="input-business-name"
+                                  placeholder="Acme Corp"
+                                  {...field}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -947,7 +987,10 @@ export default function AeoReporter() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>
-                                  Business Description <span className="text-muted-foreground font-normal">(optional)</span>
+                                  Business Description{" "}
+                                  <span className="text-muted-foreground font-normal">
+                                    (optional)
+                                  </span>
                                 </FormLabel>
                                 <FormControl>
                                   <Textarea
@@ -969,9 +1012,18 @@ export default function AeoReporter() {
                           name="websiteUrl"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Website URL <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                              <FormLabel>
+                                Website URL{" "}
+                                <span className="text-muted-foreground font-normal">
+                                  (optional)
+                                </span>
+                              </FormLabel>
                               <FormControl>
-                                <Input data-testid="input-website-url" placeholder="https://acme.com" {...field} />
+                                <Input
+                                  data-testid="input-website-url"
+                                  placeholder="https://acme.com"
+                                  {...field}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -983,9 +1035,18 @@ export default function AeoReporter() {
                           name="gmbUrl"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Google My Business URL <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                              <FormLabel>
+                                Google My Business URL{" "}
+                                <span className="text-muted-foreground font-normal">
+                                  (optional)
+                                </span>
+                              </FormLabel>
                               <FormControl>
-                                <Input data-testid="input-gmb-url" placeholder="https://maps.google.com/..." {...field} />
+                                <Input
+                                  data-testid="input-gmb-url"
+                                  placeholder="https://maps.google.com/..."
+                                  {...field}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -999,7 +1060,11 @@ export default function AeoReporter() {
                             <FormItem>
                               <FormLabel>Location</FormLabel>
                               <FormControl>
-                                <Input data-testid="input-location" placeholder="San Francisco, CA" {...field} />
+                                <Input
+                                  data-testid="input-location"
+                                  placeholder="San Francisco, CA"
+                                  {...field}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1010,22 +1075,33 @@ export default function AeoReporter() {
                       {/* Right column: Keywords + Platforms */}
                       <div className="space-y-6">
                         <h3 className="font-semibold text-foreground border-b pb-2 flex items-center gap-2">
-                          <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                          <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                            2
+                          </span>
                           Target Keywords
                           {serviceType === "auto" && (
-                            <span className="text-xs font-normal text-muted-foreground ml-1">(optional — AI will extract from description)</span>
+                            <span className="text-xs font-normal text-muted-foreground ml-1">
+                              (optional — AI will extract from description)
+                            </span>
                           )}
                         </h3>
 
                         {[1, 2, 3, 4, 5].map((num) => (
-                          <div key={`keyword${num}`} className="flex items-start gap-2">
-                            <span className="text-muted-foreground text-sm font-medium w-4 shrink-0 mt-2.5">{num}.</span>
+                          <div
+                            key={`keyword${num}`}
+                            className="flex items-start gap-2"
+                          >
+                            <span className="text-muted-foreground text-sm font-medium w-4 shrink-0 mt-2.5">
+                              {num}.
+                            </span>
                             <FormField
                               control={form.control}
                               name={`keyword${num}` as keyof FormValues}
                               render={({ field }) => (
                                 <FormItem className="flex-1 min-w-0">
-                                  <FormLabel className="sr-only">Keyword {num}</FormLabel>
+                                  <FormLabel className="sr-only">
+                                    Keyword {num}
+                                  </FormLabel>
                                   <FormControl>
                                     <Input
                                       data-testid={`input-keyword-${num}`}
@@ -1042,16 +1118,30 @@ export default function AeoReporter() {
                               name={`keyword${num}Rank` as keyof FormValues}
                               render={({ field }) => (
                                 <FormItem className="w-32 shrink-0">
-                                  <FormLabel className="sr-only">Rank {num}</FormLabel>
-                                  <Select value={field.value as string} onValueChange={field.onChange}>
+                                  <FormLabel className="sr-only">
+                                    Rank {num}
+                                  </FormLabel>
+                                  <Select
+                                    value={field.value as string}
+                                    onValueChange={field.onChange}
+                                  >
                                     <FormControl>
-                                      <SelectTrigger data-testid={`select-rank-${num}`} className="text-xs">
+                                      <SelectTrigger
+                                        data-testid={`select-rank-${num}`}
+                                        className="text-xs"
+                                      >
                                         <SelectValue placeholder="Rank" />
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
                                       {RANK_OPTIONS.map((r) => (
-                                        <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                                        <SelectItem
+                                          key={r}
+                                          value={r}
+                                          className="text-xs"
+                                        >
+                                          {r}
+                                        </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
@@ -1067,18 +1157,26 @@ export default function AeoReporter() {
                           control={form.control}
                           name="aiPlatforms"
                           render={({ field }) => {
-                            const platforms = ["ChatGPT", "Gemini", "Perplexity"];
+                            const platforms = [
+                              "ChatGPT",
+                              "Gemini",
+                              "Perplexity",
+                            ];
                             const selected: string[] = field.value ?? [];
                             const toggle = (p: string) => {
                               field.onChange(
-                                selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]
+                                selected.includes(p)
+                                  ? selected.filter((x) => x !== p)
+                                  : [...selected, p],
                               );
                             };
                             return (
                               <FormItem>
                                 <FormLabel className="text-sm font-semibold">
                                   Ranked on AI Platforms
-                                  <span className="text-muted-foreground font-normal ml-1">(optional)</span>
+                                  <span className="text-muted-foreground font-normal ml-1">
+                                    (optional)
+                                  </span>
                                 </FormLabel>
                                 <div className="flex gap-2 flex-wrap mt-1">
                                   {platforms.map((p) => (
@@ -1098,7 +1196,8 @@ export default function AeoReporter() {
                                   ))}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  Select the AI platforms where this business already appears.
+                                  Select the AI platforms where this business
+                                  already appears.
                                 </p>
                               </FormItem>
                             );
@@ -1115,7 +1214,10 @@ export default function AeoReporter() {
                         data-testid="button-generate"
                       >
                         {activeService.icon}
-                        Generate {serviceType === "auto" ? "Analysis" : `${activeService.label} Report`}
+                        Generate{" "}
+                        {serviceType === "auto"
+                          ? "Analysis"
+                          : `${activeService.label} Report`}
                       </Button>
                     </div>
                   </form>
@@ -1127,7 +1229,10 @@ export default function AeoReporter() {
 
         {/* Loading */}
         {showLoading && (
-          <div className="flex flex-col items-center justify-center py-28 no-print" data-testid="status-loading">
+          <div
+            className="flex flex-col items-center justify-center py-28 no-print"
+            data-testid="status-loading"
+          >
             <div className="relative">
               <div className="w-24 h-24 rounded-full border-4 border-muted border-t-primary animate-spin" />
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1135,9 +1240,14 @@ export default function AeoReporter() {
               </div>
             </div>
 
-            <h3 className="text-2xl font-bold text-foreground mt-8 mb-2">Analyzing Data</h3>
+            <h3 className="text-2xl font-bold text-foreground mt-8 mb-2">
+              Analyzing Data
+            </h3>
 
-            <p className="text-muted-foreground text-lg transition-all duration-500 mb-1" data-testid="text-loading-message">
+            <p
+              className="text-muted-foreground text-lg transition-all duration-500 mb-1"
+              data-testid="text-loading-message"
+            >
               {currentMessages[loadingMsgIndex]}
             </p>
 
@@ -1145,15 +1255,19 @@ export default function AeoReporter() {
               {elapsedSeconds < 10
                 ? "This usually takes 30–60 seconds — hang tight."
                 : elapsedSeconds < 30
-                ? "Still working — AI reports take a moment to build."
-                : elapsedSeconds < 60
-                ? "Almost there — generating your full report..."
-                : "Taking a little longer than usual — please wait."}
+                  ? "Still working — AI reports take a moment to build."
+                  : elapsedSeconds < 60
+                    ? "Almost there — generating your full report..."
+                    : "Taking a little longer than usual — please wait."}
             </p>
 
             <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1 rounded-full" data-testid="text-elapsed">
-                {String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:{String(elapsedSeconds % 60).padStart(2, "0")}
+              <span
+                className="text-xs font-mono text-muted-foreground bg-muted px-2.5 py-1 rounded-full"
+                data-testid="text-elapsed"
+              >
+                {String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:
+                {String(elapsedSeconds % 60).padStart(2, "0")}
               </span>
               <Button
                 variant="outline"
@@ -1171,12 +1285,18 @@ export default function AeoReporter() {
         {showReport && (
           <div className="report-container" data-testid="section-report">
             <div className="mb-6 flex items-center gap-3 no-print">
-              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border-2 ${reportService.activeColor}`}>
+              <div
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border-2 ${reportService.activeColor}`}
+              >
                 {reportService.icon}
-                {reportService.label} {reportServiceType !== "auto" ? "Report" : "Analysis"}
+                {reportService.label}{" "}
+                {reportServiceType !== "auto" ? "Report" : "Analysis"}
               </div>
               {isStreaming && (
-                <span className="text-xs text-muted-foreground animate-pulse" data-testid="status-streaming">
+                <span
+                  className="text-xs text-muted-foreground animate-pulse"
+                  data-testid="status-streaming"
+                >
                   Generating...
                 </span>
               )}
@@ -1184,16 +1304,21 @@ export default function AeoReporter() {
 
             <div className="print-only hidden mb-8 text-center">
               <h1 className="text-4xl font-bold text-primary mb-2">
-                {reportServiceType !== "auto" ? `${reportService.label} Analysis Report` : "Service Analysis Report"}
+                {reportServiceType !== "auto"
+                  ? `${reportService.label} Analysis Report`
+                  : "Service Analysis Report"}
               </h1>
               <p className="text-xl text-muted-foreground">
-                {form.getValues().businessName} &bull; {form.getValues().location}
+                {form.getValues().businessName} &bull;{" "}
+                {form.getValues().location}
               </p>
             </div>
 
             <Card className="border-none shadow-none bg-transparent">
               <CardContent className="p-0 prose prose-slate max-w-none prose-headings:font-bold prose-h2:text-primary prose-a:text-secondary">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{report}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {report}
+                </ReactMarkdown>
               </CardContent>
             </Card>
 
@@ -1201,16 +1326,26 @@ export default function AeoReporter() {
               <div className="mt-12 rounded-2xl overflow-hidden print-cta">
                 <div className="h-1.5 w-full bg-gradient-to-r from-primary via-violet-500 to-amber-400" />
                 <div className="border-2 border-t-0 border-primary/15 rounded-b-2xl bg-gradient-to-br from-primary/5 via-background to-violet-50/40 px-8 py-10 text-center">
-                  <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">Signal AEO</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">
+                    Signal AEO
+                  </p>
                   <h3 className="text-2xl font-extrabold text-foreground mb-2 leading-tight">
-                    Your competitors aren't waiting.<br />
+                    Your competitors aren't waiting.
+                    <br />
                     <span className="text-primary">Neither should you.</span>
                   </h3>
                   <p className="text-muted-foreground mb-2 max-w-lg mx-auto text-sm leading-relaxed">
-                    We help businesses own their keywords on Google <em>and</em> get cited as the answer on ChatGPT, Gemini, and Perplexity — so you capture customers at every touchpoint, before your competitors even show up.
+                    We help businesses own their keywords on Google <em>and</em>{" "}
+                    get cited as the answer on ChatGPT, Gemini, and Perplexity —
+                    so you capture customers at every touchpoint, before your
+                    competitors even show up.
                   </p>
                   <p className="text-muted-foreground mb-7 max-w-lg mx-auto text-sm leading-relaxed">
-                    <strong className="text-foreground">First conversation is free.</strong> We'll show you exactly where you stand and what it takes to dominate — no fluff, no obligation.
+                    <strong className="text-foreground">
+                      First conversation is free.
+                    </strong>{" "}
+                    We'll show you exactly where you stand and what it takes to
+                    dominate — no fluff, no obligation.
                   </p>
                   <div className="flex flex-wrap gap-3 justify-center">
                     <a
@@ -1265,25 +1400,42 @@ export default function AeoReporter() {
       {/* History Sidebar Overlay */}
       {isHistoryOpen && (
         <div className="fixed inset-0 z-50 flex no-print">
-          <div className="flex-1 bg-black/40" onClick={() => setIsHistoryOpen(false)} />
+          <div
+            className="flex-1 bg-black/40"
+            onClick={() => setIsHistoryOpen(false)}
+          />
 
           <div className="w-80 bg-card border-l border-border flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-primary" />
-                <h2 className="font-semibold text-foreground">Report History</h2>
+                <h2 className="font-semibold text-foreground">
+                  Report History
+                </h2>
                 {history.length > 0 && (
-                  <span className="text-xs bg-muted text-muted-foreground rounded-full px-2 py-0.5">{history.length}</span>
+                  <span className="text-xs bg-muted text-muted-foreground rounded-full px-2 py-0.5">
+                    {history.length}
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-1">
                 {history.length > 0 && (
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive gap-1 text-xs" onClick={clearAllHistory}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive gap-1 text-xs"
+                    onClick={clearAllHistory}
+                  >
                     <Trash2 className="w-3 h-3" />
                     Clear all
                   </Button>
                 )}
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsHistoryOpen(false)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setIsHistoryOpen(false)}
+                >
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -1294,35 +1446,62 @@ export default function AeoReporter() {
                 <div className="flex flex-col items-center justify-center h-full text-center px-6 py-16 text-muted-foreground">
                   <History className="w-10 h-10 mb-3 opacity-30" />
                   <p className="text-sm font-medium">No reports yet</p>
-                  <p className="text-xs mt-1">Generated reports will appear here.</p>
+                  <p className="text-xs mt-1">
+                    Generated reports will appear here.
+                  </p>
                 </div>
               ) : (
                 <ul className="divide-y divide-border">
                   {history.map((entry) => {
-                    const svc = SERVICE_TYPES.find((s) => s.id === entry.serviceType)!;
+                    const svc = SERVICE_TYPES.find(
+                      (s) => s.id === entry.serviceType,
+                    )!;
                     const date = new Date(entry.createdAt);
                     return (
-                      <li key={entry.id} className="group flex items-start gap-3 px-4 py-3 hover:bg-muted/50 transition-colors">
+                      <li
+                        key={entry.id}
+                        className="group flex items-start gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
+                      >
                         <button
                           className="flex-1 text-left min-w-0"
                           onClick={() => loadHistoryEntry(entry)}
                         >
-                          <p className="font-semibold text-sm text-foreground truncate">{entry.businessName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{entry.location}</p>
+                          <p className="font-semibold text-sm text-foreground truncate">
+                            {entry.businessName}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {entry.location}
+                          </p>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${svc.activeColor}`}>
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${svc.activeColor}`}
+                            >
                               {svc.label}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {date.toLocaleDateString()}{" "}
+                              {date.toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </span>
                           </div>
                         </button>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => loadHistoryEntry(entry)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => loadHistoryEntry(entry)}
+                          >
                             <ChevronRight className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => deleteHistoryEntry(entry.id)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            onClick={() => deleteHistoryEntry(entry.id)}
+                          >
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
