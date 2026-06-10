@@ -23,11 +23,11 @@ export function useAllPlanNames(): string[] {
     ])
       .then(
         ([standardPlans, customPlans]: [
-          { planName: string }[],
+          { name: string }[],
           { name: string }[],
         ]) => {
           const standardNames = standardPlans
-            .map((p) => p.planName)
+            .map((p) => p.name)
             .filter(Boolean);
           const customNames = customPlans.map((p) => p.name).filter(Boolean);
           const merged = [

@@ -61,6 +61,41 @@ router.post("/", requireAdmin, async (req, res) => {
   }
 });
 
+/* PATCH /api/packages/:id — update a custom package */
+router.patch("/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const { name, description, target, features, color, tier } = req.body;
+    if (name !== undefined && !name?.trim())
+      return res.status(400).json({ error: "Package name cannot be empty" });
+
+    const updates: Record<string, unknown> = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (description !== undefined) updates.description = description?.trim() ?? null;
+    if (target !== undefined) updates.target = target?.trim() ?? null;
+    if (features !== undefined) updates.features = features ? JSON.stringify(features) : null;
+    if (color !== undefined) updates.color = color.trim();
+    if (tier !== undefined) updates.tier = tier?.trim() ?? null;
+
+    if (Object.keys(updates).length === 0)
+      return res.status(400).json({ error: "No fields to update" });
+
+    const [updated] = await db
+      .update(customPackagesTable)
+      .set(updates)
+      .where(eq(customPackagesTable.id, id))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "Error updating custom package");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* DELETE /api/packages/:id — remove a custom package */
 router.delete("/:id", requireAdmin, async (req, res) => {
   try {

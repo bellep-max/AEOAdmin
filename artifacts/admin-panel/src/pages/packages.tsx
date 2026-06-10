@@ -14,7 +14,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Box, Plus, Trash2, Calendar, User, Palette } from "lucide-react";
+import { Box, Plus, Trash2, Calendar, User, Palette, Search, Pencil } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { PLAN_META } from "@/lib/plan-meta";
 import { format } from "date-fns";
@@ -79,6 +79,10 @@ export default function Packages() {
   const [addOpen,    setAddOpen]      = useState(false);
   const [saving,     setSaving]       = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CustomPkg | null>(null);
+  const [search, setSearch] = useState("");
+  const [renameTarget, setRenameTarget] = useState<CustomPkg | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -96,6 +100,16 @@ export default function Packages() {
   }
 
   useEffect(() => { fetchCustom(); }, []);
+
+  const filteredPkgs = customPkgs.filter((p) => {
+    const q = search.toLowerCase();
+    return !q
+      || p.name.toLowerCase().includes(q)
+      || (p.description ?? "").toLowerCase().includes(q)
+      || (p.target ?? "").toLowerCase().includes(q)
+      || (p.tier ?? "").toLowerCase().includes(q)
+      || p.createdBy.toLowerCase().includes(q);
+  });
 
   async function handleAdd() {
     if (!form.name.trim()) { toast({ title: "Plan name is required", variant: "destructive" }); return; }
@@ -125,6 +139,30 @@ export default function Packages() {
     } catch (err) {
       toast({ title: "Failed to add plan", description: err instanceof Error ? err.message : "", variant: "destructive" });
     } finally { setSaving(false); }
+  }
+
+  function openRename(pkg: CustomPkg) {
+    setRenameTarget(pkg);
+    setRenameName(pkg.name);
+  }
+
+  async function handleRename() {
+    if (!renameTarget || !renameName.trim()) return;
+    setRenaming(true);
+    try {
+      const r = await rawFetch(`/api/packages/${renameTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: renameName.trim() }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
+      toast({ title: "Plan renamed" });
+      setRenameTarget(null);
+      await fetchCustom();
+    } catch (err) {
+      toast({ title: "Failed to rename plan", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    } finally {
+      setRenaming(false);
+    }
   }
 
   async function handleDelete(pkg: CustomPkg) {
@@ -204,6 +242,17 @@ export default function Packages() {
       </div>
       -- END COMMENTED OUT */}
 
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <Input
+          className="pl-9 h-9"
+          placeholder="Search plans…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* -- Custom plans -- */}
       <div>
         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 px-1">Custom Plans</p>
@@ -212,11 +261,17 @@ export default function Packages() {
             <Skeleton className="h-16 w-full rounded-xl" />
             <Skeleton className="h-16 w-full rounded-xl" />
           </div>
-        ) : customPkgs.length === 0 ? (
+        ) : filteredPkgs.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:bg-slate-800/30 px-6 py-10 text-center">
             <Box className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-500">No custom plans yet</p>
-            <p className="text-xs text-slate-400 mt-1">Click <strong>Add Plan</strong> to create your first custom plan</p>
+            {customPkgs.length === 0 ? (
+              <>
+                <p className="text-sm font-medium text-slate-500">No custom plans yet</p>
+                <p className="text-xs text-slate-400 mt-1">Click <strong>Add Plan</strong> to create your first custom plan</p>
+              </>
+            ) : (
+              <p className="text-sm font-medium text-slate-500">No plans match your search.</p>
+            )}
           </div>
         ) : (
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -234,7 +289,7 @@ export default function Packages() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {customPkgs.map((pkg, index) => {
+                {filteredPkgs.map((pkg, index) => {
                   const col = getColorOption(pkg.color);
                   const featureList: string[] = pkg.features ? JSON.parse(pkg.features) : [];
                   return (
@@ -282,12 +337,22 @@ export default function Packages() {
                       </TableCell>
                       <TableCell className="align-top py-4 text-right">
                         {isAdmin && (
-                          <button
-                            onClick={() => setDeleteTarget(pkg)}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openRename(pkg)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+                              title="Rename plan"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteTarget(pkg)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              title="Delete plan"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -299,9 +364,11 @@ export default function Packages() {
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {PLAN_META.length} standard · {customPkgs.length} custom · {PLAN_META.length + customPkgs.length} total plans
-      </p>
+      {search && (
+        <p className="text-xs text-muted-foreground">
+          {filteredPkgs.length} of {customPkgs.length} plans matching "{search}"
+        </p>
+      )}
 
       {/* -- Add Plan Dialog -- */}
       <Dialog open={addOpen} onOpenChange={(o) => { if (!o && !saving) { setAddOpen(false); } }}>
@@ -409,6 +476,34 @@ export default function Packages() {
               onClick={handleAdd}
             >
               {saving ? "Saving..." : <><Plus className="w-4 h-4" /> Add Plan</>}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* -- Rename dialog -- */}
+      <Dialog open={!!renameTarget} onOpenChange={(o) => { if (!o && !renaming) setRenameTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename Plan</DialogTitle>
+            <DialogDescription>Enter a new name for <strong>"{renameTarget?.name}"</strong>.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Input
+              autoFocus
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
+              placeholder="Plan name"
+              className="h-10"
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" className="flex-1" onClick={() => setRenameTarget(null)} disabled={renaming}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleRename} disabled={renaming || !renameName.trim()}>
+              {renaming ? "Saving…" : "Save"}
             </Button>
           </div>
         </DialogContent>
