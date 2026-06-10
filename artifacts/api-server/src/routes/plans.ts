@@ -17,21 +17,32 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { plansTable } from "@workspace/db/schema";
-import { requireViewer } from "../middlewares/role-auth";
+import {
+  requireSalesAllowed,
+  isSales,
+  isAccountManager,
+} from "../middlewares/role-auth";
 
 const router = Router();
 
 /**
  * GET /api/plans
  * Returns all service plan rows with `cost` cast to a JavaScript number.
- * Used by the Plans page and anywhere plan pricing is displayed.
+ * Scoped roles see their slice: sales only Free Trial, account-manager
+ * everything except Free Trial.
  */
-router.get("/", requireViewer, async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const plans = await db.select().from(plansTable);
+    const visible = plans.filter((p) => {
+      const isFreeTrial = (p.planName || "").toLowerCase().includes("free");
+      if (isSales(req)) return isFreeTrial;
+      if (isAccountManager(req)) return !isFreeTrial;
+      return true;
+    });
 
     res.json(
-      plans.map((p) => ({
+      visible.map((p) => ({
         ...p,
         // Postgres numeric columns arrive as strings via node-postgres;
         // convert to number so frontend formatters (currency, charts) work

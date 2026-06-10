@@ -2,18 +2,31 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { customPackagesTable, PACKAGE_CREATORS } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { requireViewer, requireAdmin } from "../middlewares/role-auth";
+import {
+  requireSalesAllowed,
+  requireAdmin,
+  isSales,
+  isAccountManager,
+} from "../middlewares/role-auth";
 
 const router = Router();
 
-/* GET /api/packages — list all custom packages */
-router.get("/", requireViewer, async (req, res) => {
+/* GET /api/packages — list all custom packages.
+   Scoped roles see their slice: sales only Free Trial, account-manager
+   everything except Free Trial. */
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const rows = await db
       .select()
       .from(customPackagesTable)
       .orderBy(customPackagesTable.createdAt);
-    res.json(rows);
+    const visible = rows.filter((p) => {
+      const isFreeTrial = (p.name || "").toLowerCase().includes("free");
+      if (isSales(req)) return isFreeTrial;
+      if (isAccountManager(req)) return !isFreeTrial;
+      return true;
+    });
+    res.json(visible);
   } catch (err) {
     req.log.error({ err }, "Error fetching custom packages");
     res.status(500).json({ error: "Internal server error" });
