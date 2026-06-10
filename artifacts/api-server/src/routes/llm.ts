@@ -27,7 +27,11 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireOwner, requireExecutorOrOwner, requireRoles } from "../middlewares/role-auth";
+import {
+  requireOwner,
+  requireExecutorOrOwner,
+  requireRoles,
+} from "../middlewares/role-auth";
 import { requireSession } from "../middlewares/session-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
@@ -792,6 +796,87 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
   }
 });
 
+/* POST /api/llm/sales-ai/stream
+   Browser-facing proxy for the Sales AI page so the DeepSeek key stays
+   server-side. Accepts { messages, stream? } in the OpenAI chat format and
+   pipes the streamed SSE response straight back. The FE owns the system
+   prompt and conversation history; this endpoint is a thin authenticated
+   forwarder. Auth: logged-in owner or sales (mirrors the sidebar gate). */
+router.post(
+  "/sales-ai/stream",
+  requireRoles("owner", "sales"),
+  async (req, res) => {
+    try {
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+      if (!apiKey) {
+        return res
+          .status(503)
+          .json({ error: "DEEPSEEK_API_KEY not configured" });
+      }
+
+      const body = req.body as { messages?: unknown; stream?: unknown };
+      const messages = Array.isArray(body.messages) ? body.messages : null;
+      if (!messages || messages.length === 0) {
+        return res.status(400).json({ error: "messages array required" });
+      }
+      const wantsStream = body.stream !== false;
+
+      const upstream = await fetch(
+        "https://api.deepseek.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages,
+            stream: wantsStream,
+          }),
+        },
+      );
+
+      if (!upstream.ok || !upstream.body) {
+        const errText = await upstream.text().catch(() => "");
+        return res.status(upstream.status || 502).json({
+          error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`,
+        });
+      }
+
+      // Pass through whatever content-type DeepSeek replies with — SSE for
+      // streaming, application/json for non-streaming. FE parsers handle both.
+      const upstreamType =
+        upstream.headers.get("content-type") ??
+        "text/event-stream; charset=utf-8";
+      res.setHeader("Content-Type", upstreamType);
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders?.();
+
+      const reader = upstream.body.getReader();
+      req.on("close", () => reader.cancel().catch(() => {}));
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } catch (err) {
+      req.log.error({ err }, "Error streaming Sales AI response");
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+      } else {
+        res.end();
+      }
+    }
+  },
+);
+
 /* POST /api/llm/aeo-reporter/stream
    Browser-facing proxy for the AEO Reporter page so it doesn't ship the
    DeepSeek key to the client. Forwards `{ prompt }` to DeepSeek's chat
@@ -799,67 +884,75 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
    back so the FE's existing `data: {...}` parser continues to work
    unchanged. Auth is a logged-in admin session (no executor token; this
    is a UI feature, not a runner). */
-router.post("/aeo-reporter/stream", requireRoles("owner", "sales"), async (req, res) => {
-  try {
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) {
-      return res.status(503).json({ error: "DEEPSEEK_API_KEY not configured" });
-    }
-    const body = req.body as { prompt?: unknown };
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-    if (!prompt) {
-      return res.status(400).json({ error: "prompt required" });
-    }
+router.post(
+  "/aeo-reporter/stream",
+  requireRoles("owner", "sales"),
+  async (req, res) => {
+    try {
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+      if (!apiKey) {
+        return res
+          .status(503)
+          .json({ error: "DEEPSEEK_API_KEY not configured" });
+      }
+      const body = req.body as { prompt?: unknown };
+      const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+      if (!prompt) {
+        return res.status(400).json({ error: "prompt required" });
+      }
 
-    const upstream = await fetch(
-      "https://api.deepseek.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+      const upstream = await fetch(
+        "https://api.deepseek.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [{ role: "user", content: prompt }],
+            stream: true,
+          }),
         },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [{ role: "user", content: prompt }],
-          stream: true,
-        }),
-      },
-    );
+      );
 
-    if (!upstream.ok || !upstream.body) {
-      const errText = await upstream.text().catch(() => "");
-      return res.status(upstream.status || 502).json({
-        error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`,
-      });
-    }
+      if (!upstream.ok || !upstream.body) {
+        const errText = await upstream.text().catch(() => "");
+        return res.status(upstream.status || 502).json({
+          error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`,
+        });
+      }
 
-    /* Pipe the SSE stream straight through. Express's res supports
+      /* Pipe the SSE stream straight through. Express's res supports
        writing chunks; we manually set the headers DeepSeek sends so the
        FE's reader sees the same wire format. */
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders?.();
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders?.();
 
-    const reader = upstream.body.getReader();
-    req.on("close", () => reader.cancel().catch(() => {}));
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-    res.end();
-  } catch (err) {
-    req.log.error({ err }, "Error streaming AEO Reporter response");
-    if (!res.headersSent) {
-      res
-        .status(500)
-        .json({ error: err instanceof Error ? err.message : "Unknown error" });
-    } else {
+      const reader = upstream.body.getReader();
+      req.on("close", () => reader.cancel().catch(() => {}));
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
       res.end();
+    } catch (err) {
+      req.log.error({ err }, "Error streaming AEO Reporter response");
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+      } else {
+        res.end();
+      }
     }
-  }
-});
+  },
+);
 
 export default router;

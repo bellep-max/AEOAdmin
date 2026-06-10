@@ -30,6 +30,7 @@ import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
 import AdminVariants from "@/pages/admin-variants";
 import AeoReporter from "@/pages/aeo-reporter";
+import SalesAI from "@/pages/sales-ai";
 import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
@@ -45,6 +46,19 @@ function OwnerGate({
   const { isOwner, isLoading } = useAuth();
   if (isLoading) return null;
   if (!isOwner) return <Redirect to="/" />;
+  return <Component />;
+}
+
+/** owner OR sales only — mirrors BE requireRoles("owner","sales") on
+ *  /api/llm/sales-ai/stream. Used on /sales-ai. */
+function OwnerOrSalesGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { isOwner, isSales, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isOwner && !isSales) return <Redirect to="/" />;
   return <Component />;
 }
 
@@ -150,6 +164,9 @@ function ProtectedRoutes() {
           <OwnerGate component={Reports} />
         </Route>
         <Route path="/aeo-reporter" component={AeoReporter} />
+        <Route path="/sales-ai">
+          <OwnerOrSalesGate component={SalesAI} />
+        </Route>
         <Route path="/keyword-rotation">
           <AdminTierGate component={KeywordRotation} />
         </Route>
