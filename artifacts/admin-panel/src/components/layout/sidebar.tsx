@@ -69,12 +69,10 @@ interface NavItem {
    * restore, plan catalog management, prompts).
    */
   adminOnly?: boolean;
-  /**
-   * Scoped roles (sales + account-manager) see only items flagged here.
-   * Both roles see the same surface (Dashboard, Clients, Rankings, AEO
-   * Reporter); they differ only in which clients they see, not which pages.
-   */
+  /** Visible to sales role (and the admin-panel chain by default). */
   salesAllowed?: boolean;
+  /** Visible to account-manager role (and the admin-panel chain by default). */
+  accountManagerAllowed?: boolean;
 }
 
 interface NavGroupItem extends NavItem {
@@ -96,21 +94,39 @@ const navGroups: NavGroup[] = [
         href: "/",
         icon: LayoutDashboard,
         salesAllowed: true,
+        accountManagerAllowed: true,
       },
     ],
   },
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients", href: "/clients", icon: Users, salesAllowed: true },
+      {
+        name: "Clients",
+        href: "/clients",
+        icon: Users,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
       { name: "Archived", href: "/archived", icon: Archive, adminOnly: true },
       {
         name: "Keywords",
         href: "/keywords",
         icon: Key,
+        accountManagerAllowed: true,
         children: [
-          { name: "Keywords by Business", href: "/keywords", icon: Key },
-          { name: "All Keywords", href: "/keywords/all", icon: List },
+          {
+            name: "Keywords by Business",
+            href: "/keywords",
+            icon: Key,
+            accountManagerAllowed: true,
+          },
+          {
+            name: "All Keywords",
+            href: "/keywords/all",
+            icon: List,
+            accountManagerAllowed: true,
+          },
         ],
       },
       { name: "Plans", href: "/packages", icon: Box, adminOnly: true },
@@ -138,18 +154,21 @@ const navGroups: NavGroup[] = [
         href: "/rankings",
         icon: Trophy,
         salesAllowed: true,
+        accountManagerAllowed: true,
         children: [
           {
             name: "Period Comparison",
             href: "/rankings",
             icon: BarChart3,
             salesAllowed: true,
+            accountManagerAllowed: true,
           },
           {
             name: "Bi-Weekly Report",
             href: "/rankings/bi-weekly",
             icon: Calendar,
             salesAllowed: true,
+            accountManagerAllowed: true,
           },
         ],
       },
@@ -212,16 +231,19 @@ export function AppSidebar() {
   const { theme, toggleTheme } = useTheme();
 
   // Visibility rule, evaluated in order:
-  //   scoped role (sales / account-manager) → only items flagged salesAllowed
-  //   ownerOnly   → owner only
-  //   adminOnly   → admin or owner only
-  //   default     → all signed-in admin-panel users (viewer/editor/admin/owner)
+  //   sales role           → only items flagged salesAllowed
+  //   account-manager role → only items flagged accountManagerAllowed
+  //   ownerOnly            → owner only
+  //   adminOnly            → admin or owner only
+  //   default              → all signed-in admin-panel users (viewer/editor/admin/owner)
   const isVisible = (item: {
     ownerOnly?: boolean;
     adminOnly?: boolean;
     salesAllowed?: boolean;
+    accountManagerAllowed?: boolean;
   }) => {
-    if (isSales || isAccountManager) return !!item.salesAllowed;
+    if (isSales) return !!item.salesAllowed;
+    if (isAccountManager) return !!item.accountManagerAllowed;
     if (item.ownerOnly && !isOwner) return false;
     if (item.adminOnly && !isAdmin) return false;
     return true;

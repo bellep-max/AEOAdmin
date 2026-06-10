@@ -21,7 +21,10 @@ import {
   requireEditor,
   requireAdmin,
 } from "../middlewares/role-auth";
-import { assertScopedAccessToClient } from "../lib/scoped-access";
+import {
+  assertScopedAccessToClient,
+  getScopedClientIds,
+} from "../lib/scoped-access";
 
 const router = Router();
 
@@ -34,6 +37,15 @@ router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
     const { clientId, businessId, aeoPlanId, includeArchived } =
       req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
+
+    // Scoped roles (sales / account-manager) see only their slice of clients.
+    // Executor token + admin chain pass through (null).
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null) {
+      if (eligibleIds.length === 0) return res.json([]);
+      conditions.push(inArray(keywordsTable.clientId, eligibleIds));
+    }
+
     if (clientId)
       conditions.push(eq(keywordsTable.clientId, parseInt(clientId)));
     if (businessId)

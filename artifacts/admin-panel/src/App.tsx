@@ -63,6 +63,20 @@ function AdminTierGate({
   if (!user || isSales || isAccountManager) return <Redirect to="/" />;
   return <Component />;
 }
+
+/** Routes account-manager is explicitly allowed on, plus the admin chain.
+ *  Sales still gets redirected away. Used for /keywords routes where account-
+ *  manager is in scope but sales is not. */
+function AccountManagerOrAdminGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || isSales) return <Redirect to="/" />;
+  return <Component />;
+}
 // import OrganizationDetails from "@/pages/organization-details";
 
 const queryClient = new QueryClient();
@@ -110,10 +124,10 @@ function ProtectedRoutes() {
           <AdminTierGate component={Plans} />
         </Route>
         <Route path="/keywords">
-          <AdminTierGate component={Keywords} />
+          <AccountManagerOrAdminGate component={Keywords} />
         </Route>
         <Route path="/keywords/all">
-          <AdminTierGate component={KeywordsAll} />
+          <AccountManagerOrAdminGate component={KeywordsAll} />
         </Route>
         <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
