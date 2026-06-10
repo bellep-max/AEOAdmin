@@ -31,7 +31,7 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
     ...((init?.headers as Record<string, string>) ?? {}),
   };
   if (BASE.includes("ngrok")) h["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers: h });
+  return fetch(BASE + path, { credentials: "include", ...init, headers: h });
 }
 
 interface ArchivedClient {
@@ -49,7 +49,7 @@ interface ArchivedClient {
   campaignCount: number;
 }
 
-export default function ArchivedClients() {
+export default function Archived() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");

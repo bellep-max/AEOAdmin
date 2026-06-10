@@ -126,3 +126,34 @@ export function requireExecutorOrOwner(
     .status(401)
     .json({ error: "Requires executor token or owner session" });
 }
+
+/**
+ * Catalog reads needed by BOTH the executor (machine flow, no session) AND
+ * any admin-panel user. Accepts the executor token OR any logged-in role in
+ * the viewer chain (viewer/editor/admin/owner) OR sales.
+ *
+ * Apply on GET endpoints the executor must read to do its job (keywords,
+ * clients, businesses lists / detail) — these used to be anonymous and were
+ * inadvertently locked out by the RBAC sprint.
+ */
+export function requireExecutorOrSalesAllowed(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const expected = process.env.EXECUTOR_TOKEN;
+  const provided = req.header("x-executor-token");
+  if (expected && provided && provided === expected) return next();
+
+  const session = req.session as unknown as Record<string, unknown>;
+  const role = session.userRole as string | undefined;
+  if (
+    session.userId &&
+    role &&
+    ["sales", "viewer", "editor", "admin", "owner"].includes(role)
+  ) {
+    return next();
+  }
+
+  return res.status(401).json({ error: "Not authenticated" });
+}

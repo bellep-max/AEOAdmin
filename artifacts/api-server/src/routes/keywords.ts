@@ -16,6 +16,7 @@ import { rotateWinners } from "../services/keyword-rotation";
 import {
   requireOwner,
   requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
   requireViewer,
   requireEditor,
   requireAdmin,
@@ -28,7 +29,7 @@ const router = Router();
    GET /api/keywords
    Returns all AEO keywords, optionally filtered by clientId
 ──────────────────────────────────────────────────────────── */
-router.get("/", requireSalesAllowed, async (req, res) => {
+router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const { clientId, businessId, aeoPlanId, includeArchived } =
       req.query as Record<string, string>;
@@ -133,7 +134,7 @@ router.get("/", requireSalesAllowed, async (req, res) => {
    GET /api/keywords/:id
    Returns a single keyword with its links inline
 ──────────────────────────────────────────────────────────── */
-router.get("/:id", requireSalesAllowed, async (req, res) => {
+router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

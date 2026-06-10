@@ -5,14 +5,36 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Pencil, ExternalLink, Building2, MapPin, ClipboardList, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Pencil,
+  ExternalLink,
+  Building2,
+  MapPin,
+  ClipboardList,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { getPlanMeta } from "@/lib/plan-meta";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useLocation } from "wouter";
 import { RankingsSection } from "@/components/RankingsSection";
@@ -21,9 +43,11 @@ import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 interface Business {
@@ -59,13 +83,28 @@ interface CampaignRow {
   keywordCount?: number;
 }
 
-function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
+function Field({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value?: string | null;
+  href?: string;
+}) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+        {label}
+      </p>
       {value ? (
         href ? (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1 break-all">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline flex items-center gap-1 break-all"
+          >
             {value} <ExternalLink className="w-3 h-3 flex-shrink-0" />
           </a>
         ) : (
@@ -87,8 +126,12 @@ export default function BusinessDetail() {
   const { isAdmin, isEditor } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null);
-  const [deletingCampaign, setDeletingCampaign] = useState<CampaignRow | null>(null);
+  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(
+    null,
+  );
+  const [deletingCampaign, setDeletingCampaign] = useState<CampaignRow | null>(
+    null,
+  );
   const [, navigate] = useLocation();
 
   const { data: business, isLoading } = useQuery<Business>({
@@ -111,10 +154,14 @@ export default function BusinessDetail() {
     enabled: !!clientId,
   });
 
-  const { data: campaigns, refetch: refetchCampaigns } = useQuery<CampaignRow[]>({
+  const { data: campaigns, refetch: refetchCampaigns } = useQuery<
+    CampaignRow[]
+  >({
     queryKey: ["/api/clients", clientId, "aeo-plans", { businessId }],
     queryFn: async () => {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans?businessId=${businessId}`);
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans?businessId=${businessId}`,
+      );
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -123,7 +170,9 @@ export default function BusinessDetail() {
 
   async function deleteCampaign(id: number) {
     try {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, { method: "DELETE" });
+      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error();
       toast({ title: "Campaign deleted" });
       refetchCampaigns();
@@ -146,7 +195,10 @@ export default function BusinessDetail() {
     return (
       <div className="py-20 text-center text-muted-foreground">
         <p>Business not found.</p>
-        <Link href={`/clients/${clientId}`} className="text-primary hover:underline mt-2 inline-block">
+        <Link
+          href={`/clients/${clientId}`}
+          className="text-primary hover:underline mt-2 inline-block"
+        >
           ← Back to client
         </Link>
       </div>
@@ -156,11 +208,17 @@ export default function BusinessDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/clients" className="hover:text-foreground transition-colors flex items-center gap-1">
+        <Link
+          href="/clients"
+          className="hover:text-foreground transition-colors flex items-center gap-1"
+        >
           <ChevronLeft className="w-3.5 h-3.5" /> Clients
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {client?.businessName ?? "Client"}
         </Link>
         <span>/</span>
@@ -173,24 +231,36 @@ export default function BusinessDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{business.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {business.name}
+            </h1>
             <Badge
               variant="outline"
-              className={business.status === "active"
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                : "bg-muted text-muted-foreground"}
+              className={
+                business.status === "active"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-muted text-muted-foreground"
+              }
             >
               {business.status}
             </Badge>
             {business.category && (
-              <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/20">
+              <Badge
+                variant="outline"
+                className="bg-slate-500/10 text-slate-400 border-slate-500/20"
+              >
                 {business.category}
               </Badge>
             )}
           </div>
         </div>
         {isEditor && (
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setEditOpen(true)}
+          >
             <Pencil className="w-3.5 h-3.5" /> Edit
           </Button>
         )}
@@ -207,9 +277,20 @@ export default function BusinessDetail() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Name" value={business.name} />
             <Field label="Service Category" value={business.category} />
-            <Field label="Website" value={business.websiteUrl} href={business.websiteUrl ?? undefined} />
-            <Field label="GMB URL" value={business.gmbUrl} href={business.gmbUrl ?? undefined} />
-            <Field label="Published (GMB) Address" value={business.publishedAddress} />
+            <Field
+              label="Website"
+              value={business.websiteUrl}
+              href={business.websiteUrl ?? undefined}
+            />
+            <Field
+              label="GMB URL"
+              value={business.gmbUrl}
+              href={business.gmbUrl ?? undefined}
+            />
+            <Field
+              label="Published (GMB) Address"
+              value={business.publishedAddress}
+            />
             <Field label="City" value={business.city} />
             <Field label="State" value={business.state} />
             <Field label="Country" value={business.country} />
@@ -223,13 +304,22 @@ export default function BusinessDetail() {
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-primary" />
-            Campaigns {campaigns ? <span className="text-muted-foreground font-normal">({campaigns.length})</span> : null}
+            Campaigns{" "}
+            {campaigns ? (
+              <span className="text-muted-foreground font-normal">
+                ({campaigns.length})
+              </span>
+            ) : null}
           </CardTitle>
           {isAdmin && (
             <Button
-              variant="outline" size="sm"
+              variant="outline"
+              size="sm"
               className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
-              onClick={() => { setEditingCampaign(null); setCampaignDialogOpen(true); }}
+              onClick={() => {
+                setEditingCampaign(null);
+                setCampaignDialogOpen(true);
+              }}
             >
               <Plus className="w-3 h-3" /> Add Campaign
             </Button>
@@ -238,7 +328,8 @@ export default function BusinessDetail() {
         <CardContent className="p-0">
           {!campaigns || campaigns.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              No campaigns yet. Click <strong>Add Campaign</strong> to create one.
+              No campaigns yet. Click <strong>Add Campaign</strong> to create
+              one.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -259,10 +350,17 @@ export default function BusinessDetail() {
                       <TableRow
                         key={c.id}
                         className="hover:bg-muted/30 cursor-pointer"
-                        onClick={() => navigate(`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`)}
+                        onClick={() =>
+                          navigate(
+                            `/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`,
+                          )
+                        }
                       >
                         <TableCell className="text-sm">
-                          <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <div
+                            className="flex flex-col gap-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Link
                               href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
                               className="font-semibold text-primary hover:underline"
@@ -273,35 +371,52 @@ export default function BusinessDetail() {
                               href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
                               className="text-[11px] text-primary hover:underline w-fit"
                             >
-                              {c.keywordCount ?? 0} active keyword{(c.keywordCount ?? 0) === 1 ? "" : "s"}
+                              {c.keywordCount ?? 0} active keyword
+                              {(c.keywordCount ?? 0) === 1 ? "" : "s"}
                             </Link>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}
+                          >
                             {c.planType}
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}
+                          >
                             {meta.tier}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm">{c.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="text-sm">
+                          {c.createdBy ?? (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className="text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center justify-end gap-1">
                             {isEditor && (
                               <Button
-                                variant="ghost" size="sm"
+                                variant="ghost"
+                                size="sm"
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                onClick={() => { setEditingCampaign(c); setCampaignDialogOpen(true); }}
+                                onClick={() => {
+                                  setEditingCampaign(c);
+                                  setCampaignDialogOpen(true);
+                                }}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
                             )}
                             {isAdmin && (
                               <Button
-                                variant="ghost" size="sm"
+                                variant="ghost"
+                                size="sm"
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
                                 onClick={() => setDeletingCampaign(c)}
                               >
@@ -329,7 +444,10 @@ export default function BusinessDetail() {
 
       <CampaignFormDialog
         open={campaignDialogOpen}
-        onOpenChange={(open) => { setCampaignDialogOpen(open); if (!open) setEditingCampaign(null); }}
+        onOpenChange={(open) => {
+          setCampaignDialogOpen(open);
+          if (!open) setEditingCampaign(null);
+        }}
         clientId={clientId}
         businessId={businessId}
         businessName={business?.name}
@@ -337,19 +455,32 @@ export default function BusinessDetail() {
         onSaved={() => refetchCampaigns()}
       />
 
-      <AlertDialog open={!!deletingCampaign} onOpenChange={(open) => { if (!open) setDeletingCampaign(null); }}>
+      <AlertDialog
+        open={!!deletingCampaign}
+        onOpenChange={(open) => {
+          if (!open) setDeletingCampaign(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete campaign "{deletingCampaign?.name ?? deletingCampaign?.planType}"?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete campaign "
+              {deletingCampaign?.name ?? deletingCampaign?.planType}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the campaign and all linked keywords. This cannot be undone.
+              This permanently deletes the campaign and all linked keywords.
+              This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeletingCampaign(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeletingCampaign(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (deletingCampaign) deleteCampaign(deletingCampaign.id); }}
+              onClick={() => {
+                if (deletingCampaign) deleteCampaign(deletingCampaign.id);
+              }}
             >
               Yes, delete
             </AlertDialogAction>
@@ -363,7 +494,9 @@ export default function BusinessDetail() {
         clientId={clientId}
         business={business}
         onUpdated={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/businesses", businessId] });
+          queryClient.invalidateQueries({
+            queryKey: ["/api/businesses", businessId],
+          });
           toast({ title: "Business updated" });
         }}
       />

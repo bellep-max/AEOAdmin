@@ -25,6 +25,7 @@ import {
   requireAdmin,
   requireEditor,
   requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
 import { getSalesEligibleClientIds } from "../lib/sales-scope";
 import type { Request, Response, NextFunction } from "express";
@@ -67,7 +68,7 @@ async function gateClientForSales(
  * for the Status switch filter on the main page, which only wants to see
  * paused vs running.
  */
-router.get("/", requireSalesAllowed, async (req, res) => {
+router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const { status, search, archived, locked } = req.query as Record<
       string,
@@ -253,7 +254,7 @@ router.post("/", requireAdmin, async (req, res) => {
 
 router.get(
   "/:id",
-  requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
   gateClientForSales,
   async (req, res) => {
     try {

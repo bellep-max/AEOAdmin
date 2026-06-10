@@ -5,21 +5,63 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Plus, Pencil, Trash2, Loader2, Key, ChevronDown, ChevronRight, Building2, Mail, CreditCard } from "lucide-react";
+import {
+  ClipboardList,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Key,
+  ChevronDown,
+  ChevronRight,
+  Building2,
+  Mail,
+  CreditCard,
+} from "lucide-react";
 import { useLocation } from "wouter";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import { getPlanMeta } from "@/lib/plan-meta";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
@@ -91,7 +133,12 @@ type ClientLocData = {
   websitePublishedOnGmb: string;
   websiteLinkedOnGmb: string;
 };
-const EMPTY_LOC: ClientLocData = { publishedAddress: "", gmbUrl: "", websitePublishedOnGmb: "", websiteLinkedOnGmb: "" };
+const EMPTY_LOC: ClientLocData = {
+  publishedAddress: "",
+  gmbUrl: "",
+  websitePublishedOnGmb: "",
+  websiteLinkedOnGmb: "",
+};
 
 const EMPTY_FORM: PlanFormData = {
   businessId: null,
@@ -139,7 +186,10 @@ function PlanForm({
   onLocChange: (v: ClientLocData) => void;
 }) {
   const allPlanNames = useAllPlanNames();
-  const [customSchemaImplementor, setCustomSchemaImplementor] = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
+  const [customSchemaImplementor, setCustomSchemaImplementor] = useState(
+    !SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") &&
+      (values.schemaImplementor ?? "") !== "",
+  );
 
   function set(key: keyof PlanFormData, val: unknown) {
     onChange({ ...values, [key]: val });
@@ -151,8 +201,13 @@ function PlanForm({
     <div className="space-y-6">
       {/* Campaign Name preview (auto-generated from Business + Search Address) */}
       {(() => {
-        const resolvedBizName = businesses.find((b) => b.id === values.businessId)?.name ?? values.businessName ?? "";
-        const preview = [resolvedBizName, values.searchAddress].filter((v) => v && String(v).trim()).join(" — ");
+        const resolvedBizName =
+          businesses.find((b) => b.id === values.businessId)?.name ??
+          values.businessName ??
+          "";
+        const preview = [resolvedBizName, values.searchAddress]
+          .filter((v) => v && String(v).trim())
+          .join(" — ");
         return (
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -181,27 +236,41 @@ function PlanForm({
               onValueChange={(v) => {
                 const id = Number(v);
                 const biz = businesses.find((b) => b.id === id);
-                onChange({ ...values, businessId: id, businessName: biz?.name ?? "" });
+                onChange({
+                  ...values,
+                  businessId: id,
+                  businessName: biz?.name ?? "",
+                });
               }}
             >
-              <SelectTrigger className={`h-10 bg-muted/30 border-border/60 ${errors.businessId ? "border-red-500" : ""}`}>
+              <SelectTrigger
+                className={`h-10 bg-muted/30 border-border/60 ${errors.businessId ? "border-red-500" : ""}`}
+              >
                 <SelectValue placeholder="Select a business" />
               </SelectTrigger>
               <SelectContent>
                 {businesses.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    {b.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-          {errors.businessId && <p className="text-xs text-red-500 mt-1">{errors.businessId}</p>}
+          {errors.businessId && (
+            <p className="text-xs text-red-500 mt-1">{errors.businessId}</p>
+          )}
         </div>
 
         {/* Plan Type */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type of Plan</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Type of Plan
+          </Label>
           <Select
-            value={allPlanNames.includes(values.planType) ? values.planType : ""}
+            value={
+              allPlanNames.includes(values.planType) ? values.planType : ""
+            }
             onValueChange={(v) => set("planType", v)}
           >
             <SelectTrigger className="h-10 bg-muted/30 border-border/60">
@@ -209,12 +278,13 @@ function PlanForm({
             </SelectTrigger>
             <SelectContent>
               {allPlanNames.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-
       </div>
 
       {/* 10 Sample Questions */}
@@ -282,18 +352,28 @@ function PlanForm({
           </Label>
           {!customSchemaImplementor ? (
             <Select
-              value={SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") ? (values.schemaImplementor ?? "") : ""}
+              value={
+                SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "")
+                  ? (values.schemaImplementor ?? "")
+                  : ""
+              }
               onValueChange={(v) => {
-                if (v === "__custom__") { setCustomSchemaImplementor(true); set("schemaImplementor", ""); }
-                else set("schemaImplementor", v);
+                if (v === "__custom__") {
+                  setCustomSchemaImplementor(true);
+                  set("schemaImplementor", "");
+                } else set("schemaImplementor", v);
               }}
             >
-              <SelectTrigger className={`h-10 bg-muted/30 border-border/60 ${errors.schemaImplementor ? "border-red-500" : ""}`}>
+              <SelectTrigger
+                className={`h-10 bg-muted/30 border-border/60 ${errors.schemaImplementor ? "border-red-500" : ""}`}
+              >
                 <SelectValue placeholder="Select implementor" />
               </SelectTrigger>
               <SelectContent>
                 {SCHEMA_IMPLEMENTORS.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
                 ))}
                 <SelectItem value="__custom__">Other (custom)…</SelectItem>
               </SelectContent>
@@ -306,39 +386,61 @@ function PlanForm({
                 value={values.schemaImplementor ?? ""}
                 onChange={(e) => set("schemaImplementor", e.target.value)}
               />
-              <Button variant="ghost" size="sm" className="text-xs px-2 text-muted-foreground" onClick={() => { setCustomSchemaImplementor(false); set("schemaImplementor", ""); }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2 text-muted-foreground"
+                onClick={() => {
+                  setCustomSchemaImplementor(false);
+                  set("schemaImplementor", "");
+                }}
+              >
                 ← Presets
               </Button>
             </div>
           )}
           {errors.schemaImplementor && (
-            <p className="text-xs text-red-500 mt-1">{errors.schemaImplementor}</p>
+            <p className="text-xs text-red-500 mt-1">
+              {errors.schemaImplementor}
+            </p>
           )}
         </div>
       </div>
 
       {/* Campaign Search Address */}
       <div className="border-t border-border/40 pt-5 space-y-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Campaign Search Address</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Campaign Search Address
+        </p>
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search Address</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Search Address
+          </Label>
           <Input
             className="h-10 bg-muted/30 border-border/60"
             placeholder="123 Main St, Austin, TX"
             value={values.searchAddress ?? ""}
             onChange={(e) => set("searchAddress", e.target.value)}
           />
-          <p className="text-[11px] text-muted-foreground">Where ranking checks will run from for this campaign.</p>
+          <p className="text-[11px] text-muted-foreground">
+            Where ranking checks will run from for this campaign.
+          </p>
         </div>
       </div>
 
       {/* Subscription */}
       <div className="border-t border-border/40 pt-5 space-y-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Subscription</p>
-        <p className="text-[11px] text-muted-foreground -mt-2">Manual entry for now — will later auto-sync with Recurly.</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Subscription
+        </p>
+        <p className="text-[11px] text-muted-foreground -mt-2">
+          Manual entry for now — will later auto-sync with Recurly.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription ID</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Subscription ID
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="sub_xxxxxxxxxxxx"
@@ -347,18 +449,24 @@ function PlanForm({
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Card (last 4)</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Card (last 4)
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="4242"
               inputMode="numeric"
               maxLength={4}
               value={values.cardLast4 ?? ""}
-              onChange={(e) => set("cardLast4", e.target.value.replace(/\D/g, "").slice(0, 4))}
+              onChange={(e) =>
+                set("cardLast4", e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Start Date</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Start Date
+            </Label>
             <Input
               type="date"
               className="h-10 bg-muted/30 border-border/60"
@@ -367,7 +475,9 @@ function PlanForm({
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next Billing Date</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Next Billing Date
+            </Label>
             <Input
               type="date"
               className="h-10 bg-muted/30 border-border/60"
@@ -380,42 +490,66 @@ function PlanForm({
 
       {/* Client Location & GMB */}
       <div className="border-t border-border/40 pt-5 space-y-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Client Location &amp; GMB</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Client Location &amp; GMB
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GMB Address</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              GMB Address
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="123 Main St, Austin, TX"
               value={locData.publishedAddress}
-              onChange={(e) => onLocChange({ ...locData, publishedAddress: e.target.value })}
+              onChange={(e) =>
+                onLocChange({ ...locData, publishedAddress: e.target.value })
+              }
             />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GMB Link</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              GMB Link
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="https://maps.google.com/..."
               value={locData.gmbUrl}
-              onChange={(e) => onLocChange({ ...locData, gmbUrl: e.target.value })}
+              onChange={(e) =>
+                onLocChange({ ...locData, gmbUrl: e.target.value })
+              }
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website Published on GMB</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Website Published on GMB
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="https://example.com"
               value={locData.websitePublishedOnGmb}
-              onChange={(e) => onLocChange({ ...locData, websitePublishedOnGmb: e.target.value })}
+              onChange={(e) =>
+                onLocChange({
+                  ...locData,
+                  websitePublishedOnGmb: e.target.value,
+                })
+              }
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website Linked on GMB <span className="font-normal normal-case text-muted-foreground/60">(if different)</span></Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Website Linked on GMB{" "}
+              <span className="font-normal normal-case text-muted-foreground/60">
+                (if different)
+              </span>
+            </Label>
             <Input
               className="h-10 bg-muted/30 border-border/60"
               placeholder="https://example.com"
               value={locData.websiteLinkedOnGmb}
-              onChange={(e) => onLocChange({ ...locData, websiteLinkedOnGmb: e.target.value })}
+              onChange={(e) =>
+                onLocChange({ ...locData, websiteLinkedOnGmb: e.target.value })
+              }
             />
           </div>
         </div>
@@ -438,46 +572,65 @@ export default function ClientAeoPlans({
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [businesses, setBusinesses] = useState<BusinessOption[]>([]);
-  const [plans, setPlans]     = useState<AeoPlan[]>([]);
+  const [plans, setPlans] = useState<AeoPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving,  setSaving]  = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [addOpen,  setAddOpen]  = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [editPlan, setEditPlan] = useState<AeoPlan | null>(null);
-  const [formData, setFormData] = useState<PlanFormData>({ ...EMPTY_FORM, businessName: clientBusinessName });
+  const [formData, setFormData] = useState<PlanFormData>({
+    ...EMPTY_FORM,
+    businessName: clientBusinessName,
+  });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [confirmSave, setConfirmSave] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<AeoPlan | null>(null);
-  const [clientLocData, setClientLocData] = useState<ClientLocData>({ ...EMPTY_LOC });
+  const [clientLocData, setClientLocData] = useState<ClientLocData>({
+    ...EMPTY_LOC,
+  });
 
   /* keywords per plan: planId → rows */
-  const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(new Map());
-  const [kwLoading,    setKwLoading]    = useState<Set<number>>(new Set());
-  const [collapsed,    setCollapsed]    = useState<Set<number>>(new Set());
-  const [addingKwFor,  setAddingKwFor]  = useState<number | null>(null);
-  const [newKwText,    setNewKwText]    = useState("");
-  const [savingKw,     setSavingKw]     = useState(false);
+  const [planKeywords, setPlanKeywords] = useState<Map<number, KeywordRow[]>>(
+    new Map(),
+  );
+  const [kwLoading, setKwLoading] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [addingKwFor, setAddingKwFor] = useState<number | null>(null);
+  const [newKwText, setNewKwText] = useState("");
+  const [savingKw, setSavingKw] = useState(false);
 
   const fetchPlans = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await rawFetch(`/api/clients/${clientId}/aeo-plans`, { credentials: "include" });
+      const r = await rawFetch(`/api/clients/${clientId}/aeo-plans`, {
+        credentials: "include",
+      });
       setPlans(await r.json());
-    } catch { setPlans([]); }
-    finally { setLoading(false); }
+    } catch {
+      setPlans([]);
+    } finally {
+      setLoading(false);
+    }
   }, [clientId]);
 
   const fetchBusinesses = useCallback(async () => {
     try {
-      const r = await rawFetch(`/api/businesses?clientId=${clientId}`, { credentials: "include" });
+      const r = await rawFetch(`/api/businesses?clientId=${clientId}`, {
+        credentials: "include",
+      });
       if (!r.ok) throw new Error();
       const rows: Array<{ id: number; name: string }> = await r.json();
       setBusinesses(rows.map((b) => ({ id: b.id, name: b.name })));
-    } catch { setBusinesses([]); }
+    } catch {
+      setBusinesses([]);
+    }
   }, [clientId]);
 
-  useEffect(() => { fetchPlans(); fetchBusinesses(); }, [fetchPlans, fetchBusinesses]);
+  useEffect(() => {
+    fetchPlans();
+    fetchBusinesses();
+  }, [fetchPlans, fetchBusinesses]);
 
   async function handleAddKeyword(plan: AeoPlan) {
     const text = newKwText.trim();
@@ -497,7 +650,10 @@ export default function ClientAeoPlans({
         }),
       });
       if (!res.ok) throw new Error();
-      toast({ title: "Keyword added", description: `"${text}" was linked to this campaign.` });
+      toast({
+        title: "Keyword added",
+        description: `"${text}" was linked to this campaign.`,
+      });
       setNewKwText("");
       setAddingKwFor(null);
       fetchPlanKeywords(plan.id);
@@ -511,13 +667,19 @@ export default function ClientAeoPlans({
   async function fetchPlanKeywords(planId: number) {
     setKwLoading((s) => new Set(s).add(planId));
     try {
-      const r = await rawFetch(`/api/keywords?aeoPlanId=${planId}`, { credentials: "include" });
+      const r = await rawFetch(`/api/keywords?aeoPlanId=${planId}`, {
+        credentials: "include",
+      });
       const rows: KeywordRow[] = await r.json();
       setPlanKeywords((m) => new Map(m).set(planId, rows));
     } catch {
       setPlanKeywords((m) => new Map(m).set(planId, []));
     } finally {
-      setKwLoading((s) => { const n = new Set(s); n.delete(planId); return n; });
+      setKwLoading((s) => {
+        const n = new Set(s);
+        n.delete(planId);
+        return n;
+      });
     }
   }
 
@@ -543,36 +705,36 @@ export default function ClientAeoPlans({
 
   function openEdit(plan: AeoPlan) {
     setFormData({
-      businessId:            plan.businessId,
-      name:                  plan.name,
-      businessName:          plan.businessName,
-      planType:              plan.planType,
-      sampleQuestion1:       plan.sampleQuestion1,
-      sampleQuestion2:       plan.sampleQuestion2,
-      sampleQuestion3:       plan.sampleQuestion3,
-      sampleQuestion4:       plan.sampleQuestion4,
-      sampleQuestion5:       plan.sampleQuestion5,
-      sampleQuestion6:       plan.sampleQuestion6,
-      sampleQuestion7:       plan.sampleQuestion7,
-      sampleQuestion8:       plan.sampleQuestion8,
-      sampleQuestion9:       plan.sampleQuestion9,
-      sampleQuestion10:      plan.sampleQuestion10,
+      businessId: plan.businessId,
+      name: plan.name,
+      businessName: plan.businessName,
+      planType: plan.planType,
+      sampleQuestion1: plan.sampleQuestion1,
+      sampleQuestion2: plan.sampleQuestion2,
+      sampleQuestion3: plan.sampleQuestion3,
+      sampleQuestion4: plan.sampleQuestion4,
+      sampleQuestion5: plan.sampleQuestion5,
+      sampleQuestion6: plan.sampleQuestion6,
+      sampleQuestion7: plan.sampleQuestion7,
+      sampleQuestion8: plan.sampleQuestion8,
+      sampleQuestion9: plan.sampleQuestion9,
+      sampleQuestion10: plan.sampleQuestion10,
       currentAnswerPresence: plan.currentAnswerPresence,
-      searchBoostTarget:     plan.searchBoostTarget,
-      monthlyAeoBudget:      plan.monthlyAeoBudget,
-      schemaImplementor:     plan.schemaImplementor,
-      searchAddress:         plan.searchAddress ?? "",
-      subscriptionId:        plan.subscriptionId ?? "",
+      searchBoostTarget: plan.searchBoostTarget,
+      monthlyAeoBudget: plan.monthlyAeoBudget,
+      schemaImplementor: plan.schemaImplementor,
+      searchAddress: plan.searchAddress ?? "",
+      subscriptionId: plan.subscriptionId ?? "",
       subscriptionStartDate: plan.subscriptionStartDate ?? "",
-      nextBillingDate:       plan.nextBillingDate ?? "",
-      cardLast4:             plan.cardLast4 ?? "",
-      createdBy:             plan.createdBy,
+      nextBillingDate: plan.nextBillingDate ?? "",
+      cardLast4: plan.cardLast4 ?? "",
+      createdBy: plan.createdBy,
     });
     setClientLocData({
-      publishedAddress:      client?.publishedAddress      ?? "",
-      gmbUrl:                client?.gmbUrl                ?? "",
+      publishedAddress: client?.publishedAddress ?? "",
+      gmbUrl: client?.gmbUrl ?? "",
       websitePublishedOnGmb: client?.websitePublishedOnGmb ?? "",
-      websiteLinkedOnGmb:    client?.websiteLinkedOnGmb    ?? "",
+      websiteLinkedOnGmb: client?.websiteLinkedOnGmb ?? "",
     });
     setEditPlan(plan);
   }
@@ -596,7 +758,7 @@ export default function ClientAeoPlans({
       const errorCount = Object.keys(errors).length;
       toast({
         title: "❌ Required Fields Missing",
-        description: `Please fill in ${errorCount} required ${errorCount === 1 ? 'field' : 'fields'} highlighted in red.`,
+        description: `Please fill in ${errorCount} required ${errorCount === 1 ? "field" : "fields"} highlighted in red.`,
         variant: "destructive",
       });
       return false;
@@ -623,7 +785,8 @@ export default function ClientAeoPlans({
       });
 
       const resolvedBiz = businesses.find((b) => b.id === formData.businessId);
-      const bizName = resolvedBiz?.name || formData.businessName || clientBusinessName;
+      const bizName =
+        resolvedBiz?.name || formData.businessName || clientBusinessName;
       const addr = formData.searchAddress?.trim();
       const autoName = [bizName, addr].filter(Boolean).join(" — ");
 
@@ -634,29 +797,45 @@ export default function ClientAeoPlans({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...formData, name: autoName }),
         });
-        toast({ title: "✅ Campaign updated!", description: `The campaign for ${bizName} has been updated successfully.` });
+        toast({
+          title: "✅ Campaign updated!",
+          description: `The campaign for ${bizName} has been updated successfully.`,
+        });
         setEditPlan(null);
       } else {
         await rawFetch(`/api/clients/${clientId}/aeo-plans`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...formData, businessName: bizName, name: autoName }),
+          body: JSON.stringify({
+            ...formData,
+            businessName: bizName,
+            name: autoName,
+          }),
         });
-        toast({ title: "✅ Campaign added!", description: `New campaign for ${formData.businessName || clientBusinessName} has been created successfully.` });
+        toast({
+          title: "✅ Campaign added!",
+          description: `New campaign for ${formData.businessName || clientBusinessName} has been created successfully.`,
+        });
         setAddOpen(false);
       }
       fetchPlans();
     } catch {
-      toast({ title: "❌ Save failed", description: "Something went wrong. Please try again.", variant: "destructive" });
-    } finally { setSaving(false); }
+      toast({
+        title: "❌ Save failed",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleCancelClick() {
     const hasData =
-      (formData.searchAddress?.trim()) ||
-      (formData.schemaImplementor?.trim()) ||
-      (formData.planType?.trim());
+      formData.searchAddress?.trim() ||
+      formData.schemaImplementor?.trim() ||
+      formData.planType?.trim();
     if (hasData) {
       setConfirmCancel(true);
     } else {
@@ -672,11 +851,21 @@ export default function ClientAeoPlans({
     const id = confirmDelete.id;
     setConfirmDelete(null);
     try {
-      await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, { method: "DELETE", credentials: "include" });
-      toast({ title: "🗑️ Campaign deleted", description: `"${planName}" has been removed successfully.` });
+      await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      toast({
+        title: "🗑️ Campaign deleted",
+        description: `"${planName}" has been removed successfully.`,
+      });
       fetchPlans();
     } catch {
-      toast({ title: "❌ Delete failed", description: "Something went wrong. Please try again.", variant: "destructive" });
+      toast({
+        title: "❌ Delete failed",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -690,11 +879,17 @@ export default function ClientAeoPlans({
             <ClipboardList className="w-4 h-4 text-primary" />
             Campaigns
             {plans.length > 0 && (
-              <Badge variant="outline" className="text-xs border-primary/20 text-primary bg-primary/5">{plans.length}</Badge>
+              <Badge
+                variant="outline"
+                className="text-xs border-primary/20 text-primary bg-primary/5"
+              >
+                {plans.length}
+              </Badge>
             )}
           </CardTitle>
           <Button
-            variant="outline" size="sm"
+            variant="outline"
+            size="sm"
             className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
             onClick={openAdd}
           >
@@ -712,7 +907,9 @@ export default function ClientAeoPlans({
           ) : plans.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2 border-t border-border/30">
               <ClipboardList className="w-8 h-8 opacity-30" />
-              <p className="text-sm">No campaigns yet — click <strong>Add Campaign</strong></p>
+              <p className="text-sm">
+                No campaigns yet — click <strong>Add Campaign</strong>
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -730,9 +927,9 @@ export default function ClientAeoPlans({
                 </TableHeader>
                 <TableBody>
                   {plans.map((plan) => {
-                    const meta    = getPlanMeta(plan.planType);
-                    const isOpen  = !collapsed.has(plan.id);
-                    const kws     = planKeywords.get(plan.id) ?? [];
+                    const meta = getPlanMeta(plan.planType);
+                    const isOpen = !collapsed.has(plan.id);
+                    const kws = planKeywords.get(plan.id) ?? [];
                     const isKwLoading = kwLoading.has(plan.id);
                     return (
                       <React.Fragment key={plan.id}>
@@ -740,58 +937,101 @@ export default function ClientAeoPlans({
                           className="hover:bg-muted/30 cursor-pointer"
                           onClick={() => {
                             if (plan.businessId) {
-                              navigate(`/clients/${clientId}/businesses/${plan.businessId}/campaigns/${plan.id}`);
+                              navigate(
+                                `/clients/${clientId}/businesses/${plan.businessId}/campaigns/${plan.id}`,
+                              );
                             } else {
                               toggleExpand(plan.id);
                             }
                           }}
                         >
                           {/* Expand toggle */}
-                          <TableCell className="pr-0" onClick={(e) => e.stopPropagation()}>
+                          <TableCell
+                            className="pr-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button
                               onClick={() => toggleExpand(plan.id)}
                               className="w-6 h-6 flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
                               title={isOpen ? "Hide keywords" : "Show keywords"}
                             >
-                              {isOpen
-                                ? <ChevronDown className="w-3.5 h-3.5" />
-                                : <ChevronRight className="w-3.5 h-3.5" />}
+                              {isOpen ? (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              )}
                             </button>
                           </TableCell>
                           <TableCell className="text-sm font-semibold text-foreground">
-                            {plan.name ?? <span className="text-muted-foreground/40 font-normal">—</span>}
+                            {plan.name ?? (
+                              <span className="text-muted-foreground/40 font-normal">
+                                —
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm font-medium">
                             {(() => {
-                              const biz = businesses.find((b) => b.id === plan.businessId);
+                              const biz = businesses.find(
+                                (b) => b.id === plan.businessId,
+                              );
                               if (biz) return biz.name;
-                              if (plan.businessName) return <span className="text-muted-foreground italic">{plan.businessName}</span>;
-                              return <span className="text-muted-foreground/40">—</span>;
+                              if (plan.businessName)
+                                return (
+                                  <span className="text-muted-foreground italic">
+                                    {plan.businessName}
+                                  </span>
+                                );
+                              return (
+                                <span className="text-muted-foreground/40">
+                                  —
+                                </span>
+                              );
                             })()}
                           </TableCell>
                           <TableCell>
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}
+                            >
                               {plan.planType}
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}
+                            >
                               {meta.tier}
                             </span>
                           </TableCell>
-                          <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                          <TableCell className="text-sm">{plan.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <TableCell className="text-sm">
+                            {plan.currentAnswerPresence ?? (
+                              <span className="text-muted-foreground/40">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {plan.createdBy ?? (
+                              <span className="text-muted-foreground/40">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className="text-right"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <div className="flex items-center justify-end gap-1">
                               <Button
-                                variant="ghost" size="sm"
+                                variant="ghost"
+                                size="sm"
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                                 onClick={() => openEdit(plan)}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
                               <Button
-                                variant="ghost" size="sm"
+                                variant="ghost"
+                                size="sm"
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
                                 onClick={() => setConfirmDelete(plan)}
                               >
@@ -804,17 +1044,27 @@ export default function ClientAeoPlans({
                         {/* ── Inline keywords for this campaign ── */}
                         {isOpen && (
                           <TableRow className="bg-muted/10 hover:bg-muted/10">
-                            <TableCell colSpan={9} className="py-3 px-6" onClick={(e) => e.stopPropagation()}>
+                            <TableCell
+                              colSpan={9}
+                              className="py-3 px-6"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                   <Key className="w-3.5 h-3.5 text-primary" />
-                                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keywords linked to this campaign</span>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Keywords linked to this campaign
+                                  </span>
                                 </div>
                                 {addingKwFor !== plan.id && (
                                   <Button
-                                    variant="outline" size="sm"
+                                    variant="outline"
+                                    size="sm"
                                     className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
-                                    onClick={() => { setAddingKwFor(plan.id); setNewKwText(""); }}
+                                    onClick={() => {
+                                      setAddingKwFor(plan.id);
+                                      setNewKwText("");
+                                    }}
                                   >
                                     <Plus className="w-3 h-3" /> Add Keyword
                                   </Button>
@@ -828,10 +1078,16 @@ export default function ClientAeoPlans({
                                     className="h-9 bg-background"
                                     placeholder="Enter keyword text"
                                     value={newKwText}
-                                    onChange={(e) => setNewKwText(e.target.value)}
+                                    onChange={(e) =>
+                                      setNewKwText(e.target.value)
+                                    }
                                     onKeyDown={(e) => {
-                                      if (e.key === "Enter") handleAddKeyword(plan);
-                                      if (e.key === "Escape") { setAddingKwFor(null); setNewKwText(""); }
+                                      if (e.key === "Enter")
+                                        handleAddKeyword(plan);
+                                      if (e.key === "Escape") {
+                                        setAddingKwFor(null);
+                                        setNewKwText("");
+                                      }
                                     }}
                                   />
                                   <Button
@@ -842,8 +1098,12 @@ export default function ClientAeoPlans({
                                     {savingKw ? "Saving…" : "Save"}
                                   </Button>
                                   <Button
-                                    variant="ghost" size="sm"
-                                    onClick={() => { setAddingKwFor(null); setNewKwText(""); }}
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setAddingKwFor(null);
+                                      setNewKwText("");
+                                    }}
                                   >
                                     Cancel
                                   </Button>
@@ -852,10 +1112,17 @@ export default function ClientAeoPlans({
 
                               {isKwLoading ? (
                                 <div className="flex gap-2">
-                                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-6 w-28 rounded-full" />)}
+                                  {Array.from({ length: 3 }).map((_, i) => (
+                                    <Skeleton
+                                      key={i}
+                                      className="h-6 w-28 rounded-full"
+                                    />
+                                  ))}
                                 </div>
                               ) : kws.length === 0 ? (
-                                <p className="text-xs text-muted-foreground/60 italic">No keywords assigned to this campaign yet.</p>
+                                <p className="text-xs text-muted-foreground/60 italic">
+                                  No keywords assigned to this campaign yet.
+                                </p>
                               ) : (
                                 <div className="flex flex-wrap gap-1.5">
                                   {kws.map((kw) => (
@@ -870,7 +1137,11 @@ export default function ClientAeoPlans({
                                       }`}
                                     >
                                       {kw.keywordText}
-                                      {kw.isActive === false && <span className="opacity-50">(inactive)</span>}
+                                      {kw.isActive === false && (
+                                        <span className="opacity-50">
+                                          (inactive)
+                                        </span>
+                                      )}
                                     </span>
                                   ))}
                                 </div>
@@ -889,17 +1160,25 @@ export default function ClientAeoPlans({
       </Card>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}>
+      <AlertDialog
+        open={confirmDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Campaign?</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete the campaign{" "}
-              <strong>&ldquo;{confirmDelete?.planType}&rdquo;</strong>? This action cannot be undone.
+              <strong>&ldquo;{confirmDelete?.planType}&rdquo;</strong>? This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDelete}
@@ -916,17 +1195,24 @@ export default function ClientAeoPlans({
           <AlertDialogHeader>
             <AlertDialogTitle>Save Campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you ready to save this campaign for <strong>{formData.businessName || clientBusinessName}</strong>? This will {editPlan ? "update the existing" : "create a new"} campaign.
+              Are you ready to save this campaign for{" "}
+              <strong>{formData.businessName || clientBusinessName}</strong>?
+              This will {editPlan ? "update the existing" : "create a new"}{" "}
+              campaign.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>
+              Go Back
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleSave}
               disabled={saving}
             >
-              {saving ? "Saving…" : `Yes, ${editPlan ? "Update" : "Save"} Campaign`}
+              {saving
+                ? "Saving…"
+                : `Yes, ${editPlan ? "Update" : "Save"} Campaign`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -938,14 +1224,22 @@ export default function ClientAeoPlans({
           <AlertDialogHeader>
             <AlertDialogTitle>Discard Campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to cancel? All the information you've entered will be lost and cannot be recovered.
+              Are you sure you want to cancel? All the information you've
+              entered will be lost and cannot be recovered.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>
+              Continue Editing
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { setConfirmCancel(false); setAddOpen(false); setEditPlan(null); setFormErrors({}); }}
+              onClick={() => {
+                setConfirmCancel(false);
+                setAddOpen(false);
+                setEditPlan(null);
+                setFormErrors({});
+              }}
             >
               Yes, Discard Changes
             </AlertDialogAction>
@@ -954,38 +1248,56 @@ export default function ClientAeoPlans({
       </AlertDialog>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(o) => { if (!o) { handleCancelClick(); } }}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            handleCancelClick();
+          }
+        }}
+      >
         <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-card overflow-y-auto flex flex-col">
           <DialogHeader className="px-8 pt-8 pb-0">
             <div className="flex items-center gap-3 mb-1">
               <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
                 <ClipboardList className="w-4 h-4 text-primary" />
               </div>
-              <DialogTitle className="text-xl">{editPlan ? "Edit Campaign" : "Add Campaign"}</DialogTitle>
+              <DialogTitle className="text-xl">
+                {editPlan ? "Edit Campaign" : "Add Campaign"}
+              </DialogTitle>
             </div>
-            <DialogDescription className="sr-only">{editPlan ? "Edit Campaign" : "Add Campaign"}</DialogDescription>
+            <DialogDescription className="sr-only">
+              {editPlan ? "Edit Campaign" : "Add Campaign"}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 flex flex-col items-center justify-start px-8 py-6">
             <div className="w-full max-w-3xl space-y-6">
-
               {/* ── Client info summary (read-only) ── */}
               <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Client Information</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+                  Client Information
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="flex items-start gap-2">
                     <Building2 className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Business</p>
-                      <p className="text-sm font-semibold text-foreground">{clientBusinessName}</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {clientBusinessName}
+                      </p>
                     </div>
                   </div>
-                  {(client.planName) && (
+                  {client.planName && (
                     <div className="flex items-start gap-2">
                       <ClipboardList className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Subscription Plan</p>
-                        <p className="text-sm font-semibold text-foreground">{client.planName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Subscription Plan
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {client.planName}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -993,17 +1305,25 @@ export default function ClientAeoPlans({
                     <div className="flex items-start gap-2">
                       <Mail className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Contact Email</p>
-                        <p className="text-sm font-semibold text-foreground break-all">{client.contactEmail ?? client.accountEmail}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Contact Email
+                        </p>
+                        <p className="text-sm font-semibold text-foreground break-all">
+                          {client.contactEmail ?? client.accountEmail}
+                        </p>
                       </div>
                     </div>
                   )}
-                  {(client.accountType) && (
+                  {client.accountType && (
                     <div className="flex items-start gap-2">
                       <CreditCard className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Account Type</p>
-                        <p className="text-sm font-semibold text-foreground">{client.accountType}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Account Type
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {client.accountType}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -1011,16 +1331,28 @@ export default function ClientAeoPlans({
                     <div className="flex items-start gap-2">
                       <Building2 className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                       <div>
-                        <p className="text-xs text-muted-foreground">Location</p>
-                        <p className="text-sm font-semibold text-foreground">{[client.city, client.state].filter(Boolean).join(", ")}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Location
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {[client.city, client.state]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
                       </div>
                     </div>
                   )}
                   <div className="flex items-start gap-2">
-                    <div className={`w-4 h-4 mt-0.5 rounded-full shrink-0 ${client.status === "active" ? "bg-emerald-400" : "bg-slate-400"}`} />
+                    <div
+                      className={`w-4 h-4 mt-0.5 rounded-full shrink-0 ${client.status === "active" ? "bg-emerald-400" : "bg-slate-400"}`}
+                    />
                     <div>
                       <p className="text-xs text-muted-foreground">Status</p>
-                      <p className={`text-sm font-semibold capitalize ${client.status === "active" ? "text-emerald-500" : "text-muted-foreground"}`}>{client.status ?? "—"}</p>
+                      <p
+                        className={`text-sm font-semibold capitalize ${client.status === "active" ? "text-emerald-500" : "text-muted-foreground"}`}
+                      >
+                        {client.status ?? "—"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1028,7 +1360,10 @@ export default function ClientAeoPlans({
 
               <PlanForm
                 values={formData}
-                onChange={(v) => { setFormData(v); setFormErrors({}); }}
+                onChange={(v) => {
+                  setFormData(v);
+                  setFormErrors({});
+                }}
                 clientBusinessName={clientBusinessName}
                 businesses={businesses}
                 errors={formErrors}
@@ -1038,22 +1373,32 @@ export default function ClientAeoPlans({
 
               <div className="flex gap-4 pt-6">
                 <Button
-                  variant="outline" size="lg" className="flex-1 border-border/50 h-12"
+                  variant="outline"
+                  size="lg"
+                  className="flex-1 border-border/50 h-12"
                   onClick={handleCancelClick}
                   disabled={saving}
                 >
                   Cancel
                 </Button>
                 <Button
-                  size="lg" className="flex-1 gap-2 h-12"
+                  size="lg"
+                  className="flex-1 gap-2 h-12"
                   disabled={saving}
                   onClick={handleSaveClick}
                   style={{
-                    background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
-                    boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
+                    background:
+                      "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
+                    boxShadow: "0 4px 12px rgba(37,99,235,0.25)",
                   }}
                 >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : "Save Campaign"}
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    "Save Campaign"
+                  )}
                 </Button>
               </div>
             </div>

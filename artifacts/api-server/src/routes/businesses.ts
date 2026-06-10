@@ -10,12 +10,13 @@ import {
   requireAdmin,
   requireEditor,
   requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
 import { assertSalesAccessToClient } from "../lib/sales-scope";
 
 const router = Router();
 
-router.get("/", requireSalesAllowed, async (req, res) => {
+router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
     const query = db
@@ -68,7 +69,7 @@ router.get("/", requireSalesAllowed, async (req, res) => {
   }
 });
 
-router.get("/:id", requireSalesAllowed, async (req, res) => {
+router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const [business] = await db
