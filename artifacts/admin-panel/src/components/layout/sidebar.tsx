@@ -186,6 +186,12 @@ const navGroups: NavGroup[] = [
         salesAllowed: true,
       },
       {
+        name: "Sales AI",
+        href: "/sales-ai",
+        icon: Sparkles,
+        salesAllowed: true,
+      },
+      {
         name: "Keyword Rotation",
         href: "/keyword-rotation",
         icon: RefreshCw,
