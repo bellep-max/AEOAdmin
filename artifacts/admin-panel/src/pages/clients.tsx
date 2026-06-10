@@ -207,7 +207,7 @@ export default function Clients() {
       "Content-Type": "application/json",
     };
     if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-    return fetch(BASE + path, { ...init, headers });
+    return fetch(BASE + path, { credentials: "include", ...init, headers });
   }
 
   async function toggleStatus(

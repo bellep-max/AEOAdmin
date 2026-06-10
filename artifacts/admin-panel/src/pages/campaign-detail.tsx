@@ -4,15 +4,28 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { KeywordDialog, type KwRecord } from "@/components/KeywordDialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, ClipboardList, Key, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ClipboardList,
+  Key,
+  Plus,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
@@ -22,9 +35,11 @@ import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 interface Campaign {
@@ -66,10 +81,18 @@ interface Client {
   businessName: string;
 }
 
-function Field({ label, value }: { label: string; value?: string | number | null }) {
+function Field({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | number | null;
+}) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+        {label}
+      </p>
       {value != null && value !== "" ? (
         <p className="text-sm text-foreground">{value}</p>
       ) : (
@@ -80,7 +103,9 @@ function Field({ label, value }: { label: string; value?: string | number | null
 }
 
 export default function CampaignDetail() {
-  const [, params] = useRoute("/clients/:clientId/businesses/:businessId/campaigns/:campaignId");
+  const [, params] = useRoute(
+    "/clients/:clientId/businesses/:businessId/campaigns/:campaignId",
+  );
   const clientId = Number(params?.clientId);
   const businessId = Number(params?.businessId);
   const campaignId = Number(params?.campaignId);
@@ -98,7 +123,9 @@ export default function CampaignDetail() {
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
     queryFn: async () => {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${campaignId}`);
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
+      );
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -138,7 +165,16 @@ export default function CampaignDetail() {
   async function handleSaveKeyword(data: KwRecord) {
     setSavingKw(true);
     try {
-      const { id, linkUrl, linkTypeLabel, linkActive, embeddedUrl, initialRankReportLink, currentRankReportLink, ...kwData } = data;
+      const {
+        id,
+        linkUrl,
+        linkTypeLabel,
+        linkActive,
+        embeddedUrl,
+        initialRankReportLink,
+        currentRankReportLink,
+        ...kwData
+      } = data;
       const isEdit = id != null;
       const url = isEdit ? `/api/keywords/${id}` : `/api/keywords`;
       const res = await rawFetch(url, {
@@ -181,10 +217,15 @@ export default function CampaignDetail() {
 
   async function deleteCampaign() {
     try {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${campaignId}`, { method: "DELETE" });
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
+        { method: "DELETE" },
+      );
       if (!res.ok) throw new Error();
       toast({ title: "Campaign deleted" });
-      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "aeo-plans"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans"],
+      });
       navigate(`/clients/${clientId}/businesses/${businessId}`);
     } catch {
       toast({ title: "Failed to delete campaign", variant: "destructive" });
@@ -218,7 +259,10 @@ export default function CampaignDetail() {
     return (
       <div className="py-20 text-center text-muted-foreground">
         <p>Campaign not found.</p>
-        <Link href={`/clients/${clientId}/businesses/${businessId}`} className="text-primary hover:underline mt-2 inline-block">
+        <Link
+          href={`/clients/${clientId}/businesses/${businessId}`}
+          className="text-primary hover:underline mt-2 inline-block"
+        >
           ← Back to business
         </Link>
       </div>
@@ -230,19 +274,30 @@ export default function CampaignDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-        <Link href="/clients" className="hover:text-foreground transition-colors flex items-center gap-1">
+        <Link
+          href="/clients"
+          className="hover:text-foreground transition-colors flex items-center gap-1"
+        >
           <ChevronLeft className="w-3.5 h-3.5" /> Clients
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {client?.businessName ?? "Client"}
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}/businesses/${businessId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}/businesses/${businessId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {business?.name ?? "Business"}
         </Link>
         <span>/</span>
-        <span className="text-foreground font-medium">{campaign.planType} Campaign</span>
+        <span className="text-foreground font-medium">
+          {campaign.planType} Campaign
+        </span>
       </div>
 
       <div className="rounded-xl border border-border/50 bg-card/60 p-5 flex items-center gap-4">
@@ -251,11 +306,17 @@ export default function CampaignDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{campaign.name ?? `${campaign.planType} Campaign`}</h1>
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass}`}>
+            <h1 className="text-2xl font-bold text-foreground">
+              {campaign.name ?? `${campaign.planType} Campaign`}
+            </h1>
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass}`}
+            >
               {campaign.planType}
             </span>
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass}`}>
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass}`}
+            >
               {meta.tier}
             </span>
           </div>
@@ -265,7 +326,12 @@ export default function CampaignDetail() {
         </div>
         <div className="flex items-center gap-2">
           {isEditor && (
-            <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() => setEditOpen(true)}
+            >
               <Pencil className="w-3.5 h-3.5" /> Edit
             </Button>
           )}
@@ -290,16 +356,22 @@ export default function CampaignDetail() {
         businessName={business?.name}
         campaign={campaign}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "aeo-plans", campaignId] });
+          queryClient.invalidateQueries({
+            queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+          });
         }}
       />
 
-      <AlertDialog open={confirmDeleteCampaign} onOpenChange={setConfirmDeleteCampaign}>
+      <AlertDialog
+        open={confirmDeleteCampaign}
+        onOpenChange={setConfirmDeleteCampaign}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the campaign and all linked keywords. This cannot be undone.
+              This permanently deletes the campaign and all linked keywords.
+              This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -326,10 +398,22 @@ export default function CampaignDetail() {
             <Field label="Plan Type" value={campaign.planType} />
             <Field label="Tier" value={meta.tier} />
             <Field label="Search Address" value={campaign.searchAddress} />
-            <Field label="Answer Presence" value={campaign.currentAnswerPresence} />
-            <Field label="Search Boost Target" value={campaign.searchBoostTarget} />
-            <Field label="Monthly AEO Budget" value={campaign.monthlyAeoBudget} />
-            <Field label="Schema Implementor" value={campaign.schemaImplementor} />
+            <Field
+              label="Answer Presence"
+              value={campaign.currentAnswerPresence}
+            />
+            <Field
+              label="Search Boost Target"
+              value={campaign.searchBoostTarget}
+            />
+            <Field
+              label="Monthly AEO Budget"
+              value={campaign.monthlyAeoBudget}
+            />
+            <Field
+              label="Schema Implementor"
+              value={campaign.schemaImplementor}
+            />
             <Field label="Created By" value={campaign.createdBy} />
           </div>
         </CardContent>
@@ -345,7 +429,10 @@ export default function CampaignDetail() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Subscription ID" value={campaign.subscriptionId} />
-            <Field label="Card (last 4)" value={campaign.cardLast4 ? `•••• ${campaign.cardLast4}` : null} />
+            <Field
+              label="Card (last 4)"
+              value={campaign.cardLast4 ? `•••• ${campaign.cardLast4}` : null}
+            />
             <Field label="Start Date" value={campaign.subscriptionStartDate} />
             <Field label="Next Billing Date" value={campaign.nextBillingDate} />
           </div>
@@ -366,7 +453,11 @@ export default function CampaignDetail() {
         aeoPlanId={campaignId}
         addButton={
           isEditor ? (
-            <Button size="sm" className="h-8 gap-1" onClick={() => setKwDialogOpen(true)}>
+            <Button
+              size="sm"
+              className="h-8 gap-1"
+              onClick={() => setKwDialogOpen(true)}
+            >
               <Plus className="w-3.5 h-3.5" /> Add Keyword
             </Button>
           ) : undefined
@@ -392,9 +483,14 @@ export default function CampaignDetail() {
               }
             : undefined
         }
-        extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
+        extraKeywords={(keywords ?? []).map((k) => ({
+          id: k.id,
+          keywordText: k.keywordText,
+        }))}
         showRotation
-        onRotated={() => { refetchKeywords(); }}
+        onRotated={() => {
+          refetchKeywords();
+        }}
       />
 
       <KeywordDialog
@@ -406,37 +502,59 @@ export default function CampaignDetail() {
         defaultClientId={clientId}
         defaultBusinessId={businessId}
         defaultCampaignId={campaignId}
-        clients={client ? [{ id: client.id, businessName: client.businessName }] : []}
-        businesses={business ? [{ id: business.id, clientId, name: business.name }] : []}
-        plans={campaign ? [{
-          id: campaign.id,
-          clientId,
-          businessId,
-          name: campaign.name,
-          planType: campaign.planType,
-        }] : []}
+        clients={
+          client ? [{ id: client.id, businessName: client.businessName }] : []
+        }
+        businesses={
+          business ? [{ id: business.id, clientId, name: business.name }] : []
+        }
+        plans={
+          campaign
+            ? [
+                {
+                  id: campaign.id,
+                  clientId,
+                  businessId,
+                  name: campaign.name,
+                  planType: campaign.planType,
+                },
+              ]
+            : []
+        }
         onSave={handleSaveKeyword}
       />
 
       {editingKw && (
         <KeywordDialog
           open
-          onOpenChange={(o) => { if (!o) setEditingKw(null); }}
+          onOpenChange={(o) => {
+            if (!o) setEditingKw(null);
+          }}
           title="Edit Keyword"
           saving={savingKw}
           lockContext
           defaultClientId={clientId}
           defaultBusinessId={businessId}
           defaultCampaignId={campaignId}
-          clients={client ? [{ id: client.id, businessName: client.businessName }] : []}
-          businesses={business ? [{ id: business.id, clientId, name: business.name }] : []}
-          plans={campaign ? [{
-            id: campaign.id,
-            clientId,
-            businessId,
-            name: campaign.name,
-            planType: campaign.planType,
-          }] : []}
+          clients={
+            client ? [{ id: client.id, businessName: client.businessName }] : []
+          }
+          businesses={
+            business ? [{ id: business.id, clientId, name: business.name }] : []
+          }
+          plans={
+            campaign
+              ? [
+                  {
+                    id: campaign.id,
+                    clientId,
+                    businessId,
+                    name: campaign.name,
+                    planType: campaign.planType,
+                  },
+                ]
+              : []
+          }
           initial={editingKw}
           onSave={handleSaveKeyword}
         />
@@ -446,16 +564,25 @@ export default function CampaignDetail() {
 
       <CampaignAuditRankingsCard campaignId={campaignId} />
 
-      <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
+      <AlertDialog
+        open={!!confirmDeleteKw}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDeleteKw(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this keyword?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>"{confirmDeleteKw?.keywordText ?? ""}"</strong> and any associated links. This action cannot be undone.
+              This will permanently delete{" "}
+              <strong>"{confirmDeleteKw?.keywordText ?? ""}"</strong> and any
+              associated links. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {

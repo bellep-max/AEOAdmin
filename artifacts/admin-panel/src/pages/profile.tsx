@@ -6,13 +6,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, ShieldCheck, Hash, KeyRound, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  User,
+  Mail,
+  ShieldCheck,
+  Hash,
+  KeyRound,
+  Loader2,
+  CheckCircle2,
+} from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 export default function Profile() {
@@ -20,9 +30,9 @@ export default function Profile() {
   const { toast } = useToast();
 
   const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword]         = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [saving, setSaving]                   = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!user) return null;
 
@@ -40,7 +50,10 @@ export default function Profile() {
       return;
     }
     if (newPassword.length < 8) {
-      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      toast({
+        title: "Password must be at least 8 characters",
+        variant: "destructive",
+      });
       return;
     }
     setSaving(true);
@@ -60,7 +73,11 @@ export default function Profile() {
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
-      toast({ title: "Error", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -68,11 +85,12 @@ export default function Profile() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 py-4">
-
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">My Profile</h1>
-        <p className="text-sm text-muted-foreground mt-1">Manage your account information</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage your account information
+        </p>
       </div>
 
       {/* Avatar + identity card */}
@@ -96,17 +114,26 @@ export default function Profile() {
         {/* Info grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
-            { icon: User,        label: "Full Name",     value: user.name },
-            { icon: Mail,        label: "Email Address", value: user.email },
-            { icon: ShieldCheck, label: "Role",          value: user.role.charAt(0).toUpperCase() + user.role.slice(1) },
-            { icon: Hash,        label: "Account ID",    value: `#${user.id}` },
+            { icon: User, label: "Full Name", value: user.name },
+            { icon: Mail, label: "Email Address", value: user.email },
+            {
+              icon: ShieldCheck,
+              label: "Role",
+              value: user.role.charAt(0).toUpperCase() + user.role.slice(1),
+            },
+            { icon: Hash, label: "Account ID", value: `#${user.id}` },
           ].map(({ icon: Icon, label, value }) => (
-            <div key={label} className="rounded-lg border border-border bg-background px-4 py-3 space-y-1">
+            <div
+              key={label}
+              className="rounded-lg border border-border bg-background px-4 py-3 space-y-1"
+            >
               <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted-foreground font-semibold">
                 <Icon className="w-3.5 h-3.5" />
                 {label}
               </div>
-              <p className="text-base font-semibold text-foreground break-all">{value}</p>
+              <p className="text-base font-semibold text-foreground break-all">
+                {value}
+              </p>
             </div>
           ))}
         </div>
@@ -121,7 +148,9 @@ export default function Profile() {
 
         <form onSubmit={handleChangePassword} className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">Current Password</Label>
+            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">
+              Current Password
+            </Label>
             <Input
               type="password"
               className="h-11 bg-background border-border text-base"
@@ -132,7 +161,9 @@ export default function Profile() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">New Password</Label>
+            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">
+              New Password
+            </Label>
             <Input
               type="password"
               className="h-11 bg-background border-border text-base"
@@ -143,7 +174,9 @@ export default function Profile() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">Confirm New Password</Label>
+            <Label className="text-sm font-semibold uppercase tracking-widest text-foreground">
+              Confirm New Password
+            </Label>
             <Input
               type="password"
               className="h-11 bg-background border-border text-base"
@@ -155,19 +188,27 @@ export default function Profile() {
           </div>
           <Button
             type="submit"
-            disabled={saving || !currentPassword || !newPassword || !confirmPassword}
+            disabled={
+              saving || !currentPassword || !newPassword || !confirmPassword
+            }
             className="w-full h-11 text-base font-bold gap-2"
-            style={{ background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))" }}
+            style={{
+              background:
+                "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
+            }}
           >
             {saving ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+              </>
             ) : (
-              <><CheckCircle2 className="w-4 h-4" /> Update Password</>
+              <>
+                <CheckCircle2 className="w-4 h-4" /> Update Password
+              </>
             )}
           </Button>
         </form>
       </div>
-
     </div>
   );
 }
