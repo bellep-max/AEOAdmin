@@ -12,7 +12,7 @@ import {
   requireSalesAllowed,
   requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
-import { assertSalesAccessToClient } from "../lib/sales-scope";
+import { assertScopedAccessToClient } from "../lib/scoped-access";
 
 const router = Router();
 
@@ -77,7 +77,8 @@ router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
       .from(businessesTable)
       .where(eq(businessesTable.id, id));
     if (!business) return res.status(404).json({ error: "Not found" });
-    if (!(await assertSalesAccessToClient(req, res, business.clientId))) return;
+    if (!(await assertScopedAccessToClient(req, res, business.clientId)))
+      return;
     res.json(business);
   } catch (err) {
     req.log.error({ err }, "Error fetching business");

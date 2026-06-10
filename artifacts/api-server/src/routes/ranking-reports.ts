@@ -15,7 +15,7 @@ import {
   requireRoles,
   isSales,
 } from "../middlewares/role-auth";
-import { getSalesEligibleClientIds } from "../lib/sales-scope";
+import { getScopedClientIds } from "../lib/scoped-access";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
@@ -466,7 +466,7 @@ router.delete("/:id", requireExecutorToken, async (req, res) => {
    Returns per-platform initial-vs-current comparison rows */
 router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
   try {
-    const eligibleIds = await getSalesEligibleClientIds(req);
+    const eligibleIds = await getScopedClientIds(req);
     if (eligibleIds && eligibleIds.length === 0) {
       return res.json([]);
     }
@@ -585,7 +585,7 @@ router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
    Shape: [{ keywordId, chatgpt, gemini, perplexity }] */
 router.get("/per-keyword-platform", requireSalesAllowed, async (req, res) => {
   try {
-    const eligibleIds = await getSalesEligibleClientIds(req);
+    const eligibleIds = await getScopedClientIds(req);
     if (eligibleIds && eligibleIds.length === 0) {
       return res.json([]);
     }
@@ -721,7 +721,7 @@ function windowsFor(
 
 router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
   try {
-    const eligibleIds = await getSalesEligibleClientIds(req);
+    const eligibleIds = await getScopedClientIds(req);
     if (eligibleIds && eligibleIds.length === 0) {
       return res.json({ period: "weekly", window: null, rows: [] });
     }
@@ -990,7 +990,7 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
 
 router.get("/initial-vs-current", requireSalesAllowed, async (req, res) => {
   try {
-    const eligibleIds = await getSalesEligibleClientIds(req);
+    const eligibleIds = await getScopedClientIds(req);
     if (eligibleIds && eligibleIds.length === 0) {
       return res.json([]);
     }
@@ -1111,7 +1111,7 @@ router.get(
   requireRoles("owner", "sales"),
   async (req, res) => {
     try {
-      const eligibleIds = await getSalesEligibleClientIds(req);
+      const eligibleIds = await getScopedClientIds(req);
       if (eligibleIds && eligibleIds.length === 0) {
         return res.json({
           currentBatch: null,
@@ -1747,7 +1747,7 @@ router.get("/:id/screenshot-url", requireSalesAllowed, async (req, res) => {
       return res.status(404).json({ error: "ranking report not found" });
     }
     if (isSales(req)) {
-      const eligibleIds = await getSalesEligibleClientIds(req);
+      const eligibleIds = await getScopedClientIds(req);
       if (!eligibleIds || !eligibleIds.includes(rows[0].clientId)) {
         return res.status(404).json({ error: "ranking report not found" });
       }

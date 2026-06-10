@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
 
 interface AuthUser {
   id: number;
@@ -14,6 +20,8 @@ interface AuthContextType {
   isOwner: boolean;
   /** True for role === "sales" — narrowed to free-trial-only views. */
   isSales: boolean;
+  /** True for role === "account-manager" — narrowed to non-free-trial views. */
+  isAccountManager: boolean;
   /** True when the user can perform destructive / create-top-level actions.
    *  Subsumes owner. Use to gate Add/Delete buttons that should not appear
    *  for editor or viewer roles. */
@@ -30,7 +38,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(options?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
   const res = await fetch(BASE + path, {
     credentials: "include",
@@ -85,7 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!userData) throw new Error("No user data in response");
       setUser(userData);
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : "Invalid server response");
+      throw new Error(
+        err instanceof Error ? err.message : "Invalid server response",
+      );
     }
   }
 
@@ -96,12 +109,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isOwner = user?.role === "owner";
   const isSales = user?.role === "sales";
+  const isAccountManager = user?.role === "account-manager";
   // Subsumptive: admin includes owner; editor includes admin + owner. Matches
   // the BE hierarchy in middlewares/role-auth.ts.
   const isAdmin = user?.role === "admin" || isOwner;
   const isEditor = user?.role === "editor" || isAdmin;
 
-  return <AuthContext.Provider value={{ user, isLoading, isOwner, isSales, isAdmin, isEditor, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        isOwner,
+        isSales,
+        isAccountManager,
+        isAdmin,
+        isEditor,
+        login,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

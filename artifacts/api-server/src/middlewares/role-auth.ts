@@ -33,6 +33,12 @@ export function isSales(req: Request): boolean {
   return session.userRole === "sales";
 }
 
+/** True if the request session holds an account-manager user. */
+export function isAccountManager(req: Request): boolean {
+  const session = req.session as unknown as Record<string, unknown>;
+  return session.userRole === "account-manager";
+}
+
 /**
  * Generic role gate. Accepts any of the listed roles. Use this when an
  * endpoint should be reachable by multiple roles (e.g. AEO Reporter is for
@@ -79,11 +85,13 @@ export const requireEditor = requireRoles("editor", "admin", "owner");
 export const requireAdmin = requireRoles("admin", "owner");
 
 /**
- * For endpoints reachable by sales AND the read-only chain. Includes sales
- * + viewer + editor + admin + owner. Used on the 4 sales-facing screens.
+ * For endpoints reachable by the two parallel scoped roles (sales +
+ * account-manager) AND the unscoped admin-panel chain. Each scoped role
+ * sees only its slice of clients per the helpers in lib/scoped-access.ts.
  */
 export const requireSalesAllowed = requireRoles(
   "sales",
+  "account-manager",
   "viewer",
   "editor",
   "admin",
@@ -150,7 +158,9 @@ export function requireExecutorOrSalesAllowed(
   if (
     session.userId &&
     role &&
-    ["sales", "viewer", "editor", "admin", "owner"].includes(role)
+    ["sales", "account-manager", "viewer", "editor", "admin", "owner"].includes(
+      role,
+    )
   ) {
     return next();
   }

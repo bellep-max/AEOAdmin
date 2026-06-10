@@ -20,14 +20,14 @@ import {
   isNotNull,
 } from "drizzle-orm";
 import {
-  getSalesPlanFilter,
   isSales,
+  isAccountManager,
   requireAdmin,
   requireEditor,
   requireSalesAllowed,
   requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
-import { getSalesEligibleClientIds } from "../lib/sales-scope";
+import { getScopedClientIds } from "../lib/scoped-access";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -37,15 +37,15 @@ const router = Router();
  * free-trial-eligible. Non-sales sessions pass through unchanged. The handler
  * still runs its own ownership/auth as needed.
  */
-async function gateClientForSales(
+async function gateClientForScopedRoles(
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  if (!isSales(req)) return next();
+  if (!isSales(req) && !isAccountManager(req)) return next();
   const targetId = Number(req.params.id);
   if (Number.isNaN(targetId)) return next();
-  const eligibleIds = await getSalesEligibleClientIds(req);
+  const eligibleIds = await getScopedClientIds(req);
   if (!eligibleIds || !eligibleIds.includes(targetId)) {
     return res.status(404).json({ error: "Not found" });
   }
@@ -76,15 +76,11 @@ router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
     >;
     const conditions: ReturnType<typeof eq>[] = [];
 
-    // Sales sessions are scoped to free-trial clients only. Pre-fetch the
-    // eligible client IDs and intersect with the other filters below.
-    const salesPlanFilter = getSalesPlanFilter(req);
-    if (salesPlanFilter) {
-      const eligible = await db
-        .select({ clientId: clientAeoPlansTable.clientId })
-        .from(clientAeoPlansTable)
-        .where(eq(clientAeoPlansTable.planType, salesPlanFilter));
-      const eligibleIds = [...new Set(eligible.map((e) => e.clientId))];
+    // Sessions in a scoped role (sales / account-manager) see only their
+    // slice of clients. Pre-fetch the eligible IDs and intersect; unscoped
+    // sessions get a null back and skip the filter.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null) {
       if (eligibleIds.length === 0) return res.json([]);
       conditions.push(inArray(clientsTable.id, eligibleIds));
     }
@@ -255,7 +251,7 @@ router.post("/", requireAdmin, async (req, res) => {
 router.get(
   "/:id",
   requireExecutorOrSalesAllowed,
-  gateClientForSales,
+  gateClientForScopedRoles,
   async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -474,7 +470,7 @@ router.post("/:id/restore", requireAdmin, async (req, res) => {
 router.get(
   "/:id/gbp-snippet",
   requireSalesAllowed,
-  gateClientForSales,
+  gateClientForScopedRoles,
   async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -530,7 +526,7 @@ router.get(
 router.get(
   "/:id/aeo-summary",
   requireSalesAllowed,
-  gateClientForSales,
+  gateClientForScopedRoles,
   async (req, res) => {
     try {
       const id = parseInt(req.params.id);

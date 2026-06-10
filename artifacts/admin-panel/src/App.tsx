@@ -49,17 +49,18 @@ function OwnerGate({
 }
 
 /** Routes reserved for the admin-panel role chain (viewer/editor/admin/owner).
- *  Sales gets redirected to the dashboard — they have their own scoped surface
- *  (Dashboard, Clients, Rankings, AEO Reporter) and shouldn't reach admin
- *  tooling even if they type the URL or follow a deep link from elsewhere. */
+ *  Scoped roles (sales, account-manager) get redirected to the dashboard —
+ *  they have their own scoped surface (Dashboard, Clients, Rankings, AEO
+ *  Reporter) and shouldn't reach admin tooling even if they type the URL or
+ *  follow a deep link from elsewhere. */
 function AdminTierGate({
   component: Component,
 }: {
   component: ComponentType<unknown>;
 }) {
-  const { user, isSales, isLoading } = useAuth();
+  const { user, isSales, isAccountManager, isLoading } = useAuth();
   if (isLoading) return null;
-  if (!user || isSales) return <Redirect to="/" />;
+  if (!user || isSales || isAccountManager) return <Redirect to="/" />;
   return <Component />;
 }
 // import OrganizationDetails from "@/pages/organization-details";

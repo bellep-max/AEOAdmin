@@ -70,8 +70,9 @@ interface NavItem {
    */
   adminOnly?: boolean;
   /**
-   * Sales role sees only items flagged salesAllowed. Without the flag, the
-   * item is hidden for sales sessions.
+   * Scoped roles (sales + account-manager) see only items flagged here.
+   * Both roles see the same surface (Dashboard, Clients, Rankings, AEO
+   * Reporter); they differ only in which clients they see, not which pages.
    */
   salesAllowed?: boolean;
 }
@@ -89,7 +90,14 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard, salesAllowed: true }],
+    items: [
+      {
+        name: "Dashboard",
+        href: "/",
+        icon: LayoutDashboard,
+        salesAllowed: true,
+      },
+    ],
   },
   {
     label: "Infrastructure",
@@ -131,7 +139,12 @@ const navGroups: NavGroup[] = [
         icon: Trophy,
         salesAllowed: true,
         children: [
-          { name: "Period Comparison", href: "/rankings", icon: BarChart3, salesAllowed: true },
+          {
+            name: "Period Comparison",
+            href: "/rankings",
+            icon: BarChart3,
+            salesAllowed: true,
+          },
           {
             name: "Bi-Weekly Report",
             href: "/rankings/bi-weekly",
@@ -147,7 +160,12 @@ const navGroups: NavGroup[] = [
   {
     label: "Admin",
     items: [
-      { name: "AEO Reporter", href: "/aeo-reporter", icon: BrainCircuit, salesAllowed: true },
+      {
+        name: "AEO Reporter",
+        href: "/aeo-reporter",
+        icon: BrainCircuit,
+        salesAllowed: true,
+      },
       {
         name: "Keyword Rotation",
         href: "/keyword-rotation",
@@ -170,7 +188,12 @@ const navGroups: NavGroup[] = [
           },
         ],
       },
-      { name: "Prompts", href: "/admin/prompts", icon: FileText, adminOnly: true },
+      {
+        name: "Prompts",
+        href: "/admin/prompts",
+        icon: FileText,
+        adminOnly: true,
+      },
       {
         name: "Variants",
         href: "/admin/variants",
@@ -184,11 +207,12 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout, isOwner, isSales, isAdmin } = useAuth();
+  const { user, logout, isOwner, isSales, isAccountManager, isAdmin } =
+    useAuth();
   const { theme, toggleTheme } = useTheme();
 
   // Visibility rule, evaluated in order:
-  //   sales role  → only items flagged salesAllowed
+  //   scoped role (sales / account-manager) → only items flagged salesAllowed
   //   ownerOnly   → owner only
   //   adminOnly   → admin or owner only
   //   default     → all signed-in admin-panel users (viewer/editor/admin/owner)
@@ -197,7 +221,7 @@ export function AppSidebar() {
     adminOnly?: boolean;
     salesAllowed?: boolean;
   }) => {
-    if (isSales) return !!item.salesAllowed;
+    if (isSales || isAccountManager) return !!item.salesAllowed;
     if (item.ownerOnly && !isOwner) return false;
     if (item.adminOnly && !isAdmin) return false;
     return true;
@@ -206,12 +230,10 @@ export function AppSidebar() {
   const visibleGroups = navGroups
     .map((g) => ({
       ...g,
-      items: g.items
-        .filter(isVisible)
-        .map((it) => ({
-          ...it,
-          children: it.children?.filter(isVisible),
-        })),
+      items: g.items.filter(isVisible).map((it) => ({
+        ...it,
+        children: it.children?.filter(isVisible),
+      })),
     }))
     .filter((g) => (isOwner || !g.ownerOnly) && g.items.length > 0);
 

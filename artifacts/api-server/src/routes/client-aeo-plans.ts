@@ -7,7 +7,7 @@ import {
   requireEditor,
   requireAdmin,
 } from "../middlewares/role-auth";
-import { assertSalesAccessToClient } from "../lib/sales-scope";
+import { assertScopedAccessToClient } from "../lib/scoped-access";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -20,7 +20,7 @@ router.get("/", requireSalesAllowed, async (req, res) => {
     const clientId = parseInt(req.params.clientId);
     if (isNaN(clientId))
       return res.status(400).json({ error: "Invalid clientId" });
-    if (!(await assertSalesAccessToClient(req, res, clientId))) return;
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
     const businessIdParam = req.query.businessId as string | undefined;
     const businessId = businessIdParam ? parseInt(businessIdParam) : null;
@@ -83,7 +83,7 @@ router.get("/:planId", requireSalesAllowed, async (req, res) => {
     const planId = parseInt(req.params.planId);
     if (isNaN(clientId) || isNaN(planId))
       return res.status(400).json({ error: "Invalid id" });
-    if (!(await assertSalesAccessToClient(req, res, clientId))) return;
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
     const [plan] = await db
       .select()
       .from(clientAeoPlansTable)
