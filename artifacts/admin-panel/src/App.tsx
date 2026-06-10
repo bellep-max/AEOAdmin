@@ -47,6 +47,21 @@ function OwnerGate({
   if (!isOwner) return <Redirect to="/" />;
   return <Component />;
 }
+
+/** Routes reserved for the admin-panel role chain (viewer/editor/admin/owner).
+ *  Sales gets redirected to the dashboard — they have their own scoped surface
+ *  (Dashboard, Clients, Rankings, AEO Reporter) and shouldn't reach admin
+ *  tooling even if they type the URL or follow a deep link from elsewhere. */
+function AdminTierGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || isSales) return <Redirect to="/" />;
+  return <Component />;
+}
 // import OrganizationDetails from "@/pages/organization-details";
 
 const queryClient = new QueryClient();
@@ -73,7 +88,9 @@ function ProtectedRoutes() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/archived" component={Archived} />
+        <Route path="/archived">
+          <AdminTierGate component={Archived} />
+        </Route>
         <Route path="/clients" component={Clients} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
@@ -88,15 +105,29 @@ function ProtectedRoutes() {
           path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId"
           component={CampaignDetail}
         />
-        <Route path="/plans" component={Plans} />
-        <Route path="/keywords" component={Keywords} />
-        <Route path="/keywords/all" component={KeywordsAll} />
+        <Route path="/plans">
+          <AdminTierGate component={Plans} />
+        </Route>
+        <Route path="/keywords">
+          <AdminTierGate component={Keywords} />
+        </Route>
+        <Route path="/keywords/all">
+          <AdminTierGate component={KeywordsAll} />
+        </Route>
         <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
-        <Route path="/metrics" component={Metrics} />
-        <Route path="/packages" component={Packages} />
-        <Route path="/sessions/daily" component={SessionsDaily} />
-        <Route path="/sessions/audit" component={SessionsAudit} />
+        <Route path="/metrics">
+          <AdminTierGate component={Metrics} />
+        </Route>
+        <Route path="/packages">
+          <AdminTierGate component={Packages} />
+        </Route>
+        <Route path="/sessions/daily">
+          <AdminTierGate component={SessionsDaily} />
+        </Route>
+        <Route path="/sessions/audit">
+          <AdminTierGate component={SessionsAudit} />
+        </Route>
         <Route path="/reports/:id">
           <OwnerGate component={ReportDetail} />
         </Route>
@@ -104,10 +135,18 @@ function ProtectedRoutes() {
           <OwnerGate component={Reports} />
         </Route>
         <Route path="/aeo-reporter" component={AeoReporter} />
-        <Route path="/keyword-rotation" component={KeywordRotation} />
-        <Route path="/keyword-rotation/overview" component={RotationOverview} />
-        <Route path="/keyword-rotation/locked" component={LockedKeywords} />
-        <Route path="/admin/prompts" component={Prompts} />
+        <Route path="/keyword-rotation">
+          <AdminTierGate component={KeywordRotation} />
+        </Route>
+        <Route path="/keyword-rotation/overview">
+          <AdminTierGate component={RotationOverview} />
+        </Route>
+        <Route path="/keyword-rotation/locked">
+          <AdminTierGate component={LockedKeywords} />
+        </Route>
+        <Route path="/admin/prompts">
+          <AdminTierGate component={Prompts} />
+        </Route>
         <Route path="/admin/variants">
           <OwnerGate component={AdminVariants} />
         </Route>
