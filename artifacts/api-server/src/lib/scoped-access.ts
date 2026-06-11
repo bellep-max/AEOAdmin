@@ -30,7 +30,7 @@ const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
  * key off this list, so widening chuckslocal's scope is a one-line change here.
  */
 export const LOCAL_ADMIN_PLAN_TYPES = [
-  "Signal AEO Plan",
+  "AEO SEO Local Plan",
   "Signal AEO SEO Local",
 ] as const;
 

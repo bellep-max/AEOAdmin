@@ -6,7 +6,7 @@ const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 /** The only plans the chuckslocal role may assign. Mirrors LOCAL_ADMIN_PLAN_TYPES
  *  on the server (lib/scoped-access.ts). */
 export const LOCAL_ADMIN_PLAN_NAMES = [
-  "Signal AEO Plan",
+  "AEO SEO Local Plan",
   "Signal AEO SEO Local",
 ];
 
