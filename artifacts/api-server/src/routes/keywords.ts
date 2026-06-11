@@ -19,6 +19,8 @@ import {
   requireExecutorOrSalesAllowed,
   requireViewer,
   requireEditor,
+  requireScopedEditor,
+  requireScopedAdmin,
   requireAdmin,
 } from "../middlewares/role-auth";
 import {
@@ -208,7 +210,7 @@ router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
    POST /api/keywords
    Create a new keyword for a business
 ──────────────────────────────────────────────────────────── */
-router.post("/", requireEditor, async (req, res) => {
+router.post("/", requireScopedEditor, async (req, res) => {
   try {
     const body = req.body;
     if (!body.keywordText?.trim()) {
@@ -229,6 +231,9 @@ router.post("/", requireEditor, async (req, res) => {
       return res
         .status(400)
         .json({ error: "aeoPlanId does not reference an existing campaign" });
+
+    // Scoped role: the campaign's client must be inside the user's plan slice.
+    if (!(await assertScopedAccessToClient(req, res, plan.clientId))) return;
 
     if (body.clientId != null && Number(body.clientId) !== plan.clientId) {
       return res
@@ -300,9 +305,15 @@ router.get("/:id/links", requireSalesAllowed, async (req, res) => {
    POST /api/keywords/:id/links
    Add a new associated link to a keyword
 ──────────────────────────────────────────────────────────── */
-router.post("/:id/links", requireEditor, async (req, res) => {
+router.post("/:id/links", requireScopedEditor, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
+    const [lkOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!lkOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, lkOwner.clientId))) return;
     const body = req.body;
     const [link] = await db
       .insert(keywordLinksTable)
@@ -332,9 +343,15 @@ router.post("/:id/links", requireEditor, async (req, res) => {
    PATCH /api/keywords/:id/links/:linkId
    Update an associated link
 ──────────────────────────────────────────────────────────── */
-router.patch("/:id/links/:linkId", requireEditor, async (req, res) => {
+router.patch("/:id/links/:linkId", requireScopedEditor, async (req, res) => {
   try {
     const linkId = parseInt(req.params.linkId);
+    const [lkOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, parseInt(req.params.id)));
+    if (!lkOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, lkOwner.clientId))) return;
     const body = req.body as Record<string, unknown>;
     const allowed: Record<string, unknown> = {};
     if (body.linkUrl !== undefined) allowed.linkUrl = body.linkUrl ?? null;
@@ -368,10 +385,16 @@ router.patch("/:id/links/:linkId", requireEditor, async (req, res) => {
    DELETE /api/keywords/:id/links/:linkId
    Remove an associated link from a keyword
 ──────────────────────────────────────────────────────────── */
-router.delete("/:id/links/:linkId", requireEditor, async (req, res) => {
+router.delete("/:id/links/:linkId", requireScopedEditor, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
     const linkId = parseInt(req.params.linkId);
+    const [lkOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!lkOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, lkOwner.clientId))) return;
     await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, linkId));
     // If no links remain, revert keyword to type 3 (Keywords)
     const remaining = await db
@@ -395,9 +418,16 @@ router.delete("/:id/links/:linkId", requireEditor, async (req, res) => {
    PATCH /api/keywords/:id
    Update keyword fields
 ──────────────────────────────────────────────────────────── */
-router.patch("/:id", requireEditor, async (req, res) => {
+router.patch("/:id", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    // Scoped role: the keyword's client must be inside the user's plan slice.
+    const [kwOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, id));
+    if (!kwOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, kwOwner.clientId))) return;
     const body = req.body as Record<string, unknown>;
 
     const allowed: Record<string, unknown> = {};
@@ -524,10 +554,16 @@ router.patch("/:id", requireEditor, async (req, res) => {
    Mirrors the clients soft-delete behavior so archived keywords
    show up on /keyword-rotation/archived and can be restored.
 ──────────────────────────────────────────────────────────── */
-router.delete("/:id", requireAdmin, async (req, res) => {
+router.delete("/:id", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [kwOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, id));
+    if (!kwOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, kwOwner.clientId))) return;
 
     await db
       .update(keywordsTable)
@@ -551,10 +587,16 @@ router.delete("/:id", requireAdmin, async (req, res) => {
    Soft-archive a keyword (sets isActive=false + records reason)
    Body: { reason?: string }
 ──────────────────────────────────────────────────────────── */
-router.post("/:id/archive", requireAdmin, async (req, res) => {
+router.post("/:id/archive", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const [kwOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, id));
+    if (!kwOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, kwOwner.clientId))) return;
     const reason =
       (req.body as { reason?: string })?.reason ??
       "Manually archived via rotation dashboard";

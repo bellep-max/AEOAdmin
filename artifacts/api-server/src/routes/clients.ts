@@ -22,12 +22,20 @@ import {
 import {
   isSales,
   isAccountManager,
+  isChucksLocal,
   requireAdmin,
   requireEditor,
+  requireScopedAdmin,
+  requireScopedEditor,
   requireSalesAllowed,
   requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
-import { getScopedClientIds } from "../lib/scoped-access";
+import {
+  getScopedClientIds,
+  assertScopedAccessToClient,
+  isPlanAllowedForScope,
+  LOCAL_ADMIN_PLAN_TYPES,
+} from "../lib/scoped-access";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -182,13 +190,24 @@ router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   }
 });
 
-router.post("/", requireAdmin, async (req, res) => {
+router.post("/", requireScopedAdmin, async (req, res) => {
   try {
     const body = req.body;
 
     const trimmedName = String(body.businessName ?? "").trim();
     if (!trimmedName) {
       return res.status(400).json({ error: "businessName is required" });
+    }
+
+    // Scoped role (chuckslocal): a created client must carry one of its allowed
+    // plans (set as plan_name here) so it lands inside the user's slice and
+    // stays visible. Reject any other plan choice.
+    if (isChucksLocal(req) && !isPlanAllowedForScope(req, body.plan)) {
+      return res.status(403).json({
+        error: `You can only create clients on these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
     }
 
     const [existing] = await db
@@ -268,10 +287,24 @@ router.get(
   },
 );
 
-router.patch("/:id", requireEditor, async (req, res) => {
+router.patch("/:id", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    // Scoped role: may only edit clients inside its plan slice.
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
     const body = req.body;
+    // ...and may not move a client onto a plan outside its scope.
+    if (
+      isChucksLocal(req) &&
+      body.plan != null &&
+      !isPlanAllowedForScope(req, body.plan)
+    ) {
+      return res.status(403).json({
+        error: `You can only assign these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
+    }
     const keywords = body.keywords ?? []; // Optional: array of keywords to add
 
     // Remove keywords from body so it doesn't try to update the client with it
@@ -376,10 +409,11 @@ router.patch("/:id", requireEditor, async (req, res) => {
    its keywords + keyword_links so audits stop running. status is left
    alone — that's the Switch's column (pause vs running). Re-archiving an
    already-archived client is a no-op (COALESCE keeps the original stamp). */
-router.delete("/:id", requireAdmin, async (req, res) => {
+router.delete("/:id", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
 
     const reason =
       (req.body as { reason?: string } | undefined)?.reason ??
@@ -427,10 +461,11 @@ router.delete("/:id", requireAdmin, async (req, res) => {
 /* Restore the inverse of DELETE: clear archived_at + archive_reason and
    flip status back to 'active' so the client is running again. locked_at
    is left alone — graduation history shouldn't reset on restore. */
-router.post("/:id/restore", requireAdmin, async (req, res) => {
+router.post("/:id/restore", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
 
     const [client] = await db
       .update(clientsTable)

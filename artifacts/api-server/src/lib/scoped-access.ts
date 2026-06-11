@@ -13,12 +13,42 @@
  * here.
  */
 import type { Request, Response } from "express";
-import { eq, ne } from "drizzle-orm";
+import { eq, ne, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable } from "@workspace/db/schema";
-import { isSales, isAccountManager } from "../middlewares/role-auth";
+import { clientAeoPlansTable, clientsTable } from "@workspace/db/schema";
+import {
+  isSales,
+  isAccountManager,
+  isChucksLocal,
+} from "../middlewares/role-auth";
 
 const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
+
+/**
+ * The only plans the `chuckslocal` role may see or assign. Both visibility
+ * (getScopedClientIds) and plan-assignment validation (isPlanAllowedForScope)
+ * key off this list, so widening chuckslocal's scope is a one-line change here.
+ */
+export const LOCAL_ADMIN_PLAN_TYPES = [
+  "Signal AEO Plan",
+  "Signal AEO SEO Local",
+] as const;
+
+/**
+ * For a scoped writer, returns whether `planType` is one they're allowed to
+ * assign. chuckslocal may only attach the two Signal local plans; unscoped
+ * roles may assign anything (returns true).
+ */
+export function isPlanAllowedForScope(
+  req: Request,
+  planType: string | null | undefined,
+): boolean {
+  if (!isChucksLocal(req)) return true;
+  return (
+    planType != null &&
+    (LOCAL_ADMIN_PLAN_TYPES as readonly string[]).includes(planType)
+  );
+}
 
 /**
  * Returns the list of client IDs the current session can see. Returns null
@@ -43,6 +73,27 @@ export async function getScopedClientIds(
       .where(ne(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE));
     return [...new Set(rows.map((r) => r.clientId))];
   }
+  if (isChucksLocal(req)) {
+    // In scope = a formal client_aeo_plans row of one of the two Signal plans,
+    // OR the client's text plan_name is one of them (covers a client chuckslocal
+    // just created with that plan before a formal plan row is attached).
+    const planRows = await db
+      .select({ clientId: clientAeoPlansTable.clientId })
+      .from(clientAeoPlansTable)
+      .where(
+        inArray(clientAeoPlansTable.planType, [...LOCAL_ADMIN_PLAN_TYPES]),
+      );
+    const nameRows = await db
+      .select({ id: clientsTable.id })
+      .from(clientsTable)
+      .where(inArray(clientsTable.planName, [...LOCAL_ADMIN_PLAN_TYPES]));
+    return [
+      ...new Set([
+        ...planRows.map((r) => r.clientId),
+        ...nameRows.map((r) => r.id),
+      ]),
+    ];
+  }
   return null;
 }
 
@@ -58,7 +109,8 @@ export async function assertScopedAccessToClient(
   res: Response,
   clientId: number | null,
 ): Promise<boolean> {
-  if (!isSales(req) && !isAccountManager(req)) return true;
+  if (!isSales(req) && !isAccountManager(req) && !isChucksLocal(req))
+    return true;
   if (clientId == null) {
     res.status(404).json({ error: "Not found" });
     return false;

@@ -9,6 +9,8 @@ import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
   requireAdmin,
   requireEditor,
+  requireScopedAdmin,
+  requireScopedEditor,
   requireSalesAllowed,
   requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
@@ -86,12 +88,15 @@ router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
   }
 });
 
-router.post("/", requireAdmin, async (req, res) => {
+router.post("/", requireScopedAdmin, async (req, res) => {
   try {
     const body = req.body;
     if (!body.clientId || !body.name) {
       return res.status(400).json({ error: "clientId and name are required" });
     }
+    // Scoped role: the parent client must be inside the user's plan slice.
+    if (!(await assertScopedAccessToClient(req, res, Number(body.clientId))))
+      return;
     const trimmedName = String(body.name).trim();
     if (!trimmedName) {
       return res.status(400).json({ error: "name cannot be empty" });
@@ -143,9 +148,16 @@ router.post("/", requireAdmin, async (req, res) => {
   }
 });
 
-router.patch("/:id", requireEditor, async (req, res) => {
+router.patch("/:id", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    // Scoped role: the business's client must be inside the user's plan slice.
+    const [owner] = await db
+      .select({ clientId: businessesTable.clientId })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, id));
+    if (!owner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, owner.clientId))) return;
     const { searchAddress: _ignored, ...rest } = req.body ?? {};
     const body = { ...rest, updatedAt: new Date() };
 
@@ -193,9 +205,15 @@ router.patch("/:id", requireEditor, async (req, res) => {
   }
 });
 
-router.delete("/:id", requireAdmin, async (req, res) => {
+router.delete("/:id", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const [owner] = await db
+      .select({ clientId: businessesTable.clientId })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, id));
+    if (!owner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, owner.clientId))) return;
     await db.delete(businessesTable).where(eq(businessesTable.id, id));
     res.status(204).send();
   } catch (err) {

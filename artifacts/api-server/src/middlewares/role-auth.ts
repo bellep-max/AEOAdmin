@@ -40,6 +40,17 @@ export function isAccountManager(req: Request): boolean {
 }
 
 /**
+ * True if the request session holds a `chuckslocal` user — a plan-scoped admin.
+ * Admin-like (can create/edit clients, businesses, campaigns, keywords) but only
+ * within the two "Signal" local plans (see lib/scoped-access.ts). Parallel to
+ * sales/account-manager: it's a scoped role, not a tier in the admin chain.
+ */
+export function isChucksLocal(req: Request): boolean {
+  const session = req.session as unknown as Record<string, unknown>;
+  return session.userRole === "chuckslocal";
+}
+
+/**
  * Generic role gate. Accepts any of the listed roles. Use this when an
  * endpoint should be reachable by multiple roles (e.g. AEO Reporter is for
  * owner AND sales).
@@ -92,7 +103,25 @@ export const requireAdmin = requireRoles("admin", "owner");
 export const requireSalesAllowed = requireRoles(
   "sales",
   "account-manager",
+  "chuckslocal",
   "viewer",
+  "editor",
+  "admin",
+  "owner",
+);
+
+/**
+ * Write gates that ALSO admit the plan-scoped `chuckslocal` role alongside the
+ * admin chain. Use these (instead of requireAdmin / requireEditor) ONLY on the
+ * client/business/keyword/plan write endpoints chuckslocal needs — and ALWAYS
+ * pair them with assertScopedAccessToClient() in the handler so a scoped user
+ * can only write within its plan slice. chuckslocal is deliberately kept out of
+ * the bare requireAdmin/requireEditor gates so it can't reach other admin
+ * surfaces (config, imports, etc.).
+ */
+export const requireScopedAdmin = requireRoles("chuckslocal", "admin", "owner");
+export const requireScopedEditor = requireRoles(
+  "chuckslocal",
   "editor",
   "admin",
   "owner",
@@ -158,9 +187,15 @@ export function requireExecutorOrSalesAllowed(
   if (
     session.userId &&
     role &&
-    ["sales", "account-manager", "viewer", "editor", "admin", "owner"].includes(
-      role,
-    )
+    [
+      "sales",
+      "account-manager",
+      "chuckslocal",
+      "viewer",
+      "editor",
+      "admin",
+      "owner",
+    ].includes(role)
   ) {
     return next();
   }

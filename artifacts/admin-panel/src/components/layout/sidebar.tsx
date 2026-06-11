@@ -232,13 +232,24 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout, isOwner, isSales, isAccountManager, isAdmin } =
-    useAuth();
+  const {
+    user,
+    logout,
+    isOwner,
+    isSales,
+    isAccountManager,
+    isChucksLocal,
+    isAdmin,
+  } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   // Visibility rule, evaluated in order:
   //   sales role           → only items flagged salesAllowed
   //   account-manager role → only items flagged accountManagerAllowed
+  //   chuckslocal role     → same client-management surface as account-manager
+  //                          (Dashboard/Clients/Keywords/Rankings); he creates
+  //                          within his plan slice, so no admin-only catalog/ops
+  //                          pages and no owner-only beta surfaces.
   //   ownerOnly            → owner only
   //   adminOnly            → admin or owner only
   //   default              → all signed-in admin-panel users (viewer/editor/admin/owner)
@@ -250,6 +261,7 @@ export function AppSidebar() {
   }) => {
     if (isSales) return !!item.salesAllowed;
     if (isAccountManager) return !!item.accountManagerAllowed;
+    if (isChucksLocal) return !!item.accountManagerAllowed;
     if (item.ownerOnly && !isOwner) return false;
     if (item.adminOnly && !isAdmin) return false;
     return true;

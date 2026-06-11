@@ -22,6 +22,9 @@ interface AuthContextType {
   isSales: boolean;
   /** True for role === "account-manager" — narrowed to non-free-trial views. */
   isAccountManager: boolean;
+  /** True for role === "chuckslocal" — plan-scoped admin (Signal local plans).
+   *  Admin-like writes, but the BE confines them to his plan slice. */
+  isChucksLocal: boolean;
   /** True when the user can perform destructive / create-top-level actions.
    *  Subsumes owner. Use to gate Add/Delete buttons that should not appear
    *  for editor or viewer roles. */
@@ -110,9 +113,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isOwner = user?.role === "owner";
   const isSales = user?.role === "sales";
   const isAccountManager = user?.role === "account-manager";
+  const isChucksLocal = user?.role === "chuckslocal";
   // Subsumptive: admin includes owner; editor includes admin + owner. Matches
-  // the BE hierarchy in middlewares/role-auth.ts.
-  const isAdmin = user?.role === "admin" || isOwner;
+  // the BE hierarchy in middlewares/role-auth.ts. chuckslocal is admin-like for
+  // the UI (it needs the create/edit buttons); the BE enforces its plan scope.
+  const isAdmin = user?.role === "admin" || isOwner || isChucksLocal;
   const isEditor = user?.role === "editor" || isAdmin;
 
   return (
@@ -123,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isOwner,
         isSales,
         isAccountManager,
+        isChucksLocal,
         isAdmin,
         isEditor,
         login,

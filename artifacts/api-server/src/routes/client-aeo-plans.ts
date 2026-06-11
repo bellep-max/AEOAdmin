@@ -6,8 +6,15 @@ import {
   requireSalesAllowed,
   requireEditor,
   requireAdmin,
+  requireScopedAdmin,
+  requireScopedEditor,
+  isChucksLocal,
 } from "../middlewares/role-auth";
-import { assertScopedAccessToClient } from "../lib/scoped-access";
+import {
+  assertScopedAccessToClient,
+  isPlanAllowedForScope,
+  LOCAL_ADMIN_PLAN_TYPES,
+} from "../lib/scoped-access";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -109,15 +116,27 @@ router.get("/:planId", requireSalesAllowed, async (req, res) => {
  * POST /api/clients/:clientId/aeo-plans
  * Create a new AEO plan for a client.
  */
-router.post("/", requireAdmin, async (req, res) => {
+router.post("/", requireScopedAdmin, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     if (isNaN(clientId))
       return res.status(400).json({ error: "Invalid clientId" });
+    // Scoped role: client must be in slice, and the plan must be an allowed one.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
     const body = req.body as Record<string, unknown>;
     if (!body.planType)
       return res.status(400).json({ error: "planType is required" });
+    if (
+      isChucksLocal(req) &&
+      !isPlanAllowedForScope(req, body.planType as string)
+    ) {
+      return res.status(403).json({
+        error: `You can only assign these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
+    }
 
     // Reject duplicate campaign under the same client + business + (case-insensitive) name
     const rawName = typeof body.name === "string" ? body.name.trim() : null;
@@ -198,14 +217,27 @@ router.post("/", requireAdmin, async (req, res) => {
  * PATCH /api/clients/:clientId/aeo-plans/:planId
  * Update a specific AEO plan.
  */
-router.patch("/:planId", requireEditor, async (req, res) => {
+router.patch("/:planId", requireScopedEditor, async (req, res) => {
   try {
     const clientId = parseInt(req.params.clientId);
     const planId = parseInt(req.params.planId);
     if (isNaN(clientId) || isNaN(planId))
       return res.status(400).json({ error: "Invalid id" });
+    // Scoped role: client must be in slice; plan changes restricted to allowed.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
     const body = req.body as Record<string, unknown>;
+    if (
+      isChucksLocal(req) &&
+      "planType" in body &&
+      !isPlanAllowedForScope(req, body.planType as string)
+    ) {
+      return res.status(403).json({
+        error: `You can only assign these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
+    }
     const update: Record<string, unknown> = { updatedAt: new Date() };
 
     if ("businessId" in body)
@@ -305,10 +337,12 @@ router.patch("/:planId", requireEditor, async (req, res) => {
  * DELETE /api/clients/:clientId/aeo-plans/:planId
  * Delete a specific AEO plan.
  */
-router.delete("/:planId", requireAdmin, async (req, res) => {
+router.delete("/:planId", requireScopedAdmin, async (req, res) => {
   try {
     const planId = parseInt(req.params.planId);
     if (isNaN(planId)) return res.status(400).json({ error: "Invalid planId" });
+    const clientId = parseInt(req.params.clientId);
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
     await db
       .delete(clientAeoPlansTable)
