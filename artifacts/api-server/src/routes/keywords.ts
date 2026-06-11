@@ -34,8 +34,14 @@ const router = Router();
 ──────────────────────────────────────────────────────────── */
 router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
-    const { clientId, businessId, aeoPlanId, includeArchived } =
-      req.query as Record<string, string>;
+    const {
+      clientId,
+      businessId,
+      aeoPlanId,
+      includeArchived,
+      status,
+      includeLocked,
+    } = req.query as Record<string, string>;
     const conditions: ReturnType<typeof eq>[] = [];
 
     // Scoped roles (sales / account-manager) see only their slice of clients.
@@ -55,6 +61,16 @@ router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
     // By default exclude archived; pass includeArchived=true to see them
     if (includeArchived !== "true")
       conditions.push(isNull(keywordsTable.archivedAt));
+    // Locked = won-but-rankable (status='locked', not archived). Hidden by
+    // default to match prior behavior (locked keywords used to be archived).
+    // Pass status=locked to fetch only the won set, or includeLocked=true to see
+    // active + locked together.
+    if (status === "locked")
+      conditions.push(eq(keywordsTable.status, "locked"));
+    else if (includeLocked !== "true")
+      conditions.push(
+        sql`coalesce(${keywordsTable.status}, 'new') <> 'locked'`,
+      );
     const keywords = await db
       .select({
         id: keywordsTable.id,

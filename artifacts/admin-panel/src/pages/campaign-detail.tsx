@@ -162,6 +162,21 @@ export default function CampaignDetail() {
     enabled: !!campaignId,
   });
 
+  // Locked/won keywords — shown in their own card. They stay rankable (we keep
+  // running them to confirm they hold top-3), so they're excluded from the main
+  // active list above and surfaced separately here.
+  const { data: lockedKeywords } = useQuery<Keyword[]>({
+    queryKey: ["/api/keywords", { aeoPlanId: campaignId, status: "locked" }],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/keywords?aeoPlanId=${campaignId}&status=locked`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!campaignId,
+  });
+
   async function handleSaveKeyword(data: KwRecord) {
     setSavingKw(true);
     try {
@@ -492,6 +507,20 @@ export default function CampaignDetail() {
           refetchKeywords();
         }}
       />
+
+      {(lockedKeywords?.length ?? 0) > 0 && (
+        <KeywordsWithRankingsCard
+          title="Locked / Won Keywords"
+          clientId={clientId}
+          businessId={businessId}
+          aeoPlanId={campaignId}
+          extraKeywords={(lockedKeywords ?? []).map((k) => ({
+            id: k.id,
+            keywordText: k.keywordText,
+          }))}
+          restrictToKeywordIds={(lockedKeywords ?? []).map((k) => k.id)}
+        />
+      )}
 
       <KeywordDialog
         open={kwDialogOpen}

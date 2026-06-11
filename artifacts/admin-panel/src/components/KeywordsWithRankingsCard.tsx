@@ -4,9 +4,31 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Key, ChevronDown, ChevronRight, Pencil, Trash2, Lock, RefreshCw, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Key,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  Lock,
+  RefreshCw,
+  Loader2,
+} from "lucide-react";
 import { format } from "date-fns";
 import {
   usePeriodComparison,
@@ -24,13 +46,26 @@ import { StatusBadge, ChangeCell } from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
-/** A keyword "wins" (locks) when its current rank is Top-3 on ANY one platform. */
-function lockTrigger(platforms: PeriodRow[]): { platform: string; position: number } | null {
+/** A keyword "wins" (locks) when BOTH its previous and current bi-weekly runs are
+ *  Top-3 on the SAME platform — a sustained win across two consecutive cycles.
+ *  Mirrors the server rule in services/keyword-rotation.ts (SUSTAINED_RUNS = 2);
+ *  a single Top-3 run no longer shows a "Locks" badge. */
+function lockTrigger(
+  platforms: PeriodRow[],
+): { platform: string; position: number } | null {
   let best: { platform: string; position: number } | null = null;
   for (const p of platforms) {
-    const pos = p.currentPosition;
-    if (pos != null && pos >= 1 && pos <= TOP_RANK_THRESHOLD && (best == null || pos < best.position)) {
-      best = { platform: p.platform, position: pos };
+    const cur = p.currentPosition;
+    const prev = p.previousPosition;
+    const sustained =
+      cur != null &&
+      cur >= 1 &&
+      cur <= TOP_RANK_THRESHOLD &&
+      prev != null &&
+      prev >= 1 &&
+      prev <= TOP_RANK_THRESHOLD;
+    if (sustained && (best == null || cur < best.position)) {
+      best = { platform: p.platform, position: cur };
     }
   }
   return best;
@@ -81,6 +116,10 @@ interface Props {
   showRotation?: boolean;
   /** Called after a real rotation runs, so the parent can refetch its keyword list. */
   onRotated?: () => void;
+  /** When provided, restrict the displayed keywords to exactly these ids — used
+   *  to render a single bucket (e.g. only the locked/won keywords) while still
+   *  pulling ranking history from the same period-comparison query. */
+  restrictToKeywordIds?: number[];
 }
 
 function PlatformChip({
@@ -92,8 +131,17 @@ function PlatformChip({
    *  button that opens the screenshot dialog. */
   onClick?: (target: ScreenshotTarget) => void;
 }) {
-  const cls = PLATFORM_COLORS[row.platform] ?? "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
-  const arrow = row.change == null ? "" : row.change > 0 ? " ↑" : row.change < 0 ? " ↓" : " =";
+  const cls =
+    PLATFORM_COLORS[row.platform] ??
+    "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
+  const arrow =
+    row.change == null
+      ? ""
+      : row.change > 0
+        ? " ↑"
+        : row.change < 0
+          ? " ↓"
+          : " =";
   const clickable = onClick != null && row.currentReportId != null;
   const interactive = clickable
     ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-shadow"
@@ -137,7 +185,10 @@ function PlatformChip({
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
     >
       <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">{fmtPos(row.currentPosition)}{arrow}</span>
+      <span className="font-bold">
+        {fmtPos(row.currentPosition)}
+        {arrow}
+      </span>
     </span>
   );
 }
@@ -153,6 +204,7 @@ export function KeywordsWithRankingsCard({
   extraKeywords,
   showRotation = false,
   onRotated,
+  restrictToKeywordIds,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -162,15 +214,24 @@ export function KeywordsWithRankingsCard({
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
+  const { data, isLoading } = usePeriodComparison({
+    period,
+    clientId,
+    businessId,
+    aeoPlanId,
+  });
   const label = periodLabel(period);
 
   // ── Auto-rotation (lock-on-win) ───────────────────────────────────────────
   const [rotateOpen, setRotateOpen] = useState(false);
-  const [rotateBusy, setRotateBusy] = useState<false | "preview" | "run">(false);
+  const [rotateBusy, setRotateBusy] = useState<false | "preview" | "run">(
+    false,
+  );
   const [preview, setPreview] = useState<RotationLock[] | null>(null);
 
-  async function postRotate(dryRun: boolean): Promise<{ scanned: number; locked: RotationLock[] }> {
+  async function postRotate(
+    dryRun: boolean,
+  ): Promise<{ scanned: number; locked: RotationLock[] }> {
     const res = await rawFetch("/api/keywords/rotate-winners", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -187,7 +248,11 @@ export function KeywordsWithRankingsCard({
       setPreview(d.locked ?? []);
       setRotateOpen(true);
     } catch (e) {
-      toast({ title: "Couldn't preview rotation", description: String(e), variant: "destructive" });
+      toast({
+        title: "Couldn't preview rotation",
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
       setRotateBusy(false);
     }
@@ -199,43 +264,73 @@ export function KeywordsWithRankingsCard({
       const d = await postRotate(false);
       const n = d.locked?.length ?? 0;
       toast({
-        title: n ? `Locked & rotated ${n} keyword${n === 1 ? "" : "s"}` : "Nothing to rotate",
-        description: n ? d.locked.map((l) => l.keywordText).slice(0, 3).join(", ") + (n > 3 ? "…" : "") : undefined,
+        title: n
+          ? `Locked & rotated ${n} keyword${n === 1 ? "" : "s"}`
+          : "Nothing to rotate",
+        description: n
+          ? d.locked
+              .map((l) => l.keywordText)
+              .slice(0, 3)
+              .join(", ") + (n > 3 ? "…" : "")
+          : undefined,
       });
       setRotateOpen(false);
       setPreview(null);
-      qc.invalidateQueries({ queryKey: ["/api/ranking-reports/period-comparison"] });
+      qc.invalidateQueries({
+        queryKey: ["/api/ranking-reports/period-comparison"],
+      });
       onRotated?.();
     } catch (e) {
-      toast({ title: "Rotation failed", description: String(e), variant: "destructive" });
+      toast({
+        title: "Rotation failed",
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
       setRotateBusy(false);
     }
   }
 
   const grouped = useMemo(() => {
-    const byKeyword = new Map<number, { keywordId: number; keywordText: string; platforms: PeriodRow[] }>();
+    const byKeyword = new Map<
+      number,
+      { keywordId: number; keywordText: string; platforms: PeriodRow[] }
+    >();
     for (const r of data?.rows ?? []) {
       const existing = byKeyword.get(r.keywordId);
       if (existing) existing.platforms.push(r);
-      else byKeyword.set(r.keywordId, { keywordId: r.keywordId, keywordText: r.keywordText, platforms: [r] });
+      else
+        byKeyword.set(r.keywordId, {
+          keywordId: r.keywordId,
+          keywordText: r.keywordText,
+          platforms: [r],
+        });
     }
     // Merge in keywords that have no ranking data yet, so the card is the canonical "keywords for this scope" list.
     for (const k of extraKeywords ?? []) {
       if (!byKeyword.has(k.id)) {
-        byKeyword.set(k.id, { keywordId: k.id, keywordText: k.keywordText, platforms: [] });
+        byKeyword.set(k.id, {
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          platforms: [],
+        });
       }
     }
     const list = [...byKeyword.values()];
-    // Conveyor belt for rotation mode: drop locked/archived keywords. They're
-    // absent from extraKeywords (the active set for this scope) even though
-    // their rank history still comes back in `data.rows`.
-    const filtered =
-      showRotation && extraKeywords
-        ? list.filter((g) =>
-            new Set(extraKeywords.map((k) => k.id)).has(g.keywordId),
-          )
-        : list;
+    // Restrict the displayed set:
+    //  • restrictToKeywordIds — explicit bucket (e.g. only the locked/won set),
+    //  • else rotation mode — drop locked/archived keywords (they're absent from
+    //    extraKeywords, the active set, even though their rank history still
+    //    comes back in `data.rows`).
+    const restrictSet =
+      restrictToKeywordIds != null
+        ? new Set(restrictToKeywordIds)
+        : showRotation && extraKeywords
+          ? new Set(extraKeywords.map((k) => k.id))
+          : null;
+    const filtered = restrictSet
+      ? list.filter((g) => restrictSet.has(g.keywordId))
+      : list;
     // Sort by best (lowest) current rank across all platforms, ascending.
     // Unranked / "New" keywords land at the bottom; among unranked, keep
     // alphabetical order so the bottom is stable across renders.
@@ -245,7 +340,7 @@ export function KeywordsWithRankingsCard({
       if (ra !== rb) return ra - rb;
       return a.keywordText.localeCompare(b.keywordText);
     });
-  }, [data, extraKeywords, showRotation]);
+  }, [data, extraKeywords, showRotation, restrictToKeywordIds]);
 
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
 
@@ -265,10 +360,15 @@ export function KeywordsWithRankingsCard({
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Key className="w-4 h-4 text-primary" />
             {title}
-            <span className="text-muted-foreground font-normal">({grouped.length})</span>
+            <span className="text-muted-foreground font-normal">
+              ({grouped.length})
+            </span>
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
-            <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+            <Select
+              value={period}
+              onValueChange={(v) => setPeriod(v as Period)}
+            >
               <SelectTrigger className="w-36 h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -288,7 +388,11 @@ export function KeywordsWithRankingsCard({
                 disabled={rotateBusy !== false}
                 title="Lock keywords that are Top-3 on any platform and rotate in AI replacements"
               >
-                {rotateBusy === "preview" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {rotateBusy === "preview" ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                )}
                 Run rotation
               </Button>
             )}
@@ -297,33 +401,59 @@ export function KeywordsWithRankingsCard({
         </div>
         {!isLoading && (data?.rows.length ?? 0) > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap pt-2">
-            {counts.improved > 0 && <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">↑ {counts.improved}</Badge>}
-            {counts.declined > 0 && <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">↓ {counts.declined}</Badge>}
-            {counts.steady > 0 && <Badge variant="outline" className="text-[10px]">= {counts.steady}</Badge>}
-            {counts.newCount > 0 && <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">+ {counts.newCount} new</Badge>}
+            {counts.improved > 0 && (
+              <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
+                ↑ {counts.improved}
+              </Badge>
+            )}
+            {counts.declined > 0 && (
+              <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">
+                ↓ {counts.declined}
+              </Badge>
+            )}
+            {counts.steady > 0 && (
+              <Badge variant="outline" className="text-[10px]">
+                = {counts.steady}
+              </Badge>
+            )}
+            {counts.newCount > 0 && (
+              <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">
+                + {counts.newCount} new
+              </Badge>
+            )}
           </div>
         )}
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            Loading…
+          </p>
         ) : grouped.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
-            No keywords yet. {addButton ? "Click Add Keyword to create one." : ""}
+            No keywords yet.{" "}
+            {addButton ? "Click Add Keyword to create one." : ""}
           </p>
         ) : (
           <div className="space-y-2">
             {grouped.map(({ keywordId, keywordText, platforms }) => {
               const isOpen = !collapsed.has(keywordId);
               const sorted = [...platforms].sort((a, b) => {
-                const ai = PLATFORM_ORDER.indexOf(a.platform as typeof PLATFORM_ORDER[number]);
-                const bi = PLATFORM_ORDER.indexOf(b.platform as typeof PLATFORM_ORDER[number]);
+                const ai = PLATFORM_ORDER.indexOf(
+                  a.platform as (typeof PLATFORM_ORDER)[number],
+                );
+                const bi = PLATFORM_ORDER.indexOf(
+                  b.platform as (typeof PLATFORM_ORDER)[number],
+                );
                 return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
               });
               const hasData = platforms.length > 0;
               const lock = showRotation ? lockTrigger(platforms) : null;
               return (
-                <div key={keywordId} className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
+                <div
+                  key={keywordId}
+                  className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden"
+                >
                   <div className="flex items-center gap-3 px-3 py-2.5">
                     <button
                       type="button"
@@ -333,7 +463,11 @@ export function KeywordsWithRankingsCard({
                       aria-label={isOpen ? "Collapse" : "Expand"}
                     >
                       {hasData ? (
-                        isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />
+                        isOpen ? (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        )
                       ) : (
                         <Key className="w-3.5 h-3.5" />
                       )}
@@ -350,11 +484,17 @@ export function KeywordsWithRankingsCard({
                           className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 shrink-0"
                           title={`Top-3 on ${lock.platform} (#${lock.position}) — will lock & rotate`}
                         >
-                          <Lock className="w-2.5 h-2.5" /> Locks · {lock.platform} #{lock.position}
+                          <Lock className="w-2.5 h-2.5" /> Locks ·{" "}
+                          {lock.platform} #{lock.position}
                         </Badge>
                       )}
                       {!hasData && (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">No data yet</Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-muted-foreground"
+                        >
+                          No data yet
+                        </Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap shrink-0">
@@ -371,7 +511,10 @@ export function KeywordsWithRankingsCard({
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
-                        onClick={(e) => { e.stopPropagation(); onEditKeyword(keywordId); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditKeyword(keywordId);
+                        }}
                         title="Edit"
                       >
                         <Pencil className="w-4 h-4" />
@@ -382,7 +525,10 @@ export function KeywordsWithRankingsCard({
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={(e) => { e.stopPropagation(); onDeleteKeyword(keywordId); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteKeyword(keywordId);
+                        }}
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -401,11 +547,20 @@ export function KeywordsWithRankingsCard({
                         <div className="col-span-2">Status</div>
                       </div>
                       {sorted.map((p) => (
-                        <div key={`${p.keywordId}-${p.platform}-detail`} className="px-1 py-1">
+                        <div
+                          key={`${p.keywordId}-${p.platform}-detail`}
+                          className="px-1 py-1"
+                        >
                           <div className="grid grid-cols-12 gap-2 items-center text-sm">
-                            <div className="col-span-2 capitalize font-semibold">{p.platform}</div>
-                            <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
-                            <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
+                            <div className="col-span-2 capitalize font-semibold">
+                              {p.platform}
+                            </div>
+                            <div className="col-span-2 text-muted-foreground">
+                              {fmtPos(p.firstPosition)}
+                            </div>
+                            <div className="col-span-2 text-muted-foreground">
+                              {fmtPos(p.previousPosition)}
+                            </div>
                             <div className="col-span-2 font-semibold">
                               {p.currentReportId != null ? (
                                 <button
@@ -428,14 +583,30 @@ export function KeywordsWithRankingsCard({
                                 <span>{fmtPos(p.currentPosition)}</span>
                               )}
                             </div>
-                            <div className="col-span-2"><ChangeCell change={p.change} /></div>
-                            <div className="col-span-2"><StatusBadge status={p.status} /></div>
+                            <div className="col-span-2">
+                              <ChangeCell change={p.change} />
+                            </div>
+                            <div className="col-span-2">
+                              <StatusBadge status={p.status} />
+                            </div>
                           </div>
                           <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
                             <div className="col-span-2" />
-                            <div className="col-span-2">{p.firstDate ? format(new Date(p.firstDate), "MMM d") : ""}</div>
-                            <div className="col-span-2">{p.previousDate ? format(new Date(p.previousDate), "MMM d") : ""}</div>
-                            <div className="col-span-2">{p.currentDate ? format(new Date(p.currentDate), "MMM d") : ""}</div>
+                            <div className="col-span-2">
+                              {p.firstDate
+                                ? format(new Date(p.firstDate), "MMM d")
+                                : ""}
+                            </div>
+                            <div className="col-span-2">
+                              {p.previousDate
+                                ? format(new Date(p.previousDate), "MMM d")
+                                : ""}
+                            </div>
+                            <div className="col-span-2">
+                              {p.currentDate
+                                ? format(new Date(p.currentDate), "MMM d")
+                                : ""}
+                            </div>
                             <div className="col-span-4" />
                           </div>
                         </div>
@@ -449,10 +620,21 @@ export function KeywordsWithRankingsCard({
         )}
       </CardContent>
 
-      <Dialog open={rotateOpen} onOpenChange={(o) => { if (!o) { setRotateOpen(false); setPreview(null); } }}>
+      <Dialog
+        open={rotateOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRotateOpen(false);
+            setPreview(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Lock className="w-4 h-4 text-emerald-600" /> Run rotation — this campaign</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-emerald-600" /> Run rotation — this
+              campaign
+            </DialogTitle>
             <DialogDescription>
               {preview && preview.length > 0
                 ? `${preview.length} keyword${preview.length === 1 ? "" : "s"} are Top-3 on a platform and will be locked (archived) and replaced with an AI-generated keyword.`
@@ -462,7 +644,10 @@ export function KeywordsWithRankingsCard({
           {preview && preview.length > 0 && (
             <div className="max-h-72 overflow-y-auto space-y-1.5 py-1">
               {preview.map((l) => (
-                <div key={l.keywordId} className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/20 px-2.5 py-1.5 text-sm">
+                <div
+                  key={l.keywordId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/20 px-2.5 py-1.5 text-sm"
+                >
                   <span className="font-medium truncate">{l.keywordText}</span>
                   <Badge className="shrink-0 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
                     {l.triggerPlatform} #{l.triggerPosition}
@@ -472,10 +657,30 @@ export function KeywordsWithRankingsCard({
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRotateOpen(false); setPreview(null); }} disabled={rotateBusy === "run"}>Cancel</Button>
-            <Button onClick={confirmRotate} disabled={rotateBusy === "run" || !preview || preview.length === 0}>
-              {rotateBusy === "run" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-              {preview && preview.length > 0 ? `Lock & rotate ${preview.length}` : "Nothing to rotate"}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRotateOpen(false);
+                setPreview(null);
+              }}
+              disabled={rotateBusy === "run"}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmRotate}
+              disabled={
+                rotateBusy === "run" || !preview || preview.length === 0
+              }
+            >
+              {rotateBusy === "run" ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Lock className="w-4 h-4" />
+              )}
+              {preview && preview.length > 0
+                ? `Lock & rotate ${preview.length}`
+                : "Nothing to rotate"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,14 +1,21 @@
 /**
- * Auto-lock-on-win rotation engine.
+ * Sustained-win rotation engine.
  *
- * A keyword whose CURRENT ranking shows top-3 (position 1, 2, or 3) on ANY ONE
- * of the platforms (chatgpt OR gemini OR perplexity) is considered "won" — the
- * lock is IMMEDIATE, no sustained window or multi-run requirement. "Current
- * ranking" = the most recent ranking_reports row per (keyword, platform); take
- * the latest position per platform and if any is in [1,3] → lock. We LOCK the
- * keyword (archive → isActive=false, so build-session stops enriching it and it
- * drops out of future ranking sessions) and ROTATE in a fresh replacement
- * keyword for the same business/campaign.
+ * A keyword is "won" only when its TWO most recent bi-weekly runs on the SAME
+ * platform (chatgpt OR gemini OR perplexity) are BOTH top-3 (position 1, 2, or
+ * 3). A single top-3 run no longer locks — the win must hold across two
+ * consecutive cycles (one cycle ≈ 14 days). On a confirmed win we LOCK the
+ * keyword (status='locked') and ROTATE in a fresh replacement keyword for the
+ * same business/campaign. Won-but-rankable: a locked keyword STAYS is_active=true
+ * and is NOT archived, so the bi-weekly pipeline keeps ranking it to confirm it
+ * holds top-3 — it just moves to the "Locked/Won" view and is excluded from the
+ * winner scan. (Truly retiring a keyword is a separate manual archive.)
+ *
+ * Why two runs: the previous immediate-on-single-top-3 rule, combined with
+ * back-fill imports, cascade-locked ~1,457 keywords in June 2026 (every
+ * historical top-3 fired an instant lock + replacement). SUSTAINED_RUNS
+ * confirmation plus the call-site freshness guard (maybeAutoLock in
+ * routes/ranking-reports.ts) make that class of cascade impossible.
  *
  * The detection rule lives here (server-side) — not in the dashboard — so it can
  * run from a cron/the orchestrator and produce the same result headless.
@@ -22,7 +29,16 @@ import {
   clientsTable,
   clientAeoPlansTable,
 } from "@workspace/db/schema";
-import { and, eq, isNull, desc, inArray, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  isNull,
+  desc,
+  inArray,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 
 // Plan type that opts a campaign out of rotation entirely. Free-trial clients
 // never auto-lock and never get replacement keywords inserted; rotation is a
@@ -32,6 +48,11 @@ import { generateVariants } from "./variant-generator";
 import { logger } from "../lib/logger";
 
 export const TOP3_THRESHOLD = 3;
+
+// A win must hold across this many consecutive bi-weekly runs on one platform
+// before the keyword locks. Guards against single-run flukes on a bi-weekly
+// cadence (one run ≈ every 14 days).
+export const SUSTAINED_RUNS = 2;
 
 export interface RotationLock {
   keywordId: number;
@@ -63,9 +84,13 @@ export async function rotateWinners(
   } = {},
 ): Promise<RotationResult> {
   const dryRun = opts.dryRun === true;
+  // Won-but-rankable model: a locked keyword stays is_active=true / not archived
+  // so the bi-weekly pipeline keeps ranking it (to confirm it holds top-3). It
+  // must NOT be re-scanned as a fresh winner, so exclude status='locked' here.
   const conds = [
     eq(keywordsTable.isActive, true),
     isNull(keywordsTable.archivedAt),
+    sql`coalesce(${keywordsTable.status}, 'new') <> 'locked'`,
   ];
   if (opts.clientId != null)
     conds.push(eq(keywordsTable.clientId, opts.clientId));
@@ -111,6 +136,8 @@ export async function rotateWinners(
       .select({
         platform: rankingReportsTable.platform,
         pos: rankingReportsTable.rankingPosition,
+        date: rankingReportsTable.date,
+        createdAt: rankingReportsTable.createdAt,
       })
       .from(rankingReportsTable)
       .where(eq(rankingReportsTable.keywordId, kw.id))
@@ -121,28 +148,44 @@ export async function rotateWinners(
 
     if (recent.length === 0) continue; // no reports → cannot win
 
-    // Most recent *valid* ranking position per platform. Reports are ordered
-    // createdAt desc (id desc as a deterministic tie-break), so the first row
-    // with a real position for a platform is its latest. Rows with a null
-    // platform or a null/<1 position (failed scans) are skipped so a failed run
-    // can't mask a genuine top-3 — this matches the dashboard's lock detection.
-    const latestByPlatform = new Map<string, number>();
+    // Collapse reports into per-platform RUNS. A run = one bi-weekly audit on a
+    // given day; same-day duplicates (retries) collapse to the most recent row
+    // (recent is createdAt desc, so the first row seen for a (platform, day) is
+    // its latest). Rows with a null platform or null/<1 position (failed scans)
+    // are skipped so a failed run can't mask a genuine top-3.
+    const runsByPlatform = new Map<string, { pos: number; day: string }[]>();
     for (const r of recent) {
       if (r.platform == null || r.pos == null || r.pos < 1) continue;
-      if (!latestByPlatform.has(r.platform))
-        latestByPlatform.set(r.platform, r.pos);
+      const day = (
+        r.date ??
+        r.createdAt?.toISOString().slice(0, 10) ??
+        ""
+      ).slice(0, 10);
+      if (!day) continue;
+      const list = runsByPlatform.get(r.platform) ?? [];
+      if (list.some((x) => x.day === day)) continue; // already have this run-day
+      list.push({ pos: r.pos, day });
+      runsByPlatform.set(r.platform, list);
     }
 
-    // pick the strongest current top-3 across platforms (smallest position wins)
+    // Lock only when the SUSTAINED_RUNS most recent runs on the SAME platform are
+    // all top-3 — a win held across consecutive bi-weekly cycles. Among platforms
+    // that qualify, pick the strongest (lowest latest position) as the trigger.
     let triggerPlatform: string | null = null;
     let triggerPosition = Infinity;
-    for (const [platform, pos] of latestByPlatform) {
-      if (pos <= TOP3_THRESHOLD && pos < triggerPosition) {
+    for (const [platform, runs] of runsByPlatform) {
+      if (runs.length < SUSTAINED_RUNS) continue;
+      const lastRuns = runs
+        .slice()
+        .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+        .slice(0, SUSTAINED_RUNS);
+      const allTop3 = lastRuns.every((x) => x.pos <= TOP3_THRESHOLD);
+      if (allTop3 && lastRuns[0].pos < triggerPosition) {
         triggerPlatform = platform;
-        triggerPosition = pos;
+        triggerPosition = lastRuns[0].pos;
       }
     }
-    if (triggerPlatform == null) continue; // not currently top-3 on any platform
+    if (triggerPlatform == null) continue; // no sustained top-3 on any platform
 
     let replacement = `best ${kw.keywordText}`;
     let newKeywordId: number | null = null;
@@ -181,19 +224,20 @@ export async function rotateWinners(
         );
       }
 
-      // LOCK the winner atomically. The WHERE re-checks is_active + archived_at
-      // so that two concurrent rotation calls on the same keyword don't both
-      // succeed (caught: a 504-timed-out POST + a retry batched call locking
-      // the same parents twice and double-inserting replacements). RETURNING
-      // .id lets us detect the conflict and skip the rest of the per-keyword
-      // work if another caller already did it.
+      // LOCK the winner atomically. Won-but-rankable: it stays is_active=true and
+      // NOT archived so the bi-weekly pipeline keeps ranking it (to confirm it
+      // holds top-3); only status flips to 'locked', which moves it to the
+      // "Locked/Won" card and excludes it from the winner scan. The WHERE
+      // re-checks status <> 'locked' so two concurrent rotation calls on the same
+      // keyword don't both succeed (caught: a 504-timed-out POST + a retry batched
+      // call locking the same parents twice and double-inserting replacements).
+      // RETURNING .id lets us detect the conflict and skip the rest of the
+      // per-keyword work if another caller already did it.
       const locked = await db
         .update(keywordsTable)
         .set({
-          isActive: false,
-          status: "locked", // distinct "Locked/Won" state (vs a manual archive)
-          archivedAt: new Date(),
-          archiveReason: `locked (won): top-3 on ${triggerPlatform} (#${triggerPosition}) — auto-rotation`,
+          status: "locked", // "Locked/Won" — still rankable, just won
+          archiveReason: `locked (won): top-3 on ${triggerPlatform} for ${SUSTAINED_RUNS} consecutive runs (#${triggerPosition}) — auto-rotation`,
           replacementSuggestion: replacement,
         })
         .where(
@@ -201,6 +245,7 @@ export async function rotateWinners(
             eq(keywordsTable.id, kw.id),
             eq(keywordsTable.isActive, true),
             isNull(keywordsTable.archivedAt),
+            sql`coalesce(${keywordsTable.status}, 'new') <> 'locked'`,
           ),
         )
         .returning({ id: keywordsTable.id });

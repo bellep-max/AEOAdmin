@@ -24,26 +24,51 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-/* Auto-lock-on-win: when a ranking report records a top-3 position for a
-   keyword, immediately lock it (archive + status='locked') and rotate in an
-   AI replacement. Fire-and-forget so it never blocks/fails report ingestion;
-   rotateWinners is idempotent (it only touches active, non-archived keywords).
+/* Auto-lock-on-SUSTAINED-win: when a ranking report records a top-3 position
+   for a keyword, kick the rotation engine, which locks the keyword
+   (status='locked') ONLY if the win is sustained across two consecutive
+   bi-weekly runs (see services/keyword-rotation.ts). Fire-and-forget so it never
+   blocks/fails report ingestion; rotateWinners is idempotent.
 
-   Kill switch: set AUTO_ROTATION_DISABLED=1 (any truthy value) to no-op this
-   call. Used to suppress retroactive rotation during back-fill imports — the
-   rotation otherwise stamps `now()` regardless of the rank's actual date. */
-function maybeAutoLock(keywordId: unknown, rankingPosition: unknown): void {
-  if (process.env.AUTO_ROTATION_DISABLED) return;
+   Auto-rotation is OFF BY DEFAULT — only MANUAL rotation (the bulk
+   /api/keywords/rotate-winners endpoint) may lock keywords. This automatic
+   lock-on-ingest path is opt-in via AUTO_ROTATION_ENABLED=1, so a bulk import
+   can never cascade-lock (the June 2026 incident that retired ~1,457 keywords).
+   When enabled, two further guards apply:
+     1. Freshness guard: only reports dated within FRESH_WINDOW_DAYS trigger —
+        historical/back-filled rows are inert.
+     2. Kill switch AUTO_ROTATION_DISABLED=1 still force-disables. */
+const FRESH_WINDOW_DAYS = 7;
+
+function isFreshReportDate(reportDate: unknown): boolean {
+  // Only "live" runs trigger rotation. A missing/unparseable date is treated as
+  // stale (safe default — back-fills without a fresh date never cascade).
+  if (typeof reportDate !== "string" || reportDate.length < 8) return false;
+  const t = Date.parse(reportDate);
+  if (Number.isNaN(t)) return false;
+  const ageDays = (Date.now() - t) / 86_400_000;
+  return ageDays <= FRESH_WINDOW_DAYS && ageDays >= -1; // allow minor clock skew
+}
+
+function maybeAutoLock(
+  keywordId: unknown,
+  rankingPosition: unknown,
+  reportDate: unknown,
+): void {
+  // OFF by default: auto lock-on-ingest only runs when explicitly opted in.
+  if (!process.env.AUTO_ROTATION_ENABLED) return;
+  if (process.env.AUTO_ROTATION_DISABLED) return; // hard kill switch still wins
   const kid = Number(keywordId);
   const pos = Number(rankingPosition);
   if (!Number.isFinite(kid) || kid <= 0) return;
   if (!Number.isFinite(pos) || pos < 1 || pos > TOP3_THRESHOLD) return;
+  if (!isFreshReportDate(reportDate)) return; // back-fill imports can't trigger
   rotateWinners({ keywordId: kid, dryRun: false })
     .then((r) => {
       if (r.locked.length > 0) {
         logger.info(
           { keywordId: kid, locked: r.locked },
-          "auto-rotation: locked keyword on win",
+          "auto-rotation: locked keyword on sustained win",
         );
       }
     })
@@ -285,7 +310,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
         .where(eq(rankingReportsTable.id, existing[0].id))
         .returning();
       res.status(200).json({ ...updated, upserted: true });
-      maybeAutoLock(body.keywordId, body.rankingPosition);
+      maybeAutoLock(body.keywordId, body.rankingPosition, body.date);
       exportProofIfQualifies(body.keywordId, body.date);
       return;
     }
@@ -335,7 +360,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
       })
       .returning();
     res.status(201).json(report);
-    maybeAutoLock(body.keywordId, body.rankingPosition);
+    maybeAutoLock(body.keywordId, body.rankingPosition, body.date);
     exportProofIfQualifies(body.keywordId, body.date);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
