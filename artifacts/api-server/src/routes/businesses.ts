@@ -14,20 +14,28 @@ import {
   requireSalesAllowed,
   requireExecutorOrSalesAllowed,
 } from "../middlewares/role-auth";
-import { assertScopedAccessToClient } from "../lib/scoped-access";
+import {
+  assertScopedAccessToClient,
+  getScopedClientIds,
+} from "../lib/scoped-access";
 
 const router = Router();
 
 router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
-    const query = db
+    // Scoped roles see only businesses under clients in their plan slice.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null && eligibleIds.length === 0) return res.json([]);
+    const conds = [];
+    if (clientId) conds.push(eq(businessesTable.clientId, parseInt(clientId)));
+    if (eligibleIds !== null)
+      conds.push(inArray(businessesTable.clientId, eligibleIds));
+    const rows = await db
       .select()
       .from(businessesTable)
+      .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(businessesTable.createdAt));
-    const rows = clientId
-      ? await query.where(eq(businessesTable.clientId, parseInt(clientId)))
-      : await query;
 
     const ids = rows.map((b) => b.id);
     const counts = new Map<

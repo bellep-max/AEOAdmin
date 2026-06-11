@@ -289,6 +289,12 @@ router.post("/", requireScopedEditor, async (req, res) => {
 router.get("/:id/links", requireSalesAllowed, async (req, res) => {
   try {
     const keywordId = parseInt(req.params.id);
+    const [lkOwner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!lkOwner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, lkOwner.clientId))) return;
     const links = await db
       .select()
       .from(keywordLinksTable)

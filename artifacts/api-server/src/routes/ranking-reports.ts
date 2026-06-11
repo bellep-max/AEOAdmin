@@ -144,6 +144,16 @@ router.get("/", requireApiToken, async (req, res) => {
     if (q.isActive === "true" || q.isActive === "false")
       conditions.push(eq(keywordsTable.isActive, q.isActive === "true"));
 
+    // Scoped-role sessions (e.g. chuckslocal) see only their plan slice. Bearer
+    // token + owner/admin sessions return null here → unfiltered (full access).
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null)
+      conditions.push(
+        eligibleIds.length === 0
+          ? sql`1=0`
+          : inArray(rankingReportsTable.clientId, eligibleIds),
+      );
+
     const limit = intInRange(q.limit, 1, 5000, 1000);
     const offset = intInRange(q.offset, 0, Number.MAX_SAFE_INTEGER, 0);
 
