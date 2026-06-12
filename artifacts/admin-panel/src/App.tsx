@@ -49,16 +49,17 @@ function OwnerGate({
   return <Component />;
 }
 
-/** owner OR sales only — mirrors BE requireRoles("owner","sales") on
- *  /api/llm/sales-ai/stream. Used on /sales-ai. */
+/** owner, sales, OR chuckslocal — mirrors BE
+ *  requireRoles("owner","sales","chuckslocal") on /api/llm/sales-ai/stream.
+ *  Used on /sales-ai. */
 function OwnerOrSalesGate({
   component: Component,
 }: {
   component: ComponentType<unknown>;
 }) {
-  const { isOwner, isSales, isLoading } = useAuth();
+  const { isOwner, isSales, isChucksLocal, isLoading } = useAuth();
   if (isLoading) return null;
-  if (!isOwner && !isSales) return <Redirect to="/" />;
+  if (!isOwner && !isSales && !isChucksLocal) return <Redirect to="/" />;
   return <Component />;
 }
 
@@ -72,9 +73,11 @@ function AdminTierGate({
 }: {
   component: ComponentType<unknown>;
 }) {
-  const { user, isSales, isAccountManager, isLoading } = useAuth();
+  const { user, isSales, isAccountManager, isChucksLocal, isLoading } =
+    useAuth();
   if (isLoading) return null;
-  if (!user || isSales || isAccountManager) return <Redirect to="/" />;
+  if (!user || isSales || isAccountManager || isChucksLocal)
+    return <Redirect to="/" />;
   return <Component />;
 }
 

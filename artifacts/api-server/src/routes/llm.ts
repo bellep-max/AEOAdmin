@@ -801,10 +801,11 @@ router.get("/audit-context", requireExecutorOrOwner, async (req, res) => {
    server-side. Accepts { messages, stream? } in the OpenAI chat format and
    pipes the streamed SSE response straight back. The FE owns the system
    prompt and conversation history; this endpoint is a thin authenticated
-   forwarder. Auth: logged-in owner or sales (mirrors the sidebar gate). */
+   forwarder. Auth: logged-in owner, sales, or chuckslocal (mirrors the sidebar
+   gate). */
 router.post(
   "/sales-ai/stream",
-  requireRoles("owner", "sales"),
+  requireRoles("owner", "sales", "chuckslocal"),
   async (req, res) => {
     try {
       const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -865,11 +866,9 @@ router.post(
     } catch (err) {
       req.log.error({ err }, "Error streaming Sales AI response");
       if (!res.headersSent) {
-        res
-          .status(500)
-          .json({
-            error: err instanceof Error ? err.message : "Unknown error",
-          });
+        res.status(500).json({
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       } else {
         res.end();
       }
@@ -943,11 +942,9 @@ router.post(
     } catch (err) {
       req.log.error({ err }, "Error streaming AEO Reporter response");
       if (!res.headersSent) {
-        res
-          .status(500)
-          .json({
-            error: err instanceof Error ? err.message : "Unknown error",
-          });
+        res.status(500).json({
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       } else {
         res.end();
       }

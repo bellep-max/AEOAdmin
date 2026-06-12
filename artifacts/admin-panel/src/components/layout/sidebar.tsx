@@ -73,6 +73,9 @@ interface NavItem {
   salesAllowed?: boolean;
   /** Visible to account-manager role (and the admin-panel chain by default). */
   accountManagerAllowed?: boolean;
+  /** Additionally visible to the chuckslocal role (on top of the
+   *  account-manager client-management set he already sees). */
+  chucksLocalAllowed?: boolean;
 }
 
 interface NavGroupItem extends NavItem {
@@ -190,6 +193,7 @@ const navGroups: NavGroup[] = [
         href: "/sales-ai",
         icon: Sparkles,
         salesAllowed: true,
+        chucksLocalAllowed: true,
       },
       {
         name: "Keyword Rotation",
@@ -258,10 +262,12 @@ export function AppSidebar() {
     adminOnly?: boolean;
     salesAllowed?: boolean;
     accountManagerAllowed?: boolean;
+    chucksLocalAllowed?: boolean;
   }) => {
     if (isSales) return !!item.salesAllowed;
     if (isAccountManager) return !!item.accountManagerAllowed;
-    if (isChucksLocal) return !!item.accountManagerAllowed;
+    if (isChucksLocal)
+      return !!item.accountManagerAllowed || !!item.chucksLocalAllowed;
     if (item.ownerOnly && !isOwner) return false;
     if (item.adminOnly && !isAdmin) return false;
     return true;
