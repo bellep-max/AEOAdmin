@@ -9,6 +9,7 @@ import {
   clientAeoPlansTable,
   businessesTable,
   sessionsTable,
+  keywordVariantsTable,
 } from "@workspace/db/schema";
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 
@@ -2752,5 +2753,362 @@ router.delete("/businesses/:id", requirePortalAuth, async (req, res) => {
 /* Password change is served by /api/auth/change-password (admin's route);
    it operates on the unified `users` table and works for both admins and
    customers. */
+
+/* ────────────────────────────────────────────────────────────
+   Insights — read-only optimization transparency for customers.
+   Mirrors the admin rotation/locked-keyword/variant views but is
+   ALWAYS scoped to the authenticated customer's own client. No
+   mutation: customers can SEE what we're optimizing, never trigger
+   rotation, lock, archive, or replacement themselves.
+──────────────────────────────────────────────────────────── */
+
+const TOP3 = 3;
+const PLATFORM_KEYS = ["chatgpt", "gemini", "perplexity", "google"] as const;
+
+interface EnrichedKeyword {
+  id: number;
+  keywordText: string;
+  status: string | null;
+  isActive: boolean;
+  archivedAt: string | null;
+  archiveReason: string | null;
+  replacementSuggestion: string | null;
+  aeoPlanId: number | null;
+  businessId: number | null;
+  campaignName: string | null;
+  businessName: string | null;
+  latestPosition: number | null;
+  latestDate: string | null;
+  platforms: Record<string, { position: number | null; date: string | null }>;
+  sparkline: number[];
+  totalRuns: number;
+  top3Runs: number;
+  stabilityPercent: number;
+  trend: "improving" | "steady" | "declining";
+  atRisk: boolean;
+  stallingSince: string | null;
+  wonPlatform: string | null;
+  wonPosition: number | null;
+  wonAt: string | null;
+}
+
+function dayOf(date: string | null, createdAt: Date | null): string {
+  if (date) return date.slice(0, 10);
+  if (createdAt) return new Date(createdAt).toISOString().slice(0, 10);
+  return "";
+}
+
+/**
+ * Load all keywords for a client (optionally filtered to a campaign/business)
+ * and enrich each with daily rank series, per-platform latest rank, stability
+ * %, trend, at-risk detection, and won/lock metadata derived from
+ * ranking_reports. Pure read; no writes. Mirrors the admin rotation scan in
+ * services/keyword-rotation.ts but client-scoped.
+ */
+async function scanClientKeywords(
+  clientId: number,
+  opts: { aeoPlanId?: number; businessId?: number },
+): Promise<EnrichedKeyword[]> {
+  const conditions = [eq(keywordsTable.clientId, clientId)];
+  if (opts.aeoPlanId != null)
+    conditions.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
+  if (opts.businessId != null)
+    conditions.push(eq(keywordsTable.businessId, opts.businessId));
+
+  const kws = await db
+    .select({
+      id: keywordsTable.id,
+      keywordText: keywordsTable.keywordText,
+      status: keywordsTable.status,
+      isActive: keywordsTable.isActive,
+      archivedAt: keywordsTable.archivedAt,
+      archiveReason: keywordsTable.archiveReason,
+      replacementSuggestion: keywordsTable.replacementSuggestion,
+      aeoPlanId: keywordsTable.aeoPlanId,
+      businessId: keywordsTable.businessId,
+      campaignName: clientAeoPlansTable.name,
+      businessName: businessesTable.name,
+    })
+    .from(keywordsTable)
+    .leftJoin(
+      clientAeoPlansTable,
+      eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
+    )
+    .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+    .where(and(...conditions));
+
+  if (kws.length === 0) return [];
+
+  const ids = kws.map((k) => k.id);
+  const reports = await db
+    .select({
+      keywordId: rankingReportsTable.keywordId,
+      platform: rankingReportsTable.platform,
+      rankingPosition: rankingReportsTable.rankingPosition,
+      date: rankingReportsTable.date,
+      createdAt: rankingReportsTable.createdAt,
+    })
+    .from(rankingReportsTable)
+    .where(
+      and(
+        eq(rankingReportsTable.clientId, clientId),
+        inArray(rankingReportsTable.keywordId, ids),
+      ),
+    )
+    .orderBy(asc(rankingReportsTable.createdAt)); // oldest first
+
+  const byKeyword = new Map<number, typeof reports>();
+  for (const r of reports) {
+    const arr = byKeyword.get(r.keywordId) ?? [];
+    arr.push(r);
+    byKeyword.set(r.keywordId, arr);
+  }
+
+  return kws.map((k) => {
+    const rs = byKeyword.get(k.id) ?? [];
+
+    // Per-platform latest rank (oldest-first → last write wins = latest).
+    const platforms: EnrichedKeyword["platforms"] = {};
+    for (const r of rs) {
+      if (!r.platform) continue;
+      platforms[r.platform] = {
+        position: r.rankingPosition,
+        date: dayOf(r.date, r.createdAt) || null,
+      };
+    }
+
+    // Daily series: best (min) position per day, chronological.
+    const byDay = new Map<string, number>();
+    for (const r of rs) {
+      if (r.rankingPosition == null || r.rankingPosition < 1) continue;
+      const day = dayOf(r.date, r.createdAt);
+      if (!day) continue;
+      const cur = byDay.get(day);
+      if (cur == null || r.rankingPosition < cur)
+        byDay.set(day, r.rankingPosition);
+    }
+    const days = [...byDay.keys()].sort();
+    const series = days.map((d) => byDay.get(d)!);
+    const totalRuns = series.length;
+    const top3Runs = series.filter((p) => p <= TOP3).length;
+    const stabilityPercent =
+      totalRuns > 0 ? Math.round((top3Runs / totalRuns) * 100) : 0;
+    const latestPosition = totalRuns > 0 ? series[series.length - 1] : null;
+    const latestDate = days.length > 0 ? days[days.length - 1] : null;
+
+    let trend: EnrichedKeyword["trend"] = "steady";
+    if (series.length >= 2) {
+      const a = series[series.length - 1];
+      const b = series[series.length - 2];
+      trend = a < b ? "improving" : a > b ? "declining" : "steady";
+    }
+
+    const active =
+      k.isActive && k.status !== "locked" && k.archivedAt == null;
+    const last5 = series.slice(-5);
+    const atRisk = active && last5.length >= 5 && last5.every((p) => p > TOP3);
+    const stallingSince =
+      atRisk && days.length >= 5 ? days[days.length - 5] : null;
+
+    // Won info: most recent day the keyword was top-3 (oldest-first → last wins).
+    let wonPlatform: string | null = null;
+    let wonPosition: number | null = null;
+    let wonAt: string | null = null;
+    for (const r of rs) {
+      if (r.rankingPosition != null && r.rankingPosition <= TOP3) {
+        wonPlatform = r.platform ?? null;
+        wonPosition = r.rankingPosition;
+        wonAt = dayOf(r.date, r.createdAt) || null;
+      }
+    }
+
+    return {
+      id: k.id,
+      keywordText: k.keywordText,
+      status: k.status,
+      isActive: k.isActive,
+      archivedAt: k.archivedAt ? new Date(k.archivedAt).toISOString() : null,
+      archiveReason: k.archiveReason,
+      replacementSuggestion: k.replacementSuggestion,
+      aeoPlanId: k.aeoPlanId,
+      businessId: k.businessId,
+      campaignName: k.campaignName ?? null,
+      businessName: k.businessName ?? null,
+      latestPosition,
+      latestDate,
+      platforms,
+      sparkline: series.slice(-12),
+      totalRuns,
+      top3Runs,
+      stabilityPercent,
+      trend,
+      atRisk,
+      stallingSince,
+      wonPlatform,
+      wonPosition,
+      wonAt,
+    };
+  });
+}
+
+function parseIntOrUndefined(v: unknown): number | undefined {
+  if (typeof v !== "string") return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/** GET /api/portal/insights/locked-keywords — won (top-3, status=locked). */
+router.get("/insights/locked-keywords", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const enriched = await scanClientKeywords(clientId, {
+      aeoPlanId,
+      businessId,
+    });
+    const locked = enriched
+      .filter((k) => k.status === "locked")
+      .map((k) => ({
+        id: k.id,
+        keywordText: k.keywordText,
+        campaignName: k.campaignName,
+        businessName: k.businessName,
+        aeoPlanId: k.aeoPlanId,
+        businessId: k.businessId,
+        replacementSuggestion: k.replacementSuggestion,
+        archiveReason: k.archiveReason,
+        wonPlatform: k.wonPlatform,
+        wonPosition: k.wonPosition,
+        wonAt: k.wonAt,
+        stabilityPercent: k.stabilityPercent,
+        platforms: k.platforms,
+      }));
+    res.json(locked);
+  } catch (err) {
+    req.log.error({ err }, "Portal locked-keywords error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/insights/rotation-status — optimization transparency. */
+router.get("/insights/rotation-status", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const enriched = await scanClientKeywords(clientId, {
+      aeoPlanId,
+      businessId,
+    });
+
+    const summary = {
+      total: enriched.length,
+      locked: enriched.filter((k) => k.status === "locked").length,
+      active: enriched.filter(
+        (k) => k.isActive && k.status !== "locked" && !k.archivedAt,
+      ).length,
+      atRisk: enriched.filter((k) => k.atRisk).length,
+    };
+
+    const platformAggregate: Record<
+      string,
+      { tracked: number; top3: number; avgPosition: number | null }
+    > = {};
+    for (const pk of PLATFORM_KEYS) {
+      const positions = enriched
+        .map((k) => k.platforms[pk]?.position)
+        .filter((p): p is number => p != null);
+      platformAggregate[pk] = {
+        tracked: positions.length,
+        top3: positions.filter((p) => p <= TOP3).length,
+        avgPosition:
+          positions.length > 0
+            ? Math.round(
+                (positions.reduce((a, b) => a + b, 0) / positions.length) * 10,
+              ) / 10
+            : null,
+      };
+    }
+
+    const timeline: Array<Record<string, unknown>> = [];
+    for (const k of enriched) {
+      if (k.status === "locked" && k.wonAt) {
+        timeline.push({
+          type: "locked",
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          campaignName: k.campaignName,
+          platform: k.wonPlatform,
+          position: k.wonPosition,
+          date: k.wonAt,
+          detail: k.archiveReason,
+        });
+      }
+      if (k.archivedAt) {
+        timeline.push({
+          type: "archived",
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          campaignName: k.campaignName,
+          date: k.archivedAt,
+          detail: k.archiveReason,
+          replacement: k.replacementSuggestion,
+        });
+      }
+    }
+    timeline.sort((a, b) =>
+      String(a.date) < String(b.date) ? 1 : String(a.date) > String(b.date) ? -1 : 0,
+    );
+
+    res.json({
+      summary,
+      platformAggregate,
+      keywords: enriched,
+      timeline: timeline.slice(0, 50),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Portal rotation-status error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/keywords/:id/variants — read-only AI variant alternates. */
+router.get("/keywords/:id/variants", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const rawId = req.params.id;
+    const keywordId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
+    if (Number.isNaN(keywordId))
+      return res.status(400).json({ error: "Invalid keyword id" });
+
+    // Ownership check — 404 (don't leak existence) if not the client's keyword.
+    const [keyword] = await db
+      .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!keyword || keyword.clientId !== clientId)
+      return res.status(404).json({ error: "Keyword not found" });
+
+    const variants = await db
+      .select()
+      .from(keywordVariantsTable)
+      .where(
+        and(
+          eq(keywordVariantsTable.keywordId, keywordId),
+          eq(keywordVariantsTable.isActive, true),
+        ),
+      )
+      .orderBy(desc(keywordVariantsTable.generatedAt));
+
+    res.json({ variants, total: variants.length });
+  } catch (err) {
+    req.log.error({ err }, "Portal keyword variants error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export default router;
