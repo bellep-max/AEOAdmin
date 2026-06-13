@@ -39,7 +39,7 @@ function fmtDuration(s: number | null): string {
 }
 
 export function CampaignAuditRankingsCard({ campaignId }: { campaignId: number }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   const { data, isLoading } = useQuery<AuditLogRow[]>({
     queryKey: ["/api/audit-logs", { campaignId }],

@@ -120,6 +120,10 @@ interface Props {
    *  to render a single bucket (e.g. only the locked/won keywords) while still
    *  pulling ranking history from the same period-comparison query. */
   restrictToKeywordIds?: number[];
+  /** Render a card-level collapse toggle (chevron on the title). */
+  collapsible?: boolean;
+  /** When collapsible, start the card collapsed. */
+  defaultCollapsed?: boolean;
 }
 
 function PlatformChip({
@@ -205,9 +209,13 @@ export function KeywordsWithRankingsCard({
   showRotation = false,
   onRotated,
   restrictToKeywordIds,
+  collapsible = false,
+  defaultCollapsed = false,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // Card-level collapse (whole section), distinct from per-keyword `collapsed`.
+  const [sectionCollapsed, setSectionCollapsed] = useState(defaultCollapsed);
   // Screenshot dialog target. Null when the dialog is closed.
   const [screenshotTarget, setScreenshotTarget] =
     useState<ScreenshotTarget | null>(null);
@@ -353,17 +361,42 @@ export function KeywordsWithRankingsCard({
     });
   }
 
+  const showBody = !(collapsible && sectionCollapsed);
+
   return (
     <Card className="border-border/50">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Key className="w-4 h-4 text-primary" />
-            {title}
-            <span className="text-muted-foreground font-normal">
-              ({grouped.length})
-            </span>
+            {collapsible ? (
+              <button
+                type="button"
+                onClick={() => setSectionCollapsed((v) => !v)}
+                className="flex items-center gap-2 text-left"
+                aria-label={sectionCollapsed ? "Expand" : "Collapse"}
+              >
+                {sectionCollapsed ? (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                )}
+                <Key className="w-4 h-4 text-primary" />
+                {title}
+                <span className="text-muted-foreground font-normal">
+                  ({grouped.length})
+                </span>
+              </button>
+            ) : (
+              <>
+                <Key className="w-4 h-4 text-primary" />
+                {title}
+                <span className="text-muted-foreground font-normal">
+                  ({grouped.length})
+                </span>
+              </>
+            )}
           </CardTitle>
+          {showBody && (
           <div className="flex items-center gap-2 flex-wrap">
             <Select
               value={period}
@@ -398,8 +431,9 @@ export function KeywordsWithRankingsCard({
             )}
             {addButton}
           </div>
+          )}
         </div>
-        {!isLoading && (data?.rows.length ?? 0) > 0 && (
+        {showBody && !isLoading && (data?.rows.length ?? 0) > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap pt-2">
             {counts.improved > 0 && (
               <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
@@ -424,6 +458,7 @@ export function KeywordsWithRankingsCard({
           </div>
         )}
       </CardHeader>
+      {showBody && (
       <CardContent>
         {isLoading ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
@@ -619,6 +654,7 @@ export function KeywordsWithRankingsCard({
           </div>
         )}
       </CardContent>
+      )}
 
       <Dialog
         open={rotateOpen}

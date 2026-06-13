@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Activity } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
 import { fmtDateTime, fmtDuration, fmtBool, statusBadgeClass } from "@/lib/session-common";
 
@@ -93,6 +93,7 @@ export function CampaignSessionsCard({ campaignId }: Props) {
   const [to, setTo]             = useState<string>(() => defaultToET());
   const [page, setPage]         = useState(0);
   const [open, setOpen]         = useState<SessionRow | null>(null);
+  const [sectionOpen, setSectionOpen] = useState(false); // card collapsed by default
 
   const { data, isLoading, error, refetch } = useQuery<SessionsResponse>({
     queryKey: ["/api/sessions/campaign", campaignId, platform, status, from, to, page],
@@ -108,7 +109,7 @@ export function CampaignSessionsCard({ campaignId }: Props) {
       if (!res.ok) throw new Error("Failed to load sessions");
       return res.json();
     },
-    enabled: !!campaignId,
+    enabled: !!campaignId && sectionOpen, // lazy: only fetch when expanded
   });
 
   const total      = data?.total ?? 0;
@@ -125,14 +126,29 @@ export function CampaignSessionsCard({ campaignId }: Props) {
       <Card className="border-border/50">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" />
-              Daily Sessions
-              <span className="ml-1 text-xs font-normal text-muted-foreground">· times in America/New_York (ET)</span>
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>Refresh</Button>
+            <button
+              type="button"
+              onClick={() => setSectionOpen((v) => !v)}
+              className="flex items-center gap-2 text-left"
+              aria-label={sectionOpen ? "Collapse" : "Expand"}
+            >
+              {sectionOpen ? (
+                <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              )}
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Activity className="w-4 h-4 text-primary" />
+                Daily Sessions
+                <span className="ml-1 text-xs font-normal text-muted-foreground">· times in America/New_York (ET)</span>
+              </CardTitle>
+            </button>
+            {sectionOpen && (
+              <Button variant="outline" size="sm" onClick={() => refetch()}>Refresh</Button>
+            )}
           </div>
         </CardHeader>
+        {sectionOpen && (
         <CardContent className="space-y-4">
           {/* Filters */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -229,6 +245,7 @@ export function CampaignSessionsCard({ campaignId }: Props) {
             </div>
           )}
         </CardContent>
+        )}
       </Card>
 
       {/* Detail drawer */}
