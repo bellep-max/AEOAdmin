@@ -73,14 +73,18 @@ function useDashboardRankingStats(platform: DashPlatform) {
   const { data: kwData } = useQuery({
     queryKey: ["dash-keywords"],
     queryFn: async () => {
-      const [active, archived] = await Promise.all([
+      const [active, archived, locked] = await Promise.all([
         fetch(`${RANKING_API_BASE}/api/keywords`, { credentials: "include" }).then(r => r.json()),
         fetch(`${RANKING_API_BASE}/api/keywords?includeArchived=true`, { credentials: "include" }).then(r => r.json()),
+        fetch(`${RANKING_API_BASE}/api/keywords?status=locked&includeArchived=true`, { credentials: "include" }).then(r => r.json()),
       ]);
       const activeList   = (active.data   ?? active)   as { id: number }[];
       const archivedList = (archived.data ?? archived) as { id: number; archivedAt?: string; status?: string }[];
-      // "Locked/won" = archived via rotation (status='locked'); "archived" = manual/stalled.
-      const totalLocked   = archivedList.filter((k) => k.archivedAt && k.status === "locked").length;
+      const lockedList   = (locked.data   ?? locked)   as { id: number }[];
+      // "Locked/won" = status='locked' via rotation — stays rankable and is NOT
+      // archived, so it's fetched separately (the default list hides it).
+      // "archived" = manual/stalled (has archivedAt and is not locked).
+      const totalLocked   = lockedList.length;
       const totalArchived = archivedList.filter((k) => k.archivedAt && k.status !== "locked").length;
       return { totalActive: activeList.length, totalArchived, totalLocked };
     },

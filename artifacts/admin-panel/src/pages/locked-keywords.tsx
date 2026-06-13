@@ -22,7 +22,9 @@ interface LockedKw {
   keywordText: string;
   clientId: number;
   status: string | null;
-  archivedAt: string;
+  // Won/locked keywords stay rankable and are NOT archived, so this is usually
+  // null; only legacy locked rows that were archived carry a date.
+  archivedAt: string | null;
   archiveReason: string | null;
   replacementSuggestion: string | null;
   joinedClientName: string | null;
@@ -60,13 +62,16 @@ export default function LockedKeywords() {
   const { data: keywords = [], isLoading } = useQuery({
     queryKey: ["locked-keywords", clientId],
     queryFn: async () => {
-      const params = new URLSearchParams({ includeArchived: "true" });
+      // status=locked makes the API return the won set; includeArchived=true so
+      // any legacy locked rows that DID get archived are caught too.
+      const params = new URLSearchParams({ status: "locked", includeArchived: "true" });
       if (clientId !== "all") params.set("clientId", clientId);
       const r = await rawFetch(`/api/keywords?${params}`);
       const b = await r.json();
       const all = (b.data ?? b) as LockedKw[];
-      // Only "won" keywords — locked via rotation (status='locked'), not manual archives.
-      return all.filter((k) => k.status === "locked" && k.archivedAt);
+      // Won keywords are locked via rotation (status='locked'). They stay rankable
+      // and are NOT archived, so do NOT require archivedAt here.
+      return all.filter((k) => k.status === "locked");
     },
   });
 
@@ -158,7 +163,13 @@ export default function LockedKeywords() {
             </div>
             <div className="divide-y">
               {filtered
-                .sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime())
+                .sort((a, b) => {
+                  // Most recent first; locked rows without an archive date fall
+                  // back to id order (higher id ≈ more recent).
+                  const ta = a.archivedAt ? new Date(a.archivedAt).getTime() : 0;
+                  const tb = b.archivedAt ? new Date(b.archivedAt).getTime() : 0;
+                  return tb - ta || b.id - a.id;
+                })
                 .map((kw) => {
                   const trig = parseTrigger(kw.archiveReason);
                   return (
