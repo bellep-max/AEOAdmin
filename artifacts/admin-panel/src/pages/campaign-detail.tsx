@@ -519,6 +519,8 @@ export default function CampaignDetail() {
             keywordText: k.keywordText,
           }))}
           restrictToKeywordIds={(lockedKeywords ?? []).map((k) => k.id)}
+          collapsible
+          defaultCollapsed
         />
       )}
 
