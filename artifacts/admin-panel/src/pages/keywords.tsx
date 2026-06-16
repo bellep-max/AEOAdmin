@@ -1326,38 +1326,17 @@ export default function Keywords() {
     (clients ?? []).map((c) => [c.id, c.businessName]),
   );
 
+  // On deep-link (?keywordId from any card: rankings, locked, daily, audit),
+  // open that keyword's detail dialog as soon as it loads. Reliable regardless
+  // of the grouped list's collapse/scope state. Fires once.
+  const deepLinkOpened = React.useRef(false);
   useEffect(() => {
+    if (deepLinkOpened.current) return;
     if (!targetKeywordId || !keywords) return;
     const kw = keywords.find((k) => k.id === targetKeywordId);
     if (!kw) return;
-    // Scope the view to the keyword's client + business so its section actually
-    // renders (the all-clients view keeps sections collapsed). Idempotent — once
-    // these match, re-runs are no-ops.
-    if (kw.clientId != null) setSelectedClientId(kw.clientId as number);
-    if (kw.businessId != null) setSelectedBusinessId(kw.businessId as number);
-    const bizId = (kw.businessId as number | null) ?? -1;
-    // EXPAND (not collapse) the keyword's business so the row is visible.
-    setCollapsed((prev) => {
-      if (!prev.has(bizId)) return prev;
-      const next = new Set(prev);
-      next.delete(bizId);
-      return next;
-    });
-    // Retry-scroll: the row may not exist until after the scoped refetch +
-    // re-render, so poll briefly for the element before giving up.
-    const elId = `kw-${targetKeywordId}`;
-    let tries = 20;
-    const tick = () => {
-      const el = document.getElementById(elId);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("ring-2", "ring-primary");
-        setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
-        return;
-      }
-      if (tries-- > 0) setTimeout(tick, 200);
-    };
-    requestAnimationFrame(tick);
+    deepLinkOpened.current = true;
+    setEditKw({ ...(kw as KwRecord) });
   }, [targetKeywordId, keywords]);
 
   async function saveKeyword(id: number | null, data: KwRecord) {
