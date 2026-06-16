@@ -317,19 +317,15 @@ export function PeriodByClientTab({
                         <div className="px-3 py-2.5">
                           <div className="flex items-center gap-3">
                             <div className="flex-1 min-w-0">
-                              {keyword.businessId != null &&
-                              keyword.aeoPlanId != null ? (
-                                <Link
-                                  href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}/campaigns/${keyword.aeoPlanId}`}
-                                  className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline inline-block"
-                                >
-                                  {keyword.keywordText}
-                                </Link>
-                              ) : (
-                                <p className="text-sm font-semibold text-foreground truncate">
-                                  {keyword.keywordText}
-                                </p>
-                              )}
+                              {/* Deep-link to the specific keyword on the Keywords
+                                  page (it reads ?keywordId and scrolls to it),
+                                  not the campaign page. */}
+                              <Link
+                                href={`/keywords?keywordId=${keyword.keywordId}`}
+                                className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline inline-block"
+                              >
+                                {keyword.keywordText}
+                              </Link>
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                               {sortedPlatforms.map((p) => (

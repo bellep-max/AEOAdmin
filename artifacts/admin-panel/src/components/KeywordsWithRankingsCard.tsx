@@ -124,6 +124,10 @@ interface Props {
   collapsible?: boolean;
   /** When collapsible, start the card collapsed. */
   defaultCollapsed?: boolean;
+  /** Locked/Won view: these keywords already graduated to Top-3, so the status
+   *  column never shows a red "Declined" — while still Top-3 it reads "Won",
+   *  and if it has slipped out it reads a neutral "Watch" (never negative). */
+  lockedView?: boolean;
 }
 
 function PlatformChip({
@@ -211,6 +215,7 @@ export function KeywordsWithRankingsCard({
   restrictToKeywordIds,
   collapsible = false,
   defaultCollapsed = false,
+  lockedView = false,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -397,40 +402,40 @@ export function KeywordsWithRankingsCard({
             )}
           </CardTitle>
           {showBody && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select
-              value={period}
-              onValueChange={(v) => setPeriod(v as Period)}
-            >
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="weekly">Biweekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="quarterly">Quarterly</SelectItem>
-                <SelectItem value="lifetime">Since start</SelectItem>
-              </SelectContent>
-            </Select>
-            {showRotation && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1"
-                onClick={runPreview}
-                disabled={rotateBusy !== false}
-                title="Lock keywords that are Top-3 on any platform and rotate in AI replacements"
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select
+                value={period}
+                onValueChange={(v) => setPeriod(v as Period)}
               >
-                {rotateBusy === "preview" ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3.5 h-3.5" />
-                )}
-                Run rotation
-              </Button>
-            )}
-            {addButton}
-          </div>
+                <SelectTrigger className="w-36 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Biweekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="lifetime">Since start</SelectItem>
+                </SelectContent>
+              </Select>
+              {showRotation && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1"
+                  onClick={runPreview}
+                  disabled={rotateBusy !== false}
+                  title="Lock keywords that are Top-3 on any platform and rotate in AI replacements"
+                >
+                  {rotateBusy === "preview" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  Run rotation
+                </Button>
+              )}
+              {addButton}
+            </div>
           )}
         </div>
         {showBody && !isLoading && (data?.rows.length ?? 0) > 0 && (
@@ -459,201 +464,219 @@ export function KeywordsWithRankingsCard({
         )}
       </CardHeader>
       {showBody && (
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            Loading…
-          </p>
-        ) : grouped.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No keywords yet.{" "}
-            {addButton ? "Click Add Keyword to create one." : ""}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {grouped.map(({ keywordId, keywordText, platforms }) => {
-              const isOpen = !collapsed.has(keywordId);
-              const sorted = [...platforms].sort((a, b) => {
-                const ai = PLATFORM_ORDER.indexOf(
-                  a.platform as (typeof PLATFORM_ORDER)[number],
-                );
-                const bi = PLATFORM_ORDER.indexOf(
-                  b.platform as (typeof PLATFORM_ORDER)[number],
-                );
-                return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-              });
-              const hasData = platforms.length > 0;
-              const lock = showRotation ? lockTrigger(platforms) : null;
-              return (
-                <div
-                  key={keywordId}
-                  className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden"
-                >
-                  <div className="flex items-center gap-3 px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => hasData && toggle(keywordId)}
-                      className={`shrink-0 ${hasData ? "cursor-pointer text-muted-foreground hover:text-primary" : "cursor-default text-muted-foreground"}`}
-                      disabled={!hasData}
-                      aria-label={isOpen ? "Collapse" : "Expand"}
-                    >
-                      {hasData ? (
-                        isOpen ? (
-                          <ChevronDown className="w-3.5 h-3.5" />
+        <CardContent>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Loading…
+            </p>
+          ) : grouped.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              No keywords yet.{" "}
+              {addButton ? "Click Add Keyword to create one." : ""}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {grouped.map(({ keywordId, keywordText, platforms }) => {
+                const isOpen = !collapsed.has(keywordId);
+                const sorted = [...platforms].sort((a, b) => {
+                  const ai = PLATFORM_ORDER.indexOf(
+                    a.platform as (typeof PLATFORM_ORDER)[number],
+                  );
+                  const bi = PLATFORM_ORDER.indexOf(
+                    b.platform as (typeof PLATFORM_ORDER)[number],
+                  );
+                  return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                });
+                const hasData = platforms.length > 0;
+                const lock = showRotation ? lockTrigger(platforms) : null;
+                return (
+                  <div
+                    key={keywordId}
+                    className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => hasData && toggle(keywordId)}
+                        className={`shrink-0 ${hasData ? "cursor-pointer text-muted-foreground hover:text-primary" : "cursor-default text-muted-foreground"}`}
+                        disabled={!hasData}
+                        aria-label={isOpen ? "Collapse" : "Expand"}
+                      >
+                        {hasData ? (
+                          isOpen ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          )
                         ) : (
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        )
-                      ) : (
-                        <Key className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Link
-                        href={`/keywords?keywordId=${keywordId}`}
-                        className="text-sm font-semibold text-primary hover:underline truncate"
-                      >
-                        {keywordText}
-                      </Link>
-                      {lock && (
-                        <Badge
-                          className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 shrink-0"
-                          title={`Top-3 on ${lock.platform} (#${lock.position}) — will lock & rotate`}
+                          <Key className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Link
+                          href={`/keywords?keywordId=${keywordId}`}
+                          className="text-sm font-semibold text-primary hover:underline truncate"
                         >
-                          <Lock className="w-2.5 h-2.5" /> Locks ·{" "}
-                          {lock.platform} #{lock.position}
-                        </Badge>
-                      )}
-                      {!hasData && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] text-muted-foreground"
+                          {keywordText}
+                        </Link>
+                        {lock && (
+                          <Badge
+                            className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 shrink-0"
+                            title={`Top-3 on ${lock.platform} (#${lock.position}) — will lock & rotate`}
+                          >
+                            <Lock className="w-2.5 h-2.5" /> Locks ·{" "}
+                            {lock.platform} #{lock.position}
+                          </Badge>
+                        )}
+                        {!hasData && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] text-muted-foreground"
+                          >
+                            No data yet
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                        {sorted.map((p) => (
+                          <PlatformChip
+                            key={`chip-${p.keywordId}-${p.platform}`}
+                            row={p}
+                            onClick={setScreenshotTarget}
+                          />
+                        ))}
+                      </div>
+                      {onEditKeyword && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditKeyword(keywordId);
+                          }}
+                          title="Edit"
                         >
-                          No data yet
-                        </Badge>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {onDeleteKeyword && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteKeyword(keywordId);
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                      {sorted.map((p) => (
-                        <PlatformChip
-                          key={`chip-${p.keywordId}-${p.platform}`}
-                          row={p}
-                          onClick={setScreenshotTarget}
-                        />
-                      ))}
-                    </div>
-                    {onEditKeyword && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditKeyword(keywordId);
-                        }}
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {onDeleteKeyword && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteKeyword(keywordId);
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+
+                    {isOpen && hasData && (
+                      <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
+                        <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
+                          <div className="col-span-2">Platform</div>
+                          <div className="col-span-2">First</div>
+                          <div className="col-span-2">
+                            {label.previousLabel}
+                          </div>
+                          <div className="col-span-2">{label.currentLabel}</div>
+                          <div className="col-span-2">Change</div>
+                          <div className="col-span-2">Status</div>
+                        </div>
+                        {sorted.map((p) => (
+                          <div
+                            key={`${p.keywordId}-${p.platform}-detail`}
+                            className="px-1 py-1"
+                          >
+                            <div className="grid grid-cols-12 gap-2 items-center text-sm">
+                              <div className="col-span-2 capitalize font-semibold">
+                                {p.platform}
+                              </div>
+                              <div className="col-span-2 text-muted-foreground">
+                                {fmtPos(p.firstPosition)}
+                              </div>
+                              <div className="col-span-2 text-muted-foreground">
+                                {fmtPos(p.previousPosition)}
+                              </div>
+                              <div className="col-span-2 font-semibold">
+                                {p.currentReportId != null ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setScreenshotTarget({
+                                        reportId: p.currentReportId!,
+                                        keywordText: p.keywordText,
+                                        platform: p.platform,
+                                        position: p.currentPosition,
+                                        date: p.currentDate,
+                                      })
+                                    }
+                                    className="text-primary hover:underline cursor-pointer"
+                                    title="Click to view screenshot"
+                                  >
+                                    {fmtPos(p.currentPosition)}
+                                  </button>
+                                ) : (
+                                  <span>{fmtPos(p.currentPosition)}</span>
+                                )}
+                              </div>
+                              <div className="col-span-2">
+                                <ChangeCell change={p.change} />
+                              </div>
+                              <div className="col-span-2">
+                                {lockedView ? (
+                                  p.currentPosition != null &&
+                                  p.currentPosition <= TOP_RANK_THRESHOLD ? (
+                                    <Badge className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                                      <Lock className="w-2.5 h-2.5" /> Won
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] text-amber-600 border-amber-500/40 dark:text-amber-400"
+                                    >
+                                      Watch
+                                    </Badge>
+                                  )
+                                ) : (
+                                  <StatusBadge status={p.status} />
+                                )}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
+                              <div className="col-span-2" />
+                              <div className="col-span-2">
+                                {p.firstDate
+                                  ? format(new Date(p.firstDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-2">
+                                {p.previousDate
+                                  ? format(new Date(p.previousDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-2">
+                                {p.currentDate
+                                  ? format(new Date(p.currentDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-4" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-
-                  {isOpen && hasData && (
-                    <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
-                      <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
-                        <div className="col-span-2">Platform</div>
-                        <div className="col-span-2">First</div>
-                        <div className="col-span-2">{label.previousLabel}</div>
-                        <div className="col-span-2">{label.currentLabel}</div>
-                        <div className="col-span-2">Change</div>
-                        <div className="col-span-2">Status</div>
-                      </div>
-                      {sorted.map((p) => (
-                        <div
-                          key={`${p.keywordId}-${p.platform}-detail`}
-                          className="px-1 py-1"
-                        >
-                          <div className="grid grid-cols-12 gap-2 items-center text-sm">
-                            <div className="col-span-2 capitalize font-semibold">
-                              {p.platform}
-                            </div>
-                            <div className="col-span-2 text-muted-foreground">
-                              {fmtPos(p.firstPosition)}
-                            </div>
-                            <div className="col-span-2 text-muted-foreground">
-                              {fmtPos(p.previousPosition)}
-                            </div>
-                            <div className="col-span-2 font-semibold">
-                              {p.currentReportId != null ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setScreenshotTarget({
-                                      reportId: p.currentReportId!,
-                                      keywordText: p.keywordText,
-                                      platform: p.platform,
-                                      position: p.currentPosition,
-                                      date: p.currentDate,
-                                    })
-                                  }
-                                  className="text-primary hover:underline cursor-pointer"
-                                  title="Click to view screenshot"
-                                >
-                                  {fmtPos(p.currentPosition)}
-                                </button>
-                              ) : (
-                                <span>{fmtPos(p.currentPosition)}</span>
-                              )}
-                            </div>
-                            <div className="col-span-2">
-                              <ChangeCell change={p.change} />
-                            </div>
-                            <div className="col-span-2">
-                              <StatusBadge status={p.status} />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
-                            <div className="col-span-2" />
-                            <div className="col-span-2">
-                              {p.firstDate
-                                ? format(new Date(p.firstDate), "MMM d")
-                                : ""}
-                            </div>
-                            <div className="col-span-2">
-                              {p.previousDate
-                                ? format(new Date(p.previousDate), "MMM d")
-                                : ""}
-                            </div>
-                            <div className="col-span-2">
-                              {p.currentDate
-                                ? format(new Date(p.currentDate), "MMM d")
-                                : ""}
-                            </div>
-                            <div className="col-span-4" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
       )}
 
       <Dialog

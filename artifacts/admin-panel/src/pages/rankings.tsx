@@ -336,11 +336,45 @@ function exportRankingsPDF(
   }
 
   const pivoted = pivotRows(rows);
+
+  // Empty-state guard: never produce a blank PDF — say so plainly instead.
+  if (pivoted.length === 0) {
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(120, 130, 150);
+    doc.text(
+      "No ranking data for the selected filters.",
+      10,
+      headerBandHeight + 16,
+    );
+    doc.save(`rankings-${label}-empty-${fmtIsoDateET(new Date())}.pdf`);
+    return;
+  }
+
   const grouped = new Map<string, PivotRow[]>();
   for (const r of pivoted) {
     const key = r.client || "Unassigned";
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(r);
+  }
+
+  // Per-client summary (Top-3 / improved / declined) from the raw rows so the
+  // reader gets the headline numbers without scanning the table.
+  const summaryByClient = new Map<
+    string,
+    { top3: Set<number>; improved: number; declined: number }
+  >();
+  for (const r of rows) {
+    const key = r.clientName || "Unassigned";
+    let s = summaryByClient.get(key);
+    if (!s) {
+      s = { top3: new Set(), improved: 0, declined: 0 };
+      summaryByClient.set(key, s);
+    }
+    if (r.currentPosition != null && r.currentPosition <= 3)
+      s.top3.add(r.keywordId);
+    if (r.status === "improved") s.improved++;
+    else if (r.status === "declined") s.declined++;
   }
 
   let startY = headerBandHeight + 6;
@@ -370,8 +404,12 @@ function exportRankingsPDF(
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(120, 130, 150);
+    const sum = summaryByClient.get(clientName);
+    const sumTxt = sum
+      ? `  ·  ${sum.top3.size} in Top 3  ·  ${sum.improved} improved  ·  ${sum.declined} declined`
+      : "";
     doc.text(
-      `${clientRows.length} keyword${clientRows.length !== 1 ? "s" : ""}`,
+      `${clientRows.length} keyword${clientRows.length !== 1 ? "s" : ""}${sumTxt}`,
       10,
       startY + 4,
     );
