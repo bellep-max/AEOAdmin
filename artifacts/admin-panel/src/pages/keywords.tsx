@@ -1288,6 +1288,11 @@ export default function Keywords() {
         clientId: selectedClientId,
         businessId: selectedBusinessId,
         aeoPlanId: selectedCampaignId,
+        // Deep-links can target a locked/won OR archived/parked keyword (the
+        // daily & audit cards reference any keyword with history). The default
+        // list excludes both, so include them when deep-linking so the target
+        // is present to scroll to.
+        deepLink: targetKeywordId != null,
       },
     ],
     queryFn: async () => {
@@ -1298,6 +1303,12 @@ export default function Keywords() {
         qs.set("businessId", String(selectedBusinessId));
       if (selectedCampaignId !== null)
         qs.set("aeoPlanId", String(selectedCampaignId));
+      // Deep-link target may be locked/won or archived/parked — include both so
+      // it shows up and we can scroll to it.
+      if (targetKeywordId != null) {
+        qs.set("includeLocked", "true");
+        qs.set("includeArchived", "true");
+      }
       const r = await rawFetch(
         `/api/keywords${qs.toString() ? `?${qs}` : ""}`,
         { credentials: "include" },
@@ -1319,17 +1330,34 @@ export default function Keywords() {
     if (!targetKeywordId || !keywords) return;
     const kw = keywords.find((k) => k.id === targetKeywordId);
     if (!kw) return;
+    // Scope the view to the keyword's client + business so its section actually
+    // renders (the all-clients view keeps sections collapsed). Idempotent — once
+    // these match, re-runs are no-ops.
+    if (kw.clientId != null) setSelectedClientId(kw.clientId as number);
+    if (kw.businessId != null) setSelectedBusinessId(kw.businessId as number);
     const bizId = (kw.businessId as number | null) ?? -1;
+    // EXPAND (not collapse) the keyword's business so the row is visible.
     setCollapsed((prev) => {
-      if (prev.has(bizId)) return prev;
+      if (!prev.has(bizId)) return prev;
       const next = new Set(prev);
-      next.add(bizId);
+      next.delete(bizId);
       return next;
     });
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`kw-${targetKeywordId}`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+    // Retry-scroll: the row may not exist until after the scoped refetch +
+    // re-render, so poll briefly for the element before giving up.
+    const elId = `kw-${targetKeywordId}`;
+    let tries = 20;
+    const tick = () => {
+      const el = document.getElementById(elId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary");
+        setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
+        return;
+      }
+      if (tries-- > 0) setTimeout(tick, 200);
+    };
+    requestAnimationFrame(tick);
   }, [targetKeywordId, keywords]);
 
   async function saveKeyword(id: number | null, data: KwRecord) {
