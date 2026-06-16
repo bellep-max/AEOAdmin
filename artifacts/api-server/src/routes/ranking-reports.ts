@@ -637,7 +637,9 @@ router.get("/per-keyword-platform", requireSalesAllowed, async (req, res) => {
           ? inArray(rankingReportsTable.clientId, eligibleIds)
           : undefined,
       )
-      .orderBy(asc(rankingReportsTable.createdAt));
+      // by real ranking `date` (id tiebreak), not created_at (import time) —
+      // keeps current/previous/initial correct for out-of-order back-fills.
+      .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id));
 
     // Group by keywordId + platform, keep only the latest
     const latest = new Map<
@@ -820,7 +822,12 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
             ? inArray(rankingReportsTable.clientId, eligibleIds)
             : undefined,
         )
-        .orderBy(asc(rankingReportsTable.createdAt)),
+        // Order by the ranking's actual `date` (id as tiebreak), NOT created_at.
+        // created_at reflects IMPORT time, which diverges from real date for
+        // back-filled batches imported out of chronological order — that made
+        // "current"/"previous" flip (e.g. May 29 shown as current over Jun 12).
+        // Date ordering makes latest-by-date = current regardless of import order.
+        .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id)),
     ]);
 
     const clientMap = new Map(clients.map((c) => [c.id, c]));
@@ -844,10 +851,13 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
-        const t = new Date(r.createdAt as unknown as string).getTime();
+        if (!r.date) continue;
+        // Window membership by the ranking's real `date` (noon UTC), not
+        // created_at (import time) — keeps back-filled rows in the right window.
+        const t = new Date(`${r.date}T12:00:00Z`).getTime();
         if (t < from.getTime() || t >= to.getTime()) continue;
         const key = `${r.keywordId}|${r.platform}`;
-        map.set(key, r); // reports are asc-ordered, so last wins
+        map.set(key, r); // reports are date-asc ordered, so last wins
       }
       return map;
     };
@@ -1052,7 +1062,9 @@ router.get("/initial-vs-current", requireSalesAllowed, async (req, res) => {
           ? inArray(rankingReportsTable.clientId, eligibleIds)
           : undefined,
       )
-      .orderBy(asc(rankingReportsTable.createdAt));
+      // by real ranking `date` (id tiebreak), not created_at (import time) —
+      // keeps current/previous/initial correct for out-of-order back-fills.
+      .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id));
 
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
