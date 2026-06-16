@@ -445,7 +445,7 @@ export function KeywordsWithRankingsCard({
                 ↑ {counts.improved}
               </Badge>
             )}
-            {counts.declined > 0 && (
+            {!lockedView && counts.declined > 0 && (
               <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">
                 ↓ {counts.declined}
               </Badge>
@@ -626,7 +626,19 @@ export function KeywordsWithRankingsCard({
                                 )}
                               </div>
                               <div className="col-span-2">
-                                <ChangeCell change={p.change} />
+                                {lockedView ? (
+                                  // Locked/Won card: no red. Show the delta in a
+                                  // neutral tone (never the red decline styling).
+                                  <span className="text-xs text-muted-foreground">
+                                    {p.change == null
+                                      ? "—"
+                                      : p.change > 0
+                                        ? `+${p.change}`
+                                        : String(p.change)}
+                                  </span>
+                                ) : (
+                                  <ChangeCell change={p.change} />
+                                )}
                               </div>
                               <div className="col-span-2">
                                 {lockedView ? (
