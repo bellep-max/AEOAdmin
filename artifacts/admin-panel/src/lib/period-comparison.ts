@@ -21,7 +21,8 @@ export type Status =
   | "steady"
   | "declined"
   | "missing"
-  | "pending";
+  | "pending"
+  | "unavailable";
 export type Freshness = "fresh" | "stale" | "cold" | "never";
 
 export interface PeriodRow {
@@ -202,6 +203,72 @@ export const PLATFORM_COLORS: Record<string, string> = {
   perplexity:
     "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400",
 };
+
+/**
+ * Platforms with a known platform-wide outage (the upstream platform isn't
+ * reporting). For these, a keyword with no row shows an explicit "Unavailable"
+ * status instead of an empty cell, so nobody reads a blank as "rank lost".
+ * Flip this list (remove the platform) when it's reporting again — every
+ * surface keys off this one constant.
+ */
+export const UNAVAILABLE_PLATFORMS: readonly string[] = ["gemini"];
+
+export function isPlatformUnavailable(platform: string): boolean {
+  return UNAVAILABLE_PLATFORMS.includes(platform.toLowerCase());
+}
+
+/** Synthetic placeholder row marking a platform as unavailable for a keyword. */
+function makeUnavailableRow(platform: string, like: PeriodRow): PeriodRow {
+  return {
+    keywordId: like.keywordId,
+    keywordText: like.keywordText,
+    platform,
+    clientId: like.clientId,
+    clientName: like.clientName,
+    businessId: like.businessId,
+    businessName: like.businessName,
+    aeoPlanId: like.aeoPlanId,
+    campaignName: like.campaignName,
+    currentReportId: null,
+    currentPosition: null,
+    currentDate: null,
+    currentVariant: null,
+    previousReportId: null,
+    previousPosition: null,
+    previousDate: null,
+    firstReportId: null,
+    firstPosition: null,
+    firstDate: null,
+    change: null,
+    status: "unavailable",
+    freshness: "never",
+    lastRunAt: null,
+  };
+}
+
+/**
+ * Return a keyword's platform rows in PLATFORM_ORDER, appending an "unavailable"
+ * placeholder for each configured-unavailable platform that has no real row.
+ * No-op when the keyword has no rows at all — a brand-new keyword should read
+ * "No data yet", not show a lone outage chip.
+ */
+export function sortPlatformsWithUnavailable(
+  rows: readonly PeriodRow[],
+): PeriodRow[] {
+  const out = [...rows];
+  if (rows.length > 0) {
+    const present = new Set(rows.map((r) => r.platform.toLowerCase()));
+    for (const platform of UNAVAILABLE_PLATFORMS) {
+      if (!present.has(platform))
+        out.push(makeUnavailableRow(platform, rows[0]));
+    }
+  }
+  const idx = (p: string) => {
+    const i = PLATFORM_ORDER.indexOf(p as (typeof PLATFORM_ORDER)[number]);
+    return i === -1 ? 99 : i;
+  };
+  return out.sort((a, b) => idx(a.platform) - idx(b.platform));
+}
 
 export interface StatusCounts {
   total: number;

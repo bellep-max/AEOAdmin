@@ -36,9 +36,9 @@ import {
   fmtPos,
   periodLabel,
   rawFetch,
-  PLATFORM_ORDER,
   PLATFORM_COLORS,
   TOP_RANK_THRESHOLD,
+  sortPlatformsWithUnavailable,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
@@ -139,9 +139,11 @@ function PlatformChip({
    *  button that opens the screenshot dialog. */
   onClick?: (target: ScreenshotTarget) => void;
 }) {
-  const cls =
-    PLATFORM_COLORS[row.platform] ??
-    "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
+  const unavailable = row.status === "unavailable";
+  const cls = unavailable
+    ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
+    : (PLATFORM_COLORS[row.platform] ??
+      "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
   const arrow =
     row.change == null
       ? ""
@@ -150,7 +152,8 @@ function PlatformChip({
         : row.change < 0
           ? " ↓"
           : " =";
-  const clickable = onClick != null && row.currentReportId != null;
+  const clickable =
+    !unavailable && onClick != null && row.currentReportId != null;
   const interactive = clickable
     ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-shadow"
     : "";
@@ -193,10 +196,14 @@ function PlatformChip({
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
     >
       <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">
-        {fmtPos(row.currentPosition)}
-        {arrow}
-      </span>
+      {unavailable ? (
+        <span className="font-medium opacity-80">Unavailable</span>
+      ) : (
+        <span className="font-bold">
+          {fmtPos(row.currentPosition)}
+          {arrow}
+        </span>
+      )}
     </span>
   );
 }
@@ -478,15 +485,9 @@ export function KeywordsWithRankingsCard({
             <div className="space-y-2">
               {grouped.map(({ keywordId, keywordText, platforms }) => {
                 const isOpen = !collapsed.has(keywordId);
-                const sorted = [...platforms].sort((a, b) => {
-                  const ai = PLATFORM_ORDER.indexOf(
-                    a.platform as (typeof PLATFORM_ORDER)[number],
-                  );
-                  const bi = PLATFORM_ORDER.indexOf(
-                    b.platform as (typeof PLATFORM_ORDER)[number],
-                  );
-                  return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-                });
+                // Adds an "Unavailable" placeholder for any outage platform
+                // (e.g. Gemini) missing from a keyword that otherwise has data.
+                const sorted = sortPlatformsWithUnavailable(platforms);
                 const hasData = platforms.length > 0;
                 const lock = showRotation ? lockTrigger(platforms) : null;
                 return (
@@ -641,7 +642,9 @@ export function KeywordsWithRankingsCard({
                                 )}
                               </div>
                               <div className="col-span-2">
-                                {lockedView ? (
+                                {p.status === "unavailable" ? (
+                                  <StatusBadge status="unavailable" />
+                                ) : lockedView ? (
                                   p.currentPosition != null &&
                                   p.currentPosition <= TOP_RANK_THRESHOLD ? (
                                     <Badge className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">

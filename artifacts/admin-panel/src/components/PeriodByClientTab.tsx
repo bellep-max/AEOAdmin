@@ -10,8 +10,8 @@ import {
   fmtPos,
   fmtShortET,
   periodLabel,
-  PLATFORM_ORDER,
   PLATFORM_COLORS,
+  sortPlatformsWithUnavailable,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
@@ -51,9 +51,11 @@ interface CampaignGroup {
 const UNASSIGNED_PLAN = 0;
 
 function PlatformChip({ row }: { row: PeriodRow }) {
-  const cls =
-    PLATFORM_COLORS[row.platform] ??
-    "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
+  const unavailable = row.status === "unavailable";
+  const cls = unavailable
+    ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
+    : (PLATFORM_COLORS[row.platform] ??
+      "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
   const arrow =
     row.change == null
       ? ""
@@ -62,16 +64,19 @@ function PlatformChip({ row }: { row: PeriodRow }) {
         : row.change < 0
           ? " ↓"
           : " =";
-  const pos = fmtPos(row.currentPosition);
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}
     >
       <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">
-        {pos}
-        {arrow}
-      </span>
+      {unavailable ? (
+        <span className="font-medium opacity-80">Unavailable</span>
+      ) : (
+        <span className="font-bold">
+          {fmtPos(row.currentPosition)}
+          {arrow}
+        </span>
+      )}
     </span>
   );
 }
@@ -299,15 +304,10 @@ export function PeriodByClientTab({
                     a.keyword.keywordText.localeCompare(b.keyword.keywordText),
                   )
                   .map(({ keyword, platforms }) => {
-                    const sortedPlatforms = [...platforms].sort((a, b) => {
-                      const ai = PLATFORM_ORDER.indexOf(
-                        a.platform as (typeof PLATFORM_ORDER)[number],
-                      );
-                      const bi = PLATFORM_ORDER.indexOf(
-                        b.platform as (typeof PLATFORM_ORDER)[number],
-                      );
-                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-                    });
+                    // Adds an "Unavailable" placeholder for any outage platform
+                    // (e.g. Gemini) missing from a keyword that otherwise has data.
+                    const sortedPlatforms =
+                      sortPlatformsWithUnavailable(platforms);
 
                     return (
                       <div

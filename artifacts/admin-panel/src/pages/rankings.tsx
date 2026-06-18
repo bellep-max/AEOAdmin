@@ -34,6 +34,7 @@ import {
   fmtIsoDateET,
   fmtDateTimeET,
   buildPeriodUrl,
+  isPlatformUnavailable,
   type Period,
   type PeriodResponse,
   type PeriodRow,
@@ -141,6 +142,10 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
     )
     .map(({ base, platforms }) => {
       const g = (p: string) => platforms.get(p);
+      // Missing data on an outage platform (e.g. Gemini) reads as "Unavailable"
+      // in exports too, so a client report never shows a bare "—" there.
+      const statusOf = (p: string) =>
+        g(p)?.status ?? (isPlatformUnavailable(p) ? "Unavailable" : "—");
       return {
         client: base.clientName ?? "",
         business: base.businessName ?? "",
@@ -153,7 +158,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
         chatgptCurrDate: dt(g("chatgpt")?.currentDate),
         chatgptChange: chg(g("chatgpt")?.change ?? null),
-        chatgptStatus: g("chatgpt")?.status ?? "—",
+        chatgptStatus: statusOf("chatgpt"),
         geminiFirst: pos(g("gemini")?.firstPosition ?? null),
         geminiFirstDate: dt(g("gemini")?.firstDate),
         geminiPrev: pos(g("gemini")?.previousPosition ?? null),
@@ -161,7 +166,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         geminiCurr: pos(g("gemini")?.currentPosition ?? null),
         geminiCurrDate: dt(g("gemini")?.currentDate),
         geminiChange: chg(g("gemini")?.change ?? null),
-        geminiStatus: g("gemini")?.status ?? "—",
+        geminiStatus: statusOf("gemini"),
         perplexityFirst: pos(g("perplexity")?.firstPosition ?? null),
         perplexityFirstDate: dt(g("perplexity")?.firstDate),
         perplexityPrev: pos(g("perplexity")?.previousPosition ?? null),
@@ -169,7 +174,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
         perplexityCurrDate: dt(g("perplexity")?.currentDate),
         perplexityChange: chg(g("perplexity")?.change ?? null),
-        perplexityStatus: g("perplexity")?.status ?? "—",
+        perplexityStatus: statusOf("perplexity"),
       };
     });
 }
