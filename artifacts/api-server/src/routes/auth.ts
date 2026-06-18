@@ -47,7 +47,14 @@ const CODE_WINDOW_MS = 15 * 60 * 1000;
 const NOT_A_CLIENT_MESSAGE =
   "This email isn't associated with an account. Contact your account manager for access.";
 
-/** Case-insensitive match of an email against any client email field. */
+/**
+ * Case-insensitive match of an email against any client email field.
+ *
+ * An email can appear on more than one client (e.g. it was reassigned from an
+ * old/paused client to a live one). Prefer the active client and break ties by
+ * lowest id so the result is deterministic — otherwise a portal login could
+ * resolve to a stale inactive client.
+ */
 async function findClientByEmail(email: string) {
   const e = email.trim().toLowerCase();
   if (!e) return null;
@@ -60,6 +67,10 @@ async function findClientByEmail(email: string) {
         sql`lower(${clientsTable.accountEmail}) = ${e}`,
         sql`lower(${clientsTable.billingEmail}) = ${e}`,
       ),
+    )
+    .orderBy(
+      sql`case when lower(${clientsTable.status}) = 'active' then 0 else 1 end`,
+      clientsTable.id,
     )
     .limit(1);
   return client ?? null;
@@ -75,7 +86,20 @@ async function findOrCreateCustomerUser(
     .select()
     .from(usersTable)
     .where(eq(usersTable.email, email));
-  if (existing) return existing;
+  if (existing) {
+    // An email can be reassigned to a different client (the admin changed which
+    // client owns this address). The user row must follow, otherwise the portal
+    // keeps scoping to the old client_id and shows the wrong client's data.
+    if (existing.role === "customer" && existing.clientId !== clientId) {
+      const [updated] = await db
+        .update(usersTable)
+        .set({ clientId })
+        .where(eq(usersTable.id, existing.id))
+        .returning();
+      return updated ?? existing;
+    }
+    return existing;
+  }
   // Passwordless accounts never use the password column, but the schema makes
   // it NOT NULL. Store a random unguessable value so password login can't work.
   const placeholder = `otp:${crypto.randomBytes(32).toString("hex")}`;
