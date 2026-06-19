@@ -208,6 +208,56 @@ function PlatformChip({
   );
 }
 
+/** A rank value in the detail grid (First / Last 2 weeks / Current). Clickable
+ *  to open that period's screenshot when a report exists; when there's no report
+ *  for the period, clicking explains the screenshot isn't available. */
+function RankShotCell({
+  reportId,
+  position,
+  date,
+  platform,
+  keywordText,
+  emphasis,
+  onOpen,
+  onUnavailable,
+}: {
+  reportId: number | null;
+  position: number | null;
+  date: string | null;
+  platform: string;
+  keywordText: string;
+  /** Current-column cell uses the stronger foreground weight. */
+  emphasis?: boolean;
+  onOpen: (target: ScreenshotTarget) => void;
+  onUnavailable: () => void;
+}) {
+  const text = fmtPos(position);
+  if (reportId != null) {
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          onOpen({ reportId, keywordText, platform, position, date })
+        }
+        className={`cursor-pointer underline decoration-dotted decoration-muted-foreground/40 underline-offset-2 hover:text-primary hover:decoration-primary ${emphasis ? "text-foreground" : "text-muted-foreground"}`}
+        title="Click to view screenshot"
+      >
+        {text}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onUnavailable}
+      className={`cursor-pointer hover:text-foreground ${emphasis ? "text-foreground" : "text-muted-foreground"}`}
+      title="Screenshot not available for this period"
+    >
+      {text}
+    </button>
+  );
+}
+
 export function KeywordsWithRankingsCard({
   title = "Keywords",
   clientId,
@@ -233,6 +283,12 @@ export function KeywordsWithRankingsCard({
     useState<ScreenshotTarget | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const notifyNoShot = () =>
+    toast({
+      title: "Screenshot not available",
+      description: "No screenshot was captured for this period.",
+    });
 
   const { data, isLoading } = usePeriodComparison({
     period,
@@ -599,32 +655,38 @@ export function KeywordsWithRankingsCard({
                                 {p.platform}
                               </div>
                               <div className="col-span-2 text-muted-foreground">
-                                {fmtPos(p.firstPosition)}
+                                <RankShotCell
+                                  reportId={p.firstReportId}
+                                  position={p.firstPosition}
+                                  date={p.firstDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
                               </div>
                               <div className="col-span-2 text-muted-foreground">
-                                {fmtPos(p.previousPosition)}
+                                <RankShotCell
+                                  reportId={p.previousReportId}
+                                  position={p.previousPosition}
+                                  date={p.previousDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
                               </div>
                               <div className="col-span-2 font-semibold">
-                                {p.currentReportId != null ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setScreenshotTarget({
-                                        reportId: p.currentReportId!,
-                                        keywordText: p.keywordText,
-                                        platform: p.platform,
-                                        position: p.currentPosition,
-                                        date: p.currentDate,
-                                      })
-                                    }
-                                    className="text-primary hover:underline cursor-pointer"
-                                    title="Click to view screenshot"
-                                  >
-                                    {fmtPos(p.currentPosition)}
-                                  </button>
-                                ) : (
-                                  <span>{fmtPos(p.currentPosition)}</span>
-                                )}
+                                <RankShotCell
+                                  reportId={p.currentReportId}
+                                  position={p.currentPosition}
+                                  date={p.currentDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  emphasis
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
                               </div>
                               <div className="col-span-2">
                                 {lockedView ? (
