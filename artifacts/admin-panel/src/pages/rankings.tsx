@@ -799,10 +799,10 @@ export default function Rankings() {
           }}
         >
           <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
-            <SelectValue placeholder="All Clients" />
+            <SelectValue placeholder="Select a client" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Clients</SelectItem>
+            <SelectItem value="all">Select a client</SelectItem>
             {clientsSorted.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.businessName}
@@ -959,7 +959,9 @@ export default function Rankings() {
         <Card className="border-border/50 border-dashed">
           <CardContent className="py-16 text-center">
             <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
-            <p className="text-sm font-medium">Select a client to view rankings</p>
+            <p className="text-sm font-medium">
+              Select a client to view rankings
+            </p>
             <p className="text-xs text-muted-foreground mt-1">
               Rankings load per client to keep the page fast — pick a client
               above to begin.

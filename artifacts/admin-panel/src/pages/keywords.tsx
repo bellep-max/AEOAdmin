@@ -1698,8 +1698,8 @@ export default function Keywords() {
                   ),
                 )
                 .map((c) => ({ value: String(c.id), label: c.businessName }))}
-              placeholder="All Clients"
-              allLabel="All Clients"
+              placeholder="Select a client"
+              allLabel="Select a client"
             />
 
             <span className="text-slate-400">›</span>
@@ -1882,7 +1882,9 @@ export default function Keywords() {
       {selectedClientId === null && targetKeywordId == null ? (
         <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 gap-2">
           <Key className="w-10 h-10 opacity-60" />
-          <p className="text-lg font-semibold">Select a client to view keywords</p>
+          <p className="text-lg font-semibold">
+            Select a client to view keywords
+          </p>
           <p className="text-sm text-muted-foreground">
             Keywords load per client to keep the page fast — pick a client above
             to begin.

@@ -143,10 +143,10 @@ export default function RankingsBiWeekly() {
           }}
         >
           <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
-            <SelectValue placeholder="All Clients" />
+            <SelectValue placeholder="Select a client" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Clients</SelectItem>
+            <SelectItem value="all">Select a client</SelectItem>
             {clientsSorted.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.businessName}
