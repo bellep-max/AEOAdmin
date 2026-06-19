@@ -145,6 +145,34 @@ function fmtRank(
   return `#${v}`;
 }
 
+/* First → Current delta. A lower rank number is better, so first - current is
+   positive when the keyword improved. Used in exports to make the first-vs-
+   current comparison explicit instead of leaving the reader to subtract. */
+function fmtRankChange(c: RankCell | undefined): string {
+  if (!c || c.first == null || c.current == null) return "—";
+  const delta = c.first - c.current;
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
+/* Combined "first → current" cell for the PDF (compact, with the delta). */
+function fmtRankProgress(c: RankCell | undefined): string {
+  if (!c) return "—";
+  const first = c.first == null ? "—" : `#${c.first}`;
+  const current = c.current == null ? "—" : `#${c.current}`;
+  if (c.first == null && c.current == null) return "—";
+  const delta = fmtRankChange(c);
+  return delta === "—"
+    ? `${first} → ${current}`
+    : `${first} → ${current} (${delta})`;
+}
+
+/* Status text for exports: the keyword lifecycle status, marked inactive when
+   the keyword isn't active (folds the old separate "Active" column in). */
+function statusText(kw: { status?: unknown; isActive?: unknown }): string {
+  const status = String((kw as { status?: unknown }).status ?? "new");
+  return kw.isActive === false ? `${status} (inactive)` : status;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CSV EXPORT
 ═══════════════════════════════════════════════════════════ */
@@ -163,22 +191,21 @@ function exportCSV(
     "Campaign",
     "Keyword",
     "Keyword Type",
-    "Primary (1st)",
-    "Active",
     "Status",
     "Date Added",
     "ChatGPT First",
     "ChatGPT Current",
+    "ChatGPT Change",
     "Gemini First",
     "Gemini Current",
+    "Gemini Change",
     "Perplexity First",
     "Perplexity Current",
+    "Perplexity Change",
     "Search (30d)",
     "Follow-up Search (30d)",
     "Search (Life)",
     "Follow-up Search (Life)",
-    "Implemented By",
-    "Notes",
   ];
   const lines = rows.map((kw) => {
     const type = getKeywordTypeLabel(kw.keywordType as number);
@@ -196,22 +223,21 @@ function exportCSV(
       esc(campaign),
       esc(kw.keywordText),
       esc(type),
-      esc(kw.isPrimary ? "Yes" : "No"),
-      esc(kw.isActive ? "Active" : "Inactive"),
-      esc((kw as any).status ?? "new"),
+      esc(statusText(kw as { status?: unknown; isActive?: unknown })),
       esc(date),
       esc(fmtRank(ranks.chatgpt, "first")),
       esc(fmtRank(ranks.chatgpt, "current")),
+      esc(fmtRankChange(ranks.chatgpt)),
       esc(fmtRank(ranks.gemini, "first")),
       esc(fmtRank(ranks.gemini, "current")),
+      esc(fmtRankChange(ranks.gemini)),
       esc(fmtRank(ranks.perplexity, "first")),
       esc(fmtRank(ranks.perplexity, "current")),
+      esc(fmtRankChange(ranks.perplexity)),
       kw.initialSearchCount30Days ?? "",
       kw.followupSearchCount30Days ?? "",
       kw.initialSearchCountLife ?? "",
       kw.followupSearchCountLife ?? "",
-      esc((kw as any).implementedBy ?? ""),
-      esc((kw as any).notes ?? ""),
     ].join(",");
   });
   const csv = [headers.join(","), ...lines].join("\n");
@@ -316,16 +342,11 @@ function exportPDF(
         campaign,
         kw.keywordText as string,
         type,
-        kw.isPrimary ? "Yes" : "No",
-        kw.isActive ? "Active" : "Inactive",
-        ((kw as any).status ?? "new") as string,
+        statusText(kw as { status?: unknown; isActive?: unknown }),
         date,
-        fmtRank(ranks.chatgpt, "first"),
-        fmtRank(ranks.chatgpt, "current"),
-        fmtRank(ranks.gemini, "first"),
-        fmtRank(ranks.gemini, "current"),
-        fmtRank(ranks.perplexity, "first"),
-        fmtRank(ranks.perplexity, "current"),
+        fmtRankProgress(ranks.chatgpt),
+        fmtRankProgress(ranks.gemini),
+        fmtRankProgress(ranks.perplexity),
         kw.initialSearchCount30Days != null
           ? String(kw.initialSearchCount30Days)
           : "—",
@@ -338,8 +359,6 @@ function exportPDF(
         kw.followupSearchCountLife != null
           ? String(kw.followupSearchCountLife)
           : "—",
-        ((kw as any).implementedBy as string) || "—",
-        ((kw as any).notes as string) || "—",
       ];
     });
 
@@ -350,22 +369,15 @@ function exportPDF(
           "Campaign",
           "Keyword",
           "Type",
-          "1st",
-          "Active",
           "Status",
           "Date",
-          "ChatGPT 1st",
-          "ChatGPT Curr",
-          "Gemini 1st",
-          "Gemini Curr",
-          "Perplexity 1st",
-          "Perplexity Curr",
+          "ChatGPT (1st → Curr)",
+          "Gemini (1st → Curr)",
+          "Perplexity (1st → Curr)",
           "Search 30d",
           "F/U 30d",
           "Search Life",
           "F/U Life",
-          "Implemented By",
-          "Notes",
         ],
       ],
       body: bodyRows,
@@ -383,22 +395,15 @@ function exportPDF(
         0: { cellWidth: 26, overflow: "linebreak" },
         1: { cellWidth: 34, overflow: "linebreak" },
         2: { cellWidth: 14 },
-        3: { cellWidth: 8, halign: "center" },
-        4: { cellWidth: 10, halign: "center" },
-        5: { cellWidth: 12, halign: "center" },
-        6: { cellWidth: 14, halign: "center" },
-        7: { cellWidth: 11, halign: "center" },
-        8: { cellWidth: 11, halign: "center" },
-        9: { cellWidth: 11, halign: "center" },
-        10: { cellWidth: 11, halign: "center" },
-        11: { cellWidth: 11, halign: "center" },
-        12: { cellWidth: 11, halign: "center" },
-        13: { cellWidth: 10, halign: "right" },
-        14: { cellWidth: 10, halign: "right" },
-        15: { cellWidth: 10, halign: "right" },
-        16: { cellWidth: 10, halign: "right" },
-        17: { cellWidth: 16 },
-        18: { cellWidth: 20 },
+        3: { cellWidth: 16, halign: "center" },
+        4: { cellWidth: 16, halign: "center" },
+        5: { cellWidth: 24, halign: "center" },
+        6: { cellWidth: 24, halign: "center" },
+        7: { cellWidth: 24, halign: "center" },
+        8: { cellWidth: 11, halign: "right" },
+        9: { cellWidth: 11, halign: "right" },
+        10: { cellWidth: 11, halign: "right" },
+        11: { cellWidth: 11, halign: "right" },
       },
       margin: { left: 10, right: 10 },
       didDrawPage: footerFn,
@@ -1316,6 +1321,10 @@ export default function Keywords() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
+    // Lazy-load: don't pull the full keyword list on first render — it's huge
+    // and laggy. Wait for a client selection (a deep-link to a specific keyword
+    // still loads so the target can be scrolled to).
+    enabled: selectedClientId !== null || targetKeywordId != null,
   });
   const { data: clients } = useGetClients();
   const updateKeyword = useUpdateKeyword();
@@ -1870,7 +1879,16 @@ export default function Keywords() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
+      {selectedClientId === null && targetKeywordId == null ? (
+        <div className="flex flex-col items-center justify-center h-52 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 gap-2">
+          <Key className="w-10 h-10 opacity-60" />
+          <p className="text-lg font-semibold">Select a client to view keywords</p>
+          <p className="text-sm text-muted-foreground">
+            Keywords load per client to keep the page fast — pick a client above
+            to begin.
+          </p>
+        </div>
+      ) : isLoading ? (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
           <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
           <p className="text-base text-muted-foreground font-medium">

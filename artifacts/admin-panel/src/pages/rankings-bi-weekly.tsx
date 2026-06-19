@@ -215,11 +215,24 @@ export default function RankingsBiWeekly() {
         )}
       </div>
 
-      <BiWeeklyReportTab
-        clientId={selectedClientId}
-        businessId={selectedBusinessId}
-        aeoPlanId={selectedCampaignId}
-      />
+      {selectedClientId === null ? (
+        <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-center">
+          <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+          <p className="text-sm font-medium">
+            Select a client to view the bi-weekly report
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            The report loads per client to keep it fast — pick a client above to
+            begin.
+          </p>
+        </div>
+      ) : (
+        <BiWeeklyReportTab
+          clientId={selectedClientId}
+          businessId={selectedBusinessId}
+          aeoPlanId={selectedCampaignId}
+        />
+      )}
 
       {exportMode && (
         <ExportBiWeeklyDialog

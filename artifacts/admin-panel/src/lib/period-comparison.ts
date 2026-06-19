@@ -88,7 +88,13 @@ export function buildPeriodUrl(filters: PeriodFilters): string {
   return `/api/ranking-reports/period-comparison?${params}`;
 }
 
-export function usePeriodComparison(filters: PeriodFilters) {
+export function usePeriodComparison(
+  filters: PeriodFilters,
+  /** When false, the query is held back (no network call). Used to require a
+   *  client selection before loading the full dataset — the all-clients payload
+   *  is large and makes the page lag. */
+  enabled = true,
+) {
   return useQuery<PeriodResponse>({
     queryKey: [
       "/api/ranking-reports/period-comparison",
@@ -100,6 +106,7 @@ export function usePeriodComparison(filters: PeriodFilters) {
       filters.prevDate ?? null,
       filters.currentDate ?? null,
     ],
+    enabled,
     queryFn: async () => {
       const res = await rawFetch(buildPeriodUrl(filters));
       if (!res.ok) throw new Error("Failed to load period comparison");

@@ -1155,7 +1155,9 @@ router.get("/initial-vs-current", requireSalesAllowed, async (req, res) => {
    distribution for combos new to the current batch. */
 router.get(
   "/bi-weekly-report",
-  requireRoles("owner", "sales"),
+  // Same gate as period-comparison: admins/owners + scoped roles (incl.
+  // chuckslocal) are allowed; getScopedClientIds confines the data per role.
+  requireSalesAllowed,
   async (req, res) => {
     try {
       const eligibleIds = await getScopedClientIds(req);

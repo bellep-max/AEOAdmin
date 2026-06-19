@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent } from "@/components/ui/card";
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
@@ -640,15 +641,22 @@ export default function Rankings() {
     prevDateOverride !== null ||
     currentDateOverride !== null;
 
-  const { data: periodData } = usePeriodComparison({
-    period: effectivePeriod,
-    clientId: selectedClientId,
-    businessId: selectedBusinessId,
-    aeoPlanId: selectedCampaignId,
-    firstDate: firstDateOverride,
-    prevDate: prevDateOverride,
-    currentDate: currentDateOverride,
-  });
+  // Lazy-load: hold the (large) all-clients fetch until a client is picked.
+  // The page lagged badly loading every client up front; now nothing loads
+  // until the operator selects a client.
+  const clientChosen = selectedClientId !== null;
+  const { data: periodData } = usePeriodComparison(
+    {
+      period: effectivePeriod,
+      clientId: selectedClientId,
+      businessId: selectedBusinessId,
+      aeoPlanId: selectedCampaignId,
+      firstDate: firstDateOverride,
+      prevDate: prevDateOverride,
+      currentDate: currentDateOverride,
+    },
+    clientChosen,
+  );
 
   const label = periodLabel(effectivePeriod);
   const hasRows = (periodData?.rows?.length ?? 0) > 0;
@@ -947,29 +955,44 @@ export default function Rankings() {
         )}
       </div>
 
-      {/* Period overview — all three periods at a glance */}
-      {compareMode === "period" && (
-        <PeriodOverview
-          clientId={selectedClientId}
-          businessId={selectedBusinessId}
-          aeoPlanId={selectedCampaignId}
-          activePeriod={period}
-          onSelect={(p) => setPeriod(p)}
-        />
-      )}
+      {!clientChosen ? (
+        <Card className="border-border/50 border-dashed">
+          <CardContent className="py-16 text-center">
+            <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="text-sm font-medium">Select a client to view rankings</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Rankings load per client to keep the page fast — pick a client
+              above to begin.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Period overview — all three periods at a glance */}
+          {compareMode === "period" && (
+            <PeriodOverview
+              clientId={selectedClientId}
+              businessId={selectedBusinessId}
+              aeoPlanId={selectedCampaignId}
+              activePeriod={period}
+              onSelect={(p) => setPeriod(p)}
+            />
+          )}
 
-      {/* Single view — grouped by Client with inline Business · Campaign context */}
-      <PeriodByClientTab
-        period={effectivePeriod}
-        clientId={selectedClientId}
-        businessId={selectedBusinessId}
-        aeoPlanId={selectedCampaignId}
-        comparisonOnly={comparisonOnly}
-        auditDate={auditDate}
-        firstDate={firstDateOverride}
-        prevDate={prevDateOverride}
-        currentDate={currentDateOverride}
-      />
+          {/* Single view — grouped by Client with inline Business · Campaign context */}
+          <PeriodByClientTab
+            period={effectivePeriod}
+            clientId={selectedClientId}
+            businessId={selectedBusinessId}
+            aeoPlanId={selectedCampaignId}
+            comparisonOnly={comparisonOnly}
+            auditDate={auditDate}
+            firstDate={firstDateOverride}
+            prevDate={prevDateOverride}
+            currentDate={currentDateOverride}
+          />
+        </>
+      )}
 
       {/* Export dialog (PDF or CSV) — reviews/edits filters before generating */}
       {exportMode && (

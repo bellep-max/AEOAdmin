@@ -2,10 +2,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { fmtDayET, fmtDateTimeET } from "@/lib/period-comparison";
-import type {
-  BiWeeklyReport,
-  OldComboRow,
-} from "@/components/BiWeeklyReportTab";
+import type { BiWeeklyReport } from "@/components/BiWeeklyReportTab";
 
 export interface BiWeeklyExportFilters {
   clientName: string | null;
@@ -21,13 +18,6 @@ function buildFiltersLine(f: BiWeeklyExportFilters): string | null {
   return parts.length > 0 ? `Filters: ${parts.join(" · ")}` : null;
 }
 
-const trendLabel: Record<OldComboRow["trend"], string> = {
-  improved: "Improved",
-  declined: "Declined",
-  no_change: "No change",
-  not_ranked: "Not ranked",
-  single_run: "Single run",
-};
 
 function csvField(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -61,7 +51,10 @@ export function exportBiWeeklyCSV(
   report: BiWeeklyReport,
   filters: BiWeeklyExportFilters,
 ) {
-  const rows = report.details?.oldCombos ?? [];
+  // Latest audit first.
+  const rows = [...(report.details?.oldCombos ?? [])].sort((a, b) =>
+    (b.latest_audit ?? "").localeCompare(a.latest_audit ?? ""),
+  );
   const headers = [
     "client",
     "business",
@@ -75,10 +68,6 @@ export function exportBiWeeklyCSV(
     "total_runs",
     "error_count",
     "last_status",
-    "next_due",
-    "status",
-    "days_overdue",
-    "trend",
   ];
   const body = rows
     .map((r) =>
@@ -95,10 +84,6 @@ export function exportBiWeeklyCSV(
         r.total_runs,
         r.error_count,
         r.last_status,
-        r.next_due,
-        r.status_class,
-        r.days_overdue,
-        trendLabel[r.trend],
       ]
         .map(csvField)
         .join(","),
@@ -122,7 +107,10 @@ export function exportBiWeeklyPDF(
   report: BiWeeklyReport,
   filters: BiWeeklyExportFilters,
 ) {
-  const rows = report.details?.oldCombos ?? [];
+  // Latest audit first.
+  const rows = [...(report.details?.oldCombos ?? [])].sort((a, b) =>
+    (b.latest_audit ?? "").localeCompare(a.latest_audit ?? ""),
+  );
   const filtersLine = buildFiltersLine(filters);
   const headerBandHeight = filtersLine ? 30 : 24;
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
@@ -217,9 +205,6 @@ export function exportBiWeeklyPDF(
         : String(r.rank_change),
     String(r.total_runs),
     String(r.error_count),
-    r.next_due,
-    r.status_class === "overdue" ? `Overdue ${r.days_overdue}d` : "On schedule",
-    trendLabel[r.trend],
   ]);
 
   autoTable(doc, {
@@ -237,9 +222,6 @@ export function exportBiWeeklyPDF(
         "Δ",
         "Runs",
         "Errors",
-        "Next due",
-        "Status",
-        "Trend",
       ],
     ],
     body,
