@@ -546,6 +546,14 @@ export function KeywordsWithRankingsCard({
                 const sorted = sortPlatformsWithUnavailable(platforms);
                 const hasData = platforms.length > 0;
                 const lock = showRotation ? lockTrigger(platforms) : null;
+                // Freshness at a glance: the most recent Current-rank audit date
+                // across this keyword's platforms, shown on the collapsed row so
+                // the date is visible without expanding.
+                const latestCurrentDate =
+                  platforms
+                    .map((p) => p.currentDate)
+                    .filter((d): d is string => !!d)
+                    .sort((a, b) => b.localeCompare(a))[0] ?? null;
                 return (
                   <div
                     key={keywordId}
@@ -594,6 +602,14 @@ export function KeywordsWithRankingsCard({
                           </Badge>
                         )}
                       </div>
+                      {latestCurrentDate && (
+                        <span
+                          className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap"
+                          title="Most recent audit date for this keyword"
+                        >
+                          as of {format(new Date(latestCurrentDate), "MMM d")}
+                        </span>
+                      )}
                       <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                         {sorted.map((p) => (
                           <PlatformChip
@@ -725,7 +741,7 @@ export function KeywordsWithRankingsCard({
                                 )}
                               </div>
                             </div>
-                            <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
+                            <div className="grid grid-cols-12 gap-2 text-[10px] text-muted-foreground mt-0.5">
                               <div className="col-span-2" />
                               <div className="col-span-2">
                                 {p.firstDate
