@@ -49,6 +49,8 @@ import {
   buildAuditPrompt,
   buildAuditPromptStatic,
 } from "../services/audit-prompt-builder";
+import dns from "node:dns/promises";
+import net from "node:net";
 
 const router = Router();
 
@@ -948,6 +950,435 @@ router.post(
       } else {
         res.end();
       }
+    }
+  },
+);
+
+/* ── helpers for full-audit ─────────────────────────────────────────────── */
+
+interface SiteData {
+  ssl: boolean;
+  mobile: boolean;
+  wordCount: number;
+  title: string;
+  description: string;
+  h1s: string[];
+  bodyExcerpt: string;
+}
+
+/* SSRF guard: the audit fetches a user-supplied URL server-side, so block any
+   target that isn't a public http(s) host. Rejects localhost, private,
+   loopback, link-local (incl. cloud metadata 169.254.169.254), CGNAT, and
+   reserved ranges — checking every resolved address, not just literal IPs.
+   (Residual DNS-rebind TOCTOU is accepted: endpoint is staff-role gated.) */
+function isPrivateIPv4(ip: string): boolean {
+  const p = ip.split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255))
+    return true;
+  const [a, b, c] = p;
+  if (a === 0 || a === 127 || a === 10) return true;
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+function isPrivateIp(ip: string): boolean {
+  const fam = net.isIP(ip);
+  if (fam === 4) return isPrivateIPv4(ip);
+  if (fam === 6) {
+    const s = ip.toLowerCase();
+    if (s === "::1" || s === "::") return true;
+    if (s.startsWith("fc") || s.startsWith("fd")) return true; // ULA fc00::/7
+    if (/^fe[89ab]/.test(s)) return true; // link-local fe80::/10
+    // IPv4-mapped, dotted form (::ffff:1.2.3.4)
+    const mapped = s.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isPrivateIPv4(mapped[1]);
+    // IPv4-mapped, hex form the URL parser normalises to (::ffff:a9fe:a9fe)
+    const hex = s.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex) {
+      const g1 = parseInt(hex[1], 16);
+      const g2 = parseInt(hex[2], 16);
+      return isPrivateIPv4(`${g1 >> 8}.${g1 & 255}.${g2 >> 8}.${g2 & 255}`);
+    }
+    return false;
+  }
+  return true; // not an IP → treat as unsafe
+}
+
+async function isPublicHttpUrl(raw: string): Promise<boolean> {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  // URL keeps brackets on IPv6 literals (e.g. "[::1]") — strip them so
+  // net.isIP recognises the address and the IP classifier handles it.
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host === "metadata.google.internal"
+  )
+    return false;
+  if (net.isIP(host)) return !isPrivateIp(host);
+  try {
+    const addrs = await dns.lookup(host, { all: true });
+    if (addrs.length === 0) return false;
+    return addrs.every((a) => !isPrivateIp(a.address));
+  } catch {
+    return false;
+  }
+}
+
+async function fetchSiteData(url: string): Promise<SiteData | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 7000);
+  try {
+    // Follow redirects manually, re-validating each hop so a public URL can't
+    // 30x-bounce the fetch into an internal/metadata host.
+    let current = url;
+    let resp: Response | null = null;
+    for (let hop = 0; hop < 4; hop++) {
+      if (!(await isPublicHttpUrl(current))) return null;
+      const r = await fetch(current, {
+        signal: ctrl.signal,
+        redirect: "manual",
+        headers: { "User-Agent": "Mozilla/5.0 AEO-Audit-Bot/1.0" },
+      });
+      if (r.status >= 300 && r.status < 400) {
+        const loc = r.headers.get("location");
+        if (!loc) return null;
+        current = new URL(loc, current).toString();
+        continue;
+      }
+      resp = r;
+      break;
+    }
+    clearTimeout(timer);
+    if (!resp || !resp.ok) return null;
+    const html = await resp.text();
+
+    const ssl = current.startsWith("https");
+    const title =
+      html
+        .match(/<title[^>]*>(.*?)<\/title>/is)?.[1]
+        ?.replace(/<[^>]+>/g, "")
+        .trim() ?? "";
+    const description =
+      html
+        .match(
+          /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i,
+        )?.[1]
+        ?.trim() ??
+      html
+        .match(
+          /<meta[^>]+content=["']([^"']*)[^>]+name=["']description["']/i,
+        )?.[1]
+        ?.trim() ??
+      "";
+    const h1s = [...html.matchAll(/<h1[^>]*>(.*?)<\/h1>/gis)]
+      .map((m) => m[1].replace(/<[^>]+>/g, "").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const mobile = /<meta[^>]+name=["']viewport["']/i.test(html);
+
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    const bodyExcerpt = text.slice(0, 2000);
+
+    return { ssl, mobile, wordCount, title, description, h1s, bodyExcerpt };
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+/* POST /api/llm/sales-ai/full-audit
+   Server-side AEO audit: pre-computes LA + YMYL, optionally fetches the
+   website, then asks DeepSeek to produce a structured JSON report (ARS
+   score, ICE keywords, website analysis, local market, recommendations).
+   Auth mirrors /sales-ai/stream. */
+router.post(
+  "/sales-ai/full-audit",
+  requireRoles("owner", "sales", "chuckslocal"),
+  async (req, res) => {
+    try {
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+      if (!apiKey) {
+        return res
+          .status(503)
+          .json({ error: "DEEPSEEK_API_KEY not configured" });
+      }
+
+      const body = req.body as {
+        bizName?: string;
+        description?: string;
+        bizType?: string;
+        bizSize?: string;
+        competitors?: string;
+        website?: string;
+        location?: string;
+      };
+
+      const bizName = (body.bizName ?? "").trim();
+      const description = (body.description ?? "").trim();
+      const bizType = (body.bizType ?? "Other").trim();
+      const bizSize = (body.bizSize ?? "Small (<50)").trim();
+      const competitors = (body.competitors ?? "").trim();
+      const website = (body.website ?? "").trim();
+      const location = (body.location ?? "").trim();
+
+      if (!bizName && !description) {
+        return res
+          .status(400)
+          .json({ error: "bizName or description required" });
+      }
+
+      /* ── Server-side pre-calc ── */
+      const LOCAL_TYPES = ["Local Service", "Restaurant / Hospitality"];
+      const isLocal = LOCAL_TYPES.includes(bizType);
+      const hasLoc = location.length > 0;
+      const la =
+        isLocal && hasLoc
+          ? 1.0
+          : isLocal && !hasLoc
+            ? 0.2
+            : !isLocal && hasLoc
+              ? 0.5
+              : 0.0;
+      const laLabel =
+        isLocal && hasLoc
+          ? "local service + location"
+          : isLocal && !hasLoc
+            ? "local service, no location"
+            : !isLocal && hasLoc
+              ? "non-local + location"
+              : "non-local, no location";
+
+      const YMYL_TYPES = ["Healthcare", "Legal / Financial"];
+      const ymyl = YMYL_TYPES.includes(bizType) ? 1 : 0;
+
+      /* ── Optional website fetch ── */
+      let site: SiteData | null = null;
+      if (website) {
+        try {
+          site = await fetchSiteData(website);
+        } catch {
+          /* non-fatal */
+        }
+      }
+
+      /* ── Build LLM prompt ── */
+      const siteBlock = site
+        ? `
+## Real Website Data (server-fetched — use this, do not invent)
+URL: ${website}
+SSL/HTTPS: ${site.ssl}
+Mobile Viewport: ${site.mobile}
+Word Count: ${site.wordCount}
+Title: ${site.title || "(none found)"}
+Meta Description: ${site.description || "(none found)"}
+H1s: ${site.h1s.length ? site.h1s.join(" | ") : "(none found)"}
+Body Excerpt (first 2000 chars):
+${site.bodyExcerpt}
+`
+        : website
+          ? `\n## Website\nURL provided (${website}) but could not be fetched — infer from business description.\n`
+          : `\n## Website\nNone provided — infer from business description.\n`;
+
+      const systemPrompt = `You are an AEO audit engine. Return ONLY valid JSON — no prose, no markdown fences, no text outside the JSON object. Follow the 9 steps below in order.`;
+
+      const userPrompt = `## Business Context
+Business Name: ${bizName || "(not provided)"}
+Description: ${description || "(not provided)"}
+Type: ${bizType}
+Size: ${bizSize}
+Competitors: ${competitors || "unknown"}
+Location: ${location || "not provided"}
+Website: ${website || "not provided"}
+${siteBlock}
+
+## Pre-computed Server Values (treat these as ground truth — do not recalculate)
+Local Advantage (LA): ${la}   // Rule: ${laLabel}
+YMYL Penalty: ${ymyl}         // ${ymyl ? "health/legal/finance — add +30 to prompt volume" : "no YMYL penalty"}
+
+## Steps — follow in order:
+
+Step 1 — KEYWORDS
+Generate 5–7 AEO-relevant keywords for this business.
+
+Step 2 — ICE SCORES (per keyword)
+  impact (1–5): revenue/visibility potential on AI answer engines
+  confidence (1–5): likelihood this business can rank
+  ease (1–5): ease of content creation (5 = easiest)
+  ease_adj = ease + (0.5 if LA ≥ 0.5, else 0)
+  ice = (impact × 0.4) + (confidence × 0.3) + (ease_adj × 0.3)
+  priority: "high" if ice ≥ 3.5 | "medium" if 2.5–3.49 | "low" if < 2.5
+  on_site: true if keyword/topic clearly appears in website data above, false otherwise
+
+Step 3 — CCS (Content Coverage Score)
+  Percentage of keywords where on_site = true. Round to 1 decimal. If no site data, estimate from description.
+
+Step 4 — PROMPT VOLUME
+  Parse "${competitors}" as a number (use 5 if unparseable).
+  total = (competitor_count × 100) + (${ymyl} × 30) − (${la} × 20)
+  weekly = ceil(total / 4)
+
+Step 5 — ARS SCORE (AEO Readiness Score)
+  avg_ice = average of all ice scores
+  norm_ice = avg_ice / 5 × 100
+  Use pc_avg and rc_avg from Step 6 (example_prompt).
+  norm_pqs = pqs / 5 × 100
+  ars = (ccs × 0.3) + (norm_ice × 0.4) + (norm_pqs × 0.2) + (${la} × 10)
+  rating: "Green" if ars ≥ 80 | "Amber" if ≥ 60 | "Red" if < 60
+  formula: write the full substituted formula string, e.g. "(CCS × 0.3) + (norm_ice × 0.4) + (norm_pqs × 0.2) + (LA × 10) = (28.6 × 0.3) + ..."
+  summary: 2–3 sentence executive summary explaining the score and the #1 gap
+
+Step 6 — EXAMPLE PROMPT + PQS
+  Write one realistic AEO search query for the top keyword.
+  pc_avg (1–5): prompt clarity
+  rc_avg (1–5): likelihood this business is cited in AI answers right now
+  pqs = (pc_avg × 0.4) + (rc_avg × 0.6)
+  threshold_met: pqs ≥ 4.0
+
+Step 7 — WEBSITE ANALYSIS
+  ${site ? "Use the real fetched data above." : "Infer from business description (no live data)."}
+  summary: 3–4 sentences on AEO readiness of the web presence
+  ssl_note, mobile_note, content_note: short scoring observations (e.g. "SSL/HTTPS gives +1 Confidence")
+  Fill ssl/mobile/word_count/title/description/h1 from the fetched data if available, else use null/0/"".
+
+Step 8 — LOCAL MARKET
+  location: "${location || "not specified"}"
+  optimization_score: "X/10" — rate the local AEO opportunity
+  summary: 3–4 sentences on local market dynamics and missed opportunities
+  recommendations: 3 concise bullet strings (action items for local AEO)
+
+Step 9 — RECOMMENDATIONS
+  4–6 prioritized action items sorted by priority (high first).
+  Each: { priority, action, impact, effort, rationale }
+
+Return this exact JSON (no other text):
+{
+  "keywords": [
+    { "keyword": "...", "impact": 4, "confidence": 3, "ease": 4, "ease_adj": 4.5, "ice": 3.75, "on_site": true, "priority": "high" }
+  ],
+  "ccs": 28.6,
+  "search_volume": {
+    "total": 280,
+    "weekly": 70,
+    "competitor_count": 3,
+    "ymyl_penalty": ${ymyl},
+    "la_used": ${la},
+    "formula": "..."
+  },
+  "ars": {
+    "score": 69.2,
+    "rating": "Amber",
+    "formula": "...",
+    "summary": "..."
+  },
+  "example_prompt": {
+    "text": "...",
+    "pqs": 4.20,
+    "pc_avg": 4.00,
+    "rc_avg": 4.33,
+    "threshold_met": true
+  },
+  "website_analysis": {
+    "ssl": ${site ? site.ssl : null},
+    "mobile": ${site ? site.mobile : null},
+    "word_count": ${site ? site.wordCount : 0},
+    "title": ${JSON.stringify(site?.title ?? "")},
+    "description": ${JSON.stringify(site?.description ?? "")},
+    "h1": ${JSON.stringify(site?.h1s[0] ?? "")},
+    "summary": "...",
+    "ssl_note": "...",
+    "mobile_note": "...",
+    "content_note": "..."
+  },
+  "local_market": {
+    "location": "${location || "General"}",
+    "optimization_score": "5/10",
+    "summary": "...",
+    "recommendations": ["...", "...", "..."]
+  },
+  "recommendations": [
+    { "priority": "high", "action": "...", "impact": "...", "effort": "low", "rationale": "..." }
+  ]
+}`;
+
+      const upstream = await fetch(
+        "https://api.deepseek.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            stream: false,
+          }),
+        },
+      );
+
+      if (!upstream.ok) {
+        const errText = await upstream.text().catch(() => "");
+        return res.status(upstream.status || 502).json({
+          error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200)}`,
+        });
+      }
+
+      const data = (await upstream.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const raw = data.choices?.[0]?.message?.content ?? "";
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return res
+          .status(502)
+          .json({ error: "Could not parse audit JSON from model response" });
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      /* Attach the server-fetched site metadata so the FE can trust it */
+      if (site) {
+        parsed._site = {
+          ssl: site.ssl,
+          mobile: site.mobile,
+          wordCount: site.wordCount,
+          title: site.title,
+          description: site.description,
+          h1: site.h1s[0] ?? "",
+        };
+      }
+      parsed._la = la;
+      parsed._ymyl = ymyl;
+
+      return res.json(parsed);
+    } catch (err) {
+      req.log.error({ err }, "Error running full AEO audit");
+      return res.status(500).json({
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
     }
   },
 );

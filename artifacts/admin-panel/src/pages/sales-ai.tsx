@@ -61,14 +61,30 @@ interface IceKeyword {
   keyword: string;
   impact: number;
   confidence: number;
-  effort: number;
+  ease: number;
+  ease_adj: number;
   ice: number;
+  on_site: boolean;
   priority: "high" | "medium" | "low";
 }
 
 interface AuditResults {
-  weights: { wi: number; wc: number; we: number; label: string };
   keywords: IceKeyword[];
+  ccs: number;
+  search_volume: {
+    total: number;
+    weekly: number;
+    competitor_count: number;
+    ymyl_penalty: number;
+    la_used: number;
+    formula: string;
+  };
+  ars: {
+    score: number;
+    rating: "Green" | "Amber" | "Red";
+    formula: string;
+    summary: string;
+  };
   example_prompt: {
     text: string;
     pqs: number;
@@ -76,14 +92,31 @@ interface AuditResults {
     rc_avg: number;
     threshold_met: boolean;
   };
-  search_volume: {
-    total: number;
-    weekly: number;
-    competitor_density: number;
-    ymyl_penalty: number;
-    local_advantage: number;
-    formula: string;
+  website_analysis: {
+    ssl: boolean | null;
+    mobile: boolean | null;
+    word_count: number;
+    title: string;
+    description: string;
+    h1: string;
+    summary: string;
+    ssl_note: string;
+    mobile_note: string;
+    content_note: string;
   };
+  local_market: {
+    location: string;
+    optimization_score: string;
+    summary: string;
+    recommendations: string[];
+  };
+  recommendations: Array<{
+    priority: "high" | "medium" | "low";
+    action: string;
+    impact: string;
+    effort: string;
+    rationale: string;
+  }>;
 }
 
 type AnalyzerTab = "analyzer" | "audit";
@@ -152,51 +185,6 @@ Rules:
 ${SOURCE_OF_TRUTH_BLOCK}
 You are ready to chat. Wait for the user to share a business or ask a question.`;
 
-const AUDIT_SYSTEM_PROMPT = `You are an AEO audit engine. Return ONLY valid JSON — no prose, no markdown, no explanation outside the JSON.
-
-Use these rules:
-ICE scoring:
-- Impact (1–5): Revenue/visibility potential of ranking for this keyword on AI engines
-- Confidence (1–5): Likelihood the business can rank given their authority
-- Effort (1–5): Ease of creating the needed content (5 = easy)
-- ICE = (wi × Impact) + (wc × Confidence) + (we × Effort)
-- Priority: "high" if ICE ≥ 3.5, "medium" if 2.5–3.49, "low" if < 2.5
-- Weights by type: B2B SaaS → wi=0.5,wc=0.3,we=0.2 | Local Service → wi=0.3,wc=0.4,we=0.3 | B2C/E-commerce → wi=0.4,wc=0.3,we=0.3 | Healthcare/Legal → wi=0.45,wc=0.35,we=0.2 | Other → wi=0.4,wc=0.3,we=0.3
-
-PQS:
-- PC_avg: average prompt clarity score (1–5)
-- RC_avg: average response citation likelihood (1–5)
-- PQS = (PC_avg × 0.4) + (RC_avg × 0.6); threshold met if PQS ≥ 4.0
-
-Search Volume:
-- Competitor Density: 1=few, 2=moderate, 3=heavy
-- YMYL: 1 if healthcare/legal/financial, else 0
-- Local Advantage: 1 if local service with geo keywords, else 0
-- Total = (Competitor_Density × 100) + (YMYL × 30) − (Local_Advantage × 20)
-- Weekly = ceil(Total / 4)
-
-Return this JSON structure exactly:
-{
-  "weights": { "wi": 0.5, "wc": 0.3, "we": 0.2, "label": "B2B SaaS weights" },
-  "keywords": [
-    { "keyword": "...", "impact": 5, "confidence": 4, "effort": 4, "ice": 3.75, "priority": "high" }
-  ],
-  "example_prompt": {
-    "text": "...",
-    "pqs": 4.20,
-    "pc_avg": 4.00,
-    "rc_avg": 4.33,
-    "threshold_met": true
-  },
-  "search_volume": {
-    "total": 330,
-    "weekly": 83,
-    "competitor_density": 3,
-    "ymyl_penalty": 1,
-    "local_advantage": 0,
-    "formula": "(Competitor Density=3 × 100) + (YMYL Penalty=1 × 30) − (Local Advantage=0 × 20) = 330; Weekly = ceil(330 / 4) = 83"
-  }
-}`;
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -234,15 +222,17 @@ ${kwLines ? `\nKeywords and current AI visibility:\n${kwLines}` : ""}
 Give me a full visibility assessment: where they're invisible on ChatGPT, Perplexity, and Gemini, the biggest gap, the real business impact, and how Signal AEO closes it.`;
 }
 
-function buildAuditChatMessage(bizName: string, results: AuditResults): string {
+function buildAuditChatMessage(bizName: string, results: AuditResults, location?: string, website?: string): string {
   const topKw = [...results.keywords].sort((a, b) => b.ice - a.ice)[0];
   const kwSummary = results.keywords
-    .map(
-      (k) =>
-        `  - "${k.keyword}" — ICE: ${k.ice.toFixed(2)} (${k.priority.toUpperCase()})`,
-    )
+    .map((k) => `  - "${k.keyword}" — ICE: ${k.ice.toFixed(2)} (${k.priority.toUpperCase()})${k.on_site ? " ✓ on site" : ""}`)
     .join("\n");
-  return `Here are the Full AEO Audit results for **${bizName}**:
+  return `Here are the Full AEO Audit results for **${bizName}**${location ? ` (${location})` : ""}${website ? ` — ${website}` : ""}:
+
+**ARS Score:** ${results.ars.score.toFixed(1)} (${results.ars.rating})
+${results.ars.summary}
+
+**Content Coverage Score (CCS):** ${results.ccs.toFixed(1)}%
 
 **Keyword ICE Scores:**
 ${kwSummary}
@@ -257,22 +247,22 @@ PQS: ${results.example_prompt.pqs.toFixed(2)} — Threshold ${results.example_pr
 Based on these audit results, help me build a compelling sales pitch. What's the strongest angle and how should I open the conversation?`;
 }
 
-function buildChatScriptMessage(
-  bizName: string,
-  results: AuditResults,
-): string {
+function buildChatScriptMessage(bizName: string, results: AuditResults, location?: string, website?: string): string {
   const sorted = [...results.keywords].sort((a, b) => b.ice - a.ice);
   const top = sorted[0];
   const others = sorted.slice(1, 3);
-  return `Write a sales overview (max 400 words) for **${bizName}** explaining why they need AEO services.
+  return `Write a sales overview (max 400 words) for **${bizName}**${location ? ` in ${location}` : ""} explaining why they need AEO services.
 
 Use ONLY the following audit data — do not invent numbers:
 
+- ARS Score: ${results.ars.score.toFixed(1)} (${results.ars.rating})
+- Content Coverage Score: ${results.ccs.toFixed(1)}%${website ? `\n- Website: ${website}` : ""}
 - Highest priority keyword: "${top?.keyword}" (ICE ${top?.ice.toFixed(2)} — ${top?.priority.toUpperCase()})
 ${others.map((k) => `- Also important: "${k.keyword}" (ICE ${k.ice.toFixed(2)})`).join("\n")}
 - Example AEO prompt: "${results.example_prompt.text}"
 - PQS score: ${results.example_prompt.pqs.toFixed(2)} — Threshold ${results.example_prompt.threshold_met ? "Met ✓" : "Not Met ✗"}
 - Required weekly prompt volume to compete: ${results.search_volume.weekly}
+${results.local_market.summary ? `- Local market note: ${results.local_market.summary}` : ""}
 
 Follow the sales overview format:
 1. One-sentence snapshot of what ${bizName} does and who their customers are
@@ -321,6 +311,8 @@ export default function SalesAI() {
   const [auditBizType, setAuditBizType] = useState("B2B SaaS");
   const [auditBizSize, setAuditBizSize] = useState("Small (<50)");
   const [auditCompetitors, setAuditCompetitors] = useState("");
+  const [auditWebsite, setAuditWebsite] = useState("");
+  const [auditLocation, setAuditLocation] = useState("");
   const [auditResults, setAuditResults] = useState<AuditResults | null>(null);
   const [isAuditRunning, setIsAuditRunning] = useState(false);
   const [auditError, setAuditError] = useState("");
@@ -524,47 +516,29 @@ export default function SalesAI() {
     const controller = new AbortController();
     auditAbortRef.current = controller;
 
-    const userContent = `Business name: ${auditBizName || "(not provided)"}
-Description: ${auditDescription || "(not provided)"}
-Type: ${auditBizType}
-Size: ${auditBizSize}
-Number of competitors: ${auditCompetitors || "unknown"}
-
-Generate 5 realistic ICE-scored keywords for this business. Return ONLY the JSON.`;
-
     try {
-      const response = await fetch(SALES_AI_STREAM_URL, {
+      const response = await fetch(`${BASE}/api/llm/sales-ai/full-audit`, {
         method: "POST",
         signal: controller.signal,
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: AUDIT_SYSTEM_PROMPT },
-            { role: "user", content: userContent },
-          ],
-          stream: false,
+          bizName: auditBizName,
+          description: auditDescription,
+          bizType: auditBizType,
+          bizSize: auditBizSize,
+          competitors: auditCompetitors,
+          website: auditWebsite,
+          location: auditLocation,
         }),
       });
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(
-          `API Error ${response.status}: ${text || response.statusText}`,
-        );
+        throw new Error(`API Error ${response.status}: ${text || response.statusText}`);
       }
 
-      const data = await response.json();
-      const raw = data.choices?.[0]?.message?.content ?? "";
-
-      // Extract JSON from response (strip any markdown fences if present)
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (!jsonMatch)
-        throw new Error("Could not parse audit response — try again.");
-      const parsed: AuditResults = JSON.parse(jsonMatch[0]);
+      const parsed: AuditResults = await response.json();
       setAuditResults(parsed);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -581,6 +555,8 @@ Generate 5 realistic ICE-scored keywords for this business. Return ONLY the JSON
     const msg = buildAuditChatMessage(
       auditBizName || "the business",
       auditResults,
+      auditLocation,
+      auditWebsite,
     );
     setIsModalOpen(false);
     sendMessage(msg);
@@ -591,6 +567,8 @@ Generate 5 realistic ICE-scored keywords for this business. Return ONLY the JSON
     const msg = buildChatScriptMessage(
       auditBizName || "the business",
       auditResults,
+      auditLocation,
+      auditWebsite,
     );
     setIsModalOpen(false);
     sendMessage(msg);
@@ -1289,104 +1267,92 @@ Generate 5 realistic ICE-scored keywords for this business. Return ONLY the JSON
               {/* ── FULL AEO AUDIT tab ── */}
               {activeTab === "audit" && (
                 <div className="space-y-5">
-                  {/* Form — hide when results are showing */}
+                  {/* Form */}
                   {!auditResults && (
                     <>
-                      <div className="space-y-1.5">
-                        <Label>Business name</Label>
-                        <Input
-                          value={auditBizName}
-                          onChange={(e) => setAuditBizName(e.target.value)}
-                          placeholder="Black Car IQ"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label>Business name</Label>
+                          <Input
+                            value={auditBizName}
+                            onChange={(e) => setAuditBizName(e.target.value)}
+                            placeholder="Appstango"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Website <span className="text-muted-foreground font-normal">(optional — server will fetch)</span></Label>
+                          <Input
+                            value={auditWebsite}
+                            onChange={(e) => setAuditWebsite(e.target.value)}
+                            placeholder="https://appstango.com/"
+                            type="url"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label>What does your business do?</Label>
                         <Textarea
                           value={auditDescription}
                           onChange={(e) => setAuditDescription(e.target.value)}
-                          placeholder="Describe the business, target customers, services, and location…"
-                          rows={4}
+                          placeholder="Describe the business, target customers, and services…"
+                          rows={3}
                           className="resize-y"
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-4 gap-4">
                         <div className="space-y-1.5">
-                          <Label>What type of business?</Label>
-                          <Select
-                            value={auditBizType}
-                            onValueChange={setAuditBizType}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
+                          <Label>Business type</Label>
+                          <Select value={auditBizType} onValueChange={setAuditBizType}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {BIZ_TYPES.map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t}
-                                </SelectItem>
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">
-                          <Label>How big is the business?</Label>
-                          <Select
-                            value={auditBizSize}
-                            onValueChange={setAuditBizSize}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
+                          <Label>Business size</Label>
+                          <Select value={auditBizSize} onValueChange={setAuditBizSize}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {BIZ_SIZES.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s}
-                                </SelectItem>
+                                <SelectItem key={s} value={s}>{s}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">
-                          <Label>How many competitors?</Label>
+                          <Label>Competitors</Label>
                           <Input
                             value={auditCompetitors}
-                            onChange={(e) =>
-                              setAuditCompetitors(e.target.value)
-                            }
-                            placeholder="e.g. small, ~10, many"
+                            onChange={(e) => setAuditCompetitors(e.target.value)}
+                            placeholder="e.g. ~10, many"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Location / City <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                          <Input
+                            value={auditLocation}
+                            onChange={(e) => setAuditLocation(e.target.value)}
+                            placeholder="Dubai, Utah Salt Lake…"
                           />
                         </div>
                       </div>
 
                       {auditError && (
                         <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
-                          <AlertCircle className="w-4 h-4 shrink-0" />{" "}
-                          {auditError}
+                          <AlertCircle className="w-4 h-4 shrink-0" /> {auditError}
                         </div>
                       )}
 
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => setIsModalOpen(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={runFullAudit}
-                          disabled={isAuditRunning}
-                          className="gap-2"
-                        >
+                        <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                        <Button onClick={runFullAudit} disabled={isAuditRunning} className="gap-2">
                           {isAuditRunning ? (
-                            <>
-                              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />{" "}
-                              Running Audit…
-                            </>
+                            <><span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Running Audit…</>
                           ) : (
-                            <>
-                              <Zap className="w-4 h-4" /> Run Full Audit
-                            </>
+                            <><Zap className="w-4 h-4" /> Run Full Audit</>
                           )}
                         </Button>
                       </div>
@@ -1394,214 +1360,284 @@ Generate 5 realistic ICE-scored keywords for this business. Return ONLY the JSON
                   )}
 
                   {/* Results */}
-                  {auditResults && (
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-2">
+                  {auditResults && (() => {
+                    const ARS_COLORS: Record<string, string> = {
+                      Green: "text-emerald-600",
+                      Amber: "text-amber-500",
+                      Red:   "text-red-500",
+                    };
+                    const ARS_BADGE: Record<string, string> = {
+                      Green: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                      Amber: "bg-amber-50 text-amber-700 border border-amber-200",
+                      Red:   "bg-red-50 text-red-600 border border-red-200",
+                    };
+                    const wa = auditResults.website_analysis;
+                    const lm = auditResults.local_market;
+                    return (
+                      <div className="space-y-5">
+                        {/* Back nav */}
                         <button
                           onClick={() => setAuditResults(null)}
                           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                         >
                           <ArrowLeft className="w-3.5 h-3.5" /> Back to form
                         </button>
-                        <span className="text-muted-foreground text-xs">·</span>
-                        <span className="text-xs font-semibold text-foreground">
-                          {auditBizName || "Audit Results"}
-                        </span>
-                      </div>
 
-                      <div className="grid grid-cols-[1fr_320px] gap-5">
-                        {/* LEFT — ICE table */}
-                        <div>
-                          <h3 className="font-bold text-base text-foreground mb-0.5">
-                            Keyword ICE Scores
-                          </h3>
-                          <p className="text-xs text-muted-foreground mb-4">
-                            Weighted ICE = (w<sub>i</sub> × Impact) + (w
-                            <sub>c</sub> × Confidence) + (w<sub>E</sub> × Ease)
-                            — {auditResults.weights.label}
-                          </p>
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b border-border">
-                                {[
-                                  "KEYWORD",
-                                  "IMPACT",
-                                  "CONFIDENCE",
-                                  "EFFORT",
-                                  "ICE",
-                                  "PRIORITY",
-                                ].map((h) => (
-                                  <th
-                                    key={h}
-                                    className="pb-2 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wide pr-3 last:pr-0"
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {auditResults.keywords.map((kw, i) => (
-                                <tr key={i}>
-                                  <td className="py-3 pr-3 font-medium text-foreground leading-snug">
-                                    {kw.keyword}
-                                  </td>
-                                  <td className="py-3 pr-3 text-center text-muted-foreground">
-                                    {kw.impact}
-                                  </td>
-                                  <td className="py-3 pr-3 text-center text-muted-foreground">
-                                    {kw.confidence}
-                                  </td>
-                                  <td className="py-3 pr-3 text-center text-muted-foreground">
-                                    {kw.effort}
-                                  </td>
-                                  <td className="py-3 pr-3 font-bold text-foreground">
-                                    {kw.ice.toFixed(2)}
-                                  </td>
-                                  <td className="py-3">
-                                    <span
-                                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${PRIORITY_STYLES[kw.priority]}`}
-                                    >
-                                      {kw.priority}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* RIGHT — Example Prompt + Search Volume */}
-                        <div className="space-y-4">
-                          {/* Example AEO Prompt */}
-                          <Card className="bg-muted/40 border-border shadow-none">
-                            <CardHeader className="pb-3 pt-4 px-4">
-                              <CardTitle className="text-sm font-bold text-foreground">
-                                Example AEO Prompt
-                              </CardTitle>
-                              <CardDescription className="text-xs">
-                                PQS = (PC<sub>avg</sub> × 0.4) + (RC
-                                <sub>avg</sub> × 0.6)
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="px-4 pb-4 space-y-3">
-                              <div className="bg-background rounded-lg p-3 text-sm text-foreground leading-relaxed border border-border">
-                                {auditResults.example_prompt.text}
-                              </div>
-                              <div className="grid grid-cols-3 gap-2 text-center">
-                                {[
-                                  {
-                                    label: "PQS",
-                                    value:
-                                      auditResults.example_prompt.pqs.toFixed(
-                                        2,
-                                      ),
-                                  },
-                                  {
-                                    label: "PC avg",
-                                    value:
-                                      auditResults.example_prompt.pc_avg.toFixed(
-                                        2,
-                                      ),
-                                  },
-                                  {
-                                    label: "RC avg",
-                                    value:
-                                      auditResults.example_prompt.rc_avg.toFixed(
-                                        2,
-                                      ),
-                                  },
-                                ].map((stat) => (
-                                  <div
-                                    key={stat.label}
-                                    className="bg-background rounded-lg p-2 border border-border"
-                                  >
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                      {stat.label}
-                                    </p>
-                                    <p className="font-bold text-foreground text-base">
-                                      {stat.value}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">
-                                  Threshold:
-                                </span>
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${auditResults.example_prompt.threshold_met ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-orange-50 text-orange-600 border border-orange-200"}`}
-                                >
-                                  {auditResults.example_prompt.threshold_met
-                                    ? "Met"
-                                    : "Not Met"}
-                                </span>
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          {/* Required Search Volume */}
-                          <Card className="bg-muted/40 border-border shadow-none">
-                            <CardHeader className="pb-3 pt-4 px-4">
-                              <CardTitle className="text-sm font-bold text-foreground">
-                                Required Search Volume
-                              </CardTitle>
-                              <CardDescription className="text-xs">
-                                Prompts needed to maintain AI answer engine
-                                visibility.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="px-4 pb-4 space-y-3">
-                              <div className="grid grid-cols-2 gap-2 text-center">
-                                <div className="bg-background rounded-lg p-3 border border-border">
-                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                    Total Prompts
-                                  </p>
-                                  <p className="font-bold text-foreground text-2xl">
-                                    {auditResults.search_volume.total}
-                                  </p>
-                                </div>
-                                <div className="bg-background rounded-lg p-3 border border-border">
-                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                                    Weekly
-                                  </p>
-                                  <p className="font-bold text-foreground text-2xl">
-                                    {auditResults.search_volume.weekly}
-                                  </p>
-                                </div>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground bg-background rounded p-2 border border-border font-mono leading-relaxed">
-                                {auditResults.search_volume.formula}
+                        {/* ── ARS Score card ── */}
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-5">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-base text-foreground">AEO Readiness Report</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {auditBizName || "Business"}
+                                {auditWebsite && <> · <span className="font-mono">{auditWebsite}</span></>}
+                                {auditLocation && <> · {auditLocation}</>}
                               </p>
+                              <p className="text-sm text-foreground mt-3 leading-relaxed">
+                                {auditResults.ars.summary}
+                              </p>
+                              <p className="text-[10px] font-mono text-muted-foreground mt-2 bg-background rounded px-2 py-1.5 border border-border leading-relaxed break-all">
+                                {auditResults.ars.formula}
+                              </p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className={`text-5xl font-extrabold leading-none ${ARS_COLORS[auditResults.ars.rating] ?? "text-foreground"}`}>
+                                {auditResults.ars.score.toFixed(1)}
+                              </p>
+                              <span className={`inline-flex mt-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${ARS_BADGE[auditResults.ars.rating] ?? ""}`}>
+                                {auditResults.ars.rating}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ── Website Analysis + Local Market ── */}
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Website Analysis */}
+                          <Card className="bg-card border-border shadow-none">
+                            <CardHeader className="pb-2 pt-4 px-4">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                  <span className="text-base">🌐</span> Website Analysis
+                                </CardTitle>
+                                {wa.ssl != null && (
+                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${wa.ssl ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-600 border-red-200"}`}>
+                                    {wa.ssl ? "HTTPS ✓" : "HTTP ✗"}
+                                  </span>
+                                )}
+                              </div>
+                              {auditWebsite && (
+                                <p className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                                  <span className="font-mono truncate max-w-[160px]">{auditWebsite}</span>
+                                  {wa.word_count > 0 && <span>{wa.word_count.toLocaleString()} words</span>}
+                                  {wa.mobile != null && <span className={wa.mobile ? "text-emerald-600" : "text-muted-foreground"}>Mobile {wa.mobile ? "✓" : "✗"}</span>}
+                                </p>
+                              )}
+                            </CardHeader>
+                            <CardContent className="px-4 pb-4 space-y-3">
+                              <p className="text-xs text-foreground leading-relaxed">{wa.summary}</p>
+                              {(wa.title || wa.description || wa.h1) && (
+                                <div className="bg-muted/50 rounded-lg p-2.5 space-y-1 text-[11px]">
+                                  {wa.title && <p><span className="font-semibold text-muted-foreground">Title:</span> {wa.title}</p>}
+                                  {wa.description && <p><span className="font-semibold text-muted-foreground">Description:</span> {wa.description}</p>}
+                                  {wa.h1 && <p><span className="font-semibold text-muted-foreground">H1:</span> {wa.h1}</p>}
+                                </div>
+                              )}
+                              <div className="space-y-1">
+                                {wa.ssl_note && <p className="text-[10px] text-muted-foreground">{wa.ssl_note}</p>}
+                                {wa.mobile_note && <p className="text-[10px] text-muted-foreground">{wa.mobile_note}</p>}
+                                {wa.content_note && <p className="text-[10px] text-muted-foreground">{wa.content_note}</p>}
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          {/* Local Market */}
+                          <Card className="bg-card border-border shadow-none">
+                            <CardHeader className="pb-2 pt-4 px-4">
+                              <CardTitle className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                <span className="text-base">📍</span> Local Market{lm.location && lm.location !== "General" ? ` — ${lm.location}` : ""}
+                              </CardTitle>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Local optimization score: <span className="font-bold text-foreground">{lm.optimization_score}</span>
+                              </p>
+                            </CardHeader>
+                            <CardContent className="px-4 pb-4 space-y-3">
+                              <p className="text-xs text-foreground leading-relaxed">{lm.summary}</p>
+                              {lm.recommendations.length > 0 && (
+                                <ul className="space-y-1.5">
+                                  {lm.recommendations.map((r, i) => (
+                                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                                      <span className="mt-px shrink-0">→</span>
+                                      <span>{r}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </CardContent>
                           </Card>
                         </div>
-                      </div>
 
-                      {/* Actions */}
-                      <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
-                        <Button
-                          variant="outline"
-                          onClick={() => setAuditResults(null)}
-                          className="gap-2"
-                        >
-                          <RotateCcw className="w-4 h-4" /> Run New Audit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={sendChatScript}
-                          className="gap-2"
-                        >
-                          <MessageSquarePlus className="w-4 h-4" /> Generate
-                          Chat Script
-                        </Button>
-                        <Button onClick={sendAuditToChat} className="gap-2">
-                          <MessageSquarePlus className="w-4 h-4" /> Discuss in
-                          Chat
-                        </Button>
+                        {/* ── ICE Table + right column ── */}
+                        <div className="grid grid-cols-[1fr_300px] gap-5">
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="font-bold text-sm text-foreground">Keyword ICE Scores</h3>
+                              <span className="text-xs text-muted-foreground">
+                                ICE = (I×0.4) + (C×0.3) + (E<sub>adj</sub>×0.3)
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mb-3">
+                              E<sub>adj</sub> = Ease + 0.5 geo-boost when LA ≥ 0.5 &nbsp;·&nbsp; ✓ = found on site
+                            </p>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-border">
+                                  {["KEYWORD", "I", "C", "E", "E+", "ICE", "✓", "PRIORITY"].map((h) => (
+                                    <th key={h} className="pb-2 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wide pr-2 last:pr-0">
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {auditResults.keywords.map((kw, i) => (
+                                  <tr key={i}>
+                                    <td className="py-2.5 pr-2 font-medium text-foreground leading-snug max-w-[160px]">{kw.keyword}</td>
+                                    <td className="py-2.5 pr-2 text-center text-muted-foreground">{kw.impact}</td>
+                                    <td className="py-2.5 pr-2 text-center text-muted-foreground">{kw.confidence}</td>
+                                    <td className="py-2.5 pr-2 text-center text-muted-foreground">{kw.ease}</td>
+                                    <td className="py-2.5 pr-2 text-center text-muted-foreground">{kw.ease_adj?.toFixed(1) ?? kw.ease}</td>
+                                    <td className="py-2.5 pr-2 font-bold text-foreground">{kw.ice.toFixed(2)}</td>
+                                    <td className="py-2.5 pr-2 text-center">
+                                      {kw.on_site
+                                        ? <span className="text-emerald-600 font-bold">✓</span>
+                                        : <span className="text-muted-foreground/40">✗</span>}
+                                    </td>
+                                    <td className="py-2.5">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize ${PRIORITY_STYLES[kw.priority]}`}>
+                                        {kw.priority}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+
+                            {/* CCS */}
+                            <div className="mt-4 p-3 rounded-lg bg-muted/40 border border-border">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-foreground">Content Coverage Score (CCS)</span>
+                                <span className="text-sm font-extrabold text-foreground">{auditResults.ccs.toFixed(1)}%</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {auditResults.keywords.map((kw, i) => (
+                                  <span key={i} className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${kw.on_site ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-500 border-red-200"}`}>
+                                    {kw.keyword}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right column: PQS + Prompt Volume */}
+                          <div className="space-y-4">
+                            {/* PQS */}
+                            <Card className="bg-muted/40 border-border shadow-none">
+                              <CardHeader className="pb-2 pt-4 px-4">
+                                <CardTitle className="text-sm font-bold text-foreground">Example AEO Prompt</CardTitle>
+                                <CardDescription className="text-xs">
+                                  PQS = (PC<sub>avg</sub>×0.4) + (RC<sub>avg</sub>×0.6)
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="px-4 pb-4 space-y-3">
+                                <div className="bg-background rounded-lg p-3 text-xs text-foreground leading-relaxed border border-border">
+                                  {auditResults.example_prompt.text}
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                  {[
+                                    { label: "PQS",    value: auditResults.example_prompt.pqs.toFixed(2) },
+                                    { label: "PC avg", value: auditResults.example_prompt.pc_avg.toFixed(2) },
+                                    { label: "RC avg", value: auditResults.example_prompt.rc_avg.toFixed(2) },
+                                  ].map((s) => (
+                                    <div key={s.label} className="bg-background rounded-lg p-2 border border-border">
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{s.label}</p>
+                                      <p className="font-bold text-foreground text-base">{s.value}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground">Threshold:</span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${auditResults.example_prompt.threshold_met ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-orange-50 text-orange-600 border border-orange-200"}`}>
+                                    {auditResults.example_prompt.threshold_met ? "Met" : "Not Met"}
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            {/* Prompt Volume */}
+                            <Card className="bg-muted/40 border-border shadow-none">
+                              <CardHeader className="pb-2 pt-4 px-4">
+                                <CardTitle className="text-sm font-bold text-foreground">Prompt Volume Target</CardTitle>
+                                <CardDescription className="text-xs">Prompts needed to maintain AI visibility.</CardDescription>
+                              </CardHeader>
+                              <CardContent className="px-4 pb-4 space-y-3">
+                                <div className="grid grid-cols-2 gap-2 text-center">
+                                  <div className="bg-background rounded-lg p-3 border border-border">
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total / Month</p>
+                                    <p className="font-bold text-foreground text-2xl">{auditResults.search_volume.total}</p>
+                                  </div>
+                                  <div className="bg-background rounded-lg p-3 border border-border">
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Per Week</p>
+                                    <p className="font-bold text-foreground text-2xl">{auditResults.search_volume.weekly}</p>
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground bg-background rounded p-2 border border-border font-mono leading-relaxed">
+                                  {auditResults.search_volume.formula}
+                                </p>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+
+                        {/* ── Recommendations ── */}
+                        {auditResults.recommendations?.length > 0 && (
+                          <div>
+                            <h3 className="font-bold text-sm text-foreground mb-3">Recommendations</h3>
+                            <div className="space-y-2">
+                              {auditResults.recommendations.map((rec, i) => (
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/20">
+                                  <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold mt-0.5 ${PRIORITY_STYLES[rec.priority]}`}>
+                                    {rec.priority}
+                                  </span>
+                                  <div className="flex-1 min-w-0 space-y-0.5">
+                                    <p className="text-xs font-semibold text-foreground">{rec.action}</p>
+                                    <p className="text-[11px] text-muted-foreground">{rec.rationale}</p>
+                                    <div className="flex gap-3 text-[10px] text-muted-foreground">
+                                      <span>Impact: <span className="font-medium text-foreground">{rec.impact}</span></span>
+                                      <span>Effort: <span className="font-medium text-foreground">{rec.effort}</span></span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
+                          <Button variant="outline" onClick={() => setAuditResults(null)} className="gap-2">
+                            <RotateCcw className="w-4 h-4" /> Run New Audit
+                          </Button>
+                          <Button variant="outline" onClick={sendChatScript} className="gap-2">
+                            <MessageSquarePlus className="w-4 h-4" /> Generate Chat Script
+                          </Button>
+                          <Button onClick={sendAuditToChat} className="gap-2">
+                            <MessageSquarePlus className="w-4 h-4" /> Discuss in Chat
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>
