@@ -49,6 +49,8 @@ import {
   buildAuditPrompt,
   buildAuditPromptStatic,
 } from "../services/audit-prompt-builder";
+import dns from "node:dns/promises";
+import net from "node:net";
 
 const router = Router();
 
@@ -964,24 +966,124 @@ interface SiteData {
   bodyExcerpt: string;
 }
 
+/* SSRF guard: the audit fetches a user-supplied URL server-side, so block any
+   target that isn't a public http(s) host. Rejects localhost, private,
+   loopback, link-local (incl. cloud metadata 169.254.169.254), CGNAT, and
+   reserved ranges — checking every resolved address, not just literal IPs.
+   (Residual DNS-rebind TOCTOU is accepted: endpoint is staff-role gated.) */
+function isPrivateIPv4(ip: string): boolean {
+  const p = ip.split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255))
+    return true;
+  const [a, b, c] = p;
+  if (a === 0 || a === 127 || a === 10) return true;
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+function isPrivateIp(ip: string): boolean {
+  const fam = net.isIP(ip);
+  if (fam === 4) return isPrivateIPv4(ip);
+  if (fam === 6) {
+    const s = ip.toLowerCase();
+    if (s === "::1" || s === "::") return true;
+    if (s.startsWith("fc") || s.startsWith("fd")) return true; // ULA fc00::/7
+    if (/^fe[89ab]/.test(s)) return true; // link-local fe80::/10
+    // IPv4-mapped, dotted form (::ffff:1.2.3.4)
+    const mapped = s.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isPrivateIPv4(mapped[1]);
+    // IPv4-mapped, hex form the URL parser normalises to (::ffff:a9fe:a9fe)
+    const hex = s.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex) {
+      const g1 = parseInt(hex[1], 16);
+      const g2 = parseInt(hex[2], 16);
+      return isPrivateIPv4(`${g1 >> 8}.${g1 & 255}.${g2 >> 8}.${g2 & 255}`);
+    }
+    return false;
+  }
+  return true; // not an IP → treat as unsafe
+}
+
+async function isPublicHttpUrl(raw: string): Promise<boolean> {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  // URL keeps brackets on IPv6 literals (e.g. "[::1]") — strip them so
+  // net.isIP recognises the address and the IP classifier handles it.
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host === "metadata.google.internal"
+  )
+    return false;
+  if (net.isIP(host)) return !isPrivateIp(host);
+  try {
+    const addrs = await dns.lookup(host, { all: true });
+    if (addrs.length === 0) return false;
+    return addrs.every((a) => !isPrivateIp(a.address));
+  } catch {
+    return false;
+  }
+}
+
 async function fetchSiteData(url: string): Promise<SiteData | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 7000);
   try {
-    const resp = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": "Mozilla/5.0 AEO-Audit-Bot/1.0" },
-    });
+    // Follow redirects manually, re-validating each hop so a public URL can't
+    // 30x-bounce the fetch into an internal/metadata host.
+    let current = url;
+    let resp: Response | null = null;
+    for (let hop = 0; hop < 4; hop++) {
+      if (!(await isPublicHttpUrl(current))) return null;
+      const r = await fetch(current, {
+        signal: ctrl.signal,
+        redirect: "manual",
+        headers: { "User-Agent": "Mozilla/5.0 AEO-Audit-Bot/1.0" },
+      });
+      if (r.status >= 300 && r.status < 400) {
+        const loc = r.headers.get("location");
+        if (!loc) return null;
+        current = new URL(loc, current).toString();
+        continue;
+      }
+      resp = r;
+      break;
+    }
     clearTimeout(timer);
-    if (!resp.ok) return null;
+    if (!resp || !resp.ok) return null;
     const html = await resp.text();
 
-    const ssl = url.startsWith("https");
+    const ssl = current.startsWith("https");
     const title =
-      html.match(/<title[^>]*>(.*?)<\/title>/is)?.[1]?.replace(/<[^>]+>/g, "").trim() ?? "";
+      html
+        .match(/<title[^>]*>(.*?)<\/title>/is)?.[1]
+        ?.replace(/<[^>]+>/g, "")
+        .trim() ?? "";
     const description =
-      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i)?.[1]?.trim() ??
-      html.match(/<meta[^>]+content=["']([^"']*)[^>]+name=["']description["']/i)?.[1]?.trim() ?? "";
+      html
+        .match(
+          /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i,
+        )?.[1]
+        ?.trim() ??
+      html
+        .match(
+          /<meta[^>]+content=["']([^"']*)[^>]+name=["']description["']/i,
+        )?.[1]
+        ?.trim() ??
+      "";
     const h1s = [...html.matchAll(/<h1[^>]*>(.*?)<\/h1>/gis)]
       .map((m) => m[1].replace(/<[^>]+>/g, "").trim())
       .filter(Boolean)
@@ -1016,7 +1118,9 @@ router.post(
     try {
       const apiKey = process.env.DEEPSEEK_API_KEY;
       if (!apiKey) {
-        return res.status(503).json({ error: "DEEPSEEK_API_KEY not configured" });
+        return res
+          .status(503)
+          .json({ error: "DEEPSEEK_API_KEY not configured" });
       }
 
       const body = req.body as {
@@ -1029,30 +1133,40 @@ router.post(
         location?: string;
       };
 
-      const bizName     = (body.bizName     ?? "").trim();
+      const bizName = (body.bizName ?? "").trim();
       const description = (body.description ?? "").trim();
-      const bizType     = (body.bizType     ?? "Other").trim();
-      const bizSize     = (body.bizSize     ?? "Small (<50)").trim();
+      const bizType = (body.bizType ?? "Other").trim();
+      const bizSize = (body.bizSize ?? "Small (<50)").trim();
       const competitors = (body.competitors ?? "").trim();
-      const website     = (body.website     ?? "").trim();
-      const location    = (body.location    ?? "").trim();
+      const website = (body.website ?? "").trim();
+      const location = (body.location ?? "").trim();
 
       if (!bizName && !description) {
-        return res.status(400).json({ error: "bizName or description required" });
+        return res
+          .status(400)
+          .json({ error: "bizName or description required" });
       }
 
       /* ── Server-side pre-calc ── */
       const LOCAL_TYPES = ["Local Service", "Restaurant / Hospitality"];
-      const isLocal  = LOCAL_TYPES.includes(bizType);
-      const hasLoc   = location.length > 0;
-      const la       = isLocal && hasLoc  ? 1.0
-                     : isLocal && !hasLoc ? 0.2
-                     : !isLocal && hasLoc ? 0.5
-                     : 0.0;
-      const laLabel  = isLocal && hasLoc  ? "local service + location"
-                     : isLocal && !hasLoc ? "local service, no location"
-                     : !isLocal && hasLoc ? "non-local + location"
-                     : "non-local, no location";
+      const isLocal = LOCAL_TYPES.includes(bizType);
+      const hasLoc = location.length > 0;
+      const la =
+        isLocal && hasLoc
+          ? 1.0
+          : isLocal && !hasLoc
+            ? 0.2
+            : !isLocal && hasLoc
+              ? 0.5
+              : 0.0;
+      const laLabel =
+        isLocal && hasLoc
+          ? "local service + location"
+          : isLocal && !hasLoc
+            ? "local service, no location"
+            : !isLocal && hasLoc
+              ? "non-local + location"
+              : "non-local, no location";
 
       const YMYL_TYPES = ["Healthcare", "Legal / Financial"];
       const ymyl = YMYL_TYPES.includes(bizType) ? 1 : 0;
@@ -1082,8 +1196,8 @@ Body Excerpt (first 2000 chars):
 ${site.bodyExcerpt}
 `
         : website
-        ? `\n## Website\nURL provided (${website}) but could not be fetched — infer from business description.\n`
-        : `\n## Website\nNone provided — infer from business description.\n`;
+          ? `\n## Website\nURL provided (${website}) but could not be fetched — infer from business description.\n`
+          : `\n## Website\nNone provided — infer from business description.\n`;
 
       const systemPrompt = `You are an AEO audit engine. Return ONLY valid JSON — no prose, no markdown fences, no text outside the JSON object. Follow the 9 steps below in order.`;
 
@@ -1206,21 +1320,24 @@ Return this exact JSON (no other text):
   ]
 }`;
 
-      const upstream = await fetch("https://api.deepseek.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+      const upstream = await fetch(
+        "https://api.deepseek.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            stream: false,
+          }),
         },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user",   content: userPrompt },
-          ],
-          stream: false,
-        }),
-      });
+      );
 
       if (!upstream.ok) {
         const errText = await upstream.text().catch(() => "");
@@ -1235,7 +1352,9 @@ Return this exact JSON (no other text):
       const raw = data.choices?.[0]?.message?.content ?? "";
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        return res.status(502).json({ error: "Could not parse audit JSON from model response" });
+        return res
+          .status(502)
+          .json({ error: "Could not parse audit JSON from model response" });
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
@@ -1251,7 +1370,7 @@ Return this exact JSON (no other text):
           h1: site.h1s[0] ?? "",
         };
       }
-      parsed._la   = la;
+      parsed._la = la;
       parsed._ymyl = ymyl;
 
       return res.json(parsed);
