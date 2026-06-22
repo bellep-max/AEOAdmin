@@ -23,7 +23,12 @@ import {
 } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireSession } from "../middlewares/session-auth";
-import { requireAdmin, requireViewer } from "../middlewares/role-auth";
+import {
+  requireAdmin,
+  requireViewer,
+  requireSalesAllowed,
+} from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -73,7 +78,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
    GET /api/sessions
    Daily session log listing with filters + pagination.
 ──────────────────────────────────────────────────────────── */
-router.get("/", requireViewer, async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const {
       clientId,
@@ -89,7 +94,16 @@ router.get("/", requireViewer, async (req, res) => {
       offset = "0",
     } = req.query as Record<string, string>;
 
+    // Scoped roles (chuckslocal, sales, account-manager) only see their own
+    // clients' sessions; admins/owners get null = no restriction.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json({ sessions: [], total: 0, offset: 0 });
+    }
+
     const conditions = [] as ReturnType<typeof eq>[];
+    if (eligibleIds)
+      conditions.push(inArray(sessionsTable.clientId, eligibleIds));
     if (clientId)
       conditions.push(eq(sessionsTable.clientId, parseInt(clientId)));
     if (businessId)

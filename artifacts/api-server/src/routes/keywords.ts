@@ -714,10 +714,19 @@ router.post("/:id/generate-replacement", requireOwner, async (req, res) => {
    GET /api/keywords/:id/variants
    List variants for a keyword (active only by default)
 ──────────────────────────────────────────────────────────── */
-router.get("/:id/variants", requireViewer, async (req, res) => {
+router.get("/:id/variants", requireSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    // Scoped roles (chuckslocal, sales, account-manager) can only read variants
+    // for keywords inside their plan slice; admins/owners pass through.
+    const [owner] = await db
+      .select({ clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, id))
+      .limit(1);
+    if (!owner) return res.status(404).json({ error: "Keyword not found" });
+    if (!(await assertScopedAccessToClient(req, res, owner.clientId))) return;
     const includeInactive = req.query.includeInactive === "true";
 
     const rows = await db

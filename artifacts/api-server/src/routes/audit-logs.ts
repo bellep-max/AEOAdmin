@@ -7,11 +7,16 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, count, gte, lte, like, sql } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, like, sql, inArray } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireSession } from "../middlewares/session-auth";
-import { requireOwner, requireViewer } from "../middlewares/role-auth";
+import {
+  requireOwner,
+  requireViewer,
+  requireSalesAllowed,
+} from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -41,7 +46,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
 /* ────────────────────────────────────────────────────────────
    GET /api/audit-logs
 ──────────────────────────────────────────────────────────── */
-router.get("/", requireViewer, async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const {
       clientId,
@@ -57,7 +62,16 @@ router.get("/", requireViewer, async (req, res) => {
       offset = "0",
     } = req.query as Record<string, string>;
 
+    // Scoped roles (chuckslocal, sales, account-manager) only see their own
+    // clients' audit logs; admins/owners get null = no restriction.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json({ logs: [], total: 0 });
+    }
+
     const conditions = [] as ReturnType<typeof eq>[];
+    if (eligibleIds)
+      conditions.push(inArray(auditLogsTable.clientId, eligibleIds));
     if (clientId)
       conditions.push(eq(auditLogsTable.clientId, parseInt(clientId)));
     if (businessId)
