@@ -57,6 +57,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  type ComboOption,
+} from "@/components/SearchableSelect";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { BulkAddKeywordsDialog } from "@/components/BulkAddKeywordsDialog";
@@ -119,6 +123,7 @@ const businessFormSchema = z.object({
 
 export default function Clients() {
   const { isAdmin, isEditor } = useAuth();
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterAccountType, setFilterAccountType] = useState("all");
@@ -411,8 +416,19 @@ export default function Clients() {
     form.reset();
   };
 
+  const clientOptions: ComboOption[] = (clients ?? [])
+    .filter((c) => !(c as { archivedAt?: string }).archivedAt)
+    .map((c) => ({
+      value: String(c.id),
+      label: c.businessName,
+      sublabel: c.city ?? undefined,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   const filteredClients = (clients ?? [])
     .filter((c) => {
+      const clientMatch =
+        selectedClientId === null || String(c.id) === selectedClientId;
       const nameMatch =
         !search || c.businessName.toLowerCase().includes(search.toLowerCase());
       const locMatch =
@@ -433,6 +449,7 @@ export default function Clients() {
       // before refetch returns the filtered list from the BE.
       const archivedMatch = !(c as any).archivedAt;
       return (
+        clientMatch &&
         nameMatch &&
         locMatch &&
         typeMatch &&
@@ -730,6 +747,18 @@ export default function Clients() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-center">
+        {/* Select / search a client */}
+        <SearchableSelect
+          value={selectedClientId}
+          onChange={(v) => {
+            setSelectedClientId(v);
+            setPage(0);
+          }}
+          options={clientOptions}
+          placeholder="Select a client"
+          allLabel="All Clients"
+          width="w-56"
+        />
         {/* Client Name */}
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
@@ -813,7 +842,8 @@ export default function Clients() {
           </SelectContent>
         </Select>
         {/* Clear filters */}
-        {(search ||
+        {(selectedClientId ||
+          search ||
           filterLocation ||
           filterAccountType !== "all" ||
           filterStatus !== "all" ||
@@ -823,6 +853,7 @@ export default function Clients() {
             size="sm"
             className="h-10 text-sm text-slate-500 hover:text-slate-900"
             onClick={() => {
+              setSelectedClientId(null);
               setSearch("");
               setFilterLocation("");
               setFilterAccountType("all");
