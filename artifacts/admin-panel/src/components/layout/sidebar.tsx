@@ -158,22 +158,6 @@ const navGroups: NavGroup[] = [
         icon: Trophy,
         salesAllowed: true,
         accountManagerAllowed: true,
-        children: [
-          {
-            name: "Period Comparison",
-            href: "/rankings",
-            icon: BarChart3,
-            salesAllowed: true,
-            accountManagerAllowed: true,
-          },
-          {
-            name: "Bi-Weekly Report",
-            href: "/rankings/bi-weekly",
-            icon: Calendar,
-            salesAllowed: true,
-            accountManagerAllowed: true,
-          },
-        ],
       },
       { name: "Metrics", href: "/metrics", icon: BarChart3 },
       { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },

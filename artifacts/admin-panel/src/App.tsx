@@ -19,7 +19,6 @@ import KeywordsAll from "@/pages/keywords-all";
 import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
-import RankingsBiWeekly from "@/pages/rankings-bi-weekly";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
 import Packages from "@/pages/packages";
@@ -146,7 +145,6 @@ function ProtectedRoutes() {
         <Route path="/keywords/all">
           <AccountManagerOrAdminGate component={KeywordsAll} />
         </Route>
-        <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics">
           <AdminTierGate component={Metrics} />
