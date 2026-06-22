@@ -264,13 +264,11 @@ router.post("/change-password", async (req, res) => {
       return res.status(401).json({ error: "Not authenticated" });
 
     const { currentPassword, newPassword } = req.body as {
-      currentPassword: string;
+      currentPassword?: string;
       newPassword: string;
     };
-    if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "currentPassword and newPassword are required" });
+    if (!newPassword) {
+      return res.status(400).json({ error: "newPassword is required" });
     }
     if (newPassword.length < 8) {
       return res
@@ -284,8 +282,18 @@ router.post("/change-password", async (req, res) => {
       .where(eq(usersTable.id, Number(session.userId)));
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (user.passwordHash !== hashPassword(currentPassword)) {
-      return res.status(401).json({ error: "Current password is incorrect" });
+    // Passwordless accounts (email-code login) carry an "otp:" placeholder
+    // instead of a real password — let them SET one without a current password.
+    // Accounts that already have a real password must verify it to change it.
+    const isPasswordless =
+      !user.passwordHash || user.passwordHash.startsWith("otp:");
+    if (!isPasswordless) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: "Current password is required" });
+      }
+      if (user.passwordHash !== hashPassword(currentPassword)) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
     }
 
     await db
