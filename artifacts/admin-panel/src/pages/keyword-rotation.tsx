@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/lib/auth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -140,6 +141,7 @@ function StatCard({ icon, label, value, sub, color }: { icon: React.ReactNode; l
 function VariantsPanel({ kwId, kwText, isTop3, clientId }: { kwId: number; kwText: string; isTop3: boolean; clientId: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { isOwner } = useAuth();
   const [open, setOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -187,10 +189,13 @@ function VariantsPanel({ kwId, kwText, isTop3, clientId }: { kwId: number; kwTex
               <span className="text-xs">{v.variantText}</span>
             </div>
           ))}
-          <Button size="sm" variant="outline" className="h-6 text-xs mt-1" onClick={() => generate.mutate()} disabled={generate.isPending}>
-            {generate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            {data?.total ? "Regenerate" : "Generate variants"}
-          </Button>
+          {/* Variant generation is super-admin (owner) only. */}
+          {isOwner && (
+            <Button size="sm" variant="outline" className="h-6 text-xs mt-1" onClick={() => generate.mutate()} disabled={generate.isPending}>
+              {generate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+              {data?.total ? "Regenerate" : "Generate variants"}
+            </Button>
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
