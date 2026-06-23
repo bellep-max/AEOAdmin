@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
 import { CampaignAuditRankingsCard } from "@/components/CampaignAuditRankingsCard";
@@ -453,6 +455,20 @@ export default function CampaignDetail() {
           </div>
         </CardContent>
       </Card>
+
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+        title="Performance summary · this campaign"
+      />
+
+      <RankTrendChart
+        scope="campaign"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
 
       <PlatformAggregateStrip
         clientId={clientId}

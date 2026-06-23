@@ -1183,7 +1183,9 @@ export default function Keywords() {
   const [bizTypeFilters, setBizTypeFilters] = useState<Map<number, string>>(
     new Map(),
   );
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // Business cards start collapsed (compact). A businessId is in this set only
+  // while the user (or a search match) has expanded that card.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
   const [editKw, setEditKw] = useState<KwRecord | null>(null);
   const [confirmDeleteKw, setConfirmDeleteKw] = useState<KwRecord | null>(null);
@@ -1513,6 +1515,8 @@ export default function Keywords() {
   const bizById = new Map(businesses.map((b) => [b.id, b]));
   const filteredKws = ((keywords ?? []) as unknown as KwRecord[]).filter(
     (k: KwRecord) => {
+      // Hide inactive keywords from this page entirely (active-only view).
+      if (k.isActive === false) return false;
       const matchType =
         typeFilter === "all" || String(k.keywordType) === typeFilter;
       if (!matchType) return false;
@@ -1538,7 +1542,7 @@ export default function Keywords() {
     if (!searchLower) return;
     const bids = new Set<number>();
     for (const k of filteredKws) bids.add((k.businessId as number | null) ?? 0);
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       let changed = false;
       bids.forEach((b) => {
@@ -1561,10 +1565,12 @@ export default function Keywords() {
     grouped.get(bid)!.push(kw);
   }
 
-  /* Stats */
-  const all = keywords ?? ([] as KwRecord[]);
+  /* Stats — inactive keywords are hidden from this page, so count active only. */
+  const all = (keywords ?? ([] as KwRecord[])).filter(
+    (k: KwRecord) => k.isActive !== false,
+  );
   const total = all.length;
-  const active = all.filter((k: KwRecord) => k.isActive !== false).length;
+  const active = all.length;
   const type3 = all.filter((k: KwRecord) => Number(k.keywordType) === 3).length;
   const type4 = all.filter((k: KwRecord) => Number(k.keywordType) === 4).length;
 
@@ -1686,7 +1692,7 @@ export default function Keywords() {
                 setSelectedClientId(next);
                 setSelectedBusinessId(null);
                 setSelectedCampaignId(null);
-                setCollapsed(new Set());
+                setExpanded(new Set());
                 setPage(0);
               }}
               options={[...(clients ?? [])]
@@ -1712,7 +1718,7 @@ export default function Keywords() {
                 const next = v == null ? null : Number(v);
                 setSelectedBusinessId(next);
                 setSelectedCampaignId(null);
-                if (next !== null) setCollapsed(new Set([next]));
+                if (next !== null) setExpanded(new Set([next]));
                 setPage(0);
               }}
               options={[...bizInScope]
@@ -1764,7 +1770,7 @@ export default function Keywords() {
                   setSelectedClientId(null);
                   setSelectedBusinessId(null);
                   setSelectedCampaignId(null);
-                  setCollapsed(new Set());
+                  setExpanded(new Set());
                   setPage(0);
                 }}
                 className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-bold"
@@ -1969,7 +1975,7 @@ export default function Keywords() {
                   (b?.clientId ?? (bkws[0]?.clientId as number)) === clientId
                 );
               }).length;
-              const isOpen = !collapsed.has(businessId);
+              const isOpen = expanded.has(businessId);
               const initials = displayName
                 .split(" ")
                 .slice(0, 2)
@@ -2019,7 +2025,7 @@ export default function Keywords() {
                   >
                     <button
                       onClick={() =>
-                        setCollapsed((p) => {
+                        setExpanded((p) => {
                           const n = new Set(p);
                           n.has(businessId)
                             ? n.delete(businessId)

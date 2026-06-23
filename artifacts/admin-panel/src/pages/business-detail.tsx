@@ -39,6 +39,8 @@ import {
 import { useLocation } from "wouter";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
 import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -434,6 +436,19 @@ export default function BusinessDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={null}
+        title="Performance summary · this business"
+      />
+
+      <RankTrendChart
+        scope="business"
+        clientId={clientId}
+        businessId={businessId}
+      />
 
       <PlatformAggregateStrip
         clientId={clientId}

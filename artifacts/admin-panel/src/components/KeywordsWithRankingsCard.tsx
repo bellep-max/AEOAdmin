@@ -275,7 +275,9 @@ export function KeywordsWithRankingsCard({
   lockedView = false,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // Per-keyword rows start collapsed (compact chip view); a keyword id is in
+  // this set only while the user has expanded its detail grid.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   // Card-level collapse (whole section), distinct from per-keyword `collapsed`.
   const [sectionCollapsed, setSectionCollapsed] = useState(defaultCollapsed);
   // Screenshot dialog target. Null when the dialog is closed.
@@ -421,7 +423,7 @@ export function KeywordsWithRankingsCard({
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
 
   function toggle(kid: number): void {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(kid)) next.delete(kid);
       else next.add(kid);
@@ -540,7 +542,7 @@ export function KeywordsWithRankingsCard({
           ) : (
             <div className="space-y-2">
               {grouped.map(({ keywordId, keywordText, platforms }) => {
-                const isOpen = !collapsed.has(keywordId);
+                const isOpen = expanded.has(keywordId);
                 // Adds an "Unavailable" placeholder for any outage platform
                 // (e.g. Gemini) missing from a keyword that otherwise has data.
                 const sorted = sortPlatformsWithUnavailable(platforms);

@@ -45,6 +45,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
 import { CreatedByField } from "@/components/CreatedByField";
 import {
   ExternalLink,
@@ -401,6 +403,16 @@ export default function ClientDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ═══ PERFORMANCE SUMMARY ═══ */}
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={null}
+        aeoPlanId={null}
+        title="Performance summary · this client"
+      />
+
+      <RankTrendChart scope="client" clientId={clientId} />
 
       {/* ═══ BUSINESSES ═══ */}
       <BusinessesSection clientId={clientId} clientName={client.businessName} />
