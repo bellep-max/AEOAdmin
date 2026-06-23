@@ -581,7 +581,7 @@ export function KeywordsWithRankingsCard({
                       </button>
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <Link
-                          href={`/keywords?keywordId=${keywordId}`}
+                          href={`/keywords?keywordId=${keywordId}${clientId != null ? `&clientId=${clientId}` : ""}${businessId != null ? `&businessId=${businessId}` : ""}${aeoPlanId != null ? `&aeoPlanId=${aeoPlanId}` : ""}`}
                           className="text-sm font-semibold text-primary hover:underline truncate"
                         >
                           {keywordText}

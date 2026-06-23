@@ -1173,12 +1173,33 @@ export default function Keywords() {
   const { isAdmin, isEditor } = useAuth();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  // Deep-link params from a "view keyword" link (e.g. the campaign page):
+  // ?keywordId plus its clientId/businessId/aeoPlanId so we can pre-scope the
+  // (otherwise huge, lazy-loaded) list and jump straight to the keyword.
+  const [deepLink] = useState(() => {
+    const q = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : "",
+    );
+    const num = (k: string) => {
+      const v = q.get(k);
+      return v ? Number(v) : null;
+    };
+    return {
+      keywordId: num("keywordId"),
+      clientId: num("clientId"),
+      businessId: num("businessId"),
+      aeoPlanId: num("aeoPlanId"),
+    };
+  });
+
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(
+    deepLink.clientId,
+  );
   const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(
-    null,
+    deepLink.businessId,
   );
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
-    null,
+    deepLink.aeoPlanId,
   );
   const [bizTypeFilters, setBizTypeFilters] = useState<Map<number, string>>(
     new Map(),
@@ -1280,13 +1301,7 @@ export default function Keywords() {
     });
   }
 
-  const [targetKeywordId] = useState<number | null>(() => {
-    const q = new URLSearchParams(
-      typeof window !== "undefined" ? window.location.search : "",
-    );
-    const v = q.get("keywordId");
-    return v ? Number(v) : null;
-  });
+  const targetKeywordId = deepLink.keywordId;
 
   const { data: keywords, isLoading } = useQuery<KwRecord[]>({
     queryKey: [
@@ -1338,8 +1353,8 @@ export default function Keywords() {
   );
 
   // On deep-link (?keywordId from any card: rankings, locked, daily, audit),
-  // open that keyword's detail dialog as soon as it loads. Reliable regardless
-  // of the grouped list's collapse/scope state. Fires once.
+  // expand the keyword's business card and scroll it into view so the target is
+  // visible and highlighted (the ring is keyed off targetKeywordId). Fires once.
   const deepLinkOpened = React.useRef(false);
   useEffect(() => {
     if (deepLinkOpened.current) return;
@@ -1347,7 +1362,15 @@ export default function Keywords() {
     const kw = keywords.find((k) => k.id === targetKeywordId);
     if (!kw) return;
     deepLinkOpened.current = true;
-    setEditKw({ ...(kw as KwRecord) });
+    const bid = (kw.businessId as number | null) ?? 0;
+    setExpanded((prev) => new Set(prev).add(bid));
+    // The card mounts on the next render once its business is expanded; give it
+    // a beat, then scroll the highlighted keyword into view.
+    window.setTimeout(() => {
+      document
+        .getElementById(`kw-${targetKeywordId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
   }, [targetKeywordId, keywords]);
 
   async function saveKeyword(id: number | null, data: KwRecord) {
@@ -1515,8 +1538,18 @@ export default function Keywords() {
   const bizById = new Map(businesses.map((b) => [b.id, b]));
   const filteredKws = ((keywords ?? []) as unknown as KwRecord[]).filter(
     (k: KwRecord) => {
-      // Hide inactive keywords from this page entirely (active-only view).
-      if (k.isActive === false) return false;
+      // Show only a campaign's ACTIVE keywords (the product caps each campaign
+      // at 5 active). Inactive, locked/won, and archived keywords are rotated
+      // out and belong in the rotation/locked views — exclude them here so the
+      // list and counts read as the true active set (5, not 8). The deep-link
+      // target is always kept so a "view keyword" link can still surface and
+      // highlight even a locked/archived keyword.
+      const isTarget = k.id === targetKeywordId;
+      const isRotatedOut =
+        k.isActive === false ||
+        (k as { status?: unknown }).status === "locked" ||
+        (k as { archivedAt?: unknown }).archivedAt != null;
+      if (isRotatedOut && !isTarget) return false;
       const matchType =
         typeFilter === "all" || String(k.keywordType) === typeFilter;
       if (!matchType) return false;
@@ -1565,9 +1598,12 @@ export default function Keywords() {
     grouped.get(bid)!.push(kw);
   }
 
-  /* Stats — inactive keywords are hidden from this page, so count active only. */
+  /* Stats — match the list: only active (non-locked, non-archived) keywords. */
   const all = (keywords ?? ([] as KwRecord[])).filter(
-    (k: KwRecord) => k.isActive !== false,
+    (k: KwRecord) =>
+      k.isActive !== false &&
+      (k as { status?: unknown }).status !== "locked" &&
+      (k as { archivedAt?: unknown }).archivedAt == null,
   );
   const total = all.length;
   const active = all.length;
@@ -1718,7 +1754,9 @@ export default function Keywords() {
                 const next = v == null ? null : Number(v);
                 setSelectedBusinessId(next);
                 setSelectedCampaignId(null);
-                if (next !== null) setExpanded(new Set([next]));
+                // Keep cards collapsed (compact) on filter change — the user
+                // expands a card when they want its detail.
+                setExpanded(new Set());
                 setPage(0);
               }}
               options={[...bizInScope]
@@ -2267,7 +2305,7 @@ export default function Keywords() {
                                         id={`kw-${kw.id}`}
                                         className={
                                           targetKeywordId === kw.id
-                                            ? "ring-2 ring-primary rounded-lg"
+                                            ? "rounded-xl ring-2 ring-primary ring-offset-2 ring-offset-background"
                                             : ""
                                         }
                                       >
