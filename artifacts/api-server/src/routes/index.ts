@@ -28,6 +28,7 @@ import rankingsEmailRouter from "./rankings-email";
 import portalRouter from "./portal";
 import locationRouter from "./location";
 import ingestRouter from "./ingest";
+import salesRouter from "./sales";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use("/rankings", rankingsEmailRouter);
 router.use("/portal", portalRouter);
 router.use("/location", locationRouter);
 router.use("/ingest", ingestRouter);
+router.use("/sales", salesRouter);
 
 export default router;
