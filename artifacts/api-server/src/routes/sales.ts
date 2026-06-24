@@ -97,9 +97,15 @@ interface ClientRow {
   accountUserName: string | null;
 }
 
+interface BusinessRow {
+  clientId: number;
+  name: string;
+}
+
 function resolveClient(
   q: Record<string, string>,
   clients: ClientRow[],
+  businesses: BusinessRow[],
 ): { client: ClientRow; matchedBy: string } | null {
   const email = lc(q.email);
   if (email) {
@@ -122,12 +128,18 @@ function resolveClient(
   const business = q.business ?? q.businessName ?? "";
   if (business.trim()) {
     const n = normName(business);
+    const fuzzy = (cand: string) =>
+      cand.length > 8 && n.length > 8 && (cand.includes(n) || n.includes(cand));
+    // clients.business_name is often the owner's name, not the brand — so also
+    // match the businesses table (where the real brand lives) by clientId.
     let hit = clients.find((c) => normName(c.businessName) === n);
-    if (!hit && n.length > 8)
-      hit = clients.find((c) => {
-        const cn = normName(c.businessName);
-        return cn.length > 8 && (cn.includes(n) || n.includes(cn));
-      });
+    if (!hit) {
+      const b =
+        businesses.find((x) => normName(x.name) === n) ??
+        businesses.find((x) => fuzzy(normName(x.name)));
+      if (b) hit = clients.find((c) => c.id === b.clientId);
+    }
+    if (!hit) hit = clients.find((c) => fuzzy(normName(c.businessName)));
     if (hit) return { client: hit, matchedBy: "business_name" };
   }
   const full = `${q.firstName ?? ""} ${q.lastName ?? ""}`.trim();
@@ -222,7 +234,14 @@ async function resolveImprovement(
     })
     .from(clientsTable)) as ClientRow[];
 
-  const match = resolveClient(q, clients);
+  const businesses = (await db
+    .select({
+      clientId: businessesTable.clientId,
+      name: businessesTable.name,
+    })
+    .from(businessesTable)) as BusinessRow[];
+
+  const match = resolveClient(q, clients, businesses);
   if (!match)
     return {
       ok: false,
