@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import { db, pool } from "@workspace/db";
 import {
   usersTable,
@@ -11,7 +16,18 @@ import {
   sessionsTable,
   keywordVariantsTable,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  sql,
+} from "drizzle-orm";
+import { chatCompletion } from "../services/llm-client";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -31,7 +47,11 @@ function portalState(req: Request): PortalRequestState {
   return req as unknown as PortalRequestState;
 }
 
-function requirePortalAuth(req: Request, res: Response, next: NextFunction): void {
+function requirePortalAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   const session = req.session as unknown as Record<string, unknown> | undefined;
   const userId = session?.userId;
   if (typeof userId !== "number") {
@@ -47,7 +67,10 @@ function requirePortalAuth(req: Request, res: Response, next: NextFunction): voi
  * client linked; admins/owners are rejected here — they have /api/* directly
  * and shouldn't be calling portal routes.
  */
-async function requireLinkedClient(req: Request, res: Response): Promise<number | null> {
+async function requireLinkedClient(
+  req: Request,
+  res: Response,
+): Promise<number | null> {
   const state = portalState(req);
   const userId = state.portalUserId;
   if (typeof userId !== "number") {
@@ -124,7 +147,10 @@ router.get("/businesses/me", requirePortalAuth, async (req, res) => {
 
 // POST and PATCH share the same upsert semantics: register auto-creates a
 // `clients` row, so the onboarding wizard's POST is effectively an update.
-async function upsertBusinessHandler(req: Request, res: Response): Promise<void> {
+async function upsertBusinessHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
   try {
     const clientId = await requireLinkedClient(req, res);
     if (clientId == null) return;
@@ -141,7 +167,9 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
     const patch: Partial<typeof clientsTable.$inferInsert> = {};
     if (body.businessName !== undefined) {
       if (typeof body.businessName !== "string" || !body.businessName.trim()) {
-        res.status(400).json({ error: "businessName must be a non-empty string" });
+        res
+          .status(400)
+          .json({ error: "businessName must be a non-empty string" });
         return;
       }
       patch.businessName = body.businessName.trim();
@@ -153,7 +181,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
       }
       patch.accountUser = body.ownerName.trim();
     }
-    if (body.subscriberName !== undefined && typeof body.subscriberName !== "string") {
+    if (
+      body.subscriberName !== undefined &&
+      typeof body.subscriberName !== "string"
+    ) {
       res.status(400).json({ error: "subscriberName must be a string" });
       return;
     }
@@ -164,7 +195,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
       res.status(400).json({ error: "industry must be a string" });
       return;
     }
-    if (body.description !== undefined && typeof body.description !== "string") {
+    if (
+      body.description !== undefined &&
+      typeof body.description !== "string"
+    ) {
       res.status(400).json({ error: "description must be a string" });
       return;
     }
@@ -177,7 +211,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
     }
 
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -214,7 +251,10 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const keywordIds = keywords.map((k) => k.id);
 
     // Build a "latest rank per keyword" map.
-    const latestByKeyword = new Map<number, { position: number | null; date: string | null }>();
+    const latestByKeyword = new Map<
+      number,
+      { position: number | null; date: string | null }
+    >();
     if (keywordIds.length > 0) {
       const reports = await db
         .select({
@@ -244,14 +284,16 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const ranked = keywords
       .map((k) => ({ kw: k, latest: latestByKeyword.get(k.id) ?? null }))
       .filter((row) => row.latest?.position != null) as Array<{
-        kw: typeof keywords[number];
-        latest: { position: number; date: string | null };
-      }>;
+      kw: (typeof keywords)[number];
+      latest: { position: number; date: string | null };
+    }>;
 
     const visibilityScore =
       activeKeywords > 0
         ? Math.round(
-            (ranked.filter((r) => r.latest.position <= 10).length / activeKeywords) * 1000,
+            (ranked.filter((r) => r.latest.position <= 10).length /
+              activeKeywords) *
+              1000,
           ) / 10
         : null;
 
@@ -302,7 +344,10 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
 });
 
 async function getClientById(clientId: number) {
-  const [row] = await db.select().from(clientsTable).where(eq(clientsTable.id, clientId));
+  const [row] = await db
+    .select()
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId));
   return row;
 }
 
@@ -470,7 +515,9 @@ router.get("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
     }
 
     res.json(
-      keywords.map((k) => toKeywordResponse(k, clientId, positionsByKeyword.get(k.id) ?? [])),
+      keywords.map((k) =>
+        toKeywordResponse(k, clientId, positionsByKeyword.get(k.id) ?? []),
+      ),
     );
   } catch (err) {
     req.log.error({ err }, "Portal keywords list error");
@@ -530,106 +577,126 @@ router.post("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
   }
 });
 
-router.patch("/businesses/me/keywords/:id", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
+router.patch(
+  "/businesses/me/keywords/:id",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
 
-    const existing = await loadOwnedKeyword(res, clientId, req.params.id);
-    if (!existing) return;
+      const existing = await loadOwnedKeyword(res, clientId, req.params.id);
+      if (!existing) return;
 
-    const body = (req.body ?? {}) as {
-      keyword?: unknown;
-      notes?: unknown;
-      status?: unknown;
-    };
+      const body = (req.body ?? {}) as {
+        keyword?: unknown;
+        notes?: unknown;
+        status?: unknown;
+      };
 
-    const patch: Partial<typeof keywordsTable.$inferInsert> = {};
-    if (body.keyword !== undefined) {
-      if (typeof body.keyword !== "string" || !body.keyword.trim()) {
-        return res.status(400).json({ error: "keyword must be a non-empty string" });
+      const patch: Partial<typeof keywordsTable.$inferInsert> = {};
+      if (body.keyword !== undefined) {
+        if (typeof body.keyword !== "string" || !body.keyword.trim()) {
+          return res
+            .status(400)
+            .json({ error: "keyword must be a non-empty string" });
+        }
+        patch.keywordText = body.keyword.trim();
       }
-      patch.keywordText = body.keyword.trim();
-    }
-    if (body.notes !== undefined) {
-      if (typeof body.notes !== "string") {
-        return res.status(400).json({ error: "notes must be a string" });
+      if (body.notes !== undefined) {
+        if (typeof body.notes !== "string") {
+          return res.status(400).json({ error: "notes must be a string" });
+        }
+        patch.notes = body.notes;
       }
-      patch.notes = body.notes;
+      if (body.status !== undefined) {
+        const parsed = parseKeywordStatus(body.status);
+        if (typeof parsed === "object") return res.status(400).json(parsed);
+        patch.isActive = parsed;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await db
+          .update(keywordsTable)
+          .set(patch)
+          .where(eq(keywordsTable.id, existing.id));
+      }
+
+      const [updated] = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.id, existing.id));
+      if (!updated) {
+        return res.status(404).json({ error: "Keyword not found" });
+      }
+      const positions = await getRecentPositions(clientId, updated.id);
+      res.json(toKeywordResponse(updated, clientId, positions));
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword update error");
+      res.status(500).json({ error: "Internal server error" });
     }
-    if (body.status !== undefined) {
-      const parsed = parseKeywordStatus(body.status);
-      if (typeof parsed === "object") return res.status(400).json(parsed);
-      patch.isActive = parsed;
+  },
+);
+
+router.delete(
+  "/businesses/me/keywords/:id",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+
+      const existing = await loadOwnedKeyword(res, clientId, req.params.id);
+      if (!existing) return;
+
+      // Hard delete — `keyword_links` and `ranking_reports` cascade.
+      await db.delete(keywordsTable).where(eq(keywordsTable.id, existing.id));
+      res.status(204).send();
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword delete error");
+      res.status(500).json({ error: "Internal server error" });
     }
+  },
+);
 
-    if (Object.keys(patch).length > 0) {
-      await db.update(keywordsTable).set(patch).where(eq(keywordsTable.id, existing.id));
+router.get(
+  "/businesses/me/keywords/:id/links",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+
+      const rawId = req.params.id;
+      const keywordId = Number.parseInt(
+        typeof rawId === "string" ? rawId : "",
+        10,
+      );
+      if (Number.isNaN(keywordId)) {
+        return res.status(400).json({ error: "Invalid keyword id" });
+      }
+
+      const [keyword] = await db
+        .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
+        .from(keywordsTable)
+        .where(eq(keywordsTable.id, keywordId));
+      if (!keyword || keyword.clientId !== clientId) {
+        return res.status(404).json({ error: "Keyword not found" });
+      }
+
+      const links = await db
+        .select()
+        .from(keywordLinksTable)
+        .where(eq(keywordLinksTable.keywordId, keywordId))
+        .orderBy(keywordLinksTable.createdAt);
+
+      res.json(links.map((l) => toKeywordLinkResponse(l, clientId)));
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword links error");
+      res.status(500).json({ error: "Internal server error" });
     }
-
-    const [updated] = await db
-      .select()
-      .from(keywordsTable)
-      .where(eq(keywordsTable.id, existing.id));
-    if (!updated) {
-      return res.status(404).json({ error: "Keyword not found" });
-    }
-    const positions = await getRecentPositions(clientId, updated.id);
-    res.json(toKeywordResponse(updated, clientId, positions));
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword update error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.delete("/businesses/me/keywords/:id", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
-
-    const existing = await loadOwnedKeyword(res, clientId, req.params.id);
-    if (!existing) return;
-
-    // Hard delete — `keyword_links` and `ranking_reports` cascade.
-    await db.delete(keywordsTable).where(eq(keywordsTable.id, existing.id));
-    res.status(204).send();
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword delete error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/businesses/me/keywords/:id/links", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
-
-    const rawId = req.params.id;
-    const keywordId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
-    if (Number.isNaN(keywordId)) {
-      return res.status(400).json({ error: "Invalid keyword id" });
-    }
-
-    const [keyword] = await db
-      .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
-      .from(keywordsTable)
-      .where(eq(keywordsTable.id, keywordId));
-    if (!keyword || keyword.clientId !== clientId) {
-      return res.status(404).json({ error: "Keyword not found" });
-    }
-
-    const links = await db
-      .select()
-      .from(keywordLinksTable)
-      .where(eq(keywordLinksTable.keywordId, keywordId))
-      .orderBy(keywordLinksTable.createdAt);
-
-    res.json(links.map((l) => toKeywordLinkResponse(l, clientId)));
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword links error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+  },
+);
 
 router.post(
   "/businesses/me/keywords/:id/links",
@@ -651,7 +718,10 @@ router.post(
       if (typeof body.url !== "string" || !body.url.trim()) {
         return res.status(400).json({ error: "url is required" });
       }
-      if (body.description !== undefined && typeof body.description !== "string") {
+      if (
+        body.description !== undefined &&
+        typeof body.description !== "string"
+      ) {
         return res.status(400).json({ error: "description must be a string" });
       }
       if (body.linkType !== undefined && typeof body.linkType !== "string") {
@@ -727,7 +797,9 @@ router.delete(
       const owned = await loadOwnedLink(res, clientId, req.params.linkId);
       if (!owned) return;
 
-      await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, owned.link.id));
+      await db
+        .delete(keywordLinksTable)
+        .where(eq(keywordLinksTable.id, owned.link.id));
       res.status(204).send();
     } catch (err) {
       req.log.error({ err }, "Portal keyword link delete error");
@@ -839,7 +911,10 @@ router.post("/businesses/me/gbp", requirePortalAuth, async (req, res) => {
       patch.placeId = body.placeId.trim();
     }
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -856,11 +931,17 @@ router.post("/businesses/me/gbp", requirePortalAuth, async (req, res) => {
       businessId: clientId,
       placeId: client.placeId,
       businessName:
-        typeof body.businessName === "string" ? body.businessName : client.businessName,
+        typeof body.businessName === "string"
+          ? body.businessName
+          : client.businessName,
       address: client.searchAddress,
       category: typeof body.category === "string" ? body.category : null,
-      isVerified: typeof body.isVerified === "boolean" ? body.isVerified : !!client.placeId,
-      phoneNumber: typeof body.phoneNumber === "string" ? body.phoneNumber : null,
+      isVerified:
+        typeof body.isVerified === "boolean"
+          ? body.isVerified
+          : !!client.placeId,
+      phoneNumber:
+        typeof body.phoneNumber === "string" ? body.phoneNumber : null,
       website: client.gmbUrl,
       createdAt: client.createdAt,
     });
@@ -888,7 +969,9 @@ router.post("/businesses/me/websites", requirePortalAuth, async (req, res) => {
       return;
     }
     const linkType =
-      typeof body.linkType === "string" && body.linkType.trim() ? body.linkType : "other";
+      typeof body.linkType === "string" && body.linkType.trim()
+        ? body.linkType
+        : "other";
 
     res.status(201).json({
       id: 0,
@@ -909,7 +992,10 @@ router.post("/businesses/me/websites", requirePortalAuth, async (req, res) => {
  * Resolve the report date for a ranking_reports row.
  * `date` is the canonical day-string; fall back to the timestamp when missing.
  */
-function reportDate(row: { date: string | null; timestamp: Date | null }): Date | null {
+function reportDate(row: {
+  date: string | null;
+  timestamp: Date | null;
+}): Date | null {
   if (row.date) {
     const parsed = new Date(`${row.date}T00:00:00Z`);
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -1000,11 +1086,16 @@ router.get("/businesses/me/reports", requirePortalAuth, async (req, res) => {
       const prev = bucket.latestPerKeyword.get(row.keywordId);
       const atMs = row.at.getTime();
       if (!prev || atMs >= prev.atMs) {
-        bucket.latestPerKeyword.set(row.keywordId, { position: row.position, atMs });
+        bucket.latestPerKeyword.set(row.keywordId, {
+          position: row.position,
+          atMs,
+        });
       }
     }
 
-    const sortedBuckets = [...buckets.values()].sort((a, b) => a.index - b.index);
+    const sortedBuckets = [...buckets.values()].sort(
+      (a, b) => a.index - b.index,
+    );
 
     const out = sortedBuckets.map((bucket, position) => {
       const previous = position > 0 ? sortedBuckets[position - 1] : null;
@@ -1022,10 +1113,13 @@ router.get("/businesses/me/reports", requirePortalAuth, async (req, res) => {
 
       const averagePosition =
         bucket.positions.length > 0
-          ? bucket.positions.reduce((sum, p) => sum + p, 0) / bucket.positions.length
+          ? bucket.positions.reduce((sum, p) => sum + p, 0) /
+            bucket.positions.length
           : null;
       const visibilityScore =
-        bucket.totalRanked > 0 ? (bucket.topTen / bucket.totalRanked) * 100 : null;
+        bucket.totalRanked > 0
+          ? (bucket.topTen / bucket.totalRanked) * 100
+          : null;
 
       const periodStart = new Date(bucket.startMs).toISOString();
       // endMs is exclusive; expose the inclusive last day per spec.
@@ -1171,7 +1265,10 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
       sessionsTodayNum = Number(sessionsToday.count);
       totalSessionsNum = Number(totalSessions.count);
     } catch (sessionErr) {
-      req.log.warn({ sessionErr }, "Portal dashboard: failed to fetch sessions");
+      req.log.warn(
+        { sessionErr },
+        "Portal dashboard: failed to fetch sessions",
+      );
     }
 
     // Ranking position average (client-scoped)
@@ -1243,7 +1340,10 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
         );
       totalBacklinksFound = Number(blCount.count);
     } catch (kwErr) {
-      req.log.warn({ kwErr }, "Portal dashboard: failed to fetch keyword stats");
+      req.log.warn(
+        { kwErr },
+        "Portal dashboard: failed to fetch keyword stats",
+      );
     }
 
     /* totalClients/activeClients are per-tenant booleans here — a portal
@@ -1348,7 +1448,10 @@ router.patch("/clients/me", requirePortalAuth, async (req, res) => {
     }
 
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -1379,7 +1482,8 @@ router.get("/keywords", requirePortalAuth, async (req, res) => {
     ];
     if (businessId) {
       const bid = Number.parseInt(businessId, 10);
-      if (!Number.isNaN(bid)) conditions.push(eq(keywordsTable.businessId, bid));
+      if (!Number.isNaN(bid))
+        conditions.push(eq(keywordsTable.businessId, bid));
     }
     if (aeoPlanId) {
       const aid = Number.parseInt(aeoPlanId, 10);
@@ -1426,7 +1530,10 @@ router.get("/keywords", requirePortalAuth, async (req, res) => {
       })
       .from(keywordsTable)
       .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(keywordsTable.businessId, businessesTable.id),
+      )
       .leftJoin(
         clientAeoPlansTable,
         eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
@@ -1484,7 +1591,10 @@ router.get("/keywords/:id", requirePortalAuth, async (req, res) => {
       })
       .from(keywordsTable)
       .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(keywordsTable.businessId, businessesTable.id),
+      )
       .leftJoin(
         clientAeoPlansTable,
         eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
@@ -1523,14 +1633,22 @@ router.post("/keywords", requirePortalAuth, async (req, res) => {
 
     let aeoPlanId: number | null = null;
     if (body.aeoPlanId !== undefined && body.aeoPlanId !== null) {
-      const plan = await loadOwnedAeoPlan(res, clientId, String(body.aeoPlanId));
+      const plan = await loadOwnedAeoPlan(
+        res,
+        clientId,
+        String(body.aeoPlanId),
+      );
       if (!plan) return;
       aeoPlanId = plan.id;
     }
 
     let businessId: number | null = null;
     if (body.businessId !== undefined && body.businessId !== null) {
-      const ok = await verifyBusinessBelongsToClient(res, clientId, body.businessId);
+      const ok = await verifyBusinessBelongsToClient(
+        res,
+        clientId,
+        body.businessId,
+      );
       if (!ok) return;
       businessId = Number(body.businessId);
     }
@@ -1570,11 +1688,19 @@ router.patch("/keywords/:id", requirePortalAuth, async (req, res) => {
     if ("clientId" in body) delete body.clientId;
 
     if ("aeoPlanId" in body && body.aeoPlanId !== null) {
-      const plan = await loadOwnedAeoPlan(res, clientId, String(body.aeoPlanId));
+      const plan = await loadOwnedAeoPlan(
+        res,
+        clientId,
+        String(body.aeoPlanId),
+      );
       if (!plan) return;
     }
     if ("businessId" in body && body.businessId !== null) {
-      const ok = await verifyBusinessBelongsToClient(res, clientId, body.businessId);
+      const ok = await verifyBusinessBelongsToClient(
+        res,
+        clientId,
+        body.businessId,
+      );
       if (!ok) return;
     }
 
@@ -1585,9 +1711,11 @@ router.patch("/keywords/:id", requirePortalAuth, async (req, res) => {
     if (body.keywordType !== undefined)
       allowed.keywordType = Number(body.keywordType);
     if (body.isActive !== undefined) allowed.isActive = Boolean(body.isActive);
-    if (body.isPrimary !== undefined) allowed.isPrimary = Number(body.isPrimary);
+    if (body.isPrimary !== undefined)
+      allowed.isPrimary = Number(body.isPrimary);
     if (body.aeoPlanId !== undefined)
-      allowed.aeoPlanId = body.aeoPlanId === null ? null : Number(body.aeoPlanId);
+      allowed.aeoPlanId =
+        body.aeoPlanId === null ? null : Number(body.aeoPlanId);
     if (body.businessId !== undefined)
       allowed.businessId =
         body.businessId === null ? null : Number(body.businessId);
@@ -1669,7 +1797,8 @@ router.post("/keywords/:id/links", requirePortalAuth, async (req, res) => {
         linkUrl: typeof body.linkUrl === "string" ? body.linkUrl : null,
         linkTypeLabel:
           typeof body.linkTypeLabel === "string" ? body.linkTypeLabel : null,
-        embeddedUrl: typeof body.embeddedUrl === "string" ? body.embeddedUrl : null,
+        embeddedUrl:
+          typeof body.embeddedUrl === "string" ? body.embeddedUrl : null,
         linkActive: body.linkActive !== false,
         initialRankReportLink:
           typeof body.initialRankReportLink === "string"
@@ -1776,7 +1905,9 @@ router.delete(
         return res.status(404).json({ error: "Link not found" });
       }
 
-      await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, linkId));
+      await db
+        .delete(keywordLinksTable)
+        .where(eq(keywordLinksTable.id, linkId));
       /* If we removed the last link, revert keyword type to plain
          "Keywords" (3) — matches admin's behavior. */
       const remaining = await db
@@ -2329,9 +2460,7 @@ router.post("/aeo-plans", requirePortalAuth, async (req, res) => {
             ? Number(body.searchBoostTarget)
             : null,
         monthlyAeoBudget:
-          body.monthlyAeoBudget != null
-            ? String(body.monthlyAeoBudget)
-            : null,
+          body.monthlyAeoBudget != null ? String(body.monthlyAeoBudget) : null,
         schemaImplementor: (body.schemaImplementor as string) ?? null,
         searchAddress: (body.searchAddress as string) ?? null,
         subscriptionId: (body.subscriptionId as string) ?? null,
@@ -2486,7 +2615,10 @@ async function loadOwnedBusiness(
   clientId: number,
   rawId: string | string[] | undefined,
 ): Promise<typeof businessesTable.$inferSelect | null> {
-  const businessId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
+  const businessId = Number.parseInt(
+    typeof rawId === "string" ? rawId : "",
+    10,
+  );
   if (Number.isNaN(businessId)) {
     res.status(400).json({ error: "Invalid business id" });
     return null;
@@ -2606,7 +2738,8 @@ router.post("/businesses", requirePortalAuth, async (req, res) => {
         clientId,
         name: trimmedName,
         gmbUrl: typeof body.gmbUrl === "string" ? body.gmbUrl : null,
-        websiteUrl: typeof body.websiteUrl === "string" ? body.websiteUrl : null,
+        websiteUrl:
+          typeof body.websiteUrl === "string" ? body.websiteUrl : null,
         category: typeof body.category === "string" ? body.category : null,
         publishedAddress:
           typeof body.publishedAddress === "string"
@@ -2903,8 +3036,7 @@ async function scanClientKeywords(
       trend = a < b ? "improving" : a > b ? "declining" : "steady";
     }
 
-    const active =
-      k.isActive && k.status !== "locked" && k.archivedAt == null;
+    const active = k.isActive && k.status !== "locked" && k.archivedAt == null;
     const last5 = series.slice(-5);
     const atRisk = active && last5.length >= 5 && last5.every((p) => p > TOP3);
     const stallingSince =
@@ -3060,7 +3192,11 @@ router.get("/insights/rotation-status", requirePortalAuth, async (req, res) => {
       }
     }
     timeline.sort((a, b) =>
-      String(a.date) < String(b.date) ? 1 : String(a.date) > String(b.date) ? -1 : 0,
+      String(a.date) < String(b.date)
+        ? 1
+        : String(a.date) > String(b.date)
+          ? -1
+          : 0,
     );
 
     res.json({
@@ -3081,7 +3217,10 @@ router.get("/keywords/:id/variants", requirePortalAuth, async (req, res) => {
     const clientId = await requireLinkedClient(req, res);
     if (clientId == null) return;
     const rawId = req.params.id;
-    const keywordId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
+    const keywordId = Number.parseInt(
+      typeof rawId === "string" ? rawId : "",
+      10,
+    );
     if (Number.isNaN(keywordId))
       return res.status(400).json({ error: "Invalid keyword id" });
 
@@ -3108,6 +3247,128 @@ router.get("/keywords/:id/variants", requirePortalAuth, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Portal keyword variants error");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/portal/reports/summarize — DeepSeek plain-English recap
+   of a single report period. The customer already sees these numbers
+   in their report; we just turn them into a warm, jargon-free paragraph
+   a non-technical owner can understand. Portal-auth gated so only
+   logged-in customers can spend tokens. Cached in-memory because a
+   report's numbers are stable once its 2-week window has closed.
+──────────────────────────────────────────────────────────── */
+interface SummaryCacheEntry {
+  summary: string;
+  expiresMs: number;
+}
+const reportSummaryCache = new Map<string, SummaryCacheEntry>();
+const REPORT_SUMMARY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function num(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+router.post("/reports/summarize", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const periodStart = String(b.periodStart ?? "").slice(0, 10);
+    const periodEnd = String(b.periodEnd ?? "").slice(0, 10);
+    const tracked = num(b.keywordsTracked) ?? 0;
+    const improved = num(b.keywordsImproved) ?? 0;
+    const declined = num(b.keywordsDeclined) ?? 0;
+    const avgPos = num(b.averagePosition);
+    const visibility = num(b.visibilityScore);
+    const prevAvgPos = num(b.prevAveragePosition);
+    const prevVisibility = num(b.prevVisibilityScore);
+    const steady = Math.max(0, tracked - improved - declined);
+
+    if (!periodStart || !periodEnd) {
+      return res
+        .status(400)
+        .json({ error: "periodStart and periodEnd are required" });
+    }
+
+    const cacheKey = [
+      clientId,
+      periodStart,
+      periodEnd,
+      tracked,
+      improved,
+      declined,
+      avgPos ?? "-",
+      visibility ?? "-",
+    ].join("|");
+    const hit = reportSummaryCache.get(cacheKey);
+    if (hit && hit.expiresMs > Date.now()) {
+      return res.json({ summary: hit.summary, cached: true });
+    }
+
+    const facts = [
+      `Report period: ${periodStart} to ${periodEnd} (about two weeks).`,
+      `Search phrases tracked across ChatGPT, Gemini and Perplexity: ${tracked}.`,
+      `Phrases that ranked better than the previous report: ${improved}.`,
+      `Phrases that slipped: ${declined}.`,
+      `Phrases that stayed about the same: ${steady}.`,
+      avgPos != null
+        ? `Average position in AI answers: about #${Math.round(avgPos)} (closer to #1 is better).`
+        : `Average position: not enough data yet.`,
+      visibility != null
+        ? `Visibility (share of checks where the business appeared at all): about ${Math.round(visibility)}%.`
+        : `Visibility: not enough data yet.`,
+    ];
+    if (prevAvgPos != null && avgPos != null) {
+      const d = Math.round(prevAvgPos) - Math.round(avgPos);
+      facts.push(
+        d > 0
+          ? `Average position improved by ${d} spot(s) versus the previous report.`
+          : d < 0
+            ? `Average position dropped by ${Math.abs(d)} spot(s) versus the previous report.`
+            : `Average position held steady versus the previous report.`,
+      );
+    }
+    if (prevVisibility != null && visibility != null) {
+      const d = Math.round(visibility) - Math.round(prevVisibility);
+      if (d !== 0)
+        facts.push(
+          `Visibility ${d > 0 ? "rose" : "fell"} by ${Math.abs(d)} percentage point(s) versus the previous report.`,
+        );
+    }
+
+    const completion = await chatCompletion({
+      model: "deepseek-chat",
+      temperature: 0.5,
+      maxTokens: 320,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write short, warm, plain-English summaries of AI-search visibility reports for small business owners who have no technical or SEO background. " +
+            "Write 2 to 4 short sentences in a single paragraph. No markdown, no bullet points, no headings, no jargon (avoid words like 'keyword', 'SERP', 'algorithm'); say 'search phrases' and 'AI assistants'. " +
+            "Explain plainly how the business is doing at showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) about businesses like theirs. Be encouraging but honest — if things slipped, say so gently and reassuringly. End with one simple, non-technical takeaway. Address the reader as 'you' / 'your business'.",
+        },
+        {
+          role: "user",
+          content:
+            "Here are this report's numbers. Write the summary for the business owner:\n\n" +
+            facts.join("\n"),
+        },
+      ],
+    });
+
+    const summary = completion.content.trim();
+    reportSummaryCache.set(cacheKey, {
+      summary,
+      expiresMs: Date.now() + REPORT_SUMMARY_TTL_MS,
+    });
+    res.json({ summary, cached: false });
+  } catch (err) {
+    req.log.error({ err }, "Portal report summarize error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
   }
 });
 
