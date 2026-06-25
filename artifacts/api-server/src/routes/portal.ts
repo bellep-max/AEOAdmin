@@ -3372,7 +3372,8 @@ router.post("/reports/summarize", requirePortalAuth, async (req, res) => {
           content:
             "You write short, warm, plain-English summaries of AI-search visibility reports for small business owners who have no technical or SEO background. " +
             "Write 2 to 4 short sentences in a single paragraph. No markdown, no bullet points, no headings, no jargon (avoid words like 'keyword', 'SERP', 'algorithm'); say 'search phrases' and 'AI assistants'. " +
-            "Explain plainly how the business is doing at showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) about businesses like theirs. Be encouraging but honest — if things slipped, say so gently and reassuringly. End with one simple, non-technical takeaway. Address the reader as 'you' / 'your business'.",
+            "Explain plainly how the business is doing at showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) about businesses like theirs. Be encouraging but honest — if things slipped, say so gently and reassuringly. End with one simple, non-technical takeaway. Address the reader as 'you' / 'your business'. " +
+            "Never write a negative number or a minus sign, and never state that a number went down by a specific figure. If a metric declined, mention it briefly and gently in words only (no number), then focus on what is positive or being worked on. Do not comment on the count of search phrases going up or down — that number naturally changes over time as phrases rotate.",
         },
         {
           role: "user",
