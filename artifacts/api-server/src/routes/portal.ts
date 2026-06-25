@@ -25,7 +25,9 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { chatCompletion } from "../services/llm-client";
 
@@ -243,7 +245,13 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const keywords = await db
       .select()
       .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, clientId));
+      .where(
+        and(
+          eq(keywordsTable.clientId, clientId),
+          eq(keywordsTable.isActive, true),
+          isNull(keywordsTable.archivedAt),
+        ),
+      );
 
     const activeKeywords = keywords.filter((k) => k.isActive).length;
     const totalKeywords = keywords.length;
@@ -483,7 +491,13 @@ router.get("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
     const keywords = await db
       .select()
       .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, clientId))
+      .where(
+        and(
+          eq(keywordsTable.clientId, clientId),
+          eq(keywordsTable.isActive, true),
+          isNull(keywordsTable.archivedAt),
+        ),
+      )
       .orderBy(desc(keywordsTable.createdAt));
 
     const keywordIds = keywords.map((k) => k.id);
@@ -1299,7 +1313,12 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
       const [tk] = await db
         .select({ count: count() })
         .from(keywordsTable)
-        .where(eq(keywordsTable.clientId, clientId));
+        .where(
+          and(
+            eq(keywordsTable.clientId, clientId),
+            isNull(keywordsTable.archivedAt),
+          ),
+        );
       const [ak] = await db
         .select({ count: count() })
         .from(keywordsTable)
@@ -1477,8 +1496,12 @@ router.get("/keywords", requirePortalAuth, async (req, res) => {
        filters are accepted, but clientId is force-bound to the portal
        user's client and ignored if passed. */
     const { businessId, aeoPlanId } = req.query as Record<string, string>;
-    const conditions: ReturnType<typeof eq>[] = [
+    // Exclude soft-deleted/archived keywords — admin DELETE only sets
+    // isActive=false + archivedAt, so without this the portal keeps showing them.
+    const conditions: SQL[] = [
       eq(keywordsTable.clientId, clientId),
+      eq(keywordsTable.isActive, true),
+      isNull(keywordsTable.archivedAt),
     ];
     if (businessId) {
       const bid = Number.parseInt(businessId, 10);
