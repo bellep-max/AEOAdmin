@@ -29,7 +29,11 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { requireApiToken } from "../middlewares/api-token";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const router = Router();
@@ -216,6 +220,7 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
 
 async function resolveImprovement(
   q: Record<string, string>,
+  opts: { strict?: boolean } = {},
 ): Promise<
   | { ok: true; data: ImprovementData }
   | { ok: false; status: number; reason: string }
@@ -307,7 +312,12 @@ async function resolveImprovement(
         inArray(rankingReportsTable.keywordId, candidateIds),
         isNotNull(rankingReportsTable.rankingPosition),
         sql`${rankingReportsTable.screenshotUrl} LIKE 's3://%'`,
-        sql`COALESCE(${rankingReportsTable.screenshotRankVisible}, true) = true`,
+        // strict = only OCR-confirmed rank-visible screenshots (true); the
+        // default treats unchecked (null) as visible. The GHL sync uses strict
+        // so a not-yet-validated or inaccurate screenshot never reaches a CRM.
+        opts.strict
+          ? sql`${rankingReportsTable.screenshotRankVisible} = true`
+          : sql`COALESCE(${rankingReportsTable.screenshotRankVisible}, true) = true`,
       ),
     )) as RankRow[];
 
@@ -435,7 +445,9 @@ router.get("/screenshot", async (req, res) => {
   try {
     const which =
       lc(req.query.which as string) === "first" ? "first" : "current";
-    const r = await resolveImprovement(req.query as Record<string, string>);
+    const r = await resolveImprovement(req.query as Record<string, string>, {
+      strict: req.query.strict === "1",
+    });
     if (!r.ok) return res.status(r.status).send(r.reason);
     // keyword already filtered by resolveImprovement when ?keyword= given; the
     // list is sorted strongest-first, so [0] is the right default.
@@ -458,6 +470,218 @@ router.get("/screenshot", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "sales screenshot error");
     return res.status(500).send("error");
+  }
+});
+
+/* ──────────────────────────────────────────────────────────────────────────
+   GHL CRM sync — POST /api/sales/ghl/sync
+   Body (or query): { email, contactId }. Triggered by a GHL Workflow "Custom
+   Webhook" with the contact's email + id. Writes the best VALIDATED keyword per
+   AI platform into the contact's AEO-Screenshot custom fields:
+     slot 1 = ChatGPT, slot 2 = Gemini, slot 3 = Perplexity
+   Each slot gets keyword + before(first) + after(current) permanent image URLs.
+   Validation is strict (screenshot_rank_visible = true) AND the S3 object must
+   exist; a platform without a clean before+after has its slot CLEARED so stale
+   or inaccurate screenshots are removed. Slots 4 & 5 are always cleared.
+   ────────────────────────────────────────────────────────────────────────── */
+const PLATFORM_LABELS: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+interface GhlSlot {
+  platform: string;
+  keyword: string;
+  before: string;
+  after: string;
+}
+// GHL custom-field IDs (location uXRl9WpDjS7LFjeYfQqD, "AEO Screenshots" set).
+const GHL_SLOTS: GhlSlot[] = [
+  {
+    platform: "chatgpt",
+    keyword: "zK2LMxLvSzDuN57Tg5Wm",
+    before: "aPO15dVThO9tLII4Gd0M",
+    after: "145zp2b1sCUahlx8XUDP",
+  },
+  {
+    platform: "gemini",
+    keyword: "AgpjCvYMqMZIsZothqzL",
+    before: "JG2d3pSactgHSyZZvqZU",
+    after: "xRAFqQZyda6GIHhTymEM",
+  },
+  {
+    platform: "perplexity",
+    keyword: "RfpIMJO9NBi8jcOSt9Al",
+    before: "ljpITPNxJWzUNuK6tddV",
+    after: "J8QEwmgaWEHJfrpx2r9B",
+  },
+];
+// Slots 4 & 5 (keyword + before + after) — always cleared.
+const GHL_CLEAR_FIELDS = [
+  "UNmLPRknfrcupkbHtHta",
+  "Tejpef4lvNXxlOuhKdNQ",
+  "hiYVp5Vwd4lnmopxYzUl",
+  "hStRjpBWJjXI6TUqSQ7Y",
+  "8SaDk0rNZVq1xH4dnyF0",
+  "LMxQtjDJO0bcyhzhd10o",
+];
+
+const SALES_PUBLIC_BASE =
+  process.env.SALES_PUBLIC_BASE ??
+  "https://jjm59vpn3y.us-east-1.awsapprunner.com";
+
+function buildScreenshotUrl(
+  email: string,
+  keyword: string,
+  platform: string,
+  which: "first" | "current",
+): string {
+  const u = new URL(`${SALES_PUBLIC_BASE}/api/sales/screenshot`);
+  u.searchParams.set("email", email);
+  u.searchParams.set("keyword", keyword);
+  u.searchParams.set("platform", platform);
+  u.searchParams.set("which", which);
+  u.searchParams.set("token", process.env.READ_API_TOKEN ?? "");
+  return u.toString();
+}
+
+async function s3Exists(s3Uri: string): Promise<boolean> {
+  const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
+  if (!m) return false;
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: m[1], Key: m[2] }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ghlUpdateContact(
+  contactId: string,
+  customFields: { id: string; field_value: string }[],
+): Promise<void> {
+  const token = process.env.GHL_PIT_TOKEN;
+  if (!token) throw new Error("GHL_PIT_TOKEN not configured");
+  const resp = await fetch(
+    `https://services.leadconnectorhq.com/contacts/${contactId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Version: "2021-07-28",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ customFields }),
+    },
+  );
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(
+      `GHL update failed (${resp.status}): ${text.slice(0, 300)}`,
+    );
+  }
+}
+
+router.post("/ghl/sync", requireApiToken, async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const pick = (k: string) =>
+      String(body[k] ?? (req.query[k] as string) ?? "").trim();
+    const email = lc(pick("email"));
+    const contactId = pick("contactId") || pick("contact_id") || pick("id");
+    if (!email)
+      return res.status(400).json({ ok: false, reason: "email is required" });
+    if (!contactId)
+      return res
+        .status(400)
+        .json({ ok: false, reason: "contactId is required" });
+
+    // "Exclude known-bad": use screenshots not OCR-flagged as bad (rank not
+    // visible). Strict-only (rank_visible=true) is too sparse to form a
+    // before+after pair until the OCR batch finishes, so it would write nothing.
+    const r = await resolveImprovement({ email }, { strict: false });
+
+    const fields: { id: string; field_value: string }[] = GHL_CLEAR_FIELDS.map(
+      (id) => ({ id, field_value: "" }),
+    );
+    const written: string[] = [];
+
+    for (const slot of GHL_SLOTS) {
+      // best keyword for THIS platform = strongest improvement, validated.
+      let best: {
+        keyword: string | null;
+        first: RankPoint;
+        current: RankPoint;
+      } | null = null;
+      let bestImp = -Infinity;
+      if (r.ok) {
+        for (const k of r.data.keywords) {
+          const pr = k.platforms[slot.platform];
+          if (!pr) continue;
+          const imp = pr.first.rank - pr.current.rank;
+          if (imp > bestImp) {
+            bestImp = imp;
+            best = { keyword: k.keyword, first: pr.first, current: pr.current };
+          }
+        }
+      }
+      const valid =
+        best != null &&
+        bestImp > 0 &&
+        (await s3Exists(best.first.s3Uri)) &&
+        (await s3Exists(best.current.s3Uri));
+      if (!valid || !best) {
+        // clear this platform's slot so a stale/inaccurate screenshot is removed
+        fields.push(
+          { id: slot.keyword, field_value: "" },
+          { id: slot.before, field_value: "" },
+          { id: slot.after, field_value: "" },
+        );
+        continue;
+      }
+      const kwText = best.keyword ?? "";
+      fields.push(
+        {
+          id: slot.keyword,
+          field_value: `${kwText} (${PLATFORM_LABELS[slot.platform]})`,
+        },
+        {
+          id: slot.before,
+          field_value: buildScreenshotUrl(
+            email,
+            kwText,
+            slot.platform,
+            "first",
+          ),
+        },
+        {
+          id: slot.after,
+          field_value: buildScreenshotUrl(
+            email,
+            kwText,
+            slot.platform,
+            "current",
+          ),
+        },
+      );
+      written.push(
+        `${slot.platform}: "${kwText}" #${best.first.rank}→#${best.current.rank}`,
+      );
+    }
+
+    await ghlUpdateContact(contactId, fields);
+    return res.json({
+      ok: true,
+      contactId,
+      email,
+      written,
+      clearedPlatforms: GHL_SLOTS.length - written.length,
+    });
+  } catch (err) {
+    req.log.error({ err }, "sales ghl sync error");
+    return res.status(500).json({ ok: false, reason: "internal server error" });
   }
 });
 
