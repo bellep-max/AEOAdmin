@@ -40,6 +40,9 @@ const router = Router();
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? "us-east-1" });
 const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"] as const;
 const PLATFORMS = new Set<string>(PLATFORM_ORDER);
+// Largest believable AI-answer list position; ranks above this are treated as
+// bad data (parse errors) and excluded from improvement/screenshot resolution.
+const MAX_RANK = 50;
 
 const lc = (v: unknown) =>
   typeof v === "string" ? v.toLowerCase().trim() : "";
@@ -311,6 +314,10 @@ async function resolveImprovement(
       and(
         inArray(rankingReportsTable.keywordId, candidateIds),
         isNotNull(rankingReportsTable.rankingPosition),
+        // Sanity bound: AI-answer list positions are small. Anything beyond
+        // MAX_RANK (e.g. a parse-error "#1242") is garbage and must never
+        // become a "before" rank or it makes the improvement look fake.
+        sql`${rankingReportsTable.rankingPosition} BETWEEN 1 AND ${MAX_RANK}`,
         sql`${rankingReportsTable.screenshotUrl} LIKE 's3://%'`,
         // strict = only OCR-confirmed rank-visible screenshots (true); the
         // default treats unchecked (null) as visible. The GHL sync uses strict
