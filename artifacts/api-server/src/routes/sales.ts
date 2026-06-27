@@ -44,6 +44,8 @@ const PLATFORMS = new Set<string>(PLATFORM_ORDER);
 // Largest believable AI-answer list position; ranks above this are treated as
 // bad data (parse errors) and excluded from improvement/screenshot resolution.
 const MAX_RANK = 50;
+// A "top 3" finish is the bold claim that needs a positive summary to back it.
+const TOP3 = 3;
 
 const lc = (v: unknown) =>
   typeof v === "string" ? v.toLowerCase().trim() : "";
@@ -224,7 +226,7 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
 
 async function resolveImprovement(
   q: Record<string, string>,
-  opts: { strict?: boolean; genuineOnly?: boolean } = {},
+  opts: { strict?: boolean; positiveTop3?: boolean } = {},
 ): Promise<
   | { ok: true; data: ImprovementData }
   | { ok: false; status: number; reason: string }
@@ -336,23 +338,22 @@ async function resolveImprovement(
     byKeyword.get(r.keywordId)!.push(r);
   }
 
-  // genuineOnly gates each (keyword, platform) on the LLM verdict so only
-  // answers that genuinely recommend the business survive — drops the coerced
-  // "[RANK: X/Y]" fakes. A combo with no verdict yet is treated as NOT genuine.
-  let genuineSet: Set<string> | null = null;
-  if (opts.genuineOnly && candidateIds.length > 0) {
+  // Positive-summary guard: a TOP-3 headline must be backed by a positive
+  // summary, otherwise the screenshot text could contradict the rank (e.g. "#1"
+  // next to "weaker choice"). Ranks below the top 3 aren't bold claims, so they
+  // pass without a sentiment check. A top-3 with no positive verdict is dropped.
+  let sentimentMap: Map<string, string | null> | null = null;
+  if (opts.positiveTop3 && candidateIds.length > 0) {
     const verdicts = await db
       .select({
         keywordId: keywordVerdictsTable.keywordId,
         platform: keywordVerdictsTable.platform,
-        genuine: keywordVerdictsTable.genuine,
+        sentiment: keywordVerdictsTable.sentiment,
       })
       .from(keywordVerdictsTable)
       .where(inArray(keywordVerdictsTable.keywordId, candidateIds));
-    genuineSet = new Set(
-      verdicts
-        .filter((v) => v.genuine === true)
-        .map((v) => `${v.keywordId}|${lc(v.platform)}`),
+    sentimentMap = new Map(
+      verdicts.map((v) => [`${v.keywordId}|${lc(v.platform)}`, v.sentiment]),
     );
   }
 
@@ -362,9 +363,16 @@ async function resolveImprovement(
     const platforms: Record<string, PlatformRanks> = {};
     let maxImproved = -Infinity;
     for (const p of wantPlatforms) {
-      if (genuineSet && !genuineSet.has(`${keywordId}|${p}`)) continue;
       const fc = firstAndCurrent(rows.filter((r) => r.platform === p));
       if (!fc) continue;
+      // a top-3 headline must have a positive summary, or its screenshot text
+      // could undercut the rank — drop those; leave everything else as-is.
+      if (
+        sentimentMap &&
+        fc.current.rank <= TOP3 &&
+        sentimentMap.get(`${keywordId}|${p}`) !== "positive"
+      )
+        continue;
       platforms[p] = fc;
       maxImproved = Math.max(maxImproved, fc.first.rank - fc.current.rank);
     }
@@ -627,12 +635,12 @@ router.post("/ghl/sync", requireApiToken, async (req, res) => {
         .status(400)
         .json({ ok: false, reason: "contactId is required" });
 
-    // genuineOnly gates each platform on the LLM verdict (real recommendation,
-    // not the coerced [RANK] line). Exclude-known-bad (not strict) for the
-    // screenshot itself, since OCR coverage is still sparse.
+    // Show improvements as before (exclude-known-bad, not strict), but apply the
+    // positive-summary guard so a top-3 headline never sits next to negative
+    // screenshot text.
     const r = await resolveImprovement(
       { email },
-      { strict: false, genuineOnly: true },
+      { strict: false, positiveTop3: true },
     );
 
     const fields: { id: string; field_value: string }[] = GHL_CLEAR_FIELDS.map(
