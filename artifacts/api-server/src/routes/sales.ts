@@ -26,6 +26,7 @@ import {
   businessesTable,
   keywordsTable,
   rankingReportsTable,
+  keywordVerdictsTable,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { requireApiToken } from "../middlewares/api-token";
@@ -223,7 +224,7 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
 
 async function resolveImprovement(
   q: Record<string, string>,
-  opts: { strict?: boolean } = {},
+  opts: { strict?: boolean; genuineOnly?: boolean } = {},
 ): Promise<
   | { ok: true; data: ImprovementData }
   | { ok: false; status: number; reason: string }
@@ -335,12 +336,33 @@ async function resolveImprovement(
     byKeyword.get(r.keywordId)!.push(r);
   }
 
+  // genuineOnly gates each (keyword, platform) on the LLM verdict so only
+  // answers that genuinely recommend the business survive — drops the coerced
+  // "[RANK: X/Y]" fakes. A combo with no verdict yet is treated as NOT genuine.
+  let genuineSet: Set<string> | null = null;
+  if (opts.genuineOnly && candidateIds.length > 0) {
+    const verdicts = await db
+      .select({
+        keywordId: keywordVerdictsTable.keywordId,
+        platform: keywordVerdictsTable.platform,
+        genuine: keywordVerdictsTable.genuine,
+      })
+      .from(keywordVerdictsTable)
+      .where(inArray(keywordVerdictsTable.keywordId, candidateIds));
+    genuineSet = new Set(
+      verdicts
+        .filter((v) => v.genuine === true)
+        .map((v) => `${v.keywordId}|${lc(v.platform)}`),
+    );
+  }
+
   const wantPlatforms = platformFilter ? [platformFilter] : [...PLATFORM_ORDER];
   const keywords: KeywordEntry[] = [];
   for (const [keywordId, rows] of byKeyword) {
     const platforms: Record<string, PlatformRanks> = {};
     let maxImproved = -Infinity;
     for (const p of wantPlatforms) {
+      if (genuineSet && !genuineSet.has(`${keywordId}|${p}`)) continue;
       const fc = firstAndCurrent(rows.filter((r) => r.platform === p));
       if (!fc) continue;
       platforms[p] = fc;
@@ -605,10 +627,13 @@ router.post("/ghl/sync", requireApiToken, async (req, res) => {
         .status(400)
         .json({ ok: false, reason: "contactId is required" });
 
-    // "Exclude known-bad": use screenshots not OCR-flagged as bad (rank not
-    // visible). Strict-only (rank_visible=true) is too sparse to form a
-    // before+after pair until the OCR batch finishes, so it would write nothing.
-    const r = await resolveImprovement({ email }, { strict: false });
+    // genuineOnly gates each platform on the LLM verdict (real recommendation,
+    // not the coerced [RANK] line). Exclude-known-bad (not strict) for the
+    // screenshot itself, since OCR coverage is still sparse.
+    const r = await resolveImprovement(
+      { email },
+      { strict: false, genuineOnly: true },
+    );
 
     const fields: { id: string; field_value: string }[] = GHL_CLEAR_FIELDS.map(
       (id) => ({ id, field_value: "" }),
