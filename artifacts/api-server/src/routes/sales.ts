@@ -202,13 +202,32 @@ interface ImprovementData {
   keywords: KeywordEntry[];
 }
 
-/** first = earliest dated row; current = best (lowest) rank. */
+/** Build the strongest real before→after pair:
+ *   after  = best (lowest) rank; ties broken toward the most recent date.
+ *   before = ANY earlier-dated screenshot with a WORSE rank than the after —
+ *            pick the worst such rank for the biggest visible improvement.
+ * Returns null when no earlier-dated worse-ranked screenshot exists (no genuine
+ * improvement to show). Dates are 'YYYY-MM-DD' text, so string compare = time. */
 function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
   const dated = rows.filter((r) => r.date);
   if (dated.length === 0) return null;
-  const first = dated.reduce((a, b) => (a.date! <= b.date! ? a : b));
-  const current = rows.reduce((a, b) =>
-    a.rankingPosition <= b.rankingPosition ? a : b,
+  const current = dated.reduce((a, b) => {
+    if (b.rankingPosition < a.rankingPosition) return b;
+    if (
+      b.rankingPosition === a.rankingPosition &&
+      (b.date ?? "") > (a.date ?? "")
+    )
+      return b;
+    return a;
+  });
+  const earlier = dated.filter(
+    (r) =>
+      (r.date ?? "") < (current.date ?? "") &&
+      r.rankingPosition > current.rankingPosition,
+  );
+  if (earlier.length === 0) return null;
+  const first = earlier.reduce((a, b) =>
+    b.rankingPosition > a.rankingPosition ? b : a,
   );
   return {
     first: {
