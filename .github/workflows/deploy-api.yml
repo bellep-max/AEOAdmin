@@ -11,9 +11,11 @@
 #   3. Tells App Runner to pull and roll out the new image.
 #   4. Waits for the rollout to reach RUNNING (or fails the job).
 #
+# Auth is keyless via GitHub OIDC: the job assumes an IAM role whose trust policy
+# allows this repo. No long-lived AWS keys are stored.
+#
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
-#   - AWS_ACCESS_KEY_ID
-#   - AWS_SECRET_ACCESS_KEY
+#   - AWS_ROLE_ARN             (IAM role to assume via OIDC; has ECR + App Runner perms)
 #   - APP_RUNNER_SERVICE_ARN   (kept secret because the ARN exposes the account ID)
 
 name: Deploy API
@@ -22,18 +24,19 @@ on:
   push:
     branches: [main]
     paths:
-      - 'artifacts/api-server/**'
-      - 'lib/db/**'
-      - 'lib/api-spec/**'
-      - 'lib/api-client-react/**'
-      - 'lib/api-zod/**'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - '.github/workflows/deploy-api.yml'
+      - "artifacts/api-server/**"
+      - "lib/db/**"
+      - "lib/api-spec/**"
+      - "lib/api-client-react/**"
+      - "lib/api-zod/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/deploy-api.yml"
   workflow_dispatch: {}
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: deploy-api
@@ -57,8 +60,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
