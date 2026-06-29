@@ -514,10 +514,16 @@ export default function CampaignDetail() {
               }
             : undefined
         }
-        extraKeywords={(keywords ?? []).map((k) => ({
-          id: k.id,
-          keywordText: k.keywordText,
-        }))}
+        extraKeywords={(keywords ?? [])
+          .filter((k) => {
+            const status = String((k as { status?: unknown }).status ?? "");
+            return (
+              k.isActive !== false &&
+              status !== "archived" &&
+              status !== "locked"
+            );
+          })
+          .map((k) => ({ id: k.id, keywordText: k.keywordText }))}
         showRotation
         onRotated={() => {
           refetchKeywords();

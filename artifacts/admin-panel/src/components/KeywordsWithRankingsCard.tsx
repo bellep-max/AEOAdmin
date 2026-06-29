@@ -409,10 +409,18 @@ export function KeywordsWithRankingsCard({
     const filtered = restrictSet
       ? list.filter((g) => restrictSet.has(g.keywordId))
       : list;
-    // Sort by best (lowest) current rank across all platforms, ascending.
-    // Unranked / "New" keywords land at the bottom; among unranked, keep
-    // alphabetical order so the bottom is stable across renders.
+    // Sort by most-recent ranking date first (latest current date across
+    // platforms, descending) so freshly-run keywords lead. Ties break by best
+    // (lowest) current rank, then alphabetically for a stable bottom.
+    const latestDateOf = (platforms: PeriodRow[]) =>
+      platforms
+        .map((p) => p.currentDate)
+        .filter((d): d is string => !!d)
+        .sort((a, b) => b.localeCompare(a))[0] ?? "";
     return filtered.sort((a, b) => {
+      const da = latestDateOf(a.platforms);
+      const db = latestDateOf(b.platforms);
+      if (da !== db) return db.localeCompare(da);
       const ra = bestCurrentRank(a.platforms);
       const rb = bestCurrentRank(b.platforms);
       if (ra !== rb) return ra - rb;
