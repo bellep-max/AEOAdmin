@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,7 @@ import {
   fmtPos,
   fmtShortET,
   periodLabel,
+  rawFetch,
   PLATFORM_COLORS,
   sortPlatformsWithUnavailable,
   type Period,
@@ -112,6 +114,28 @@ export function PeriodByClientTab({
   });
   const label = periodLabel(period);
 
+  /* Active keyword set (GET /api/keywords already excludes archived + locked).
+     Used to drop archived/locked keywords from this report — their old rank
+     history still comes back in the period data otherwise. Scoped to the
+     current view when possible. On error the query throws → activeIds stays
+     null → no filtering (safe fallback, never blanks the report). */
+  const { data: activeKws } = useQuery<{ id: number }[]>({
+    queryKey: ["/api/keywords/active-set", { clientId, aeoPlanId }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (aeoPlanId) params.set("aeoPlanId", String(aeoPlanId));
+      else if (clientId) params.set("clientId", String(clientId));
+      const qs = params.toString();
+      const res = await rawFetch(`/api/keywords${qs ? `?${qs}` : ""}`);
+      if (!res.ok) throw new Error(`keywords ${res.status}`);
+      return res.json();
+    },
+  });
+  const activeIds = useMemo(
+    () => (activeKws ? new Set(activeKws.map((k) => k.id)) : null),
+    [activeKws],
+  );
+
   /* When a Current date is pinned, also drop rows that don't have an audit
      on that date. Lets the operator pin Current=YYYY-MM-DD and see only the
      keywords that actually ran on that day, not 2k blanks. */
@@ -159,6 +183,8 @@ export function PeriodByClientTab({
         continue;
       if (!matchesCurrentPin(r.currentDate)) continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
+      // Drop archived/locked keywords (only present once the active set loads).
+      if (activeIds && !activeIds.has(r.keywordId)) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
       if (!group) {
@@ -186,7 +212,15 @@ export function PeriodByClientTab({
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase()),
     );
-  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev, currentDate]);
+  }, [
+    data,
+    search,
+    auditDate,
+    comparisonOnly,
+    keywordsWithPrev,
+    currentDate,
+    activeIds,
+  ]);
 
   if (isLoading) {
     return (
@@ -300,9 +334,19 @@ export function PeriodByClientTab({
 
               <CardContent className="pt-0 pb-4 space-y-2">
                 {campaign.keywords
-                  .sort((a, b) =>
-                    a.keyword.keywordText.localeCompare(b.keyword.keywordText),
-                  )
+                  .sort((a, b) => {
+                    const latest = (ps: PeriodRow[]) =>
+                      ps
+                        .map((p) => p.currentDate)
+                        .filter((d): d is string => !!d)
+                        .sort((x, y) => y.localeCompare(x))[0] ?? "";
+                    const da = latest(a.platforms);
+                    const db = latest(b.platforms);
+                    if (da !== db) return db.localeCompare(da);
+                    return a.keyword.keywordText.localeCompare(
+                      b.keyword.keywordText,
+                    );
+                  })
                   .map(({ keyword, platforms }) => {
                     // Adds an "Unavailable" placeholder for any outage platform
                     // (e.g. Gemini) missing from a keyword that otherwise has data.

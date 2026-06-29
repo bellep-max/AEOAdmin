@@ -22,8 +22,8 @@ export function StatusBadge({ status }: { status: Status }) {
       icon: <TrendingUp className="w-3 h-3" />,
     },
     declined: {
-      bg: "bg-red-500/10 border-red-500/30",
-      text: "text-red-600 dark:text-red-400",
+      bg: "bg-yellow-500/10 border-yellow-500/30",
+      text: "text-yellow-700 dark:text-yellow-400",
       label: "Declined",
       icon: <TrendingDown className="w-3 h-3" />,
     },
@@ -124,7 +124,7 @@ export function ChangeCell({ change }: { change: number | null }) {
     );
   if (change < 0)
     return (
-      <span className="text-red-600 dark:text-red-400 font-semibold">
+      <span className="text-yellow-700 dark:text-yellow-400 font-semibold">
         {change}
       </span>
     );
