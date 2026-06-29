@@ -252,7 +252,7 @@ export function PerformanceSummaryCard({
                           className={`gap-0.5 text-[10px] shrink-0 ${
                             up
                               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                              : "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30"
+                              : "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/30"
                           }`}
                         >
                           {up ? (

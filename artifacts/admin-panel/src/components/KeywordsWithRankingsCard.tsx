@@ -519,7 +519,7 @@ export function KeywordsWithRankingsCard({
               </Badge>
             )}
             {!lockedView && counts.declined > 0 && (
-              <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">
+              <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">
                 ↓ {counts.declined}
               </Badge>
             )}

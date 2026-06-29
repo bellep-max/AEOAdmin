@@ -82,7 +82,7 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {counts.improved > 0 && <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">↑ {counts.improved}</Badge>}
-                  {counts.declined > 0 && <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">↓ {counts.declined}</Badge>}
+                  {counts.declined > 0 && <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">↓ {counts.declined}</Badge>}
                   {counts.steady > 0 && <Badge variant="outline" className="text-[10px]">= {counts.steady}</Badge>}
                   {counts.newCount > 0 && <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">+ {counts.newCount}</Badge>}
                   {counts.missing > 0 && <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px]">? {counts.missing}</Badge>}
