@@ -654,12 +654,15 @@ router.post("/ghl/sync", requireApiToken, async (req, res) => {
         .status(400)
         .json({ ok: false, reason: "contactId is required" });
 
-    // Show improvements as before (exclude-known-bad, not strict), but apply the
-    // positive-summary guard so a top-3 headline never sits next to negative
-    // screenshot text.
+    // GHL_SYNC_STRICT=1 → only OCR-verified screenshots (screenshot_rank_visible
+    // = true: the client is actually shown at their rank) reach the CRM. Default
+    // (unset) stays lenient — serves the strongest improvement even if not yet
+    // verified — so coverage isn't gutted before captures are re-framed. Flip the
+    // env var on once verified screenshots have repopulated. The positive-summary
+    // guard always applies (a top-3 headline needs a positive summary).
     const r = await resolveImprovement(
       { email },
-      { strict: false, positiveTop3: true },
+      { strict: process.env.GHL_SYNC_STRICT === "1", positiveTop3: true },
     );
 
     const fields: { id: string; field_value: string }[] = GHL_CLEAR_FIELDS.map(
