@@ -9,6 +9,7 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
+  fmtPosOrNoRanking,
   fmtShortET,
   periodLabel,
   rawFetch,
@@ -75,7 +76,7 @@ function PlatformChip({ row }: { row: PeriodRow }) {
         <span className="font-medium opacity-80">Unavailable</span>
       ) : (
         <span className="font-bold">
-          {fmtPos(row.currentPosition)}
+          {fmtPosOrNoRanking(row.currentPosition, row.status)}
           {arrow}
         </span>
       )}

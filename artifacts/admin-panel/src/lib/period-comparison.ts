@@ -22,7 +22,8 @@ export type Status =
   | "declined"
   | "missing"
   | "pending"
-  | "unavailable";
+  | "unavailable"
+  | "no_ranking";
 export type Freshness = "fresh" | "stale" | "cold" | "never";
 
 export interface PeriodRow {
@@ -117,6 +118,17 @@ export function usePeriodComparison(
 
 export function fmtPos(n: number | null | undefined): string {
   return n == null ? "—" : `#${n}`;
+}
+
+/** Rank display that shows "No ranking yet" when the current screenshot failed
+ *  the quality check (status "no_ranking") — the AI claimed a top-3 rank the
+ *  client isn't actually shown at — instead of a misleading position. */
+export function fmtPosOrNoRanking(
+  n: number | null | undefined,
+  status: Status,
+): string {
+  if (status === "no_ranking") return "No ranking yet";
+  return fmtPos(n);
 }
 
 export function fmtWindow(s: string): string {

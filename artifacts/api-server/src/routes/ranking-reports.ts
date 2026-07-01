@@ -815,6 +815,7 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
           createdAt: rankingReportsTable.createdAt,
           date: rankingReportsTable.date,
           keywordVariant: rankingReportsTable.keywordVariant,
+          screenshotRankVisible: rankingReportsTable.screenshotRankVisible,
         })
         .from(rankingReportsTable)
         .where(
@@ -958,8 +959,21 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       const prev = previous.get(key);
       const firstEverRow = first.get(key);
       const lastEver = ever.get(key);
+      // A top-3 whose screenshot failed the OCR check (screenshot_rank_visible
+      // = false) means the AI's summary CLAIMED the rank but the client isn't
+      // actually shown in the list — not a real ranking. Surface it as
+      // "no_ranking" and suppress the fake position/trend. Ranks beyond top-3
+      // keep their position (a false there just means the label wasn't legible).
+      const noRanking =
+        !!cur &&
+        cur.screenshotRankVisible === false &&
+        cur.rankingPosition != null &&
+        cur.rankingPosition <= 3;
+
       const change =
-        cur?.rankingPosition != null && prev?.rankingPosition != null
+        !noRanking &&
+        cur?.rankingPosition != null &&
+        prev?.rankingPosition != null
           ? prev.rankingPosition - cur.rankingPosition
           : null;
 
@@ -969,8 +983,10 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         | "steady"
         | "declined"
         | "missing"
-        | "pending" = "pending";
-      if (cur && !prev) status = "new";
+        | "pending"
+        | "no_ranking" = "pending";
+      if (noRanking) status = "no_ranking";
+      else if (cur && !prev) status = "new";
       else if (cur && prev && change != null) {
         if (change > 0) status = "improved";
         else if (change < 0) status = "declined";
@@ -995,7 +1011,7 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         aeoPlanId: kw?.aeoPlanId ?? null,
         campaignName: plan?.name ?? plan?.planType ?? null,
         currentReportId: cur?.id ?? null,
-        currentPosition: cur?.rankingPosition ?? null,
+        currentPosition: noRanking ? null : (cur?.rankingPosition ?? null),
         /* currentDate is the unambiguous YYYY-MM-DD `date` text column,
            not the `created_at` timestamp. Using the timestamp made the
            frontend's ET-conversion land on the prior calendar day for

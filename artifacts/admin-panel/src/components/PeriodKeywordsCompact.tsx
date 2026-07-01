@@ -5,6 +5,7 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
+  fmtPosOrNoRanking,
   periodLabel,
   PLATFORM_ORDER,
   PLATFORM_COLORS,
@@ -26,7 +27,7 @@ function PlatformChip({ row }: { row: PeriodRow }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}>
       <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">{fmtPos(row.currentPosition)}{arrow}</span>
+      <span className="font-bold">{fmtPosOrNoRanking(row.currentPosition, row.status)}{arrow}</span>
     </span>
   );
 }
@@ -97,7 +98,7 @@ export function PeriodKeywordsCompact({ period, clientId, businessId, aeoPlanId 
                       <div key={`${p.keywordId}-${p.platform}-row`} className="grid grid-cols-12 gap-2 items-center text-xs pl-1 py-1">
                         <div className="col-span-2 capitalize font-semibold">{p.platform}</div>
                         <div className="col-span-3 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                        <div className="col-span-3 font-semibold">{fmtPos(p.currentPosition)}</div>
+                        <div className="col-span-3 font-semibold">{fmtPosOrNoRanking(p.currentPosition, p.status)}</div>
                         <div className="col-span-2"><ChangeCell change={p.change} /></div>
                         <div className="col-span-2"><StatusBadge status={p.status} /></div>
                       </div>

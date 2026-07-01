@@ -34,6 +34,7 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
+  fmtPosOrNoRanking,
   periodLabel,
   rawFetch,
   PLATFORM_COLORS,
@@ -200,7 +201,7 @@ function PlatformChip({
         <span className="font-medium opacity-80">Unavailable</span>
       ) : (
         <span className="font-bold">
-          {fmtPos(row.currentPosition)}
+          {fmtPosOrNoRanking(row.currentPosition, row.status)}
           {arrow}
         </span>
       )}

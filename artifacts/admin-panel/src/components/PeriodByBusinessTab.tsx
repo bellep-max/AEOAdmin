@@ -6,6 +6,7 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
+  fmtPosOrNoRanking,
   periodLabel,
   type Period,
   type PeriodRow,
@@ -124,7 +125,7 @@ export function PeriodByBusinessTab({ period, clientId, businessId, aeoPlanId }:
                         <div className="col-span-4 truncate font-medium">{r.keywordText}</div>
                         <div className="col-span-2"><PlatformPill platform={r.platform} /></div>
                         <div className="col-span-2 text-muted-foreground">{fmtPos(r.previousPosition)}</div>
-                        <div className="col-span-2 font-semibold">{fmtPos(r.currentPosition)}</div>
+                        <div className="col-span-2 font-semibold">{fmtPosOrNoRanking(r.currentPosition, r.status)}</div>
                         <div className="col-span-1"><ChangeCell change={r.change} /></div>
                         <div className="col-span-1"><StatusBadge status={r.status} /></div>
                       </div>
