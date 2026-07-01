@@ -77,7 +77,7 @@ function entryVisibleInList(fullText, business) {
 
 const rows = (
   await c.query(
-    `SELECT rr.id, rr.ranking_position, rr.screenshot_url,
+    `SELECT rr.id, rr.ranking_position, rr.ranking_total, rr.screenshot_url,
             COALESCE(b.name, cl.business_name) AS biz
        FROM ranking_reports rr
        JOIN keywords k ON k.id = rr.keyword_id
@@ -120,7 +120,12 @@ for (const r of rows) {
     // entry-visible only gates the top-3 (the ranks we surface as proof)
     const entryOk =
       r.ranking_position > TOP3 ? true : entryVisibleInList(txt, r.biz);
-    const ok = rankMatch && entryOk;
+    // Sole-result guard: ranking_total <= 1 means the AI couldn't find real
+    // competitors and named only the client ("#1 of 1", usually with hedging
+    // like "I can't reliably verify the top 3"). That's not a competitive
+    // ranking — reject it even though the client technically "appears".
+    const soleResult = r.ranking_total != null && Number(r.ranking_total) <= 1;
+    const ok = rankMatch && entryOk && !soleResult;
     await c.query(
       "UPDATE ranking_reports SET screenshot_rank_visible=$1 WHERE id=$2",
       [ok, r.id],
@@ -130,7 +135,7 @@ for (const r of rows) {
       notVisible++;
       if (falseSamples.length < 10)
         falseSamples.push(
-          `#${r.id} dbRank=${r.ranking_position} ocr=[${ranks.join(",")}] rankMatch=${rankMatch} entry=${entryOk} biz="${(r.biz || "").slice(0, 24)}"`,
+          `#${r.id} dbRank=${r.ranking_position} ocr=[${ranks.join(",")}] rankMatch=${rankMatch} entry=${entryOk} sole=${soleResult} biz="${(r.biz || "").slice(0, 24)}"`,
         );
     }
   } catch (e) {
