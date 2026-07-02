@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { rawFetch } from "@/lib/period-comparison";
-import { X, Send, Eye, EyeOff, TrendingUp } from "lucide-react";
+import { X, Send, Eye, EyeOff, TrendingUp, Sparkles } from "lucide-react";
 
 interface EmailConfigResponse {
   ready: boolean;
@@ -99,6 +99,10 @@ export function SalesEmailDialog({
   const [newRecipient, setNewRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [introMessage, setIntroMessage] = useState("");
+  const [offerText, setOfferText] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("");
+  const [ctaUrl, setCtaUrl] = useState("");
+  const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
     null,
@@ -155,8 +159,19 @@ export function SalesEmailDialog({
       p.set("keywordId", String(selectedKeywordId));
     if (selectedPlatform != null) p.set("platform", selectedPlatform);
     if (introMessage.trim()) p.set("introMessage", introMessage.trim());
+    if (offerText.trim()) p.set("offerText", offerText.trim());
+    if (ctaLabel.trim()) p.set("ctaLabel", ctaLabel.trim());
+    if (ctaUrl.trim()) p.set("ctaUrl", ctaUrl.trim());
     return p.toString();
-  }, [clientId, selectedKeywordId, selectedPlatform, introMessage]);
+  }, [
+    clientId,
+    selectedKeywordId,
+    selectedPlatform,
+    introMessage,
+    offerText,
+    ctaLabel,
+    ctaUrl,
+  ]);
 
   const { data: preview, isFetching: previewLoading } =
     useQuery<SalesPreviewResponse>({
@@ -181,6 +196,34 @@ export function SalesEmailDialog({
     );
   }, [preview, selectedKeywordId]);
 
+  const aiSuggest = useMutation({
+    mutationFn: async () => {
+      const res = await rawFetch("/api/sales/email-ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          keywordId: selectedKeywordId ?? undefined,
+          platform: selectedPlatform ?? undefined,
+          instruction: aiInstruction.trim() || undefined,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok)
+        throw new Error(body?.detail ?? body?.error ?? "AI generation failed");
+      return body as {
+        intro: string;
+        offer: string;
+        costUsd: number;
+        tokens: number;
+      };
+    },
+    onSuccess: (data) => {
+      setIntroMessage(data.intro);
+      if (data.offer) setOfferText(data.offer);
+    },
+  });
+
   const send = useMutation({
     mutationFn: async () => {
       const res = await rawFetch("/api/sales/send-email", {
@@ -193,6 +236,9 @@ export function SalesEmailDialog({
           recipients,
           subject: subject.trim() || undefined,
           introMessage: introMessage.trim() || undefined,
+          offerText: offerText.trim() || undefined,
+          ctaLabel: ctaLabel.trim() || undefined,
+          ctaUrl: ctaUrl.trim() || undefined,
         }),
       });
       const body = await res.json();
@@ -241,6 +287,10 @@ export function SalesEmailDialog({
     setResult(null);
     setMobilePreviewOpen(false);
     setIntroMessage("");
+    setOfferText("");
+    setCtaLabel("");
+    setCtaUrl("");
+    setAiInstruction("");
     setSubject("");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
@@ -465,17 +515,96 @@ export function SalesEmailDialog({
               />
             </div>
 
+            {/* AI generate */}
+            <div className="space-y-2 p-3 border border-amber-200 bg-amber-50/40 rounded-md">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                <Label className="m-0">AI-generated sales copy</Label>
+              </div>
+              <Input
+                placeholder="Optional hint (e.g., 'roofing contractor, push urgency')"
+                value={aiInstruction}
+                onChange={(e) => setAiInstruction(e.target.value)}
+                disabled={aiSuggest.isPending}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100 w-full"
+                onClick={() => aiSuggest.mutate()}
+                disabled={
+                  clientId == null ||
+                  aiSuggest.isPending ||
+                  !preview?.hasImprovement
+                }
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {aiSuggest.isPending
+                  ? "Generating…"
+                  : "Generate intro + offer with DeepSeek (uses real data)"}
+              </Button>
+              {aiSuggest.isError && (
+                <p className="text-[11px] text-red-600">
+                  {aiSuggest.error instanceof Error
+                    ? aiSuggest.error.message
+                    : "AI generation failed"}
+                </p>
+              )}
+              {aiSuggest.isSuccess && aiSuggest.data && (
+                <p className="text-[11px] text-muted-foreground">
+                  Generated · {aiSuggest.data.tokens} tokens · $
+                  {aiSuggest.data.costUsd.toFixed(5)}
+                </p>
+              )}
+            </div>
+
             {/* Intro message */}
             <div className="space-y-2">
-              <Label htmlFor="sales-intro">Intro message (optional)</Label>
+              <Label htmlFor="sales-intro">Intro copy (optional)</Label>
               <Textarea
                 id="sales-intro"
                 value={introMessage}
                 onChange={(e) => setIntroMessage(e.target.value)}
-                placeholder="A short personal note shown above the before/after proof…"
+                placeholder="Shown above the before/after proof. Leave empty for the default pitch, or generate with AI above…"
                 rows={6}
                 className="font-mono text-sm"
               />
+            </div>
+
+            {/* Offer copy */}
+            <div className="space-y-2">
+              <Label htmlFor="sales-offer">Offer copy (optional)</Label>
+              <Textarea
+                id="sales-offer"
+                value={offerText}
+                onChange={(e) => setOfferText(e.target.value)}
+                placeholder="Shown in the highlighted offer box above the button. Leave empty for the default momentum pitch…"
+                rows={4}
+                className="font-mono text-sm"
+              />
+            </div>
+
+            {/* CTA */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="sales-cta-label">Button label</Label>
+                <Input
+                  id="sales-cta-label"
+                  value={ctaLabel}
+                  onChange={(e) => setCtaLabel(e.target.value)}
+                  placeholder="See Your Live AI Rankings"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sales-cta-url">Button link</Label>
+                <Input
+                  id="sales-cta-url"
+                  value={ctaUrl}
+                  onChange={(e) => setCtaUrl(e.target.value)}
+                  placeholder="Defaults to the client portal"
+                />
+              </div>
             </div>
 
             {/* Mobile-only: preview toggle */}

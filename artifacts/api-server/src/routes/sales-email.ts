@@ -19,6 +19,7 @@ import { db } from "@workspace/db";
 import { clientAeoPlansTable, emailSendsTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
+import { chatCompletion } from "../services/llm-client";
 import { requireRoles, getSalesPlanFilter } from "../middlewares/role-auth";
 import {
   resolveImprovement,
@@ -110,6 +111,14 @@ function pickSelection(
   };
 }
 
+/* Portal theme: dark navy (#0f172a) + amber-500 (#f59e0b) accent on light
+   slate — mirrors the customer portal so the email feels like the product. */
+const NAVY = "#0f172a";
+const AMBER = "#f59e0b";
+const DEFAULT_CTA_URL =
+  process.env.PORTAL_PUBLIC_URL ?? "https://d2cad6tmt9gq2h.cloudfront.net";
+const DEFAULT_CTA_LABEL = "See Your Live AI Rankings";
+
 interface SalesEmailArgs {
   business: string;
   keyword: string;
@@ -121,6 +130,23 @@ interface SalesEmailArgs {
   beforeImageUrl: string;
   afterImageUrl: string;
   introMessage?: string;
+  offerText?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+}
+
+function defaultIntro(a: SalesEmailArgs): string {
+  const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
+  return `Are you showing up in AI Search?
+
+More and more of your customers aren't Googling anymore — they're asking ChatGPT, ${pLabel === "ChatGPT" ? "Gemini" : "ChatGPT"} and Perplexity who to hire. The AI gives them one short list, and the businesses on it win the job. Everyone else vanishes from the conversation.
+
+We went and checked where ${a.business} stands. Here's what the AI actually said.`;
+}
+
+function defaultOffer(a: SalesEmailArgs): string {
+  const improved = a.beforeRank - a.afterRank;
+  return `This is one keyword. Every week we push more of your searches up the AI's list — the result below moved ${improved} spot${improved === 1 ? "" : "s"} and it's still climbing. Your competitors are already fighting for these answers; every week you're not optimizing, someone else takes the spot.`;
 }
 
 function buildSalesEmailHtml(a: SalesEmailArgs): string {
@@ -133,10 +159,22 @@ function buildSalesEmailHtml(a: SalesEmailArgs): string {
   const improved = a.beforeRank - a.afterRank;
   const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
   const pColor = platformColor(a.platform);
+  const eyebrow = (t: string) =>
+    `<div style="font-size:11px;font-weight:800;letter-spacing:2.5px;color:${AMBER};text-transform:uppercase">${t}</div>`;
+  const paragraphs = (text: string) =>
+    text
+      .trim()
+      .split(/\n{2,}/)
+      .map(
+        (p) =>
+          `<p style="margin:0 0 14px 0;color:#334155;font-size:14px;line-height:1.65;white-space:pre-wrap">${p.trim()}</p>`,
+      )
+      .join("");
 
-  const introBlock = a.introMessage?.trim()
-    ? `<div style="margin:16px 0;padding:16px;background:#f8fafc;border-left:3px solid #6366f1;border-radius:4px;color:#334155;font-size:14px;white-space:pre-wrap">${a.introMessage}</div>`
-    : "";
+  const intro = paragraphs(a.introMessage?.trim() || defaultIntro(a));
+  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a));
+  const ctaLabel = a.ctaLabel?.trim() || DEFAULT_CTA_LABEL;
+  const ctaUrl = a.ctaUrl?.trim() || DEFAULT_CTA_URL;
 
   const shotCell = (
     label: string,
@@ -145,37 +183,72 @@ function buildSalesEmailHtml(a: SalesEmailArgs): string {
     url: string,
     highlight: boolean,
   ) => `
-    <td style="width:50%;padding:10px;vertical-align:top">
-      <div style="text-align:center;margin-bottom:8px">
-        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:${highlight ? "#16a34a" : "#94a3b8"};text-transform:uppercase">${label}</div>
-        <div style="font-size:26px;font-weight:800;color:${highlight ? "#16a34a" : "#475569"}">#${rank}</div>
-        <div style="font-size:11px;color:#94a3b8">${date ?? ""}</div>
+    <td style="width:50%;padding:8px;vertical-align:top">
+      <div style="background:#fff;border:1px solid ${highlight ? AMBER : "#e2e8f0"};border-radius:12px;overflow:hidden${highlight ? `;box-shadow:0 0 0 3px rgba(245,158,11,0.15)` : ""}">
+        <div style="padding:12px 8px 10px 8px;text-align:center;background:${highlight ? "#fffbeb" : "#f8fafc"};border-bottom:1px solid ${highlight ? "#fde68a" : "#e2e8f0"}">
+          <div style="font-size:10px;font-weight:800;letter-spacing:2px;color:${highlight ? "#b45309" : "#94a3b8"};text-transform:uppercase">${label}</div>
+          <div style="font-size:30px;font-weight:800;color:${highlight ? "#b45309" : "#64748b"};line-height:1.2">#${rank}</div>
+          <div style="font-size:10px;color:#94a3b8">${date ?? ""}</div>
+        </div>
+        <img src="${url}" alt="${label} screenshot" width="100%"
+             style="width:100%;height:auto;display:block" />
       </div>
-      <img src="${url}" alt="${label} screenshot" width="100%"
-           style="width:100%;height:auto;border:1px solid ${highlight ? "#bbf7d0" : "#e5e7eb"};border-radius:8px;display:block" />
     </td>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:680px;margin:0 auto;padding:32px 16px">
-    <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
-      <h1 style="margin:0 0 4px 0;color:#0f172a;font-size:22px">Your AI Search Ranking Is Climbing</h1>
-      <p style="margin:0 0 4px 0;color:#64748b;font-size:14px">${a.business} · ${today}</p>
-      ${introBlock}
-      <div style="margin:20px 0;padding:14px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">
-        <div style="font-size:15px;color:#0f172a;font-weight:600;margin-bottom:6px">&ldquo;${a.keyword}&rdquo;</div>
-        <span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${pColor};color:#fff;font-size:11px;font-weight:600">${pLabel}</span>
-        <div style="margin-top:8px;font-size:18px;font-weight:800;color:#16a34a">&#9650; Up ${improved} spot${improved === 1 ? "" : "s"} &nbsp;·&nbsp; #${a.beforeRank} &rarr; #${a.afterRank}</div>
+<body style="margin:0;padding:0;background:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:640px;margin:0 auto;padding:24px 12px">
+    <div style="background:#f8fafc;border-radius:16px;overflow:hidden;border:1px solid #cbd5e1">
+
+      <!-- Hero -->
+      <div style="background:${NAVY};padding:36px 28px 32px 28px;text-align:center">
+        ${eyebrow("AI Search · Signal AEO")}
+        <h1 style="margin:12px 0 8px 0;color:#fff;font-size:26px;line-height:1.25">Your AI Search Results Are&nbsp;In</h1>
+        <p style="margin:0;color:#94a3b8;font-size:14px">${a.business} — here&rsquo;s what the AI is telling your customers · ${today}</p>
       </div>
-      <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse">
-        <tr>
-          ${shotCell("Before", a.beforeRank, a.beforeDate, a.beforeImageUrl, false)}
-          ${shotCell("After", a.afterRank, a.afterDate, a.afterImageUrl, true)}
-        </tr>
-      </table>
-      <p style="margin:28px 0 0 0;color:#94a3b8;font-size:11px;text-align:center">Screenshots captured directly from ${pLabel}&rsquo;s live results.</p>
+
+      <!-- Intro copy -->
+      <div style="padding:28px 28px 8px 28px">
+        ${intro}
+      </div>
+
+      <!-- Proof -->
+      <div style="padding:8px 20px 4px 20px">
+        <div style="text-align:center;margin-bottom:6px">${eyebrow("What we found")}</div>
+        <div style="text-align:center;margin-bottom:14px">
+          <div style="font-size:17px;color:${NAVY};font-weight:700;margin:6px 0 8px 0">&ldquo;${a.keyword}&rdquo;</div>
+          <span style="display:inline-block;padding:3px 12px;border-radius:12px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
+          <div style="margin-top:10px;font-size:20px;font-weight:800;color:#16a34a">&#9650; Up ${improved} spot${improved === 1 ? "" : "s"} &nbsp;·&nbsp; #${a.beforeRank} &rarr; #${a.afterRank}</div>
+        </div>
+        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse">
+          <tr>
+            ${shotCell("Before", a.beforeRank, a.beforeDate, a.beforeImageUrl, false)}
+            ${shotCell("After", a.afterRank, a.afterDate, a.afterImageUrl, true)}
+          </tr>
+        </table>
+        <p style="margin:10px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${pLabel}.</p>
+      </div>
+
+      <!-- Offer / CTA -->
+      <div style="padding:20px 28px 32px 28px">
+        <div style="background:#fff;border-left:4px solid ${AMBER};border-radius:10px;padding:20px 22px;border-top:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+          ${eyebrow("Keep the momentum")}
+          <div style="height:10px"></div>
+          ${offer}
+          <div style="text-align:center;margin-top:18px">
+            <a href="${ctaUrl}" style="display:inline-block;background:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:13px 34px;border-radius:10px;text-decoration:none">${ctaLabel}</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="background:${NAVY};padding:20px 28px;text-align:center">
+        <p style="margin:0 0 4px 0;color:#94a3b8;font-size:12px;font-weight:700">Signal AEO</p>
+        <p style="margin:0;color:#64748b;font-size:11px">Screenshots captured directly from ${pLabel}&rsquo;s live results. You&rsquo;re receiving this because we track AI search rankings for ${a.business}.</p>
+      </div>
+
     </div>
   </div>
 </body>
@@ -190,6 +263,13 @@ interface PreparedEmail {
   strictMode: boolean;
 }
 
+interface SalesEmailCopy {
+  introMessage?: string;
+  offerText?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+}
+
 /** Shared preview/send assembly — one path, so preview === sent. The caller
  *  resolves the improvement data once (it's a heavy query) and passes it in. */
 function prepareSalesEmail(
@@ -198,7 +278,7 @@ function prepareSalesEmail(
   strictMode: boolean,
   keywordId: number | null,
   platform: string | null,
-  introMessage: string | undefined,
+  copy: SalesEmailCopy,
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
   const selection = pickSelection(data, keywordId, platform);
   if (!selection)
@@ -221,7 +301,7 @@ function prepareSalesEmail(
     afterDate: selection.ranks.current.date,
     beforeImageUrl: imgUrl("first"),
     afterImageUrl: imgUrl("current"),
-    introMessage,
+    ...copy,
   });
   return {
     ok: true,
@@ -265,9 +345,13 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       ? Number.parseInt(String(req.query.keywordId), 10)
       : null;
     const platform = req.query.platform ? String(req.query.platform) : null;
-    const introMessage = req.query.introMessage
-      ? String(req.query.introMessage)
-      : undefined;
+    const qs = (k: string) => (req.query[k] ? String(req.query[k]) : undefined);
+    const copy: SalesEmailCopy = {
+      introMessage: qs("introMessage"),
+      offerText: qs("offerText"),
+      ctaLabel: qs("ctaLabel"),
+      ctaUrl: qs("ctaUrl"),
+    };
 
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(
@@ -292,7 +376,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       strictMode,
       keywordId != null && Number.isNaN(keywordId) ? null : keywordId,
       platform,
-      introMessage,
+      copy,
     );
     if (!prepared.ok)
       return res.json({
@@ -334,6 +418,9 @@ interface SendSalesEmailBody {
   recipients: string[];
   subject?: string;
   introMessage?: string;
+  offerText?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
 }
 
 /* POST /api/sales/send-email */
@@ -376,7 +463,12 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       strictMode,
       body.keywordId ?? null,
       body.platform ?? null,
-      body.introMessage,
+      {
+        introMessage: body.introMessage,
+        offerText: body.offerText,
+        ctaLabel: body.ctaLabel,
+        ctaUrl: body.ctaUrl,
+      },
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;
@@ -466,6 +558,93 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     req.log.error({ err }, "Error sending sales email");
     const detail = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: "Internal server error", detail });
+  }
+});
+
+/* POST /api/sales/email-ai-suggest
+   Body: { clientId, keywordId?, platform?, instruction? }
+   DeepSeek writes the persuasive intro + offer copy from the REAL improvement
+   numbers (it is explicitly forbidden from inventing stats). Returns
+   { intro, offer } for the two editable text blocks. */
+router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
+  const body = req.body as {
+    clientId?: number;
+    keywordId?: number | null;
+    platform?: string | null;
+    instruction?: string;
+  };
+  if (!body.clientId)
+    return res.status(400).json({ error: "clientId required" });
+  try {
+    if (!(await isClientInSalesScope(req, body.clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+
+    const strictMode = process.env.GHL_SYNC_STRICT === "1";
+    const r = await resolveImprovement(
+      { clientId: String(body.clientId) },
+      { strict: strictMode, positiveTop3: true },
+    );
+    if (!r.ok) return res.status(409).json({ error: r.reason });
+    const selection = pickSelection(
+      r.data,
+      body.keywordId ?? null,
+      body.platform ?? null,
+    );
+    if (!selection)
+      return res.status(409).json({ error: "No improved keyword available." });
+
+    const facts = {
+      business: r.data.business,
+      keyword: selection.entry.keyword,
+      platform: PLATFORM_LABELS[selection.platform] ?? selection.platform,
+      before_rank: selection.ranks.first.rank,
+      after_rank: selection.ranks.current.rank,
+      spots_improved: selection.improved,
+      before_date: selection.ranks.first.date,
+      after_date: selection.ranks.current.date,
+      other_improved_keywords: r.data.keywords.length - 1,
+    };
+
+    const systemPrompt = `You write short, punchy, persuasive sales emails for local businesses about their AI-search (AEO) rankings on ChatGPT, Gemini, and Perplexity. Tone: confident, exciting, a little FOMO — the reader should feel they're winning and want more. Think "your customers are asking AI who to hire, and the AI just named YOU".
+
+HARD RULES:
+- Use ONLY the numbers provided in the data. NEVER invent statistics, percentages, studies, or analyst quotes.
+- Plain text only. No markdown, no HTML, no subject line, no greeting ("Hi X"), no sign-off.
+- Output EXACTLY two sections separated by a line containing only "---".
+  Section 1 (intro, 2-3 short paragraphs, max 110 words): hook about customers asking AI instead of Google, then tee up the result we found for this business. The email template shows the before/after proof right after this text.
+  Section 2 (offer, 1-2 short paragraphs, max 60 words): momentum pitch — this is one keyword, more are climbing, competitors want these spots. End with urgency toward the call-to-action button (do not write the button text).
+- If the user gives an instruction, follow it.`;
+
+    const userPrompt = `Real data for this client:
+
+${JSON.stringify(facts, null, 2)}
+
+${body.instruction?.trim() ? `User instruction: ${body.instruction.trim()}\n\n` : ""}Write the two sections now.`;
+
+    const result = await chatCompletion({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.8,
+      maxTokens: 500,
+    });
+    const raw = result.content.trim();
+    const [intro, offer] = raw.includes("\n---")
+      ? raw.split(/\n-{3,}\n?/, 2).map((s) => s.trim())
+      : [raw, ""];
+    return res.json({
+      intro,
+      offer,
+      model: result.model,
+      costUsd: Number(result.costUsd.toFixed(6)),
+      tokens: result.totalTokens,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error generating sales email AI copy");
+    const detail = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: "AI generation failed", detail });
   }
 });
 
