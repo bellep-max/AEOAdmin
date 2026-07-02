@@ -190,7 +190,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
     <div style="background:#fff;border:1px solid ${highlight ? "#fbbf24" : "#e2e8f0"};border-radius:14px;overflow:hidden${highlight ? ";box-shadow:0 8px 24px rgba(245,158,11,0.25)" : ";box-shadow:0 2px 8px rgba(15,23,42,0.06)"}">
       <div style="text-align:center;padding:8px 8px 7px 8px;background:${highlight ? `linear-gradient(135deg,#fbbf24,${AMBER})` : "#f1f5f9"}${highlight ? `;background-color:${AMBER}` : ""}">
         <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:${highlight ? NAVY : "#94a3b8"};text-transform:uppercase;line-height:1.3">${label}</div>
-        <div style="font-size:24px;font-weight:800;color:${highlight ? NAVY : "#64748b"};line-height:1.15">#${rank}</div>
+        <div style="font-size:34px;font-weight:800;color:${highlight ? NAVY : "#64748b"};line-height:1.15">#${rank}</div>
       </div>
       <img src="${url}" alt="${label} screenshot" width="100%" style="width:100%;height:auto;display:block" />
     </div>`;
