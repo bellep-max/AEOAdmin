@@ -808,6 +808,8 @@ export default function Rankings() {
         open={salesEmailOpen}
         onClose={() => setSalesEmailOpen(false)}
         clientId={selectedClientId}
+        businessId={selectedBusinessId}
+        aeoPlanId={selectedCampaignId}
       />
 
       {/* Weekly run banner */}

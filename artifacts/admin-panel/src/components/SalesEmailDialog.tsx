@@ -78,6 +78,10 @@ interface SalesEmailDialogProps {
   open: boolean;
   onClose: () => void;
   clientId: number | null;
+  /* Rankings-page cascade filter — when set, the improvement pool is limited
+     to that business / campaign; null means the client's whole pool. */
+  businessId?: number | null;
+  aeoPlanId?: number | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -93,6 +97,8 @@ export function SalesEmailDialog({
   open,
   onClose,
   clientId,
+  businessId,
+  aeoPlanId,
 }: SalesEmailDialogProps) {
   const { toast } = useToast();
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -145,16 +151,18 @@ export function SalesEmailDialog({
     setRecipients(Array.from(new Set(candidates)));
   }, [defaults]);
 
-  /* Keyword/platform picks from a previous client are meaningless for the
-     next one — reset to "strongest improvement" whenever the client changes. */
+  /* Keyword/platform picks from a previous scope are meaningless for the
+     next one — reset to "strongest improvement" whenever the scope changes. */
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
-  }, [clientId]);
+  }, [clientId, businessId, aeoPlanId]);
 
   const previewQueryParams = useMemo(() => {
     if (clientId == null) return null;
     const p = new URLSearchParams({ clientId: String(clientId) });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (selectedKeywordId != null)
       p.set("keywordId", String(selectedKeywordId));
     if (selectedPlatform != null) p.set("platform", selectedPlatform);
@@ -165,6 +173,8 @@ export function SalesEmailDialog({
     return p.toString();
   }, [
     clientId,
+    businessId,
+    aeoPlanId,
     selectedKeywordId,
     selectedPlatform,
     introMessage,
@@ -203,6 +213,8 @@ export function SalesEmailDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId,
+          businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selectedKeywordId ?? undefined,
           platform: selectedPlatform ?? undefined,
           instruction: aiInstruction.trim() || undefined,
@@ -231,6 +243,8 @@ export function SalesEmailDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId,
+          businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selectedKeywordId ?? undefined,
           platform: selectedPlatform ?? undefined,
           recipients,

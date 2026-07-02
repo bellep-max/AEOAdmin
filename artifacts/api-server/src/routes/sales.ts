@@ -258,6 +258,10 @@ export async function resolveImprovement(
   | { ok: false; status: number; reason: string }
 > {
   const platformFilter = PLATFORMS.has(lc(q.platform)) ? lc(q.platform) : null;
+  // Optional scope filters (admin UI cascade: client › business › campaign).
+  // Absent/zero = no filter, the client's whole keyword pool competes.
+  const businessFilter = Number(q.businessId) > 0 ? Number(q.businessId) : null;
+  const planFilter = Number(q.aeoPlanId) > 0 ? Number(q.aeoPlanId) : null;
 
   const clients = (await db
     .select({
@@ -303,6 +307,10 @@ export async function resolveImprovement(
         eq(keywordsTable.isActive, true),
         sql`${keywordsTable.archivedAt} IS NULL`,
         sql`COALESCE(${keywordsTable.status}, '') NOT IN ('locked', 'archived')`,
+        businessFilter
+          ? eq(keywordsTable.businessId, businessFilter)
+          : undefined,
+        planFilter ? eq(keywordsTable.aeoPlanId, planFilter) : undefined,
       ),
     );
   if (kws.length === 0)
@@ -616,7 +624,11 @@ export function buildScreenshotUrlByClient(
   keyword: string,
   platform: string,
   which: "first" | "current",
-  opts: { strict?: boolean } = {},
+  opts: {
+    strict?: boolean;
+    businessId?: number | null;
+    aeoPlanId?: number | null;
+  } = {},
 ): string {
   const u = new URL(`${SALES_PUBLIC_BASE}/api/sales/screenshot`);
   u.searchParams.set("clientId", String(clientId));
@@ -624,6 +636,9 @@ export function buildScreenshotUrlByClient(
   u.searchParams.set("platform", platform);
   u.searchParams.set("which", which);
   if (opts.strict) u.searchParams.set("strict", "1");
+  if (opts.businessId)
+    u.searchParams.set("businessId", String(opts.businessId));
+  if (opts.aeoPlanId) u.searchParams.set("aeoPlanId", String(opts.aeoPlanId));
   u.searchParams.set("token", process.env.READ_API_TOKEN ?? "");
   return u.toString();
 }

@@ -275,6 +275,29 @@ interface SalesEmailCopy {
   ctaUrl?: string;
 }
 
+interface SalesEmailScope {
+  businessId: number | null;
+  aeoPlanId: number | null;
+}
+
+/** resolveImprovement takes the scope through its query object (the same
+ *  fields the /screenshot URL carries). */
+function scopeQuery(clientId: number, scope: SalesEmailScope) {
+  return {
+    clientId: String(clientId),
+    ...(scope.businessId ? { businessId: String(scope.businessId) } : {}),
+    ...(scope.aeoPlanId ? { aeoPlanId: String(scope.aeoPlanId) } : {}),
+  };
+}
+
+function parseScope(src: Record<string, unknown>): SalesEmailScope {
+  const n = (v: unknown) => {
+    const x = Number.parseInt(String(v ?? ""), 10);
+    return Number.isFinite(x) && x > 0 ? x : null;
+  };
+  return { businessId: n(src.businessId), aeoPlanId: n(src.aeoPlanId) };
+}
+
 /** Shared preview/send assembly — one path, so preview === sent. The caller
  *  resolves the improvement data once (it's a heavy query) and passes it in. */
 function prepareSalesEmail(
@@ -284,6 +307,7 @@ function prepareSalesEmail(
   keywordId: number | null,
   platform: string | null,
   copy: SalesEmailCopy,
+  scope: SalesEmailScope,
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
   const selection = pickSelection(data, keywordId, platform);
   if (!selection)
@@ -295,6 +319,8 @@ function prepareSalesEmail(
   const imgUrl = (which: "first" | "current") =>
     buildScreenshotUrlByClient(clientId, kwText, selection.platform, which, {
       strict: strictMode,
+      businessId: scope.businessId,
+      aeoPlanId: scope.aeoPlanId,
     });
   // the SELECTED keyword's business, not the client's dominant one — they can
   // differ for multi-business clients
@@ -361,11 +387,12 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       ctaUrl: qs("ctaUrl"),
     };
 
+    const scope = parseScope(req.query as Record<string, unknown>);
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
-    const r = await resolveImprovement(
-      { clientId: String(clientId) },
-      { strict: strictMode, positiveTop3: true },
-    );
+    const r = await resolveImprovement(scopeQuery(clientId, scope), {
+      strict: strictMode,
+      positiveTop3: true,
+    });
     /* No-improvement is a valid preview state, not an error — the FE shows an
        empty state and disables Send. */
     if (!r.ok)
@@ -385,6 +412,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       keywordId != null && Number.isNaN(keywordId) ? null : keywordId,
       platform,
       copy,
+      scope,
     );
     if (!prepared.ok)
       return res.json({
@@ -421,6 +449,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
 
 interface SendSalesEmailBody {
   clientId: number;
+  businessId?: number | null;
+  aeoPlanId?: number | null;
   keywordId?: number | null;
   platform?: string | null;
   recipients: string[];
@@ -459,11 +489,12 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       });
     }
 
+    const scope = parseScope(body as Record<string, unknown>);
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
-    const r = await resolveImprovement(
-      { clientId: String(body.clientId) },
-      { strict: strictMode, positiveTop3: true },
-    );
+    const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
+      strict: strictMode,
+      positiveTop3: true,
+    });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const prepared = prepareSalesEmail(
       body.clientId,
@@ -477,6 +508,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         ctaLabel: body.ctaLabel,
         ctaUrl: body.ctaUrl,
       },
+      scope,
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;
@@ -577,6 +609,8 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
 router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
   const body = req.body as {
     clientId?: number;
+    businessId?: number | null;
+    aeoPlanId?: number | null;
     keywordId?: number | null;
     platform?: string | null;
     instruction?: string;
@@ -587,11 +621,12 @@ router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
     if (!(await isClientInSalesScope(req, body.clientId)))
       return res.status(403).json({ error: "Client outside your plan scope" });
 
+    const scope = parseScope(body as Record<string, unknown>);
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
-    const r = await resolveImprovement(
-      { clientId: String(body.clientId) },
-      { strict: strictMode, positiveTop3: true },
-    );
+    const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
+      strict: strictMode,
+      positiveTop3: true,
+    });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const selection = pickSelection(
       r.data,
