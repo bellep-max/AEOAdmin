@@ -344,7 +344,7 @@ export function SalesEmailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-6xl h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-[1500px] w-[96vw] h-[94vh] flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Send sales email</DialogTitle>
           <DialogDescription>
@@ -354,9 +354,9 @@ export function SalesEmailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden min-h-0">
-          {/* LEFT: form */}
-          <div className="overflow-y-auto space-y-4 pr-1">
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4 overflow-hidden min-h-0">
+          {/* LEFT: form (2/5) */}
+          <div className="overflow-y-auto space-y-4 pr-1 md:col-span-2">
             {emailConfig && !emailConfig.ready && (
               <div className="p-3 rounded-md text-sm bg-amber-50 border border-amber-300 text-amber-900">
                 <div className="font-semibold mb-1">
@@ -649,8 +649,11 @@ export function SalesEmailDialog({
             )}
           </div>
 
-          {/* RIGHT: live preview (desktop only) */}
-          <div className="hidden md:flex flex-col min-h-0">{previewBlock}</div>
+          {/* RIGHT: live preview (desktop only, 3/5 — wide enough for the
+              email's real 640px width) */}
+          <div className="hidden md:flex flex-col min-h-0 md:col-span-3">
+            {previewBlock}
+          </div>
         </div>
 
         <DialogFooter className="flex-shrink-0">
