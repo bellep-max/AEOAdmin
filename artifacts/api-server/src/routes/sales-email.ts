@@ -296,8 +296,11 @@ function prepareSalesEmail(
     buildScreenshotUrlByClient(clientId, kwText, selection.platform, which, {
       strict: strictMode,
     });
+  // the SELECTED keyword's business, not the client's dominant one — they can
+  // differ for multi-business clients
+  const business = selection.entry.business || data.business;
   const html = buildSalesEmailHtml({
-    business: data.business,
+    business,
     keyword: kwText,
     platform: selection.platform,
     beforeRank: selection.ranks.first.rank,
@@ -312,7 +315,7 @@ function prepareSalesEmail(
     ok: true,
     prep: {
       html,
-      business: data.business,
+      business,
       clientName: data.client.name,
       selection,
       strictMode,
