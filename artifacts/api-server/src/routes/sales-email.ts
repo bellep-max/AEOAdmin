@@ -202,19 +202,19 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
   <div style="max-width:640px;margin:0 auto;padding:28px 12px">
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
-    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:40px 28px 76px 28px;text-align:center">
+    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:22px 28px 58px 28px;text-align:center">
       ${kicker("AI Search Report")}
-      <h1 style="margin:16px 0 10px 0;color:#fff;font-size:30px;line-height:1.2;letter-spacing:-0.5px">The AI just ranked<br/>your business.</h1>
-      <p style="margin:0;color:#94a3b8;font-size:14px">${a.business} &nbsp;·&nbsp; ${today}</p>
+      <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">The AI just ranked your business.</h1>
+      <p style="margin:0;color:#94a3b8;font-size:13px">${a.business} &nbsp;·&nbsp; ${today}</p>
     </div>
 
     <!-- Overlapping scorecard -->
     <div style="background:#f8fafc;border-radius:0 0 18px 18px;border:1px solid #cbd5e1;border-top:0">
-      <div style="margin:-48px 24px 0 24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:22px 20px;text-align:center">
-        <div style="font-size:16px;color:${NAVY};font-weight:700;margin-bottom:8px">&ldquo;${a.keyword}&rdquo;</div>
-        <span style="display:inline-block;padding:4px 14px;border-radius:14px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
-        <div style="margin-top:12px;font-size:32px;font-weight:800;color:#b45309;line-height:1.1">&#9650; ${improved} spot${improved === 1 ? "" : "s"}</div>
-        <div style="margin-top:6px;font-size:14px;font-weight:600;color:#64748b">#${a.beforeRank} &rarr; <span style="color:#b45309">#${a.afterRank}</span>${a.beforeDate && a.afterDate ? ` &nbsp;·&nbsp; ${a.beforeDate} &rarr; ${a.afterDate}` : ""}</div>
+      <div style="margin:-42px 24px 0 24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:16px 20px;text-align:center">
+        <div style="font-size:15px;color:${NAVY};font-weight:700;margin-bottom:6px">&ldquo;${a.keyword}&rdquo;</div>
+        <span style="display:inline-block;padding:3px 12px;border-radius:14px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
+        <div style="margin-top:8px;font-size:28px;font-weight:800;color:#b45309;line-height:1.1">&#9650; ${improved} spot${improved === 1 ? "" : "s"}</div>
+        <div style="margin-top:5px;font-size:13px;font-weight:600;color:#64748b">#${a.beforeRank} &rarr; <span style="color:#b45309">#${a.afterRank}</span>${a.beforeDate && a.afterDate ? ` &nbsp;·&nbsp; ${a.beforeDate} &rarr; ${a.afterDate}` : ""}</div>
       </div>
 
       <!-- Intro copy -->
