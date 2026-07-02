@@ -198,7 +198,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
 <body style="margin:0;padding:0;background:#e7edf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:640px;margin:0 auto;padding:28px 12px">
+  <div style="max-width:720px;margin:0 auto;padding:28px 12px">
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
     <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:22px 28px 58px 28px;text-align:center">
