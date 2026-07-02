@@ -47,7 +47,9 @@ import {
   type ExportFiltersValue,
 } from "@/components/ExportRankingsDialog";
 import { SendReportDialog } from "@/components/SendReportDialog";
-import { Mail } from "lucide-react";
+import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { useAuth } from "@/lib/auth";
+import { Mail, TrendingUp } from "lucide-react";
 
 interface ClientRow {
   id: number;
@@ -584,6 +586,9 @@ export default function Rankings() {
   );
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
   const [sendReportOpen, setSendReportOpen] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const { isOwner, isSales, isAdmin } = useAuth();
+  const canSendSalesEmail = isOwner || isSales || isAdmin;
   const queryClient = useQueryClient();
 
   const effectivePeriod: Period =
@@ -772,6 +777,22 @@ export default function Rankings() {
           >
             <Mail className="w-3.5 h-3.5" /> Send Report
           </Button>
+          {canSendSalesEmail && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-emerald-300 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-semibold"
+              onClick={() => setSalesEmailOpen(true)}
+              disabled={selectedClientId == null}
+              title={
+                selectedClientId == null
+                  ? "Pick a client first"
+                  : "Email this client their before/after ranking improvement proof"
+              }
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> Sales Email
+            </Button>
+          )}
         </div>
       </div>
 
@@ -781,6 +802,12 @@ export default function Rankings() {
         clientId={selectedClientId}
         businessId={selectedBusinessId}
         aeoPlanId={selectedCampaignId}
+      />
+
+      <SalesEmailDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
+        clientId={selectedClientId}
       />
 
       {/* Weekly run banner */}

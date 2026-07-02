@@ -117,6 +117,13 @@ function resolveClient(
   clients: ClientRow[],
   businesses: BusinessRow[],
 ): { client: ClientRow; matchedBy: string } | null {
+  // Internal callers (admin UI / sales email) already know the client — a
+  // numeric clientId beats every fuzzy signal.
+  const idNum = Number(q.clientId);
+  if (Number.isFinite(idNum) && idNum > 0) {
+    const hit = clients.find((c) => c.id === idNum);
+    if (hit) return { client: hit, matchedBy: "client_id" };
+  }
   const email = lc(q.email);
   if (email) {
     const hit = clients.find(
@@ -179,23 +186,23 @@ async function presign(s3Uri: string): Promise<string | null> {
   });
 }
 
-interface RankPoint {
+export interface RankPoint {
   rank: number;
   date: string | null;
   s3Uri: string;
 }
-interface PlatformRanks {
+export interface PlatformRanks {
   first: RankPoint;
   current: RankPoint;
 }
-interface KeywordEntry {
+export interface KeywordEntry {
   keywordId: number;
   keyword: string | null;
   business: string;
   platforms: Record<string, PlatformRanks>;
   maxImproved: number;
 }
-interface ImprovementData {
+export interface ImprovementData {
   matchedBy: string;
   business: string;
   client: { id: number; name: string };
@@ -243,7 +250,7 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
   };
 }
 
-async function resolveImprovement(
+export async function resolveImprovement(
   q: Record<string, string>,
   opts: { strict?: boolean; positiveTop3?: boolean } = {},
 ): Promise<
@@ -540,7 +547,7 @@ router.get("/screenshot", async (req, res) => {
    exist; a platform without a clean before+after has its slot CLEARED so stale
    or inaccurate screenshots are removed. Slots 4 & 5 are always cleared.
    ────────────────────────────────────────────────────────────────────────── */
-const PLATFORM_LABELS: Record<string, string> = {
+export const PLATFORM_LABELS: Record<string, string> = {
   chatgpt: "ChatGPT",
   gemini: "Gemini",
   perplexity: "Perplexity",
@@ -602,7 +609,26 @@ function buildScreenshotUrl(
   return u.toString();
 }
 
-async function s3Exists(s3Uri: string): Promise<boolean> {
+/** Same permanent streaming link, but pinned by clientId — for internal
+ *  callers (sales email) where the client may have no email on file. */
+export function buildScreenshotUrlByClient(
+  clientId: number,
+  keyword: string,
+  platform: string,
+  which: "first" | "current",
+  opts: { strict?: boolean } = {},
+): string {
+  const u = new URL(`${SALES_PUBLIC_BASE}/api/sales/screenshot`);
+  u.searchParams.set("clientId", String(clientId));
+  u.searchParams.set("keyword", keyword);
+  u.searchParams.set("platform", platform);
+  u.searchParams.set("which", which);
+  if (opts.strict) u.searchParams.set("strict", "1");
+  u.searchParams.set("token", process.env.READ_API_TOKEN ?? "");
+  return u.toString();
+}
+
+export async function s3Exists(s3Uri: string): Promise<boolean> {
   const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
   if (!m) return false;
   try {

@@ -29,6 +29,7 @@ import portalRouter from "./portal";
 import locationRouter from "./location";
 import ingestRouter from "./ingest";
 import salesRouter from "./sales";
+import salesEmailRouter from "./sales-email";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use("/portal", portalRouter);
 router.use("/location", locationRouter);
 router.use("/ingest", ingestRouter);
 router.use("/sales", salesRouter);
+router.use("/sales", salesEmailRouter);
 
 export default router;
