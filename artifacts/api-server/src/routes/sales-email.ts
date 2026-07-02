@@ -136,20 +136,19 @@ interface SalesEmailArgs {
 }
 
 function defaultIntro(a: SalesEmailArgs): string {
-  const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
   return `Are you showing up in AI Search?
 
-More and more of your customers aren't Googling anymore — they're asking ChatGPT, ${pLabel === "ChatGPT" ? "Gemini" : "ChatGPT"} and Perplexity who to hire. The AI gives them one short list, and the businesses on it win the job. Everyone else vanishes from the conversation.
+More and more of your customers aren't Googling anymore — they're asking ChatGPT, Gemini and Perplexity who to hire. The AI gives them one short list, and the businesses on it win the job. Everyone else vanishes from the conversation.
 
 We went and checked where ${a.business} stands. Here's what the AI actually said.`;
 }
 
 function defaultOffer(a: SalesEmailArgs): string {
   const improved = a.beforeRank - a.afterRank;
-  return `This is one keyword. Every week we push more of your searches up the AI's list — the result below moved ${improved} spot${improved === 1 ? "" : "s"} and it's still climbing. Your competitors are already fighting for these answers; every week you're not optimizing, someone else takes the spot.`;
+  return `This is one keyword. Every week we push more of your searches up the AI's list — the result above moved ${improved} spot${improved === 1 ? "" : "s"} and it's still climbing. Your competitors are already fighting for these answers; every week you're not optimizing, someone else takes the spot.`;
 }
 
-function buildSalesEmailHtml(a: SalesEmailArgs): string {
+export function buildSalesEmailHtml(a: SalesEmailArgs): string {
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -159,97 +158,103 @@ function buildSalesEmailHtml(a: SalesEmailArgs): string {
   const improved = a.beforeRank - a.afterRank;
   const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
   const pColor = platformColor(a.platform);
-  const eyebrow = (t: string) =>
-    `<div style="font-size:11px;font-weight:800;letter-spacing:2.5px;color:${AMBER};text-transform:uppercase">${t}</div>`;
-  const paragraphs = (text: string) =>
+  const kicker = (t: string, color = AMBER) =>
+    `<table cellpadding="0" cellspacing="0" style="margin:0 auto;border-collapse:collapse"><tr>
+       <td style="width:26px;border-top:1px solid ${color};opacity:0.6"></td>
+       <td style="padding:0 10px;font-size:11px;font-weight:800;letter-spacing:3px;color:${color};text-transform:uppercase;white-space:nowrap">${t}</td>
+       <td style="width:26px;border-top:1px solid ${color};opacity:0.6"></td>
+     </tr></table>`;
+  const paragraphs = (text: string, color = "#334155") =>
     text
       .trim()
       .split(/\n{2,}/)
       .map(
         (p) =>
-          `<p style="margin:0 0 14px 0;color:#334155;font-size:14px;line-height:1.65;white-space:pre-wrap">${p.trim()}</p>`,
+          `<p style="margin:0 0 14px 0;color:${color};font-size:14px;line-height:1.7;white-space:pre-wrap">${p.trim()}</p>`,
       )
       .join("");
 
   const intro = paragraphs(a.introMessage?.trim() || defaultIntro(a));
-  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a));
+  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a), "#cbd5e1");
   const ctaLabel = a.ctaLabel?.trim() || DEFAULT_CTA_LABEL;
   const ctaUrl = a.ctaUrl?.trim() || DEFAULT_CTA_URL;
 
-  const shotCell = (
+  const shot = (
     label: string,
     rank: number,
     date: string | null,
     url: string,
     highlight: boolean,
   ) => `
-    <td style="width:50%;padding:8px;vertical-align:top">
-      <div style="background:#fff;border:1px solid ${highlight ? AMBER : "#e2e8f0"};border-radius:12px;overflow:hidden${highlight ? `;box-shadow:0 0 0 3px rgba(245,158,11,0.15)` : ""}">
-        <div style="padding:12px 8px 10px 8px;text-align:center;background:${highlight ? "#fffbeb" : "#f8fafc"};border-bottom:1px solid ${highlight ? "#fde68a" : "#e2e8f0"}">
-          <div style="font-size:10px;font-weight:800;letter-spacing:2px;color:${highlight ? "#b45309" : "#94a3b8"};text-transform:uppercase">${label}</div>
-          <div style="font-size:30px;font-weight:800;color:${highlight ? "#b45309" : "#64748b"};line-height:1.2">#${rank}</div>
-          <div style="font-size:10px;color:#94a3b8">${date ?? ""}</div>
-        </div>
-        <img src="${url}" alt="${label} screenshot" width="100%"
-             style="width:100%;height:auto;display:block" />
+    <div style="background:#fff;border:1px solid ${highlight ? "#fbbf24" : "#e2e8f0"};border-radius:14px;overflow:hidden${highlight ? ";box-shadow:0 8px 24px rgba(245,158,11,0.25)" : ";box-shadow:0 2px 8px rgba(15,23,42,0.06)"}">
+      <div style="text-align:center;padding:14px 8px 12px 8px;background:${highlight ? `linear-gradient(135deg,#fbbf24,${AMBER})` : "#f1f5f9"}${highlight ? `;background-color:${AMBER}` : ""}">
+        <div style="font-size:10px;font-weight:800;letter-spacing:2.5px;color:${highlight ? NAVY : "#94a3b8"};text-transform:uppercase">${label}</div>
+        <div style="font-size:34px;font-weight:800;color:${highlight ? NAVY : "#64748b"};line-height:1.15">#${rank}</div>
+        <div style="font-size:10px;font-weight:600;color:${highlight ? "#78350f" : "#94a3b8"}">${date ?? ""}</div>
       </div>
-    </td>`;
+      <img src="${url}" alt="${label} screenshot" width="100%" style="width:100%;height:auto;display:block" />
+    </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-<body style="margin:0;padding:0;background:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:640px;margin:0 auto;padding:24px 12px">
-    <div style="background:#f8fafc;border-radius:16px;overflow:hidden;border:1px solid #cbd5e1">
+<body style="margin:0;padding:0;background:#e7edf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:640px;margin:0 auto;padding:28px 12px">
 
-      <!-- Hero -->
-      <div style="background:${NAVY};padding:36px 28px 32px 28px;text-align:center">
-        ${eyebrow("AI Search · Signal AEO")}
-        <h1 style="margin:12px 0 8px 0;color:#fff;font-size:26px;line-height:1.25">Your AI Search Results Are&nbsp;In</h1>
-        <p style="margin:0;color:#94a3b8;font-size:14px">${a.business} — here&rsquo;s what the AI is telling your customers · ${today}</p>
+    <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
+    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:40px 28px 76px 28px;text-align:center">
+      ${kicker("AI Search Report")}
+      <h1 style="margin:16px 0 10px 0;color:#fff;font-size:30px;line-height:1.2;letter-spacing:-0.5px">The AI just ranked<br/>your business.</h1>
+      <p style="margin:0;color:#94a3b8;font-size:14px">${a.business} &nbsp;·&nbsp; ${today}</p>
+    </div>
+
+    <!-- Overlapping scorecard -->
+    <div style="background:#f8fafc;border-radius:0 0 18px 18px;border:1px solid #cbd5e1;border-top:0">
+      <div style="margin:-48px 24px 0 24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 12px 32px rgba(15,23,42,0.18);padding:22px 20px;text-align:center">
+        <div style="font-size:16px;color:${NAVY};font-weight:700;margin-bottom:8px">&ldquo;${a.keyword}&rdquo;</div>
+        <span style="display:inline-block;padding:4px 14px;border-radius:14px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
+        <div style="margin-top:12px;font-size:32px;font-weight:800;color:#b45309;line-height:1.1">&#9650; ${improved} spot${improved === 1 ? "" : "s"}</div>
+        <div style="margin-top:6px;font-size:14px;font-weight:600;color:#64748b">#${a.beforeRank} &rarr; <span style="color:#b45309">#${a.afterRank}</span>${a.beforeDate && a.afterDate ? ` &nbsp;·&nbsp; ${a.beforeDate} &rarr; ${a.afterDate}` : ""}</div>
       </div>
 
       <!-- Intro copy -->
-      <div style="padding:28px 28px 8px 28px">
+      <div style="padding:26px 30px 6px 30px">
         ${intro}
       </div>
 
-      <!-- Proof -->
-      <div style="padding:8px 20px 4px 20px">
-        <div style="text-align:center;margin-bottom:6px">${eyebrow("What we found")}</div>
-        <div style="text-align:center;margin-bottom:14px">
-          <div style="font-size:17px;color:${NAVY};font-weight:700;margin:6px 0 8px 0">&ldquo;${a.keyword}&rdquo;</div>
-          <span style="display:inline-block;padding:3px 12px;border-radius:12px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
-          <div style="margin-top:10px;font-size:20px;font-weight:800;color:#16a34a">&#9650; Up ${improved} spot${improved === 1 ? "" : "s"} &nbsp;·&nbsp; #${a.beforeRank} &rarr; #${a.afterRank}</div>
-        </div>
-        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse">
+      <!-- Proof: before vs after -->
+      <div style="padding:10px 20px 0 20px">
+        ${kicker("The proof")}
+        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:14px">
           <tr>
-            ${shotCell("Before", a.beforeRank, a.beforeDate, a.beforeImageUrl, false)}
-            ${shotCell("After", a.afterRank, a.afterDate, a.afterImageUrl, true)}
+            <td style="width:47%;vertical-align:top">${shot("Before", a.beforeRank, a.beforeDate, a.beforeImageUrl, false)}</td>
+            <td style="width:6%;text-align:center;vertical-align:middle">
+              <div style="display:inline-block;width:30px;height:30px;line-height:30px;border-radius:15px;background:${NAVY};color:${AMBER};font-size:15px;font-weight:800">&rarr;</div>
+            </td>
+            <td style="width:47%;vertical-align:top">${shot("After", a.afterRank, a.afterDate, a.afterImageUrl, true)}</td>
           </tr>
         </table>
-        <p style="margin:10px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${pLabel}.</p>
+        <p style="margin:12px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${pLabel}.</p>
       </div>
 
-      <!-- Offer / CTA -->
-      <div style="padding:20px 28px 32px 28px">
-        <div style="background:#fff;border-left:4px solid ${AMBER};border-radius:10px;padding:20px 22px;border-top:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
-          ${eyebrow("Keep the momentum")}
-          <div style="height:10px"></div>
-          ${offer}
-          <div style="text-align:center;margin-top:18px">
-            <a href="${ctaUrl}" style="display:inline-block;background:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:13px 34px;border-radius:10px;text-decoration:none">${ctaLabel}</a>
-          </div>
+      <!-- Offer / CTA (dark card for contrast) -->
+      <div style="padding:24px 24px 30px 24px">
+        <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:16px;padding:26px 26px 28px 26px;text-align:center">
+          ${kicker("Keep the momentum")}
+          <div style="height:14px"></div>
+          <div style="text-align:left">${offer}</div>
+          <a href="${ctaUrl}" style="display:inline-block;margin-top:10px;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">${ctaLabel} &nbsp;&rarr;</a>
+          <p style="margin:14px 0 0 0;color:#64748b;font-size:11px">Live data · updated after every audit</p>
         </div>
       </div>
-
-      <!-- Footer -->
-      <div style="background:${NAVY};padding:20px 28px;text-align:center">
-        <p style="margin:0 0 4px 0;color:#94a3b8;font-size:12px;font-weight:700">Signal AEO</p>
-        <p style="margin:0;color:#64748b;font-size:11px">Screenshots captured directly from ${pLabel}&rsquo;s live results. You&rsquo;re receiving this because we track AI search rankings for ${a.business}.</p>
-      </div>
-
     </div>
+
+    <!-- Footer -->
+    <div style="padding:18px 20px;text-align:center">
+      <p style="margin:0 0 3px 0;font-size:11px;font-weight:800;letter-spacing:3px;color:#64748b;text-transform:uppercase">Signal <span style="color:${AMBER}">AEO</span></p>
+      <p style="margin:0;color:#94a3b8;font-size:11px">Screenshots captured directly from ${pLabel}&rsquo;s live results.<br/>You&rsquo;re receiving this because we track AI search rankings for ${a.business}.</p>
+    </div>
+
   </div>
 </body>
 </html>`;
