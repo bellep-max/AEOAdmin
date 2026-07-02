@@ -19,6 +19,7 @@ import KeywordsAll from "@/pages/keywords-all";
 import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
 import Rankings from "@/pages/rankings";
+import SentEmails from "@/pages/sent-emails";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
 import Packages from "@/pages/packages";
@@ -146,6 +147,7 @@ function ProtectedRoutes() {
           <AccountManagerOrAdminGate component={KeywordsAll} />
         </Route>
         <Route path="/rankings" component={Rankings} />
+        <Route path="/sent-emails" component={SentEmails} />
         <Route path="/metrics">
           <AdminTierGate component={Metrics} />
         </Route>

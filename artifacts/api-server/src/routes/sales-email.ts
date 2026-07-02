@@ -16,14 +16,20 @@
  */
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable, emailSendsTable } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  clientAeoPlansTable,
+  clientsTable,
+  emailSendsTable,
+} from "@workspace/db/schema";
+import { and, desc, eq, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles, getSalesPlanFilter } from "../middlewares/role-auth";
 import {
   resolveImprovement,
   buildScreenshotUrlByClient,
+  ghlFindContactIdByEmail,
+  ghlCreateNote,
   s3Exists,
   PLATFORM_LABELS,
   type ImprovementData,
@@ -557,10 +563,61 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       | string
       | undefined;
 
+    /* One-way GHL record: a note on the contact's timeline saying what went
+       out. Never triggers a workflow; never blocks or fails the send. Skipped
+       in safe mode (test sends must not touch real client contacts). */
+    let ghlStatus: string | null = null;
+    if (!sendError) {
+      if (safeOverride) ghlStatus = "skipped (safe mode)";
+      else if (
+        process.env.GHL_POST_AFTER_SEND === "0" ||
+        !process.env.GHL_PIT_TOKEN
+      )
+        ghlStatus = "disabled";
+      else {
+        try {
+          const [clientRow] = await db
+            .select({
+              accountEmail: clientsTable.accountEmail,
+              contactEmail: clientsTable.contactEmail,
+            })
+            .from(clientsTable)
+            .where(eq(clientsTable.id, body.clientId))
+            .limit(1);
+          const lookupEmail =
+            clientRow?.accountEmail || clientRow?.contactEmail || null;
+          const contactId = lookupEmail
+            ? await ghlFindContactIdByEmail(lookupEmail)
+            : null;
+          if (!contactId) ghlStatus = "no_contact";
+          else {
+            const pLabelNote =
+              PLATFORM_LABELS[selection.platform] ?? selection.platform;
+            await ghlCreateNote(
+              contactId,
+              [
+                "AEO sales email sent (admin panel)",
+                `To: ${intendedRecipients.join(", ")}`,
+                `Subject: ${subject}`,
+                `Business: ${business}`,
+                `Proof: "${selection.entry.keyword}" on ${pLabelNote} — #${selection.ranks.first.rank} → #${selection.ranks.current.rank}`,
+              ].join("\n"),
+            );
+            ghlStatus = "posted";
+          }
+        } catch (e) {
+          ghlStatus = `failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 180)}`;
+          req.log.warn({ err: e }, "GHL post-send note failed");
+        }
+      }
+    }
+
     const [logged] = await db
       .insert(emailSendsTable)
       .values({
         clientId: body.clientId,
+        businessId: scope.businessId,
+        aeoPlanId: scope.aeoPlanId,
         recipients: actualRecipients,
         intendedRecipients: safeOverride ? intendedRecipients : null,
         fromEmail,
@@ -568,6 +625,19 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         status: sendError ? "failed" : "sent",
         sendgridMessageId: messageId ?? null,
         error: sendError,
+        kind: "sales",
+        html,
+        meta: {
+          keyword: selection.entry.keyword,
+          keywordId: selection.entry.keywordId,
+          platform: selection.platform,
+          beforeRank: selection.ranks.first.rank,
+          afterRank: selection.ranks.current.rank,
+          beforeDate: selection.ranks.first.date,
+          afterDate: selection.ranks.current.date,
+          business,
+        },
+        ghlStatus,
       })
       .returning({ id: emailSendsTable.id });
 
@@ -593,11 +663,84 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       platform: selection.platform,
       beforeRank: selection.ranks.first.rank,
       afterRank: selection.ranks.current.rank,
+      ghlStatus,
     });
   } catch (err) {
     req.log.error({ err }, "Error sending sales email");
     const detail = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: "Internal server error", detail });
+  }
+});
+
+/* GET /api/sales/email-sends?clientId=&kind=
+   Sent-email history for the Sent Emails page (html excluded — fetch the
+   detail endpoint to replay one). Sales users only see their plan slice. */
+router.get("/email-sends", requireSalesEmail, async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? Number.parseInt(String(req.query.clientId), 10)
+      : null;
+    const kind = req.query.kind ? String(req.query.kind) : null;
+    const planType = getSalesPlanFilter(req);
+    const rows = await db
+      .select({
+        id: emailSendsTable.id,
+        clientId: emailSendsTable.clientId,
+        clientName: clientsTable.businessName,
+        sentAt: emailSendsTable.sentAt,
+        recipients: emailSendsTable.recipients,
+        intendedRecipients: emailSendsTable.intendedRecipients,
+        subject: emailSendsTable.subject,
+        status: emailSendsTable.status,
+        kind: emailSendsTable.kind,
+        meta: emailSendsTable.meta,
+        ghlStatus: emailSendsTable.ghlStatus,
+        error: emailSendsTable.error,
+      })
+      .from(emailSendsTable)
+      .leftJoin(clientsTable, eq(emailSendsTable.clientId, clientsTable.id))
+      .where(
+        and(
+          clientId != null && Number.isFinite(clientId)
+            ? eq(emailSendsTable.clientId, clientId)
+            : undefined,
+          kind ? eq(emailSendsTable.kind, kind) : undefined,
+          planType
+            ? sql`EXISTS (SELECT 1 FROM client_aeo_plans cap
+                           WHERE cap.client_id = ${emailSendsTable.clientId}
+                             AND cap.plan_type = ${planType})`
+            : undefined,
+        ),
+      )
+      .orderBy(desc(emailSendsTable.sentAt))
+      .limit(200);
+    return res.json({ sends: rows });
+  } catch (err) {
+    req.log.error({ err }, "Error listing sales email sends");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /api/sales/email-sends/:id — full record incl. the exact HTML sent. */
+router.get("/email-sends/:id", requireSalesEmail, async (req, res) => {
+  const id = Number.parseInt(String(req.params.id), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const [row] = await db
+      .select()
+      .from(emailSendsTable)
+      .where(eq(emailSendsTable.id, id))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: "not found" });
+    if (
+      row.clientId != null &&
+      !(await isClientInSalesScope(req, row.clientId))
+    )
+      return res.status(403).json({ error: "Client outside your plan scope" });
+    return res.json(row);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching email send detail");
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 

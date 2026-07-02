@@ -31,4 +31,12 @@ export const emailSendsTable = pgTable("email_sends", {
   /* When SAFE_RECIPIENT_OVERRIDE is active, this records the original
      recipients we WOULD have used so the audit trail isn't misleading. */
   intendedRecipients: jsonb("intended_recipients").$type<string[]>(),
+  /* 'report' (Send Report) or 'sales' (Sales Email). Old rows are null. */
+  kind: text("kind"),
+  /* The exact rendered HTML that was sent — the Sent Emails page replays it. */
+  html: text("html"),
+  /* Send-specific context: keyword, platform, beforeRank, afterRank, etc. */
+  meta: jsonb("meta").$type<Record<string, unknown>>(),
+  /* GHL one-way record: 'posted' | 'no_contact' | 'disabled' | 'failed: …' */
+  ghlStatus: text("ghl_status"),
 });

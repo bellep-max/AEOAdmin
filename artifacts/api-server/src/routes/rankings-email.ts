@@ -988,6 +988,9 @@ router.post("/send-report", requireOwner, async (req, res) => {
         status: sendError ? "failed" : "sent",
         sendgridMessageId: messageId ?? null,
         error: sendError,
+        kind: "report",
+        html,
+        meta: { mode },
       })
       .returning({ id: emailSendsTable.id });
 

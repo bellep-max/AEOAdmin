@@ -654,6 +654,62 @@ export async function s3Exists(s3Uri: string): Promise<boolean> {
   }
 }
 
+// GHL location for contact lookups ("AEO Screenshots" custom-field set lives
+// here too — see GHL_SLOTS above).
+const GHL_LOCATION_ID = "uXRl9WpDjS7LFjeYfQqD";
+
+function ghlHeaders(): Record<string, string> {
+  const token = process.env.GHL_PIT_TOKEN;
+  if (!token) throw new Error("GHL_PIT_TOKEN not configured");
+  return {
+    Authorization: `Bearer ${token}`,
+    Version: "2021-07-28",
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+/** Find the GHL contact id for an email address, or null when none exists. */
+export async function ghlFindContactIdByEmail(
+  email: string,
+): Promise<string | null> {
+  const u = new URL(
+    "https://services.leadconnectorhq.com/contacts/search/duplicate",
+  );
+  u.searchParams.set("locationId", GHL_LOCATION_ID);
+  u.searchParams.set("email", email);
+  const resp = await fetch(u, { headers: ghlHeaders() });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(
+      `GHL contact lookup failed (${resp.status}): ${text.slice(0, 200)}`,
+    );
+  }
+  const body = (await resp.json()) as { contact?: { id?: string } };
+  return body.contact?.id ?? null;
+}
+
+/** One-way record on the contact's timeline — never triggers a workflow. */
+export async function ghlCreateNote(
+  contactId: string,
+  noteBody: string,
+): Promise<void> {
+  const resp = await fetch(
+    `https://services.leadconnectorhq.com/contacts/${contactId}/notes`,
+    {
+      method: "POST",
+      headers: ghlHeaders(),
+      body: JSON.stringify({ body: noteBody }),
+    },
+  );
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(
+      `GHL note create failed (${resp.status}): ${text.slice(0, 200)}`,
+    );
+  }
+}
+
 async function ghlUpdateContact(
   contactId: string,
   customFields: { id: string; field_value: string }[],

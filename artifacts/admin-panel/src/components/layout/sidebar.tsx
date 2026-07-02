@@ -51,6 +51,7 @@ import {
   RefreshCw,
   Archive,
   Lock,
+  MailCheck,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -158,6 +159,12 @@ const navGroups: NavGroup[] = [
         icon: Trophy,
         salesAllowed: true,
         accountManagerAllowed: true,
+      },
+      {
+        name: "Sent Emails",
+        href: "/sent-emails",
+        icon: MailCheck,
+        salesAllowed: true,
       },
       { name: "Metrics", href: "/metrics", icon: BarChart3 },
       { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },
