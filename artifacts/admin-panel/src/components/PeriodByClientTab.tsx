@@ -411,6 +411,7 @@ export function PeriodByClientTab({
                                     rank={p.firstPosition}
                                     date={p.firstDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    noRanking={p.firstNoRanking}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -420,6 +421,7 @@ export function PeriodByClientTab({
                                     rank={p.previousPosition}
                                     date={p.previousDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    noRanking={p.previousNoRanking}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -429,6 +431,7 @@ export function PeriodByClientTab({
                                     rank={p.currentPosition}
                                     date={p.currentDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    noRanking={p.status === "no_ranking"}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -482,6 +485,9 @@ interface RankCellButtonProps {
   rank: number | null;
   date: string | null;
   label: string;
+  /* This part's screenshot failed the top-3 OCR check — show the
+     "No ranking yet" label instead of a dash (still click-to-view). */
+  noRanking?: boolean;
   onPick: (cell: {
     id: number;
     label: string;
@@ -497,9 +503,10 @@ function RankCellButton({
   rank,
   date,
   label,
+  noRanking,
   onPick,
 }: RankCellButtonProps) {
-  const text = fmtPos(rank);
+  const text = noRanking ? "No ranking yet" : fmtPos(rank);
   if (reportId == null) {
     return <span>{text}</span>;
   }

@@ -6,12 +6,17 @@ import {
   countStatuses,
   fmtPos,
   fmtPosOrNoRanking,
+  fmtPosOrNoRankingFlag,
   periodLabel,
   PLATFORM_ORDER,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, PlatformPill, ChangeCell } from "@/components/period-badges";
+import {
+  StatusBadge,
+  PlatformPill,
+  ChangeCell,
+} from "@/components/period-badges";
 
 interface Props {
   period: Period;
@@ -20,8 +25,18 @@ interface Props {
   aeoPlanId: number | null;
 }
 
-export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }: Props) {
-  const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
+export function PeriodByPlatformTab({
+  period,
+  clientId,
+  businessId,
+  aeoPlanId,
+}: Props) {
+  const { data, isLoading } = usePeriodComparison({
+    period,
+    clientId,
+    businessId,
+    aeoPlanId,
+  });
   const label = periodLabel(period);
 
   const byPlatform = useMemo(() => {
@@ -34,7 +49,11 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
   }, [data]);
 
   if (isLoading) {
-    return <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>;
+    return (
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
   }
   if (!data || data.rows.length === 0) {
     return (
@@ -48,7 +67,9 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
 
   const platforms = [
     ...PLATFORM_ORDER.filter((p) => byPlatform[p]),
-    ...Object.keys(byPlatform).filter((p) => !PLATFORM_ORDER.includes(p as typeof PLATFORM_ORDER[number])),
+    ...Object.keys(byPlatform).filter(
+      (p) => !PLATFORM_ORDER.includes(p as (typeof PLATFORM_ORDER)[number]),
+    ),
   ];
 
   return (
@@ -57,10 +78,16 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
         {platforms.map((platform) => {
           const rows = byPlatform[platform];
           const counts = countStatuses(rows);
-          const currentPositions = rows.map((r) => r.currentPosition).filter((n): n is number => n != null);
-          const avg = currentPositions.length > 0
-            ? Math.round(currentPositions.reduce((s, n) => s + n, 0) / currentPositions.length)
-            : null;
+          const currentPositions = rows
+            .map((r) => r.currentPosition)
+            .filter((n): n is number => n != null);
+          const avg =
+            currentPositions.length > 0
+              ? Math.round(
+                  currentPositions.reduce((s, n) => s + n, 0) /
+                    currentPositions.length,
+                )
+              : null;
           const topTen = currentPositions.filter((n) => n <= 10).length;
           return (
             <Card key={platform} className="border-border/50">
@@ -68,25 +95,53 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
                 <CardTitle className="text-sm font-semibold">
                   <PlatformPill platform={platform} />
                 </CardTitle>
-                <Badge variant="outline" className="text-[10px]">{rows.length} result{rows.length !== 1 ? "s" : ""}</Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {rows.length} result{rows.length !== 1 ? "s" : ""}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-muted/30 px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Avg rank</p>
-                    <p className="text-lg font-bold">{avg != null ? `#${avg}` : "—"}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Avg rank
+                    </p>
+                    <p className="text-lg font-bold">
+                      {avg != null ? `#${avg}` : "—"}
+                    </p>
                   </div>
                   <div className="rounded-lg bg-muted/30 px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Top 10</p>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Top 10
+                    </p>
                     <p className="text-lg font-bold">{topTen}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {counts.improved > 0 && <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">↑ {counts.improved}</Badge>}
-                  {counts.declined > 0 && <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">↓ {counts.declined}</Badge>}
-                  {counts.steady > 0 && <Badge variant="outline" className="text-[10px]">= {counts.steady}</Badge>}
-                  {counts.newCount > 0 && <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">+ {counts.newCount}</Badge>}
-                  {counts.missing > 0 && <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px]">? {counts.missing}</Badge>}
+                  {counts.improved > 0 && (
+                    <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
+                      ↑ {counts.improved}
+                    </Badge>
+                  )}
+                  {counts.declined > 0 && (
+                    <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">
+                      ↓ {counts.declined}
+                    </Badge>
+                  )}
+                  {counts.steady > 0 && (
+                    <Badge variant="outline" className="text-[10px]">
+                      = {counts.steady}
+                    </Badge>
+                  )}
+                  {counts.newCount > 0 && (
+                    <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">
+                      + {counts.newCount}
+                    </Badge>
+                  )}
+                  {counts.missing > 0 && (
+                    <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px]">
+                      ? {counts.missing}
+                    </Badge>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -118,16 +173,32 @@ export function PeriodByPlatformTab({ period, clientId, businessId, aeoPlanId }:
               </div>
               <div className="divide-y divide-border/50">
                 {rows.map((r) => (
-                  <div key={`${r.keywordId}-${r.platform}`} className="grid grid-cols-12 gap-2 items-center text-sm px-4 py-2 hover:bg-muted/20">
-                    <div className="col-span-4 truncate font-medium">{r.keywordText}</div>
+                  <div
+                    key={`${r.keywordId}-${r.platform}`}
+                    className="grid grid-cols-12 gap-2 items-center text-sm px-4 py-2 hover:bg-muted/20"
+                  >
+                    <div className="col-span-4 truncate font-medium">
+                      {r.keywordText}
+                    </div>
                     <div className="col-span-2 text-xs text-muted-foreground truncate">
                       {r.clientName ?? "—"}
                       {r.businessName ? ` · ${r.businessName}` : ""}
                     </div>
-                    <div className="col-span-2 text-muted-foreground">{fmtPos(r.previousPosition)}</div>
-                    <div className="col-span-2 font-semibold">{fmtPosOrNoRanking(r.currentPosition, r.status)}</div>
-                    <div className="col-span-1"><ChangeCell change={r.change} /></div>
-                    <div className="col-span-1"><StatusBadge status={r.status} /></div>
+                    <div className="col-span-2 text-muted-foreground">
+                      {fmtPosOrNoRankingFlag(
+                        r.previousPosition,
+                        r.previousNoRanking,
+                      )}
+                    </div>
+                    <div className="col-span-2 font-semibold">
+                      {fmtPosOrNoRanking(r.currentPosition, r.status)}
+                    </div>
+                    <div className="col-span-1">
+                      <ChangeCell change={r.change} />
+                    </div>
+                    <div className="col-span-1">
+                      <StatusBadge status={r.status} />
+                    </div>
                   </div>
                 ))}
               </div>

@@ -961,22 +961,29 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       const lastEver = ever.get(key);
       // A top-3 whose screenshot failed the OCR check (screenshot_rank_visible
       // = false) means the AI's summary CLAIMED the rank but the client isn't
-      // actually shown in the list — not a real ranking. Surface it as
-      // "no_ranking" and suppress the fake position/trend. Ranks beyond top-3
-      // keep their position (a false there just means the label wasn't legible).
-      const noRanking =
-        !!cur &&
-        cur.screenshotRankVisible === false &&
-        cur.rankingPosition != null &&
-        cur.rankingPosition <= 3;
+      // actually shown in the list — not a real ranking. Applies independently
+      // to each of the three parts (First / Previous / Current): the fake
+      // position is suppressed per part. Ranks beyond top-3 keep their
+      // position (a false there just means the label wasn't legible).
+      const isFakeTop3 = (r: typeof cur): boolean =>
+        !!r &&
+        r.screenshotRankVisible === false &&
+        r.rankingPosition != null &&
+        r.rankingPosition <= 3;
+      const noRanking = isFakeTop3(cur);
+      const prevNoRanking = isFakeTop3(prev);
+      const firstNoRanking = isFakeTop3(firstEverRow);
 
+      // a fake previous can't anchor a trend — treat it as absent
       const change =
         !noRanking &&
+        !prevNoRanking &&
         cur?.rankingPosition != null &&
         prev?.rankingPosition != null
           ? prev.rankingPosition - cur.rankingPosition
           : null;
 
+      const prevReal = prev && !prevNoRanking ? prev : null;
       let status:
         | "new"
         | "improved"
@@ -986,12 +993,12 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         | "pending"
         | "no_ranking" = "pending";
       if (noRanking) status = "no_ranking";
-      else if (cur && !prev) status = "new";
-      else if (cur && prev && change != null) {
+      else if (cur && !prevReal) status = "new";
+      else if (cur && prevReal && change != null) {
         if (change > 0) status = "improved";
         else if (change < 0) status = "declined";
         else status = "steady";
-      } else if (!cur && prev) status = "missing";
+      } else if (!cur && prevReal) status = "missing";
       else status = "pending";
 
       const lastRunAt = lastEver?.createdAt ?? null;
@@ -1019,11 +1026,17 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         currentDate: cur?.date ?? null,
         currentVariant: cur?.keywordVariant ?? null,
         previousReportId: prev?.id ?? null,
-        previousPosition: prev?.rankingPosition ?? null,
+        previousPosition: prevNoRanking
+          ? null
+          : (prev?.rankingPosition ?? null),
         previousDate: prev?.date ?? null,
+        previousNoRanking: prevNoRanking,
         firstReportId: firstEverRow?.id ?? null,
-        firstPosition: firstEverRow?.rankingPosition ?? null,
+        firstPosition: firstNoRanking
+          ? null
+          : (firstEverRow?.rankingPosition ?? null),
         firstDate: firstEverRow?.date ?? null,
+        firstNoRanking,
         change,
         status,
         freshness,

@@ -219,6 +219,7 @@ function RankShotCell({
   platform,
   keywordText,
   emphasis,
+  noRanking,
   onOpen,
   onUnavailable,
 }: {
@@ -229,10 +230,12 @@ function RankShotCell({
   keywordText: string;
   /** Current-column cell uses the stronger foreground weight. */
   emphasis?: boolean;
+  /** This part's screenshot failed the top-3 OCR check — label instead of dash. */
+  noRanking?: boolean;
   onOpen: (target: ScreenshotTarget) => void;
   onUnavailable: () => void;
 }) {
-  const text = fmtPos(position);
+  const text = noRanking ? "No ranking yet" : fmtPos(position);
   if (reportId != null) {
     return (
       <button
@@ -688,6 +691,7 @@ export function KeywordsWithRankingsCard({
                                   date={p.firstDate}
                                   platform={p.platform}
                                   keywordText={p.keywordText}
+                                  noRanking={p.firstNoRanking}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
@@ -699,6 +703,7 @@ export function KeywordsWithRankingsCard({
                                   date={p.previousDate}
                                   platform={p.platform}
                                   keywordText={p.keywordText}
+                                  noRanking={p.previousNoRanking}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
@@ -711,6 +716,7 @@ export function KeywordsWithRankingsCard({
                                   platform={p.platform}
                                   keywordText={p.keywordText}
                                   emphasis
+                                  noRanking={p.status === "no_ranking"}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
