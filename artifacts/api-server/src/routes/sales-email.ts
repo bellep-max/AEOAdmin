@@ -129,10 +129,6 @@ const DEFAULT_CTA_URL =
 const DEFAULT_CTA_LABEL = process.env.SALES_CTA_LABEL ?? "Pick a Time";
 const SENDER_NAME = process.env.SALES_SENDER_NAME ?? "Chuck";
 const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
-// Physical address for the CAN-SPAM footer — fill via env when finalized.
-const SENDER_ADDRESS =
-  process.env.SALES_SENDER_ADDRESS ??
-  "SEO Local LLC · [Street Address], Lehi, UT [ZIP]";
 
 interface SalesEmailArgs {
   business: string;
@@ -264,7 +260,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
     <!-- Footer -->
     <div style="padding:18px 20px;text-align:center">
       <p style="margin:0 0 4px 0;font-size:11px;font-weight:800;letter-spacing:2px;color:#64748b;text-transform:uppercase">${SENDER_ORG}</p>
-      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">${SENDER_ADDRESS}<br/>You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. <a href="${ctaUrl}" style="color:#94a3b8">Unsubscribe</a> &mdash; or just reply &ldquo;unsubscribe.&rdquo;</p>
+      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. <a href="${ctaUrl}" style="color:#94a3b8">Unsubscribe</a> &mdash; or just reply &ldquo;unsubscribe.&rdquo;</p>
     </div>
 
   </div>
@@ -631,7 +627,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       storedSubject = msg.subject;
       try {
         const sgResp = await sgMail.send(msg);
-        messageId = sgResp?.[0]?.headers?.["x-message-id"] as string | undefined;
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as
+          | string
+          | undefined;
         deliveredVia = "sendgrid";
       } catch (e: unknown) {
         sendError = e instanceof Error ? e.message : String(e);
@@ -674,7 +672,8 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         fromEmail,
         subject: storedSubject,
         status: sendError ? "failed" : "sent",
-        sendgridMessageId: deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        sendgridMessageId:
+          deliveredVia === "sendgrid" ? (messageId ?? null) : null,
         error: sendError,
         kind: "sales",
         html,
