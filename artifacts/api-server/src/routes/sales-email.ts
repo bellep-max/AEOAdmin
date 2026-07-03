@@ -682,14 +682,22 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           try {
             const pLabelNote =
               PLATFORM_LABELS[selection.platform] ?? selection.platform;
+            const sentAtEt = new Date().toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              dateStyle: "medium",
+              timeStyle: "short",
+            });
             await ghlCreateNote(
               contactId,
               [
-                "AEO sales email sent (admin panel, via SendGrid)",
+                "📧 AEO Sales Email — SENT",
+                `When: ${sentAtEt} ET`,
                 `To: ${intendedRecipients.join(", ")}`,
+                `From: ${fromName} <${fromEmail}>`,
                 `Subject: ${subject}`,
                 `Business: ${business}`,
                 `Proof: "${selection.entry.keyword}" on ${pLabelNote} — #${selection.ranks.first.rank} → #${selection.ranks.current.rank}`,
+                "Sent from the AEO admin panel via SendGrid.",
               ].join("\n"),
             );
             ghlStatus = ghlStatus ? `${ghlStatus} + noted` : "noted";
