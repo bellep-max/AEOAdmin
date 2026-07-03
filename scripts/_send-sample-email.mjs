@@ -25,8 +25,14 @@ const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
       email: secret.SENDGRID_FROM_EMAIL,
       name: process.env.SAMPLE_FROM_NAME || "Chuck — SEO Local",
     },
-    subject: "Your first AI ranking is in (sample)",
+    subject:
+      process.env.SAMPLE_SUBJECT ?? "Your first AI ranking is in (sample)",
     content: [{ type: "text/html", value: html }],
+    tracking_settings: {
+      click_tracking: { enable: false, enable_text: false },
+      open_tracking: { enable: false },
+      subscription_tracking: { enable: false },
+    },
   }),
 });
 console.log(`SendGrid → HTTP ${res.status} to ${TO}`);

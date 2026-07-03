@@ -208,7 +208,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
   <div style="max-width:720px;margin:0 auto;padding:0 0 20px 0">
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
-    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};padding:30px 28px 58px 28px;text-align:center">
+    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};padding:22px 28px 56px 28px;text-align:center">
       ${kicker(`${SENDER_ORG} · AI Ranking`)}
       <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">Your first AI ranking is in.</h1>
       <p style="margin:0;color:#94a3b8;font-size:13px">${a.business}</p>
@@ -260,7 +260,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
     <!-- Footer -->
     <div style="padding:18px 20px;text-align:center">
       <p style="margin:0 0 4px 0;font-size:11px;font-weight:800;letter-spacing:2px;color:#64748b;text-transform:uppercase">${SENDER_ORG}</p>
-      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. <a href="${ctaUrl}" style="color:#94a3b8">Unsubscribe</a> &mdash; or just reply &ldquo;unsubscribe.&rdquo;</p>
+      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. Reply &ldquo;unsubscribe&rdquo; and we&rsquo;ll take you off the list.</p>
     </div>
 
   </div>
@@ -626,6 +626,15 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
           : subject,
         html,
+        // Keep it a 1:1 email, not a newsletter: no link-rewriting redirect,
+        // no open pixel, no injected List-Unsubscribe header (all of which make
+        // Gmail file it under Promotions/bulk).
+        trackingSettings: {
+          clickTracking: { enable: false, enableText: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false },
+        },
+        mailSettings: { bypassListManagement: { enable: false } },
       };
       storedSubject = msg.subject;
       try {
