@@ -121,9 +121,17 @@ function pickSelection(
    slate — mirrors the customer portal so the email feels like the product. */
 const NAVY = "#0f172a";
 const AMBER = "#f59e0b";
+// CTA now points at Chuck's Calendly (was the client portal).
 const DEFAULT_CTA_URL =
-  process.env.PORTAL_PUBLIC_URL ?? "https://d2cad6tmt9gq2h.cloudfront.net";
-const DEFAULT_CTA_LABEL = "See Your Live AI Rankings";
+  process.env.SALES_CTA_URL ??
+  "https://calendly.com/contact-seolocal/ai-ranking";
+const DEFAULT_CTA_LABEL = process.env.SALES_CTA_LABEL ?? "Pick a Time";
+const SENDER_NAME = process.env.SALES_SENDER_NAME ?? "Chuck";
+const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
+// Physical address for the CAN-SPAM footer — fill via env when finalized.
+const SENDER_ADDRESS =
+  process.env.SALES_SENDER_ADDRESS ??
+  "SEO Local LLC · [Street Address], Lehi, UT [ZIP]";
 
 interface SalesEmailArgs {
   business: string;
@@ -135,6 +143,7 @@ interface SalesEmailArgs {
   afterDate: string | null;
   beforeImageUrl: string;
   afterImageUrl: string;
+  firstName?: string | null;
   introMessage?: string;
   offerText?: string;
   ctaLabel?: string;
@@ -142,25 +151,21 @@ interface SalesEmailArgs {
 }
 
 function defaultIntro(a: SalesEmailArgs): string {
-  return `Are you showing up in AI Search?
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
 
-More and more of your customers aren't Googling anymore — they're asking ChatGPT, Gemini and Perplexity who to hire. The AI gives them one short list, and the businesses on it win the job. Everyone else vanishes from the conversation.
+We've added a new service for ${SENDER_ORG} customers: an AI Ranking Service. We now work to get ${a.business} named as the answer when people ask ChatGPT, Gemini, and Perplexity for what you do.
 
-We went and checked where ${a.business} stands. Here's what the AI actually said.`;
+Here's your first keyword ranking:`;
 }
 
 function defaultOffer(a: SalesEmailArgs): string {
-  const improved = a.beforeRank - a.afterRank;
-  return `This is one keyword. Every week we push more of your searches up the AI's list — the result above moved ${improved} spot${improved === 1 ? "" : "s"} and it's still climbing. Your competitors are already fighting for these answers; every week you're not optimizing, someone else takes the spot.`;
+  return `This is a real, screenshot-verified result: ${a.business} is now showing up as the AI answer for "${a.keyword}."
+
+We'll be ranking a few more of your keywords over the next couple weeks. If you want the rest now, or want to hear more about how the service works, just reply — or pick a time below.`;
 }
 
 export function buildSalesEmailHtml(a: SalesEmailArgs): string {
-  const today = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "America/New_York",
-  });
   const improved = a.beforeRank - a.afterRank;
   const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
   const pColor = platformColor(a.platform);
@@ -188,11 +193,9 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
   const shot = (
     label: string,
     rank: number,
-    date: string | null,
     url: string,
     highlight: boolean,
   ) => `
-    <div style="text-align:center;font-size:11px;font-weight:600;color:#94a3b8;line-height:1.3;margin-bottom:6px">${date ?? "&nbsp;"}</div>
     <div style="background:#fff;border:1px solid ${highlight ? "#fbbf24" : "#e2e8f0"};border-radius:14px;overflow:hidden${highlight ? ";box-shadow:0 8px 24px rgba(245,158,11,0.25)" : ";box-shadow:0 2px 8px rgba(15,23,42,0.06)"}">
       <div style="text-align:center;padding:8px 8px 7px 8px;background:${highlight ? `linear-gradient(135deg,#fbbf24,${AMBER})` : "#f1f5f9"}${highlight ? `;background-color:${AMBER}` : ""}">
         <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:${highlight ? NAVY : "#94a3b8"};text-transform:uppercase;line-height:1.3">${label}</div>
@@ -209,9 +212,9 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
     <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:22px 28px 58px 28px;text-align:center">
-      ${kicker("AI Search Report")}
-      <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">The AI just ranked your business.</h1>
-      <p style="margin:0;color:#94a3b8;font-size:13px">${a.business} &nbsp;·&nbsp; ${today}</p>
+      ${kicker(`${SENDER_ORG} · AI Ranking`)}
+      <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">Your first AI ranking is in.</h1>
+      <p style="margin:0;color:#94a3b8;font-size:13px">${a.business}</p>
     </div>
 
     <!-- Overlapping scorecard -->
@@ -220,7 +223,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
         <div style="font-size:15px;color:${NAVY};font-weight:700;margin-bottom:6px">&ldquo;${a.keyword}&rdquo;</div>
         <span style="display:inline-block;padding:3px 12px;border-radius:14px;background:${pColor};color:#fff;font-size:11px;font-weight:700">${pLabel}</span>
         <div style="margin-top:8px;font-size:28px;font-weight:800;color:#b45309;line-height:1.1">&#9650; ${improved} spot${improved === 1 ? "" : "s"}</div>
-        <div style="margin-top:5px;font-size:13px;font-weight:600;color:#64748b">#${a.beforeRank} &rarr; <span style="color:#b45309">#${a.afterRank}</span>${a.beforeDate && a.afterDate ? ` &nbsp;·&nbsp; ${a.beforeDate} &rarr; ${a.afterDate}` : ""}</div>
+        <div style="margin-top:5px;font-size:13px;font-weight:600;color:#64748b">#${a.beforeRank} &rarr; <span style="color:#b45309">#${a.afterRank}</span></div>
       </div>
 
       <!-- Intro copy -->
@@ -233,32 +236,34 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
         ${kicker("The proof")}
         <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:14px">
           <tr>
-            <td style="width:47%;vertical-align:top">${shot("Before", a.beforeRank, a.beforeDate, a.beforeImageUrl, false)}</td>
+            <td style="width:47%;vertical-align:top">${shot("Before", a.beforeRank, a.beforeImageUrl, false)}</td>
             <td style="width:6%;text-align:center;vertical-align:middle">
               <div style="display:inline-block;width:30px;height:30px;line-height:30px;border-radius:15px;background:${NAVY};color:${AMBER};font-size:15px;font-weight:800">&rarr;</div>
             </td>
-            <td style="width:47%;vertical-align:top">${shot("After", a.afterRank, a.afterDate, a.afterImageUrl, true)}</td>
+            <td style="width:47%;vertical-align:top">${shot("After", a.afterRank, a.afterImageUrl, true)}</td>
           </tr>
         </table>
         <p style="margin:12px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${pLabel}.</p>
       </div>
 
-      <!-- Offer / CTA (dark card for contrast) -->
-      <div style="padding:24px 24px 30px 24px">
-        <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:16px;padding:26px 26px 28px 26px;text-align:center">
-          ${kicker("Keep the momentum")}
-          <div style="height:14px"></div>
-          <div style="text-align:left">${offer}</div>
-          <a href="${ctaUrl}" style="display:inline-block;margin-top:10px;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">${ctaLabel} &nbsp;&rarr;</a>
-          <p style="margin:14px 0 0 0;color:#64748b;font-size:11px">Live data · updated after every audit</p>
-        </div>
+      <!-- Closing copy + CTA -->
+      <div style="padding:20px 30px 6px 30px">
+        ${offer}
+      </div>
+      <div style="padding:6px 24px 8px 24px;text-align:center">
+        <a href="${ctaUrl}" style="display:inline-block;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">${ctaLabel} &nbsp;&rarr;</a>
+      </div>
+
+      <!-- Signature -->
+      <div style="padding:14px 30px 26px 30px">
+        <p style="margin:0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${SENDER_NAME}<br/><span style="color:#64748b">${SENDER_ORG}</span></p>
       </div>
     </div>
 
     <!-- Footer -->
     <div style="padding:18px 20px;text-align:center">
-      <p style="margin:0 0 3px 0;font-size:11px;font-weight:800;letter-spacing:3px;color:#64748b;text-transform:uppercase">Signal <span style="color:${AMBER}">AEO</span></p>
-      <p style="margin:0;color:#94a3b8;font-size:11px">Screenshots captured directly from ${pLabel}&rsquo;s live results.<br/>You&rsquo;re receiving this because we track AI search rankings for ${a.business}.</p>
+      <p style="margin:0 0 4px 0;font-size:11px;font-weight:800;letter-spacing:2px;color:#64748b;text-transform:uppercase">${SENDER_ORG}</p>
+      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">${SENDER_ADDRESS}<br/>You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. <a href="${ctaUrl}" style="color:#94a3b8">Unsubscribe</a> &mdash; or just reply &ldquo;unsubscribe.&rdquo;</p>
     </div>
 
   </div>
@@ -304,6 +309,18 @@ function parseScope(src: Record<string, unknown>): SalesEmailScope {
   return { businessId: n(src.businessId), aeoPlanId: n(src.aeoPlanId) };
 }
 
+/** Contact first name for the greeting — first token of the client's account
+ *  user name. Null when we have nothing usable (falls back to "Hi there,"). */
+async function firstNameOfClient(clientId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ name: clientsTable.accountUserName })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId))
+    .limit(1);
+  const token = (row?.name ?? "").trim().split(/\s+/)[0];
+  return token && token.length > 1 ? token : null;
+}
+
 /** Shared preview/send assembly — one path, so preview === sent. The caller
  *  resolves the improvement data once (it's a heavy query) and passes it in. */
 function prepareSalesEmail(
@@ -314,6 +331,7 @@ function prepareSalesEmail(
   platform: string | null,
   copy: SalesEmailCopy,
   scope: SalesEmailScope,
+  firstName: string | null,
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
   const selection = pickSelection(data, keywordId, platform);
   if (!selection)
@@ -341,6 +359,7 @@ function prepareSalesEmail(
     afterDate: selection.ranks.current.date,
     beforeImageUrl: imgUrl("first"),
     afterImageUrl: imgUrl("current"),
+    firstName,
     ...copy,
   });
   return {
@@ -411,6 +430,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         strictMode,
       });
 
+    const firstName = await firstNameOfClient(clientId);
     const prepared = prepareSalesEmail(
       clientId,
       r.data,
@@ -419,6 +439,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       platform,
       copy,
       scope,
+      firstName,
     );
     if (!prepared.ok)
       return res.json({
@@ -502,6 +523,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       positiveTop3: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
+    const firstName = await firstNameOfClient(body.clientId);
     const prepared = prepareSalesEmail(
       body.clientId,
       r.data,
@@ -515,6 +537,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         ctaUrl: body.ctaUrl,
       },
       scope,
+      firstName,
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;
@@ -539,10 +562,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
     const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
 
-    const pLabel = PLATFORM_LABELS[selection.platform] ?? selection.platform;
-    const subject =
-      body.subject?.trim() ||
-      `Your AI search ranking is climbing — ${business} (#${selection.ranks.first.rank} → #${selection.ranks.current.rank} on ${pLabel})`;
+    const subject = body.subject?.trim() || "Your first AI ranking is in";
 
     const msg = {
       to: actualRecipients,
@@ -780,25 +800,26 @@ router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
       return res.status(409).json({ error: "No improved keyword available." });
 
     const facts = {
+      sender_org: SENDER_ORG,
+      contact_first_name:
+        (await firstNameOfClient(body.clientId)) ?? "the customer",
       business: r.data.business,
       keyword: selection.entry.keyword,
       platform: PLATFORM_LABELS[selection.platform] ?? selection.platform,
       before_rank: selection.ranks.first.rank,
       after_rank: selection.ranks.current.rank,
       spots_improved: selection.improved,
-      before_date: selection.ranks.first.date,
-      after_date: selection.ranks.current.date,
       other_improved_keywords: r.data.keywords.length - 1,
     };
 
-    const systemPrompt = `You write short, punchy, persuasive sales emails for local businesses about their AI-search (AEO) rankings on ChatGPT, Gemini, and Perplexity. Tone: confident, exciting, a little FOMO — the reader should feel they're winning and want more. Think "your customers are asking AI who to hire, and the AI just named YOU".
+    const systemPrompt = `You write warm, credible sales emails for ${SENDER_ORG}, a local SEO company, announcing a client's first AI-search (AEO) ranking result on ChatGPT, Gemini, and Perplexity. Voice: friendly, plain-spoken, low-hype — a trusted vendor sharing good news, not a pushy pitch. Match this proven template's flow.
 
 HARD RULES:
-- Use ONLY the numbers provided in the data. NEVER invent statistics, percentages, studies, or analyst quotes.
-- Plain text only. No markdown, no HTML, no subject line, no greeting ("Hi X"), no sign-off.
+- Use ONLY the values in the data. NEVER invent statistics, percentages, studies, or quotes.
+- Plain text only. No markdown, no HTML, no subject line.
 - Output EXACTLY two sections separated by a line containing only "---".
-  Section 1 (intro, 2-3 short paragraphs, max 110 words): hook about customers asking AI instead of Google, then tee up the result we found for this business. The email template shows the before/after proof right after this text.
-  Section 2 (offer, 1-2 short paragraphs, max 60 words): momentum pitch — this is one keyword, more are climbing, competitors want these spots. End with urgency toward the call-to-action button (do not write the button text).
+  Section 1 (intro, max 90 words): open with "Hi <contact_first_name>," then explain ${SENDER_ORG} added an AI Ranking Service that gets <business> named as the answer when people ask AI what they do. End with a line like "Here's your first keyword ranking:" — the before/after proof is shown right after this text.
+  Section 2 (closing, max 70 words): confirm this is a real, screenshot-verified result — <business> now shows up as the AI answer for the keyword. Then say you'll rank a few more of their keywords over the next couple weeks, and invite them to reply or book a time. Do NOT write the button text or a sign-off.
 - If the user gives an instruction, follow it.`;
 
     const userPrompt = `Real data for this client:
