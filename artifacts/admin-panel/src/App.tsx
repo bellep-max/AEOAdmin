@@ -11,6 +11,7 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
+import Businesses from "@/pages/businesses";
 import ClientDetail from "@/pages/client-detail";
 import BusinessDetail from "@/pages/business-detail";
 import CampaignDetail from "@/pages/campaign-detail";
@@ -124,6 +125,7 @@ function ProtectedRoutes() {
           <AdminTierGate component={Archived} />
         </Route>
         <Route path="/clients" component={Clients} />
+        <Route path="/businesses" component={Businesses} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
           path="/clients/:clientId/businesses/:businessId"

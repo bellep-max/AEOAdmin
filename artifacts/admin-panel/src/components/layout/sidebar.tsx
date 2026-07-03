@@ -52,6 +52,7 @@ import {
   Archive,
   Lock,
   MailCheck,
+  Building2,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -109,6 +110,13 @@ const navGroups: NavGroup[] = [
         name: "Clients",
         href: "/clients",
         icon: Users,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
+      {
+        name: "Businesses",
+        href: "/businesses",
+        icon: Building2,
         salesAllowed: true,
         accountManagerAllowed: true,
       },

@@ -280,20 +280,17 @@ export function SalesEmailDialog({
     },
     onSuccess: (data) => {
       const actual: string[] = data.recipientsActual ?? [];
-      setResult({
-        ok: true,
-        message: `Sent to ${actual.join(", ")}`,
-        safeModeActive: data.safeModeActive,
-      });
       toast({
         title: data.safeModeActive
-          ? "Email sent (safe-mode override)"
-          : "Email sent",
+          ? "✓ Email sent (safe-mode override)"
+          : "✓ Email sent",
         description:
           actual.length > 0
             ? `Delivered to ${actual.join(", ")}`
             : "SendGrid accepted the message.",
       });
+      // Success — close the modal; the toast stays visible outside it.
+      handleClose();
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "Send failed";
