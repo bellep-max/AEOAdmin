@@ -689,6 +689,62 @@ export async function ghlFindContactIdByEmail(
   return body.contact?.id ?? null;
 }
 
+/** Send an email THROUGH GHL so it lands in the contact's conversation and
+ *  replies thread back into GHL. GHL delivers via the location's configured
+ *  sending domain. Returns the GHL message/conversation ids. Conversations use
+ *  the 2021-04-15 API version (contacts use 2021-07-28). */
+export async function ghlSendEmail(
+  contactId: string,
+  opts: {
+    html: string;
+    subject: string;
+    emailFrom?: string;
+    emailTo?: string;
+  },
+): Promise<{ messageId?: string; conversationId?: string; raw: unknown }> {
+  const token = process.env.GHL_PIT_TOKEN;
+  if (!token) throw new Error("GHL_PIT_TOKEN not configured");
+  const body: Record<string, unknown> = {
+    type: "Email",
+    contactId,
+    subject: opts.subject,
+    html: opts.html,
+  };
+  if (opts.emailFrom) body.emailFrom = opts.emailFrom;
+  if (opts.emailTo) body.emailTo = opts.emailTo;
+  const resp = await fetch(
+    "https://services.leadconnectorhq.com/conversations/messages",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Version: "2021-04-15",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  const text = await resp.text();
+  if (!resp.ok)
+    throw new Error(
+      `GHL send email failed (${resp.status}): ${text.slice(0, 300)}`,
+    );
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    /* GHL returned non-JSON on success — keep raw */
+  }
+  return {
+    messageId: (parsed.messageId ?? parsed.emailMessageId) as
+      | string
+      | undefined,
+    conversationId: parsed.conversationId as string | undefined,
+    raw: parsed,
+  };
+}
+
 /** One-way record on the contact's timeline — never triggers a workflow. */
 export async function ghlCreateNote(
   contactId: string,

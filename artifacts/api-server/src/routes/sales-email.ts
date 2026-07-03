@@ -30,6 +30,7 @@ import {
   buildScreenshotUrlByClient,
   ghlFindContactIdByEmail,
   ghlCreateNote,
+  ghlSendEmail,
   s3Exists,
   PLATFORM_LABELS,
   type ImprovementData,
@@ -564,70 +565,100 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
 
     const subject = body.subject?.trim() || "Your first AI ranking is in";
 
-    const msg = {
-      to: actualRecipients,
-      from: { email: fromEmail, name: fromName },
-      subject: safeOverride
-        ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
-        : subject,
-      html,
-    };
-    let sgResp: Awaited<ReturnType<typeof sgMail.send>> | null = null;
-    let sendError: string | null = null;
-    try {
-      sgResp = await sgMail.send(msg);
-    } catch (e: unknown) {
-      sendError = e instanceof Error ? e.message : String(e);
-    }
-    const messageId = sgResp?.[0]?.headers?.["x-message-id"] as
-      | string
-      | undefined;
+    /* Delivery routing:
+       - GHL sending is disabled in safe mode (a test must never email a real
+         client's GHL contact) and when no PIT token is set.
+       - GHL_SEND_MODE=ghl_first (default when a token exists): deliver THROUGH
+         GHL so the email is in the contact's conversation and replies thread
+         back to GHL. SendGrid is the fallback (no GHL contact, or GHL errors).
+       - GHL_SEND_MODE=sendgrid_only: always SendGrid, GHL gets a one-way note. */
+    // Opt-in: default stays SendGrid+note (no behavior change on deploy). Set
+    // GHL_SEND_MODE=ghl_first in the prod secret to route delivery through GHL.
+    const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
+    const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
 
-    /* One-way GHL record: a note on the contact's timeline saying what went
-       out. Never triggers a workflow; never blocks or fails the send. Skipped
-       in safe mode (test sends must not touch real client contacts). */
+    // GHL contact — needed to send-via-GHL and/or to log the note.
+    let contactId: string | null = null;
+    if (ghlEnabled) {
+      try {
+        const [clientRow] = await db
+          .select({
+            accountEmail: clientsTable.accountEmail,
+            contactEmail: clientsTable.contactEmail,
+          })
+          .from(clientsTable)
+          .where(eq(clientsTable.id, body.clientId))
+          .limit(1);
+        const lookupEmail =
+          clientRow?.accountEmail || clientRow?.contactEmail || null;
+        contactId = lookupEmail
+          ? await ghlFindContactIdByEmail(lookupEmail)
+          : null;
+      } catch (e) {
+        req.log.warn({ err: e }, "GHL contact lookup failed");
+      }
+    }
+
+    let deliveredVia: "ghl" | "sendgrid" | null = null;
+    let messageId: string | undefined;
+    let sendError: string | null = null;
     let ghlStatus: string | null = null;
-    if (!sendError) {
-      if (safeOverride) ghlStatus = "skipped (safe mode)";
-      else if (
-        process.env.GHL_POST_AFTER_SEND === "0" ||
-        !process.env.GHL_PIT_TOKEN
-      )
-        ghlStatus = "disabled";
-      else {
-        try {
-          const [clientRow] = await db
-            .select({
-              accountEmail: clientsTable.accountEmail,
-              contactEmail: clientsTable.contactEmail,
-            })
-            .from(clientsTable)
-            .where(eq(clientsTable.id, body.clientId))
-            .limit(1);
-          const lookupEmail =
-            clientRow?.accountEmail || clientRow?.contactEmail || null;
-          const contactId = lookupEmail
-            ? await ghlFindContactIdByEmail(lookupEmail)
-            : null;
-          if (!contactId) ghlStatus = "no_contact";
-          else {
+    let storedSubject = subject;
+
+    // 1) Preferred: deliver through GHL (replies thread back into GHL).
+    if (ghlEnabled && sendMode === "ghl_first" && contactId) {
+      try {
+        const r = await ghlSendEmail(contactId, { html, subject });
+        deliveredVia = "ghl";
+        messageId = r.messageId;
+        ghlStatus = "sent_via_ghl";
+      } catch (e) {
+        ghlStatus = `ghl_send_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+        req.log.warn({ err: e }, "GHL send failed — falling back to SendGrid");
+      }
+    }
+
+    // 2) Fallback / default: SendGrid, then a one-way GHL note.
+    if (deliveredVia == null) {
+      const msg = {
+        to: actualRecipients,
+        from: { email: fromEmail, name: fromName },
+        subject: safeOverride
+          ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
+          : subject,
+        html,
+      };
+      storedSubject = msg.subject;
+      try {
+        const sgResp = await sgMail.send(msg);
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as string | undefined;
+        deliveredVia = "sendgrid";
+      } catch (e: unknown) {
+        sendError = e instanceof Error ? e.message : String(e);
+      }
+      if (!sendError) {
+        if (!ghlEnabled)
+          ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
+        else if (!contactId) ghlStatus = ghlStatus ?? "no_contact";
+        else {
+          try {
             const pLabelNote =
               PLATFORM_LABELS[selection.platform] ?? selection.platform;
             await ghlCreateNote(
               contactId,
               [
-                "AEO sales email sent (admin panel)",
+                "AEO sales email sent (admin panel, via SendGrid)",
                 `To: ${intendedRecipients.join(", ")}`,
                 `Subject: ${subject}`,
                 `Business: ${business}`,
                 `Proof: "${selection.entry.keyword}" on ${pLabelNote} — #${selection.ranks.first.rank} → #${selection.ranks.current.rank}`,
               ].join("\n"),
             );
-            ghlStatus = "posted";
+            ghlStatus = ghlStatus ? `${ghlStatus} + noted` : "noted";
+          } catch (e) {
+            ghlStatus = `note_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+            req.log.warn({ err: e }, "GHL note failed");
           }
-        } catch (e) {
-          ghlStatus = `failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 180)}`;
-          req.log.warn({ err: e }, "GHL post-send note failed");
         }
       }
     }
@@ -641,9 +672,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         recipients: actualRecipients,
         intendedRecipients: safeOverride ? intendedRecipients : null,
         fromEmail,
-        subject: msg.subject,
+        subject: storedSubject,
         status: sendError ? "failed" : "sent",
-        sendgridMessageId: messageId ?? null,
+        sendgridMessageId: deliveredVia === "sendgrid" ? (messageId ?? null) : null,
         error: sendError,
         kind: "sales",
         html,
@@ -656,6 +687,8 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           beforeDate: selection.ranks.first.date,
           afterDate: selection.ranks.current.date,
           business,
+          deliveredVia,
+          messageId: messageId ?? null,
         },
         ghlStatus,
       })
@@ -664,7 +697,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     if (sendError) {
       req.log.error(
         { sendError, sendId: logged.id },
-        "SendGrid sales email failed",
+        "Sales email delivery failed",
       );
       return res.status(502).json({
         error: "Email delivery failed",
@@ -676,6 +709,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       ok: true,
       sendId: logged.id,
       messageId: messageId ?? null,
+      deliveredVia,
       recipientsActual: actualRecipients,
       recipientsIntended: intendedRecipients,
       safeModeActive: Boolean(safeOverride),
