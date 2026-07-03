@@ -205,10 +205,10 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
 <body style="margin:0;padding:0;background:#e7edf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-  <div style="max-width:720px;margin:0 auto;padding:28px 12px">
+  <div style="max-width:720px;margin:0 auto;padding:0 0 20px 0">
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
-    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};border-radius:18px 18px 0 0;padding:22px 28px 58px 28px;text-align:center">
+    <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};padding:30px 28px 58px 28px;text-align:center">
       ${kicker(`${SENDER_ORG} · AI Ranking`)}
       <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">Your first AI ranking is in.</h1>
       <p style="margin:0;color:#94a3b8;font-size:13px">${a.business}</p>
@@ -503,7 +503,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
 
     configureSendGrid();
     const fromEmail = process.env.SENDGRID_FROM_EMAIL;
-    const fromName = process.env.SENDGRID_FROM_NAME ?? "AEO Platform Reports";
+    // Sales emails carry their own SEO Local sender name (the ranking-report
+    // emails keep SENDGRID_FROM_NAME). Override via SALES_FROM_NAME.
+    const fromName =
+      process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`;
     if (!fromEmail) {
       return res.status(503).json({
         error: "Sender email not configured",

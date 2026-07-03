@@ -23,7 +23,7 @@ const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     personalizations: [{ to: [{ email: TO }] }],
     from: {
       email: secret.SENDGRID_FROM_EMAIL,
-      name: secret.SENDGRID_FROM_NAME || "SEO Local",
+      name: process.env.SAMPLE_FROM_NAME || "Chuck — SEO Local",
     },
     subject: "Your first AI ranking is in (sample)",
     content: [{ type: "text/html", value: html }],
