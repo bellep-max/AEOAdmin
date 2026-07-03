@@ -20,6 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Building2 } from "lucide-react";
+import {
+  SearchableSelect,
+  type ComboOption,
+} from "@/components/SearchableSelect";
 import { rawFetch } from "@/lib/period-comparison";
 
 interface BusinessRow {
@@ -43,7 +47,8 @@ interface ClientRow {
 
 export default function Businesses() {
   const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string | null>(null);
+  const [businessFilter, setBusinessFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data: businesses, isLoading } = useQuery<BusinessRow[]>({
@@ -70,19 +75,38 @@ export default function Businesses() {
     return m;
   }, [clients]);
 
-  const clientOptions = useMemo(
+  const clientOptions = useMemo<ComboOption[]>(
     () =>
-      [...(clients ?? [])].sort((a, b) =>
-        (a.businessName ?? "").localeCompare(b.businessName ?? ""),
-      ),
+      [...(clients ?? [])]
+        .sort((a, b) =>
+          (a.businessName ?? "").localeCompare(b.businessName ?? ""),
+        )
+        .map((c) => ({ value: String(c.id), label: c.businessName })),
     [clients],
+  );
+
+  const businessOptions = useMemo<ComboOption[]>(
+    () =>
+      [...(businesses ?? [])]
+        .filter(
+          (b) => clientFilter == null || String(b.clientId) === clientFilter,
+        )
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((b) => ({
+          value: String(b.id),
+          label: b.name,
+          sublabel: clientName.get(b.clientId),
+        })),
+    [businesses, clientFilter, clientName],
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (businesses ?? [])
       .filter((b) => {
-        if (clientFilter !== "all" && String(b.clientId) !== clientFilter)
+        if (businessFilter != null && String(b.id) !== businessFilter)
+          return false;
+        if (clientFilter != null && String(b.clientId) !== clientFilter)
           return false;
         if (statusFilter !== "all" && b.status !== statusFilter) return false;
         if (!q) return true;
@@ -99,7 +123,14 @@ export default function Businesses() {
         return hay.includes(q);
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [businesses, search, clientFilter, statusFilter, clientName]);
+  }, [
+    businesses,
+    search,
+    businessFilter,
+    clientFilter,
+    statusFilter,
+    clientName,
+  ]);
 
   const location = (b: BusinessRow) =>
     [b.city, b.state].filter(Boolean).join(", ") || "—";
@@ -132,19 +163,25 @@ export default function Businesses() {
             className="pl-9"
           />
         </div>
-        <Select value={clientFilter} onValueChange={setClientFilter}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="All clients" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All clients</SelectItem>
-            {clientOptions.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>
-                {c.businessName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={businessFilter}
+          onChange={setBusinessFilter}
+          options={businessOptions}
+          placeholder="All businesses"
+          allLabel="All businesses"
+          width="w-64"
+        />
+        <SearchableSelect
+          value={clientFilter}
+          onChange={(v) => {
+            setClientFilter(v);
+            setBusinessFilter(null);
+          }}
+          options={clientOptions}
+          placeholder="All clients"
+          allLabel="All clients"
+          width="w-56"
+        />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="All statuses" />
