@@ -121,8 +121,10 @@ function Field({
 
 export default function BusinessDetail() {
   const [, params] = useRoute("/clients/:clientId/businesses/:businessId");
-  const clientId = Number(params?.clientId);
-  const businessId = Number(params?.businessId);
+  // Params may carry a readable "-slug" suffix (e.g. "11-carrot-software");
+  // parseInt takes the leading id and ignores the rest.
+  const clientId = parseInt(String(params?.clientId ?? ""), 10);
+  const businessId = parseInt(String(params?.businessId ?? ""), 10);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { isAdmin, isEditor } = useAuth();

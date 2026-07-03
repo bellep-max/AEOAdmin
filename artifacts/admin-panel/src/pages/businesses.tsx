@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
   Table,
@@ -45,7 +45,15 @@ interface ClientRow {
   businessName: string;
 }
 
+const slugify = (s: string) =>
+  (s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
 export default function Businesses() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [businessFilter, setBusinessFilter] = useState<string | null>(null);
@@ -132,8 +140,14 @@ export default function Businesses() {
     clientName,
   ]);
 
-  const location = (b: BusinessRow) =>
+  const locationOf = (b: BusinessRow) =>
     [b.city, b.state].filter(Boolean).join(", ") || "—";
+
+  const businessHref = (b: BusinessRow) => {
+    const cSlug = slugify(clientName.get(b.clientId) ?? "");
+    const bSlug = slugify(b.name);
+    return `/clients/${b.clientId}${cSlug ? `-${cSlug}` : ""}/businesses/${b.id}${bSlug ? `-${bSlug}` : ""}`;
+  };
 
   return (
     <div className="space-y-5">
@@ -231,11 +245,18 @@ export default function Businesses() {
                 </TableRow>
               )}
               {filtered.map((b) => (
-                <TableRow key={b.id} className="hover:bg-muted/30">
-                  <TableCell className="font-medium">{b.name}</TableCell>
+                <TableRow
+                  key={b.id}
+                  onClick={() => navigate(businessHref(b))}
+                  className="hover:bg-muted/40 cursor-pointer"
+                >
+                  <TableCell className="font-medium text-primary">
+                    {b.name}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     <Link
                       href={`/clients/${b.clientId}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="hover:text-primary hover:underline"
                     >
                       {clientName.get(b.clientId) ?? `Client ${b.clientId}`}
@@ -245,7 +266,7 @@ export default function Businesses() {
                     {b.category || "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {location(b)}
+                    {locationOf(b)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {b.keywordCount}
