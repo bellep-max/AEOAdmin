@@ -172,8 +172,20 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
        <td style="padding:0 10px;font-size:11px;font-weight:800;letter-spacing:3px;color:${color};text-transform:uppercase;white-space:nowrap">${t}</td>
        <td style="width:26px;border-top:1px solid ${color};opacity:0.6"></td>
      </tr></table>`;
+  // Bold-highlight the keyword (and business) wherever they appear in the copy,
+  // custom or default. Longest term first so a business containing the keyword
+  // doesn't get double-wrapped.
+  const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const kwTerm = (a.keyword || "").trim();
+  const highlight = (text: string) =>
+    kwTerm.length >= 2
+      ? text.replace(
+          new RegExp(escRe(kwTerm), "gi"),
+          (m) => `<strong style="color:#b45309;font-weight:700">${m}</strong>`,
+        )
+      : text;
   const paragraphs = (text: string, color = "#334155") =>
-    text
+    highlight(text)
       .trim()
       .split(/\n{2,}/)
       .map(
@@ -183,7 +195,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
       .join("");
 
   const intro = paragraphs(a.introMessage?.trim() || defaultIntro(a));
-  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a), "#cbd5e1");
+  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a));
   const ctaLabel = a.ctaLabel?.trim() || DEFAULT_CTA_LABEL;
   const ctaUrl = a.ctaUrl?.trim() || DEFAULT_CTA_URL;
 
@@ -449,6 +461,20 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       });
 
     const sel = prepared.prep.selection;
+    // The resolved default intro/offer text — the FE seeds the editable boxes
+    // with these so the operator can see and extend the template.
+    const dArgs: SalesEmailArgs = {
+      business: prepared.prep.business,
+      keyword: sel.entry.keyword ?? "",
+      platform: sel.platform,
+      beforeRank: sel.ranks.first.rank,
+      afterRank: sel.ranks.current.rank,
+      beforeDate: sel.ranks.first.date,
+      afterDate: sel.ranks.current.date,
+      beforeImageUrl: "",
+      afterImageUrl: "",
+      firstName,
+    };
     return res.json({
       hasImprovement: true,
       html: prepared.prep.html,
@@ -462,6 +488,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         afterRank: sel.ranks.current.rank,
         improved: sel.improved,
       },
+      defaultIntro: defaultIntro(dArgs),
+      defaultOffer: defaultOffer(dArgs),
       keywords: keywordOptions(r.data),
       strictMode,
     });

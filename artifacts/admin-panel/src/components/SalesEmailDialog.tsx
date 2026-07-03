@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -70,6 +70,8 @@ interface SalesPreviewResponse {
     afterRank: number;
     improved: number;
   } | null;
+  defaultIntro?: string;
+  defaultOffer?: string;
   keywords: KeywordOption[];
   strictMode: boolean;
 }
@@ -114,6 +116,7 @@ export function SalesEmailDialog({
     null,
   );
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  const seededRef = useRef(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [result, setResult] = useState<{
     ok: boolean;
@@ -156,6 +159,9 @@ export function SalesEmailDialog({
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setIntroMessage("");
+    setOfferText("");
+    seededRef.current = false;
   }, [clientId, businessId, aeoPlanId]);
 
   const previewQueryParams = useMemo(() => {
@@ -195,6 +201,18 @@ export function SalesEmailDialog({
         return res.json();
       },
     });
+
+  /* Seed the editable Intro/Offer boxes with the resolved default template so
+     the operator sees the actual copy and can extend it. Seed once per scope;
+     don't clobber edits the user already made. */
+  useEffect(() => {
+    if (!preview?.hasImprovement || seededRef.current) return;
+    if (introMessage === "" && preview.defaultIntro)
+      setIntroMessage(preview.defaultIntro);
+    if (offerText === "" && preview.defaultOffer)
+      setOfferText(preview.defaultOffer);
+    seededRef.current = true;
+  }, [preview, introMessage, offerText]);
 
   const activeKeyword = useMemo<KeywordOption | null>(() => {
     if (!preview?.keywords?.length) return null;
@@ -308,6 +326,7 @@ export function SalesEmailDialog({
     setSubject("");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    seededRef.current = false;
     onClose();
   }
 
@@ -575,26 +594,30 @@ export function SalesEmailDialog({
 
             {/* Intro message */}
             <div className="space-y-2">
-              <Label htmlFor="sales-intro">Intro copy (optional)</Label>
+              <Label htmlFor="sales-intro">
+                Intro copy — editable (shown above the proof)
+              </Label>
               <Textarea
                 id="sales-intro"
                 value={introMessage}
                 onChange={(e) => setIntroMessage(e.target.value)}
-                placeholder="Shown above the before/after proof. Leave empty for the default pitch, or generate with AI above…"
-                rows={6}
+                placeholder="The default intro loads here — edit it or add more text…"
+                rows={8}
                 className="font-mono text-sm"
               />
             </div>
 
             {/* Offer copy */}
             <div className="space-y-2">
-              <Label htmlFor="sales-offer">Offer copy (optional)</Label>
+              <Label htmlFor="sales-offer">
+                Offer copy — editable (shown above the button)
+              </Label>
               <Textarea
                 id="sales-offer"
                 value={offerText}
                 onChange={(e) => setOfferText(e.target.value)}
-                placeholder="Shown in the highlighted offer box above the button. Leave empty for the default momentum pitch…"
-                rows={4}
+                placeholder="The default closing loads here — edit it or add more text…"
+                rows={6}
                 className="font-mono text-sm"
               />
             </div>
