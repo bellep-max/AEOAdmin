@@ -252,7 +252,11 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
 
 export async function resolveImprovement(
   q: Record<string, string>,
-  opts: { strict?: boolean; positiveTop3?: boolean } = {},
+  opts: {
+    strict?: boolean;
+    positiveTop3?: boolean;
+    includeUnimproved?: boolean;
+  } = {},
 ): Promise<
   | { ok: true; data: ImprovementData }
   | { ok: false; status: number; reason: string }
@@ -412,8 +416,10 @@ export async function resolveImprovement(
     }
     if (Object.keys(platforms).length === 0) continue;
     const improved = maxImproved === -Infinity ? 0 : maxImproved;
-    // only surface keywords that actually improved on at least one platform
-    if (improved <= 0) continue;
+    // only surface keywords that actually improved on at least one platform —
+    // unless the caller opts into manual selection (the operator reviews the
+    // preview and may pick any keyword that has a real screenshot).
+    if (!opts.includeUnimproved && improved <= 0) continue;
     const meta = kwMeta.get(keywordId);
     keywords.push({
       keywordId,
@@ -427,7 +433,9 @@ export async function resolveImprovement(
     return {
       ok: false,
       status: 404,
-      reason: "No improved keywords with a visible rank for this client yet.",
+      reason: opts.includeUnimproved
+        ? "No keywords with a usable screenshot for this client yet."
+        : "No improved keywords with a visible rank for this client yet.",
     };
 
   // strongest improvement first

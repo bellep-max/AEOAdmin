@@ -16,15 +16,12 @@
  */
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
-import {
-  clientAeoPlansTable,
-  clientsTable,
-  emailSendsTable,
-} from "@workspace/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { clientsTable, emailSendsTable } from "@workspace/db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
-import { requireRoles, getSalesPlanFilter } from "../middlewares/role-auth";
+import { requireRoles } from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 import {
   resolveImprovement,
   buildScreenshotUrlByClient,
@@ -39,7 +36,12 @@ import {
 } from "./sales";
 
 const router = Router();
-const requireSalesEmail = requireRoles("sales", "admin", "owner");
+const requireSalesEmail = requireRoles(
+  "sales",
+  "chuckslocal",
+  "admin",
+  "owner",
+);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"];
 
@@ -59,25 +61,16 @@ function platformColor(p: string): string {
   return "#64748b";
 }
 
-/** Sales sessions are plan-scoped (Free Trial Plans) — a sales user may only
- *  email clients inside that slice. Other roles pass unconditionally. */
+/** Scoped roles (sales → free-trial, account-manager → non-free-trial,
+ *  chuckslocal → the two Signal local plans) may only email clients inside
+ *  their slice. Unscoped roles (admin / owner) pass unconditionally. */
 async function isClientInSalesScope(
   req: Request,
   clientId: number,
 ): Promise<boolean> {
-  const planType = getSalesPlanFilter(req);
-  if (!planType) return true;
-  const rows = await db
-    .select({ id: clientAeoPlansTable.id })
-    .from(clientAeoPlansTable)
-    .where(
-      and(
-        eq(clientAeoPlansTable.clientId, clientId),
-        eq(clientAeoPlansTable.planType, planType),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
+  const eligible = await getScopedClientIds(req);
+  if (eligible === null) return true;
+  return eligible.includes(clientId);
 }
 
 interface Selection {
@@ -430,7 +423,10 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     /* No-improvement is a valid preview state, not an error — the FE shows an
        empty state and disables Send. */
@@ -553,7 +549,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const firstName = await firstNameOfClient(body.clientId);
@@ -799,7 +798,9 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
       ? Number.parseInt(String(req.query.clientId), 10)
       : null;
     const kind = req.query.kind ? String(req.query.kind) : null;
-    const planType = getSalesPlanFilter(req);
+    const scopedIds = await getScopedClientIds(req);
+    if (scopedIds !== null && scopedIds.length === 0)
+      return res.json({ sends: [] });
     const rows = await db
       .select({
         id: emailSendsTable.id,
@@ -823,10 +824,8 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
             ? eq(emailSendsTable.clientId, clientId)
             : undefined,
           kind ? eq(emailSendsTable.kind, kind) : undefined,
-          planType
-            ? sql`EXISTS (SELECT 1 FROM client_aeo_plans cap
-                           WHERE cap.client_id = ${emailSendsTable.clientId}
-                             AND cap.plan_type = ${planType})`
+          scopedIds !== null
+            ? inArray(emailSendsTable.clientId, scopedIds)
             : undefined,
         ),
       )
@@ -886,7 +885,10 @@ router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const selection = pickSelection(
