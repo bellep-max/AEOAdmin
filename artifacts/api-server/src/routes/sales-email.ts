@@ -394,6 +394,10 @@ function keywordOptions(data: ImprovementData) {
       beforeDate: k.platforms[p].first.date,
       afterDate: k.platforms[p].current.date,
       improved: k.platforms[p].first.rank - k.platforms[p].current.rank,
+      // OCR rank-visibility per screenshot: true = rank clearly in image,
+      // false = not detected (bad screenshot), null = not checked.
+      beforeRankVisible: k.platforms[p].first.rankVisible,
+      afterRankVisible: k.platforms[p].current.rankVisible,
     })),
   }));
 }

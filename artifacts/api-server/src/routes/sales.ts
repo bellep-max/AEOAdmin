@@ -176,6 +176,7 @@ interface RankRow {
   date: string | null;
   rankingPosition: number;
   screenshotUrl: string;
+  rankVisible: boolean | null;
 }
 
 async function presign(s3Uri: string): Promise<string | null> {
@@ -190,6 +191,7 @@ export interface RankPoint {
   rank: number;
   date: string | null;
   s3Uri: string;
+  rankVisible: boolean | null;
 }
 export interface PlatformRanks {
   first: RankPoint;
@@ -241,11 +243,13 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
       rank: first.rankingPosition,
       date: first.date,
       s3Uri: first.screenshotUrl,
+      rankVisible: first.rankVisible,
     },
     current: {
       rank: current.rankingPosition,
       date: current.date,
       s3Uri: current.screenshotUrl,
+      rankVisible: current.rankVisible,
     },
   };
 }
@@ -349,6 +353,7 @@ export async function resolveImprovement(
       date: rankingReportsTable.date,
       rankingPosition: rankingReportsTable.rankingPosition,
       screenshotUrl: rankingReportsTable.screenshotUrl,
+      rankVisible: rankingReportsTable.screenshotRankVisible,
     })
     .from(rankingReportsTable)
     .where(
