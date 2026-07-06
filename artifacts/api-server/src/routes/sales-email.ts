@@ -129,6 +129,11 @@ const DEFAULT_CTA_URL =
 const DEFAULT_CTA_LABEL = process.env.SALES_CTA_LABEL ?? "Pick a Time";
 const SENDER_NAME = process.env.SALES_SENDER_NAME ?? "Chuck";
 const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
+// From address for GHL-delivered sales emails. Unset → GHL uses the sub-account's
+// default LC Email sender (e.g. mail@seolocal.us). Set GHL_EMAIL_FROM (address, or
+// "Name <address>") to control the From without a redeploy — the address must be an
+// authorized sender on the GHL sub-account's verified sending domain.
+const GHL_EMAIL_FROM = process.env.GHL_EMAIL_FROM?.trim() || undefined;
 
 interface SalesEmailArgs {
   business: string;
@@ -604,8 +609,11 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
     const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
 
-    // GHL contact — needed to send-via-GHL and/or to log the note.
+    // GHL contact — needed to send-via-GHL and/or to log the note. The contact's
+    // own email is GHL's default "To"; any OTHER listed recipients are CC'd on the
+    // GHL send (a GHL email is threaded to one contact, so extras ride as CC).
     let contactId: string | null = null;
+    let contactPrimaryEmail: string | null = null;
     if (ghlEnabled) {
       try {
         const [clientRow] = await db
@@ -616,10 +624,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           .from(clientsTable)
           .where(eq(clientsTable.id, body.clientId))
           .limit(1);
-        const lookupEmail =
+        contactPrimaryEmail =
           clientRow?.accountEmail || clientRow?.contactEmail || null;
-        contactId = lookupEmail
-          ? await ghlFindContactIdByEmail(lookupEmail)
+        contactId = contactPrimaryEmail
+          ? await ghlFindContactIdByEmail(contactPrimaryEmail)
           : null;
       } catch (e) {
         req.log.warn({ err: e }, "GHL contact lookup failed");
@@ -635,7 +643,16 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     // 1) Preferred: deliver through GHL (replies thread back into GHL).
     if (ghlEnabled && sendMode === "ghl_first" && contactId) {
       try {
-        const r = await ghlSendEmail(contactId, { html, subject });
+        const primary = (contactPrimaryEmail ?? "").toLowerCase();
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primary,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
         deliveredVia = "ghl";
         messageId = r.messageId;
         ghlStatus = "sent_via_ghl";

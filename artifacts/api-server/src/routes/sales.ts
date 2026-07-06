@@ -700,6 +700,8 @@ export async function ghlSendEmail(
     subject: string;
     emailFrom?: string;
     emailTo?: string;
+    emailCc?: string[];
+    emailBcc?: string[];
   },
 ): Promise<{ messageId?: string; conversationId?: string; raw: unknown }> {
   const token = process.env.GHL_PIT_TOKEN;
@@ -712,6 +714,8 @@ export async function ghlSendEmail(
   };
   if (opts.emailFrom) body.emailFrom = opts.emailFrom;
   if (opts.emailTo) body.emailTo = opts.emailTo;
+  if (opts.emailCc?.length) body.emailCc = opts.emailCc;
+  if (opts.emailBcc?.length) body.emailBcc = opts.emailBcc;
   const resp = await fetch(
     "https://services.leadconnectorhq.com/conversations/messages",
     {
