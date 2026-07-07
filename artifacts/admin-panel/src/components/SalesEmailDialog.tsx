@@ -22,7 +22,16 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { rawFetch } from "@/lib/period-comparison";
-import { X, Send, Eye, EyeOff, TrendingUp, Sparkles } from "lucide-react";
+import {
+  X,
+  Send,
+  Eye,
+  EyeOff,
+  TrendingUp,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react";
 
 interface EmailConfigResponse {
   ready: boolean;
@@ -47,6 +56,10 @@ interface PlatformOption {
   beforeDate: string | null;
   afterDate: string | null;
   improved: number;
+  // OCR rank-visibility per screenshot: true = clear, false = rank not detected
+  // (bad screenshot), null = unchecked.
+  beforeRankVisible: boolean | null;
+  afterRankVisible: boolean | null;
 }
 
 interface KeywordOption {
@@ -93,6 +106,35 @@ function platformLabel(p: string): string {
   if (p === "gemini") return "Gemini";
   if (p === "perplexity") return "Perplexity";
   return p;
+}
+
+type ScreenshotQuality = "bad" | "good" | "unverified";
+
+/** Worst-case screenshot quality across a platform's before + after images.
+ *  bad = OCR could not find the rank in an image (a "not good" screenshot to
+ *  review); good = both OCR-verified; unverified = at least one not checked. */
+function platformQuality(p: PlatformOption): ScreenshotQuality {
+  if (p.beforeRankVisible === false || p.afterRankVisible === false)
+    return "bad";
+  if (p.beforeRankVisible === true && p.afterRankVisible === true)
+    return "good";
+  return "unverified";
+}
+
+/** Worst quality across all of a keyword's platform options. */
+function keywordQuality(k: KeywordOption): ScreenshotQuality {
+  const qs = k.platforms.map(platformQuality);
+  if (qs.includes("bad")) return "bad";
+  if (qs.includes("unverified")) return "unverified";
+  return "good";
+}
+
+function QualityMark({ quality }: { quality: ScreenshotQuality }) {
+  if (quality === "bad")
+    return <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />;
+  if (quality === "good")
+    return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
+  return null;
 }
 
 export function SalesEmailDialog({
@@ -223,6 +265,20 @@ export function SalesEmailDialog({
       ) ?? preview.keywords[0]
     );
   }, [preview, selectedKeywordId]);
+
+  // The platform option actually being sent (explicit pick, else the server's
+  // default) — drives the persistent screenshot-quality note under the picker.
+  const activePlatformOption = useMemo<PlatformOption | null>(() => {
+    if (!activeKeyword) return null;
+    const target = selectedPlatform ?? preview?.selected?.platform ?? null;
+    return (
+      (target
+        ? activeKeyword.platforms.find((p) => p.platform === target)
+        : null) ??
+      activeKeyword.platforms[0] ??
+      null
+    );
+  }, [activeKeyword, selectedPlatform, preview]);
 
   const aiSuggest = useMutation({
     mutationFn: async () => {
@@ -450,7 +506,11 @@ export function SalesEmailDialog({
                   </SelectItem>
                   {preview?.keywords.map((k) => (
                     <SelectItem key={k.keywordId} value={String(k.keywordId)}>
-                      {k.keyword ?? `Keyword ${k.keywordId}`} (▲{k.maxImproved})
+                      <span className="inline-flex items-center gap-1.5">
+                        <QualityMark quality={keywordQuality(k)} />
+                        {k.keyword ?? `Keyword ${k.keywordId}`} (▲
+                        {k.maxImproved})
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -476,8 +536,11 @@ export function SalesEmailDialog({
                   </SelectItem>
                   {activeKeyword?.platforms.map((p) => (
                     <SelectItem key={p.platform} value={p.platform}>
-                      {platformLabel(p.platform)} · #{p.beforeRank} → #
-                      {p.afterRank}
+                      <span className="inline-flex items-center gap-1.5">
+                        <QualityMark quality={platformQuality(p)} />
+                        {platformLabel(p.platform)} · #{p.beforeRank} → #
+                        {p.afterRank}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -486,6 +549,24 @@ export function SalesEmailDialog({
                 The email shows one before/after pair. Defaults pick the
                 strongest verified improvement.
               </p>
+              {activePlatformOption &&
+                platformQuality(activePlatformOption) === "bad" && (
+                  <div className="flex items-start gap-1.5 p-2 rounded-md text-xs bg-red-50 border border-red-200 text-red-800">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      Heads up — the rank isn’t clearly visible in one of these
+                      screenshots (failed OCR check). Open the preview and
+                      confirm the ranking reads well before sending.
+                    </span>
+                  </div>
+                )}
+              {activePlatformOption &&
+                platformQuality(activePlatformOption) === "unverified" && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Not OCR-verified yet — worth a quick look at the preview to
+                    confirm the rank reads clearly.
+                  </p>
+                )}
             </div>
 
             {/* Recipients */}

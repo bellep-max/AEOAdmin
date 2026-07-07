@@ -16,15 +16,12 @@
  */
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
-import {
-  clientAeoPlansTable,
-  clientsTable,
-  emailSendsTable,
-} from "@workspace/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { clientsTable, emailSendsTable } from "@workspace/db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
-import { requireRoles, getSalesPlanFilter } from "../middlewares/role-auth";
+import { requireRoles } from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 import {
   resolveImprovement,
   buildScreenshotUrlByClient,
@@ -39,7 +36,12 @@ import {
 } from "./sales";
 
 const router = Router();
-const requireSalesEmail = requireRoles("sales", "admin", "owner");
+const requireSalesEmail = requireRoles(
+  "sales",
+  "chuckslocal",
+  "admin",
+  "owner",
+);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"];
 
@@ -59,25 +61,16 @@ function platformColor(p: string): string {
   return "#64748b";
 }
 
-/** Sales sessions are plan-scoped (Free Trial Plans) — a sales user may only
- *  email clients inside that slice. Other roles pass unconditionally. */
+/** Scoped roles (sales → free-trial, account-manager → non-free-trial,
+ *  chuckslocal → the two Signal local plans) may only email clients inside
+ *  their slice. Unscoped roles (admin / owner) pass unconditionally. */
 async function isClientInSalesScope(
   req: Request,
   clientId: number,
 ): Promise<boolean> {
-  const planType = getSalesPlanFilter(req);
-  if (!planType) return true;
-  const rows = await db
-    .select({ id: clientAeoPlansTable.id })
-    .from(clientAeoPlansTable)
-    .where(
-      and(
-        eq(clientAeoPlansTable.clientId, clientId),
-        eq(clientAeoPlansTable.planType, planType),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
+  const eligible = await getScopedClientIds(req);
+  if (eligible === null) return true;
+  return eligible.includes(clientId);
 }
 
 interface Selection {
@@ -129,6 +122,11 @@ const DEFAULT_CTA_URL =
 const DEFAULT_CTA_LABEL = process.env.SALES_CTA_LABEL ?? "Pick a Time";
 const SENDER_NAME = process.env.SALES_SENDER_NAME ?? "Chuck";
 const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
+// From address for GHL-delivered sales emails. Unset → GHL uses the sub-account's
+// default LC Email sender (e.g. mail@seolocal.us). Set GHL_EMAIL_FROM (address, or
+// "Name <address>") to control the From without a redeploy — the address must be an
+// authorized sender on the GHL sub-account's verified sending domain.
+const GHL_EMAIL_FROM = process.env.GHL_EMAIL_FROM?.trim() || undefined;
 
 interface SalesEmailArgs {
   business: string;
@@ -396,6 +394,10 @@ function keywordOptions(data: ImprovementData) {
       beforeDate: k.platforms[p].first.date,
       afterDate: k.platforms[p].current.date,
       improved: k.platforms[p].first.rank - k.platforms[p].current.rank,
+      // OCR rank-visibility per screenshot: true = rank clearly in image,
+      // false = not detected (bad screenshot), null = not checked.
+      beforeRankVisible: k.platforms[p].first.rankVisible,
+      afterRankVisible: k.platforms[p].current.rankVisible,
     })),
   }));
 }
@@ -425,7 +427,10 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     /* No-improvement is a valid preview state, not an error — the FE shows an
        empty state and disables Send. */
@@ -548,7 +553,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const firstName = await firstNameOfClient(body.clientId);
@@ -604,8 +612,11 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
     const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
 
-    // GHL contact — needed to send-via-GHL and/or to log the note.
+    // GHL contact — needed to send-via-GHL and/or to log the note. The contact's
+    // own email is GHL's default "To"; any OTHER listed recipients are CC'd on the
+    // GHL send (a GHL email is threaded to one contact, so extras ride as CC).
     let contactId: string | null = null;
+    let contactPrimaryEmail: string | null = null;
     if (ghlEnabled) {
       try {
         const [clientRow] = await db
@@ -616,10 +627,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           .from(clientsTable)
           .where(eq(clientsTable.id, body.clientId))
           .limit(1);
-        const lookupEmail =
+        contactPrimaryEmail =
           clientRow?.accountEmail || clientRow?.contactEmail || null;
-        contactId = lookupEmail
-          ? await ghlFindContactIdByEmail(lookupEmail)
+        contactId = contactPrimaryEmail
+          ? await ghlFindContactIdByEmail(contactPrimaryEmail)
           : null;
       } catch (e) {
         req.log.warn({ err: e }, "GHL contact lookup failed");
@@ -635,7 +646,16 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     // 1) Preferred: deliver through GHL (replies thread back into GHL).
     if (ghlEnabled && sendMode === "ghl_first" && contactId) {
       try {
-        const r = await ghlSendEmail(contactId, { html, subject });
+        const primary = (contactPrimaryEmail ?? "").toLowerCase();
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primary,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
         deliveredVia = "ghl";
         messageId = r.messageId;
         ghlStatus = "sent_via_ghl";
@@ -682,14 +702,22 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           try {
             const pLabelNote =
               PLATFORM_LABELS[selection.platform] ?? selection.platform;
+            const sentAtEt = new Date().toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              dateStyle: "medium",
+              timeStyle: "short",
+            });
             await ghlCreateNote(
               contactId,
               [
-                "AEO sales email sent (admin panel, via SendGrid)",
+                "📧 AEO Sales Email — SENT",
+                `When: ${sentAtEt} ET`,
                 `To: ${intendedRecipients.join(", ")}`,
+                `From: ${fromName} <${fromEmail}>`,
                 `Subject: ${subject}`,
                 `Business: ${business}`,
                 `Proof: "${selection.entry.keyword}" on ${pLabelNote} — #${selection.ranks.first.rank} → #${selection.ranks.current.rank}`,
+                "Sent from the AEO admin panel via SendGrid.",
               ].join("\n"),
             );
             ghlStatus = ghlStatus ? `${ghlStatus} + noted` : "noted";
@@ -774,7 +802,9 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
       ? Number.parseInt(String(req.query.clientId), 10)
       : null;
     const kind = req.query.kind ? String(req.query.kind) : null;
-    const planType = getSalesPlanFilter(req);
+    const scopedIds = await getScopedClientIds(req);
+    if (scopedIds !== null && scopedIds.length === 0)
+      return res.json({ sends: [] });
     const rows = await db
       .select({
         id: emailSendsTable.id,
@@ -798,10 +828,8 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
             ? eq(emailSendsTable.clientId, clientId)
             : undefined,
           kind ? eq(emailSendsTable.kind, kind) : undefined,
-          planType
-            ? sql`EXISTS (SELECT 1 FROM client_aeo_plans cap
-                           WHERE cap.client_id = ${emailSendsTable.clientId}
-                             AND cap.plan_type = ${planType})`
+          scopedIds !== null
+            ? inArray(emailSendsTable.clientId, scopedIds)
             : undefined,
         ),
       )
@@ -861,7 +889,10 @@ router.post("/email-ai-suggest", requireSalesEmail, async (req, res) => {
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(body.clientId, scope), {
       strict: strictMode,
-      positiveTop3: true,
+      // Operator UI: show every keyword that has a real screenshot and let the
+      // sender review the preview. The automated CRM sync keeps positiveTop3.
+      positiveTop3: false,
+      includeUnimproved: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const selection = pickSelection(

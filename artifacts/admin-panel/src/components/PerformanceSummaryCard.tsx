@@ -142,7 +142,7 @@ export function PerformanceSummaryCard({
   clientId,
   businessId,
   aeoPlanId,
-  title = "Performance summary",
+  title = "Overall Performance summary",
 }: Props) {
   const { data, isLoading } = usePeriodComparison({
     period: "lifetime",

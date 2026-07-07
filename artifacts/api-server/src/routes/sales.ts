@@ -176,6 +176,7 @@ interface RankRow {
   date: string | null;
   rankingPosition: number;
   screenshotUrl: string;
+  rankVisible: boolean | null;
 }
 
 async function presign(s3Uri: string): Promise<string | null> {
@@ -190,6 +191,7 @@ export interface RankPoint {
   rank: number;
   date: string | null;
   s3Uri: string;
+  rankVisible: boolean | null;
 }
 export interface PlatformRanks {
   first: RankPoint;
@@ -241,18 +243,24 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
       rank: first.rankingPosition,
       date: first.date,
       s3Uri: first.screenshotUrl,
+      rankVisible: first.rankVisible,
     },
     current: {
       rank: current.rankingPosition,
       date: current.date,
       s3Uri: current.screenshotUrl,
+      rankVisible: current.rankVisible,
     },
   };
 }
 
 export async function resolveImprovement(
   q: Record<string, string>,
-  opts: { strict?: boolean; positiveTop3?: boolean } = {},
+  opts: {
+    strict?: boolean;
+    positiveTop3?: boolean;
+    includeUnimproved?: boolean;
+  } = {},
 ): Promise<
   | { ok: true; data: ImprovementData }
   | { ok: false; status: number; reason: string }
@@ -345,6 +353,7 @@ export async function resolveImprovement(
       date: rankingReportsTable.date,
       rankingPosition: rankingReportsTable.rankingPosition,
       screenshotUrl: rankingReportsTable.screenshotUrl,
+      rankVisible: rankingReportsTable.screenshotRankVisible,
     })
     .from(rankingReportsTable)
     .where(
@@ -412,8 +421,10 @@ export async function resolveImprovement(
     }
     if (Object.keys(platforms).length === 0) continue;
     const improved = maxImproved === -Infinity ? 0 : maxImproved;
-    // only surface keywords that actually improved on at least one platform
-    if (improved <= 0) continue;
+    // only surface keywords that actually improved on at least one platform —
+    // unless the caller opts into manual selection (the operator reviews the
+    // preview and may pick any keyword that has a real screenshot).
+    if (!opts.includeUnimproved && improved <= 0) continue;
     const meta = kwMeta.get(keywordId);
     keywords.push({
       keywordId,
@@ -427,7 +438,9 @@ export async function resolveImprovement(
     return {
       ok: false,
       status: 404,
-      reason: "No improved keywords with a visible rank for this client yet.",
+      reason: opts.includeUnimproved
+        ? "No keywords with a usable screenshot for this client yet."
+        : "No improved keywords with a visible rank for this client yet.",
     };
 
   // strongest improvement first
@@ -700,6 +713,8 @@ export async function ghlSendEmail(
     subject: string;
     emailFrom?: string;
     emailTo?: string;
+    emailCc?: string[];
+    emailBcc?: string[];
   },
 ): Promise<{ messageId?: string; conversationId?: string; raw: unknown }> {
   const token = process.env.GHL_PIT_TOKEN;
@@ -712,6 +727,8 @@ export async function ghlSendEmail(
   };
   if (opts.emailFrom) body.emailFrom = opts.emailFrom;
   if (opts.emailTo) body.emailTo = opts.emailTo;
+  if (opts.emailCc?.length) body.emailCc = opts.emailCc;
+  if (opts.emailBcc?.length) body.emailBcc = opts.emailBcc;
   const resp = await fetch(
     "https://services.leadconnectorhq.com/conversations/messages",
     {

@@ -23,6 +23,7 @@ import {
   requireScopedAdmin,
   requireAdmin,
 } from "../middlewares/role-auth";
+import { scanClientKeywords } from "./portal";
 import {
   assertScopedAccessToClient,
   getScopedClientIds,
@@ -193,11 +194,21 @@ router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
       .from(keywordLinksTable)
       .where(eq(keywordLinksTable.keywordId, id))
       .orderBy(keywordLinksTable.createdAt);
+    // Lock date: derived (there is no lockedAt column) from the win history —
+    // only computed for locked keywords, scoped to this one keyword.
+    let wonAt: string | null = null;
+    if (row.kw.status === "locked") {
+      const [enriched] = await scanClientKeywords(row.kw.clientId, {
+        keywordId: id,
+      });
+      wonAt = enriched?.wonAt ?? null;
+    }
     res.json({
       ...row.kw,
       clientName: row.clientName ?? null,
       businessName: row.businessName ?? null,
       campaignName: row.campaignName ?? null,
+      wonAt,
       links,
     });
   } catch (err) {

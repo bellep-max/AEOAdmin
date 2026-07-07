@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable, keywordsTable } from "@workspace/db/schema";
-import { and, eq, asc, inArray, sql } from "drizzle-orm";
+import { clientAeoPlansTable } from "@workspace/db/schema";
+import { and, eq, asc, sql } from "drizzle-orm";
 import {
   requireSalesAllowed,
   requireEditor,
@@ -15,6 +15,11 @@ import {
   isPlanAllowedForScope,
   LOCAL_ADMIN_PLAN_TYPES,
 } from "../lib/scoped-access";
+import {
+  scanClientKeywords,
+  bucketCountsByPlan,
+  type KeywordBuckets,
+} from "./portal";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -45,35 +50,32 @@ router.get("/", requireSalesAllowed, async (req, res) => {
       )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    const ids = plans.map((p) => p.id);
-    const counts = new Map<number, number>();
-    for (const id of ids) counts.set(id, 0);
-    if (ids.length > 0) {
-      const kwRows = await db
-        .select({
-          aeoPlanId: keywordsTable.aeoPlanId,
-          c: sql<number>`count(*)::int`,
-        })
-        .from(keywordsTable)
-        .where(
-          and(
-            inArray(keywordsTable.aeoPlanId, ids),
-            eq(keywordsTable.isActive, true),
-          ),
-        )
-        .groupBy(keywordsTable.aeoPlanId);
-      for (const r of kwRows) {
-        if (r.aeoPlanId != null) counts.set(r.aeoPlanId, Number(r.c));
-      }
-    }
+    const buckets =
+      plans.length > 0
+        ? bucketCountsByPlan(
+            await scanClientKeywords(clientId, {
+              businessId:
+                businessId != null && !isNaN(businessId)
+                  ? businessId
+                  : undefined,
+            }),
+          )
+        : new Map<number, KeywordBuckets>();
 
     res.json(
-      plans.map((p) => ({
-        ...p,
-        keywordCount: counts.get(p.id) ?? 0,
-        monthlyAeoBudget:
-          p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
-      })),
+      plans.map((p) => {
+        const b = buckets.get(p.id) ?? { active: 0, watch: 0, locked: 0 };
+        return {
+          ...p,
+          activeCount: b.active,
+          watchCount: b.watch,
+          lockedCount: b.locked,
+          // back-compat: original "active keyword" count = all active keywords.
+          keywordCount: b.active + b.watch,
+          monthlyAeoBudget:
+            p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
+        };
+      }),
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching client AEO plans");
