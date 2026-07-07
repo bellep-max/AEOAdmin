@@ -31,7 +31,9 @@ import {
   requireOwner,
   requireExecutorOrOwner,
   requireRoles,
+  requireSalesAllowed,
 } from "../middlewares/role-auth";
+import { chatCompletion } from "../services/llm-client";
 import { requireSession } from "../middlewares/session-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
@@ -1382,5 +1384,196 @@ Return this exact JSON (no other text):
     }
   },
 );
+
+/* ── POST /api/llm/explain-performance ─────────────────────────────────────
+   A plain-English "what this page means" summary for a client/business/
+   campaign detail page. The admin FE already computes the same numbers the
+   PerformanceSummaryCard shows, so it sends them here (like the portal
+   /reports/summarize does) and this endpoint just narrates them via DeepSeek.
+   Cached on a hash of the numbers, so it only regenerates when the data
+   actually changes (6h TTL backstop). */
+interface ExplainMover {
+  keyword: string;
+  first: number | null;
+  current: number | null;
+  delta: number;
+}
+interface ExplainPlatform {
+  platform: string;
+  avgCurrent: number | null;
+  top3: number;
+  tracked: number;
+}
+interface ExplainBody {
+  level: "client" | "business" | "campaign";
+  name: string;
+  metrics: {
+    tracked: number;
+    withRank: number;
+    top3: number;
+    improved: number;
+    declined: number;
+    steady: number;
+    avgFirst: number | null;
+    avgCurrent: number | null;
+  };
+  platforms: ExplainPlatform[];
+  movers: ExplainMover[];
+  decliners: ExplainMover[];
+}
+
+/* One short plain-English blurb per dashboard component, so each can sit next
+   to its own visual instead of one combined paragraph. */
+interface ExplainSections {
+  overall: string;
+  trend: string;
+  movers: string;
+  platforms: string;
+}
+const EXPLAIN_SECTION_KEYS: (keyof ExplainSections)[] = [
+  "overall",
+  "trend",
+  "movers",
+  "platforms",
+];
+
+const explainCache = new Map<
+  string,
+  { sections: ExplainSections; expiresMs: number }
+>();
+const EXPLAIN_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const PLATFORM_LABEL: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+router.post("/explain-performance", requireSalesAllowed, async (req, res) => {
+  try {
+    const b = (req.body ?? {}) as Partial<ExplainBody>;
+    const m = b.metrics;
+    if (!b.name || !m || typeof m.tracked !== "number") {
+      return res.status(400).json({ error: "name and metrics are required" });
+    }
+    const level = b.level ?? "campaign";
+    const platforms = Array.isArray(b.platforms) ? b.platforms : [];
+    const movers = Array.isArray(b.movers) ? b.movers.slice(0, 5) : [];
+    const decliners = Array.isArray(b.decliners) ? b.decliners.slice(0, 3) : [];
+
+    if (m.withRank === 0) {
+      const msg =
+        "No ranking data has come in yet for this " +
+        level +
+        ". This appears once the tracked search phrases have been checked on the AI assistants.";
+      return res.json({
+        sections: { overall: msg, trend: "", movers: "", platforms: "" },
+        cached: false,
+      });
+    }
+
+    const cacheKey = JSON.stringify({
+      level,
+      name: b.name,
+      m,
+      platforms,
+      movers,
+      decliners,
+    });
+    const hit = explainCache.get(cacheKey);
+    if (hit && hit.expiresMs > Date.now()) {
+      return res.json({ sections: hit.sections, cached: true });
+    }
+
+    const pLabel = (p: string) => PLATFORM_LABEL[p] ?? p;
+    const facts: string[] = [
+      `This is the ${level} "${b.name}".`,
+      `Search phrases tracked across ChatGPT, Gemini and Perplexity: ${m.tracked} (${m.withRank} have a ranking so far).`,
+      `Phrases now in the top 3: ${m.top3}.`,
+      `Phrases that improved since we started: ${m.improved}.`,
+      `Phrases that slipped: ${m.declined}.`,
+      `Phrases holding steady: ${m.steady}.`,
+      m.avgCurrent != null
+        ? `Average position now: about #${m.avgCurrent}${m.avgFirst != null ? ` (started around #${m.avgFirst})` : ""}. Closer to #1 is better.`
+        : `Average position: not enough data yet.`,
+    ];
+    for (const p of platforms) {
+      if (p.avgCurrent != null)
+        facts.push(
+          `On ${pLabel(p.platform)}: average position about #${p.avgCurrent}, with ${p.top3} of ${p.tracked} phrases in the top 3.`,
+        );
+    }
+    if (movers.length) {
+      facts.push(
+        "Biggest improvements: " +
+          movers
+            .map(
+              (x) =>
+                `"${x.keyword}" moved from #${x.first ?? "?"} to #${x.current ?? "?"}`,
+            )
+            .join("; ") +
+          ".",
+      );
+    }
+    if (decliners.length) {
+      facts.push(
+        "Phrases being watched (slipped): " +
+          decliners.map((x) => `"${x.keyword}"`).join(", ") +
+          ".",
+      );
+    }
+
+    const completion = await chatCompletion({
+      model: "deepseek-chat",
+      temperature: 0.4,
+      maxTokens: 480,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You explain an AI-search ranking dashboard in plain English to a business owner or account manager who finds the charts confusing. " +
+            "This dashboard measures how often the business shows up when people ask AI assistants (ChatGPT, Gemini, Perplexity) for businesses like theirs; a position closer to #1 means it appears nearer the top of the AI's answer. " +
+            "You will write a SEPARATE short explanation for each part of the page. Respond with ONLY a JSON object (no markdown, no code fences) with exactly these string keys:\n" +
+            '- "overall": 1-2 sentences on the overall standing — how many search phrases are tracked, how many reached the top 3, and the average position and direction.\n' +
+            '- "trend": 1-2 sentences explaining the over-time line chart and how to read it (each line is a search phrase\'s position by date; a line rising toward the top means it is climbing toward #1).\n' +
+            '- "movers": 1-2 sentences on the biggest movers — name one or two of the largest improvements, and gently note anything being watched. If there are no movers, say progress is holding steady.\n' +
+            '- "platforms": 1-2 sentences on how visibility differs across the AI assistants (ChatGPT, Gemini, Perplexity). If no per-assistant data is given, return an empty string "".\n' +
+            "Each value is plain English, warm and encouraging but honest, addressed as 'you' / 'your business'. No markdown inside the values. Do not invent any numbers beyond the ones given.",
+        },
+        {
+          role: "user",
+          content:
+            "Here are this page's numbers. Return the JSON object of per-section explanations:\n\n" +
+            facts.join("\n"),
+        },
+      ],
+    });
+
+    /* DeepSeek returns the JSON object; strip any stray code fence, then parse
+       leniently. On any parse failure, fall back to putting the whole reply in
+       the overall section so the UI still shows something useful. */
+    const raw = completion.content.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    let sections: ExplainSections = { overall: "", trend: "", movers: "", platforms: "" };
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const k of EXPLAIN_SECTION_KEYS) {
+        const v = parsed[k];
+        sections[k] = typeof v === "string" ? v.trim() : "";
+      }
+    } catch {
+      sections = { overall: raw, trend: "", movers: "", platforms: "" };
+    }
+
+    explainCache.set(cacheKey, {
+      sections,
+      expiresMs: Date.now() + EXPLAIN_TTL_MS,
+    });
+    return res.json({ sections, cached: false });
+  } catch (err) {
+    req.log.error({ err }, "explain-performance error");
+    return res
+      .status(500)
+      .json({ error: "Could not generate a summary right now." });
+  }
+});
 
 export default router;
