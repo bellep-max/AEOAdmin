@@ -2359,35 +2359,32 @@ router.get("/aeo-plans", requirePortalAuth, async (req, res) => {
       )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    const ids = plans.map((p) => p.id);
-    const counts = new Map<number, number>();
-    for (const id of ids) counts.set(id, 0);
-    if (ids.length > 0) {
-      const kwRows = await db
-        .select({
-          aeoPlanId: keywordsTable.aeoPlanId,
-          c: sql<number>`count(*)::int`,
-        })
-        .from(keywordsTable)
-        .where(
-          and(
-            inArray(keywordsTable.aeoPlanId, ids),
-            eq(keywordsTable.isActive, true),
-          ),
-        )
-        .groupBy(keywordsTable.aeoPlanId);
-      for (const r of kwRows) {
-        if (r.aeoPlanId != null) counts.set(r.aeoPlanId, Number(r.c));
-      }
-    }
+    const buckets =
+      plans.length > 0
+        ? bucketCountsByPlan(
+            await scanClientKeywords(clientId, {
+              businessId:
+                businessIdNum != null && !Number.isNaN(businessIdNum)
+                  ? businessIdNum
+                  : undefined,
+            }),
+          )
+        : new Map<number, KeywordBuckets>();
 
     res.json(
-      plans.map((p) => ({
-        ...p,
-        keywordCount: counts.get(p.id) ?? 0,
-        monthlyAeoBudget:
-          p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
-      })),
+      plans.map((p) => {
+        const b = buckets.get(p.id) ?? { active: 0, watch: 0, locked: 0 };
+        return {
+          ...p,
+          activeCount: b.active,
+          watchCount: b.watch,
+          lockedCount: b.locked,
+          // back-compat: original "active keyword" count = all active keywords.
+          keywordCount: b.active + b.watch,
+          monthlyAeoBudget:
+            p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
+        };
+      }),
     );
   } catch (err) {
     req.log.error({ err }, "Portal aeo-plans list error");
@@ -2921,7 +2918,7 @@ router.delete("/businesses/:id", requirePortalAuth, async (req, res) => {
 const TOP3 = 3;
 const PLATFORM_KEYS = ["chatgpt", "gemini", "perplexity", "google"] as const;
 
-interface EnrichedKeyword {
+export interface EnrichedKeyword {
   id: number;
   keywordText: string;
   status: string | null;
@@ -2961,15 +2958,17 @@ function dayOf(date: string | null, createdAt: Date | null): string {
  * ranking_reports. Pure read; no writes. Mirrors the admin rotation scan in
  * services/keyword-rotation.ts but client-scoped.
  */
-async function scanClientKeywords(
+export async function scanClientKeywords(
   clientId: number,
-  opts: { aeoPlanId?: number; businessId?: number },
+  opts: { aeoPlanId?: number; businessId?: number; keywordId?: number },
 ): Promise<EnrichedKeyword[]> {
   const conditions = [eq(keywordsTable.clientId, clientId)];
   if (opts.aeoPlanId != null)
     conditions.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
   if (opts.businessId != null)
     conditions.push(eq(keywordsTable.businessId, opts.businessId));
+  if (opts.keywordId != null)
+    conditions.push(eq(keywordsTable.id, opts.keywordId));
 
   const kws = await db
     .select({
@@ -3104,6 +3103,36 @@ async function scanClientKeywords(
       wonAt,
     };
   });
+}
+
+export interface KeywordBuckets {
+  /** Active + healthy (being worked, not slipping, not yet won). */
+  active: number;
+  /** Active but slipping — out of the top for its recent checks ("under watch"). */
+  watch: number;
+  /** Won and held ("locked"). */
+  locked: number;
+}
+
+/** Groups enriched keywords into disjoint Active / Under-watch / Locked tallies
+ *  per aeo_plan, using the same rules as the rotation-status summary. A keyword
+ *  counts in exactly one bucket (watch is the at-risk slice of active). */
+export function bucketCountsByPlan(
+  enriched: EnrichedKeyword[],
+): Map<number, KeywordBuckets> {
+  const byPlan = new Map<number, KeywordBuckets>();
+  for (const k of enriched) {
+    if (k.aeoPlanId == null) continue;
+    const b = byPlan.get(k.aeoPlanId) ?? { active: 0, watch: 0, locked: 0 };
+    if (k.status === "locked" && k.archivedAt == null) {
+      b.locked += 1;
+    } else if (k.isActive && k.status !== "locked" && k.archivedAt == null) {
+      if (k.atRisk) b.watch += 1;
+      else b.active += 1;
+    }
+    byPlan.set(k.aeoPlanId, b);
+  }
+  return byPlan;
 }
 
 function parseIntOrUndefined(v: unknown): number | undefined {

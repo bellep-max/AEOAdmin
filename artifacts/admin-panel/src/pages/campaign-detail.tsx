@@ -460,7 +460,7 @@ export default function CampaignDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={campaignId}
-        title="Performance summary · this campaign"
+        title="Overall Performance summary · this campaign"
       />
 
       <RankTrendChart

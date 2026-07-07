@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -83,6 +84,9 @@ interface CampaignRow {
   schemaImplementor: string | null;
   createdBy: string | null;
   keywordCount?: number;
+  activeCount?: number;
+  watchCount?: number;
+  lockedCount?: number;
 }
 
 function Field({
@@ -371,13 +375,40 @@ export default function BusinessDetail() {
                             >
                               {c.name ?? "(unnamed campaign)"}
                             </Link>
-                            <Link
-                              href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
-                              className="text-[11px] text-primary hover:underline w-fit"
-                            >
-                              {c.keywordCount ?? 0} active keyword
-                              {(c.keywordCount ?? 0) === 1 ? "" : "s"}
-                            </Link>
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.activeCount ?? c.keywordCount ?? 0}
+                                </span>{" "}
+                                active
+                                <InfoTip label="What are active keywords">
+                                  Keywords we&rsquo;re actively working to move
+                                  up the rankings right now.
+                                </InfoTip>
+                              </span>
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.watchCount ?? 0}
+                                </span>{" "}
+                                under watch
+                                <InfoTip label="What are under-watch keywords">
+                                  Keywords that were ranking but have slipped
+                                  out of the top lately — we&rsquo;re watching
+                                  these closely and adjusting.
+                                </InfoTip>
+                              </span>
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.lockedCount ?? 0}
+                                </span>{" "}
+                                locked
+                                <InfoTip label="What are locked keywords">
+                                  Keywords that reached the top and are
+                                  &ldquo;won&rdquo; — we hold their spot and
+                                  shift effort to other keywords.
+                                </InfoTip>
+                              </span>
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -443,7 +474,7 @@ export default function BusinessDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={null}
-        title="Performance summary · this business"
+        title="Overall Performance summary · this business"
       />
 
       <RankTrendChart

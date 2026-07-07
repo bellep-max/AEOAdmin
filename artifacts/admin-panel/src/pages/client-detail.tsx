@@ -409,7 +409,7 @@ export default function ClientDetail() {
         clientId={clientId}
         businessId={null}
         aeoPlanId={null}
-        title="Performance summary · this client"
+        title="Overall Performance summary · this client"
       />
 
       <RankTrendChart scope="client" clientId={clientId} />
