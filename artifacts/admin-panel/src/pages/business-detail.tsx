@@ -475,12 +475,14 @@ export default function BusinessDetail() {
         businessId={businessId}
         aeoPlanId={null}
         title="Overall Performance summary · this business"
+        scopeName={business.name}
       />
 
       <RankTrendChart
         scope="business"
         clientId={clientId}
         businessId={businessId}
+        scopeName={business.name}
       />
 
       <PlatformAggregateStrip
@@ -488,6 +490,7 @@ export default function BusinessDetail() {
         businessId={businessId}
         aeoPlanId={null}
         title={`Overall ranking · Business — ${business?.name ?? "Business"}`}
+        scopeName={business.name}
       />
 
       <CampaignFormDialog

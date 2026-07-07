@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TrendingUp, TrendingDown, Minus, Trophy, Info } from "lucide-react";
+import { AIExplain } from "@/components/AIExplain";
 import {
   Tooltip,
   TooltipTrigger,
@@ -29,6 +30,8 @@ interface Props {
   /** When true, renders its own period dropdown. When false, uses `period` prop and stays silent. */
   standalone?: boolean;
   period?: Period;
+  /** Scope display name — enables the AI "what this means" blurb under the strip. */
+  scopeName?: string | null;
 }
 
 export function PlatformAggregateStrip({
@@ -38,6 +41,7 @@ export function PlatformAggregateStrip({
   title = "Overall ranking by platform",
   standalone = true,
   period: externalPeriod,
+  scopeName,
 }: Props) {
   const [internalPeriod, setInternalPeriod] = useState<Period>("weekly");
   const period = standalone ? internalPeriod : (externalPeriod ?? "weekly");
@@ -184,6 +188,13 @@ export function PlatformAggregateStrip({
             })}
           </div>
         )}
+        <AIExplain
+          section="platforms"
+          name={scopeName}
+          clientId={clientId}
+          businessId={businessId}
+          aeoPlanId={aeoPlanId}
+        />
       </CardContent>
     </Card>
   );

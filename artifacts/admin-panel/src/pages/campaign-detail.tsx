@@ -461,6 +461,7 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         title="Overall Performance summary · this campaign"
+        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
       />
 
       <RankTrendChart
@@ -468,6 +469,7 @@ export default function CampaignDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={campaignId}
+        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
       />
 
       <PlatformAggregateStrip
@@ -475,6 +477,7 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         title={`Overall ranking · Campaign — ${campaign.name ?? campaign.planType}`}
+        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
       />
 
       <KeywordsWithRankingsCard

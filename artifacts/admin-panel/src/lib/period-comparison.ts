@@ -395,6 +395,100 @@ export function countStatuses(rows: readonly PeriodRow[]): StatusCounts {
   };
 }
 
+/** Per-keyword "since start" progress: the keyword's best (lowest) initial rank
+ *  across platforms vs its best current rank. Positive `improvement` = moved up
+ *  (lower rank number is better). Null ranks mean the keyword had no scan for
+ *  that column yet. Shared by PerformanceSummaryCard and the AI summary card so
+ *  their headline numbers can never diverge. */
+export interface KeywordProgress {
+  keywordId: number;
+  keywordText: string;
+  firstBest: number | null;
+  currentBest: number | null;
+  improvement: number | null;
+}
+
+export function bestOf(positions: (number | null)[]): number | null {
+  let best: number | null = null;
+  for (const p of positions) {
+    if (p != null && p >= 1 && (best == null || p < best)) best = p;
+  }
+  return best;
+}
+
+export interface PerformanceSummary {
+  keywords: KeywordProgress[];
+  withRank: number;
+  inTop3: number;
+  improved: number;
+  declined: number;
+  steady: number;
+  avgCurrent: number | null;
+  avgFirst: number | null;
+}
+
+export function summarizeProgress(rows: PeriodRow[]): PerformanceSummary {
+  const byKeyword = new Map<
+    number,
+    { keywordText: string; rows: PeriodRow[] }
+  >();
+  for (const r of rows) {
+    const existing = byKeyword.get(r.keywordId);
+    if (existing) existing.rows.push(r);
+    else byKeyword.set(r.keywordId, { keywordText: r.keywordText, rows: [r] });
+  }
+
+  const keywords: KeywordProgress[] = [];
+  for (const [keywordId, { keywordText, rows: kwRows }] of byKeyword) {
+    const firstBest = bestOf(kwRows.map((r) => r.firstPosition));
+    const currentBest = bestOf(kwRows.map((r) => r.currentPosition));
+    const improvement =
+      firstBest != null && currentBest != null ? firstBest - currentBest : null;
+    keywords.push({
+      keywordId,
+      keywordText,
+      firstBest,
+      currentBest,
+      improvement,
+    });
+  }
+
+  const ranked = keywords.filter((k) => k.currentBest != null);
+  const currents = ranked.map((k) => k.currentBest as number);
+  const firsts = keywords
+    .map((k) => k.firstBest)
+    .filter((n): n is number => n != null);
+
+  const round = (n: number | null) => (n == null ? null : Math.round(n));
+
+  return {
+    keywords,
+    withRank: ranked.length,
+    inTop3: ranked.filter(
+      (k) => (k.currentBest as number) <= TOP_RANK_THRESHOLD,
+    ).length,
+    improved: keywords.filter((k) => k.improvement != null && k.improvement > 0)
+      .length,
+    declined: keywords.filter((k) => k.improvement != null && k.improvement < 0)
+      .length,
+    steady: keywords.filter((k) => k.improvement === 0).length,
+    avgCurrent: round(avg(currents)),
+    avgFirst: round(avg(firsts)),
+  };
+}
+
+/** Keywords that moved, most-improved first — the "biggest movers" ordering
+ *  shared by the summary card and AI card. */
+export function sortMovers(keywords: KeywordProgress[]): KeywordProgress[] {
+  return keywords
+    .filter((k) => k.improvement != null && k.improvement !== 0)
+    .sort(
+      (a, b) =>
+        (b.improvement as number) - (a.improvement as number) ||
+        (a.currentBest ?? 99) - (b.currentBest ?? 99),
+    );
+}
+
 export function periodLabel(p: Period): {
   short: string;
   long: string;

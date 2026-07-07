@@ -12,90 +12,10 @@ import {
 import {
   usePeriodComparison,
   fmtPos,
-  TOP_RANK_THRESHOLD,
-  type PeriodRow,
+  summarizeProgress,
+  sortMovers,
 } from "@/lib/period-comparison";
-
-/** Per-keyword "since start" progress: the keyword's best (lowest) initial rank
- *  across platforms vs its best current rank. Positive `improvement` = moved up
- *  (lower rank number is better). Null ranks mean the keyword had no scan for
- *  that column yet. */
-interface KeywordProgress {
-  keywordId: number;
-  keywordText: string;
-  firstBest: number | null;
-  currentBest: number | null;
-  improvement: number | null;
-}
-
-function bestOf(positions: (number | null)[]): number | null {
-  let best: number | null = null;
-  for (const p of positions) {
-    if (p != null && p >= 1 && (best == null || p < best)) best = p;
-  }
-  return best;
-}
-
-function summarize(rows: PeriodRow[]): {
-  keywords: KeywordProgress[];
-  withRank: number;
-  inTop3: number;
-  improved: number;
-  declined: number;
-  steady: number;
-  avgCurrent: number | null;
-  avgFirst: number | null;
-} {
-  const byKeyword = new Map<
-    number,
-    { keywordText: string; rows: PeriodRow[] }
-  >();
-  for (const r of rows) {
-    const existing = byKeyword.get(r.keywordId);
-    if (existing) existing.rows.push(r);
-    else byKeyword.set(r.keywordId, { keywordText: r.keywordText, rows: [r] });
-  }
-
-  const keywords: KeywordProgress[] = [];
-  for (const [keywordId, { keywordText, rows: kwRows }] of byKeyword) {
-    const firstBest = bestOf(kwRows.map((r) => r.firstPosition));
-    const currentBest = bestOf(kwRows.map((r) => r.currentPosition));
-    const improvement =
-      firstBest != null && currentBest != null ? firstBest - currentBest : null;
-    keywords.push({
-      keywordId,
-      keywordText,
-      firstBest,
-      currentBest,
-      improvement,
-    });
-  }
-
-  const ranked = keywords.filter((k) => k.currentBest != null);
-  const currents = ranked.map((k) => k.currentBest as number);
-  const firsts = keywords
-    .map((k) => k.firstBest)
-    .filter((n): n is number => n != null);
-
-  const round = (n: number | null) => (n == null ? null : Math.round(n));
-  const avg = (nums: number[]) =>
-    nums.length ? nums.reduce((s, n) => s + n, 0) / nums.length : null;
-
-  return {
-    keywords,
-    withRank: ranked.length,
-    inTop3: ranked.filter(
-      (k) => (k.currentBest as number) <= TOP_RANK_THRESHOLD,
-    ).length,
-    improved: keywords.filter((k) => k.improvement != null && k.improvement > 0)
-      .length,
-    declined: keywords.filter((k) => k.improvement != null && k.improvement < 0)
-      .length,
-    steady: keywords.filter((k) => k.improvement === 0).length,
-    avgCurrent: round(avg(currents)),
-    avgFirst: round(avg(firsts)),
-  };
-}
+import { AIExplain } from "@/components/AIExplain";
 
 interface StatProps {
   label: string;
@@ -133,6 +53,8 @@ interface Props {
   businessId: number | null;
   aeoPlanId: number | null;
   title?: string;
+  /** Scope display name — enables the per-section AI "what this means" blurbs. */
+  scopeName?: string | null;
 }
 
 /** "Since start" performance summary for a client / business / campaign scope.
@@ -143,6 +65,7 @@ export function PerformanceSummaryCard({
   businessId,
   aeoPlanId,
   title = "Overall Performance summary",
+  scopeName,
 }: Props) {
   const { data, isLoading } = usePeriodComparison({
     period: "lifetime",
@@ -151,19 +74,9 @@ export function PerformanceSummaryCard({
     aeoPlanId,
   });
 
-  const s = useMemo(() => summarize(data?.rows ?? []), [data]);
+  const s = useMemo(() => summarizeProgress(data?.rows ?? []), [data]);
 
-  const movers = useMemo(
-    () =>
-      s.keywords
-        .filter((k) => k.improvement != null && k.improvement !== 0)
-        .sort(
-          (a, b) =>
-            (b.improvement as number) - (a.improvement as number) ||
-            (a.currentBest ?? 99) - (b.currentBest ?? 99),
-        ),
-    [s.keywords],
-  );
+  const movers = useMemo(() => sortMovers(s.keywords), [s.keywords]);
 
   const trackedCount = s.keywords.length;
 
@@ -221,6 +134,14 @@ export function PerformanceSummaryCard({
               />
             </div>
 
+            <AIExplain
+              section="overall"
+              name={scopeName}
+              clientId={clientId}
+              businessId={businessId}
+              aeoPlanId={aeoPlanId}
+            />
+
             {movers.length > 0 && (
               <div className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
@@ -274,6 +195,16 @@ export function PerformanceSummaryCard({
                   </div>
                 )}
               </div>
+            )}
+
+            {movers.length > 0 && (
+              <AIExplain
+                section="movers"
+                name={scopeName}
+                clientId={clientId}
+                businessId={businessId}
+                aeoPlanId={aeoPlanId}
+              />
             )}
           </div>
         )}
