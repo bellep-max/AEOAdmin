@@ -643,12 +643,26 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     let ghlStatus: string | null = null;
     let storedSubject = subject;
 
+    // GHL delivers to the CONTACT's own primary email (the client). Only route
+    // through GHL when the operator actually kept the client in the recipient
+    // list — otherwise a test send (client removed, your address typed in) would
+    // still land in the client's inbox with you merely CC'd. When the client is
+    // not a listed recipient, fall through to SendGrid, which honors the typed To.
+    const primaryEmail = (contactPrimaryEmail ?? "").toLowerCase();
+    const recipientsIncludeClient =
+      primaryEmail.length > 0 &&
+      intendedRecipients.some((e) => e.toLowerCase() === primaryEmail);
+
     // 1) Preferred: deliver through GHL (replies thread back into GHL).
-    if (ghlEnabled && sendMode === "ghl_first" && contactId) {
+    if (
+      ghlEnabled &&
+      sendMode === "ghl_first" &&
+      contactId &&
+      recipientsIncludeClient
+    ) {
       try {
-        const primary = (contactPrimaryEmail ?? "").toLowerCase();
         const ccList = intendedRecipients.filter(
-          (e) => e.toLowerCase() !== primary,
+          (e) => e.toLowerCase() !== primaryEmail,
         );
         const r = await ghlSendEmail(contactId, {
           html,
@@ -698,6 +712,10 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         if (!ghlEnabled)
           ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
         else if (!contactId) ghlStatus = ghlStatus ?? "no_contact";
+        // Client removed from recipients = a test send; don't touch the real
+        // client's GHL contact timeline with a "SENT" note.
+        else if (!recipientsIncludeClient)
+          ghlStatus = "skipped_note (client not a recipient)";
         else {
           try {
             const pLabelNote =
