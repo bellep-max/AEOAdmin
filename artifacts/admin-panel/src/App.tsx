@@ -32,6 +32,7 @@ import ReportDetail from "@/pages/report-detail";
 import AdminVariants from "@/pages/admin-variants";
 import AeoReporter from "@/pages/aeo-reporter";
 import SalesAI from "@/pages/sales-ai";
+import Chatbot from "@/pages/chatbot";
 import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
@@ -169,6 +170,7 @@ function ProtectedRoutes() {
           <OwnerGate component={Reports} />
         </Route>
         <Route path="/aeo-reporter" component={AeoReporter} />
+        <Route path="/chatbot" component={Chatbot} />
         <Route path="/sales-ai">
           <OwnerOrSalesGate component={SalesAI} />
         </Route>
