@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useChatbot } from "@/lib/chatbot/useChatbot";
+import { scopeFocus } from "@/lib/chatbot/types";
 import { ScopeBar } from "@/components/chatbot/ScopeBar";
 import { MessageList } from "@/components/chatbot/MessageList";
 
@@ -69,8 +70,8 @@ export default function Chatbot() {
             ) : turns.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Ask me anything about {scope.businessName ?? scope.clientName}
-                  's rankings. Try one of these:
+                  Ask me anything about {scopeFocus(scope).name}'s rankings. Try
+                  one of these:
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {SUGGESTIONS.map((s) => (

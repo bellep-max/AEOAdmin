@@ -7,7 +7,7 @@ import type { ChatTurn, Dataset } from "@/lib/chatbot/types";
 function summaryDataset(): Dataset {
   return {
     intentKind: "business_summary",
-    scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null },
+    scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null, aeoPlanId: null, campaignName: null },
     coverage: { earliest: "2026-05-01", latest: "2026-06-30", rowCount: 12, platforms: ["chatgpt"] },
     summary: {
       keywords: [],
@@ -36,7 +36,7 @@ describe("ChatVisuals", () => {
   it("renders a keyword table from keywordList", () => {
     const dataset: Dataset = {
       intentKind: "keyword_list",
-      scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null },
+      scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null, aeoPlanId: null, campaignName: null },
       coverage: { earliest: null, latest: null, rowCount: 2, platforms: [] },
       keywordList: [
         { keywordId: 1, keywordText: "best dentist", isActive: true, status: "new" },
@@ -52,7 +52,7 @@ describe("ChatVisuals", () => {
   it("renders nothing for an empty dataset", () => {
     const dataset: Dataset = {
       intentKind: "business_summary",
-      scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null },
+      scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null, aeoPlanId: null, campaignName: null },
       coverage: { earliest: null, latest: null, rowCount: 0, platforms: [] },
       isEmpty: true,
     };

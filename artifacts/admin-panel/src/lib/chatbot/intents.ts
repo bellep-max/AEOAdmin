@@ -12,7 +12,7 @@ import type {
   TimeframeSpec,
   TimeframeToken,
 } from "./types";
-import { PLATFORMS } from "./types";
+import { PLATFORMS, scopeFocus } from "./types";
 
 /** Intents backed by real endpoints, described for the classifier. */
 export const INTENT_CATALOG: {
@@ -241,12 +241,10 @@ export function parseIntent(raw: unknown): Intent {
 
 /** System prompt for the classifier. Instructs JSON-only output and honesty. */
 export function buildRouterSystemPrompt(scope: ChatScope): string {
-  const scopeLabel = scope.businessName
-    ? `${scope.clientName} → ${scope.businessName}`
-    : scope.clientName;
+  const focus = scopeFocus(scope);
   return [
     "You are the intent classifier for an SEO ranking analytics chatbot.",
-    `The user is asking about this business: ${scopeLabel}.`,
+    `The user is asking about this ${focus.level}: ${focus.name}.`,
     "The product tracks keyword rankings on ChatGPT, Gemini, and Perplexity over time.",
     "",
     "Classify the user's message into ONE intent. Return STRICT JSON only, no prose. Shape:",

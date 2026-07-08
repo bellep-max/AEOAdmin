@@ -6,7 +6,7 @@ const scope: ChatScope = {
   clientId: 1,
   clientName: "Acme",
   businessId: null,
-  businessName: null,
+  businessName: null, aeoPlanId: null, campaignName: null,
 };
 
 describe("parseIntent", () => {

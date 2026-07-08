@@ -19,13 +19,33 @@ export const PLATFORMS: readonly Platform[] = [
   "perplexity",
 ] as const;
 
-/** Active client/business the conversation is scoped to. */
+/** Active client / business / campaign the conversation is scoped to. */
 export interface ChatScope {
   clientId: number;
   clientName: string;
   /** null = all businesses for the client. */
   businessId: number | null;
   businessName: string | null;
+  /** Campaign = client_aeo_plans row (aeoPlanId). null = all campaigns. */
+  aeoPlanId: number | null;
+  campaignName: string | null;
+}
+
+/** The most specific entity the user has selected. Used so the assistant names
+ *  exactly what's in focus (the campaign, else the business, else the client). */
+export interface ScopeFocus {
+  level: "client" | "business" | "campaign";
+  name: string;
+}
+
+export function scopeFocus(scope: ChatScope): ScopeFocus {
+  if (scope.aeoPlanId !== null && scope.campaignName) {
+    return { level: "campaign", name: scope.campaignName };
+  }
+  if (scope.businessId !== null && scope.businessName) {
+    return { level: "business", name: scope.businessName };
+  }
+  return { level: "client", name: scope.clientName };
 }
 
 /** Relative time windows the router may resolve. Resolved to real dates by the

@@ -5,16 +5,21 @@
  * visuals are rendered separately by code — the LLM only writes the prose.
  */
 import type { Dataset, Intent } from "./types";
+import { scopeFocus } from "./types";
 
 /** Small, guardrail-aligned view of the dataset for the LLM. Never the raw
  *  5000-row payload — just the aggregates the answer should describe. */
 export function buildNarrativeContext(
   dataset: Dataset,
 ): Record<string, unknown> {
+  const focus = scopeFocus(dataset.scope);
   const ctx: Record<string, unknown> = {
-    business: dataset.scope.businessName
-      ? `${dataset.scope.clientName} → ${dataset.scope.businessName}`
-      : dataset.scope.clientName,
+    // The exact entity in focus, so the narrative names the right thing: the
+    // campaign if one is selected, else the business, else the client.
+    focus: { level: focus.level, name: focus.name },
+    client: dataset.scope.clientName,
+    business: dataset.scope.businessName,
+    campaign: dataset.scope.campaignName,
     dataCoverage: {
       earliest: dataset.coverage.earliest,
       latest: dataset.coverage.latest,
@@ -77,18 +82,34 @@ export function buildNarrativeContext(
 }
 
 const NARRATIVE_SYSTEM = [
-  "You are an SEO ranking analytics assistant. You explain ranking data to a",
-  "user in clear, friendly prose. A chart or cards are shown alongside your",
-  "text, so do NOT render tables — just narrate.",
+  "You are a warm, conversational analytics partner who helps people understand",
+  "how their business shows up in AI search (ChatGPT, Gemini, Perplexity). You",
+  "talk like a helpful human colleague, not a report generator. Charts and cards",
+  "are shown alongside your text, so do NOT render tables — just talk it through.",
   "",
-  "ABSOLUTE RULES:",
+  "NAME WHAT'S IN FOCUS:",
+  "- The DATA has a `focus` object with a `level` (client, business, or campaign)",
+  "  and a `name`. Open by naming THAT specific thing, by name, conversationally.",
+  "  If the user picked a campaign, talk about that campaign; if a business, that",
+  "  business; if only the client, the client. For a campaign named Fall Promo:",
+  "  'Here's how the Fall Promo campaign is doing…'. Refer to it as a campaign,",
+  "  business, or client to match the focus level — don't call a campaign a",
+  "  business, and don't reference a level the user didn't select.",
+  "",
+  "TONE:",
+  "- Friendly and natural, like you're sitting next to them. A little warmth is",
+  '  good ("nice — three keywords cracked the top 3"). Avoid corporate filler',
+  "  and robotic phrasing. Lead with the takeaway, then the details.",
+  "",
+  "ABSOLUTE RULES (accuracy over everything):",
   "- Use ONLY numbers and dates that appear in the DATA JSON you are given.",
   "- Never invent, estimate, extrapolate, or round to a value not present.",
-  "- Always state the actual date coverage (earliest to latest) the data spans.",
-  "- Lower ranking position numbers are better (#1 is best).",
-  "- If isEmpty is true, say plainly there is no ranking data for this",
-  "  business/timeframe yet, and suggest nothing fabricated.",
-  "- Keep it to 2–5 short sentences or a few bullets. Markdown allowed.",
+  "- Always mention the actual date range (earliest to latest) the data covers.",
+  "- Lower ranking position numbers are better (#1 is best) — get the direction",
+  "  right (a move from #8 to #3 is an improvement).",
+  "- If isEmpty is true, gently say there's no ranking data for this selection",
+  "  yet, and don't fabricate anything.",
+  "- Keep it to 2–5 short sentences or a few quick bullets. Markdown allowed.",
 ].join("\n");
 
 export function buildNarrativeMessages(

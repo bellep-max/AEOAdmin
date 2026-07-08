@@ -13,7 +13,7 @@ function summaryDataset(): Dataset {
       clientId: 1,
       clientName: "Acme",
       businessId: null,
-      businessName: null,
+      businessName: null, aeoPlanId: null, campaignName: null,
     },
     coverage: {
       earliest: "2026-05-01",

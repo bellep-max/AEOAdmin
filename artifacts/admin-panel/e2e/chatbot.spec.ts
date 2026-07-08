@@ -19,6 +19,9 @@ async function mockBackend(page: Page): Promise<void> {
     route.fulfill({ json: [{ id: 1, businessName: "Acme Dental" }] }),
   );
   await page.route("**/api/businesses**", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/aeo-plans**", (route) =>
+    route.fulfill({ json: [{ id: 10, clientId: 1, businessId: 1, name: "Facelift Campaign", planType: "AEO Plan" }] }),
+  );
   await page.route("**/api/ranking-reports**", (route) =>
     route.fulfill({ json: { meta: { total: ROWS.length }, data: ROWS } }),
   );
@@ -110,4 +113,16 @@ test("switching business clears the transcript", async ({ page }) => {
   // (Same client re-selected via the combobox clears via setScope.)
   await page.getByRole("option", { name: "Acme Dental" }).click();
   await expect(page.getByTestId("suggestion").first()).toBeVisible();
+});
+
+test("can scope to a campaign; the chip and empty-state name it", async ({ page }) => {
+  await page.goto("/chatbot");
+  await selectClient(page, "Acme Dental");
+
+  // Campaign select is the third combobox — open it and pick the campaign.
+  await page.getByRole("button", { name: /all campaigns/i }).click();
+  await page.getByRole("option", { name: "Facelift Campaign" }).click();
+
+  await expect(page.getByTestId("active-scope")).toContainText("Facelift Campaign");
+  await expect(page.getByText(/Facelift Campaign's rankings/i)).toBeVisible();
 });
