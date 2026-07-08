@@ -7,7 +7,7 @@
  * The four admin endpoints all take ?clientId=; empty AI narrative sections are
  * hidden and numbers are never invented — every figure comes from the payload.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetClient } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,7 +24,7 @@ import {
   ScopeSelector,
   type ScopeState,
 } from "@/components/summary/ScopeSelector";
-import { DateSelector } from "@/components/summary/DateSelector";
+import { DateCalendar } from "@/components/summary/DateCalendar";
 import { MetricsCards } from "@/components/summary/MetricsCards";
 import { NarrativeBlock } from "@/components/summary/NarrativeBlock";
 import { PlatformAggregates } from "@/components/summary/PlatformAggregates";
@@ -58,6 +58,17 @@ export default function SummaryReport() {
   };
 
   const { data: dates } = useAvailableDates(scopeParams);
+
+  // Default to the latest available run, and — when the scope changes — fall
+  // back to the latest if the currently-picked date has no data for the new
+  // scope. Dates arrive newest-first from the endpoint.
+  useEffect(() => {
+    const list = dates?.dates;
+    if (!list || list.length === 0) return;
+    const stillAvailable = date != null && list.some((d) => d.date === date);
+    if (!stillAvailable) setDate(list[0].date);
+  }, [dates, date]);
+
   const { data: report, isLoading: reportLoading } = useSummaryReport({
     ...scopeParams,
     date,
@@ -99,13 +110,9 @@ export default function SummaryReport() {
           <ScopeSelector
             clientId={clientId}
             value={scope}
-            onChange={(next) => {
-              setScope(next);
-              // A different scope has a different set of runs — reset the date.
-              setDate(null);
-            }}
+            onChange={setScope}
           />
-          <DateSelector
+          <DateCalendar
             dates={dates?.dates ?? []}
             value={date}
             onChange={setDate}
