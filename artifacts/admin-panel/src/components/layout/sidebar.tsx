@@ -53,6 +53,7 @@ import {
   Lock,
   MailCheck,
   Building2,
+  MessageSquare,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -186,6 +187,14 @@ const navGroups: NavGroup[] = [
         href: "/aeo-reporter",
         icon: BrainCircuit,
         salesAllowed: true,
+      },
+      {
+        name: "Chatbot",
+        href: "/chatbot",
+        icon: MessageSquare,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+        chucksLocalAllowed: true,
       },
       {
         name: "Sales AI",

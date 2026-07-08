@@ -956,6 +956,123 @@ router.post(
   },
 );
 
+/* POST /api/llm/chatbot/stream
+   Browser-facing proxy for the Chatbot page. Keeps the DeepSeek key
+   server-side and forwards `{ messages, stream?, response_format? }` in the
+   OpenAI chat format. Two call shapes ride this one endpoint:
+     1. Intent routing  → { messages, stream: false, response_format:
+        { type: "json_object" } } — a single JSON classification response.
+     2. Narrative       → { messages, stream: true } — SSE tokens piped back.
+   The FE owns the system prompt, conversation history, and the data it feeds
+   in as context; this endpoint is a thin authenticated forwarder. Auth: any
+   signed-in admin-panel role (requireSalesAllowed). The page is open to all,
+   but the client/business data it can reach is already role-scoped by the
+   /api/clients, /api/businesses, and /api/ranking-reports endpoints. */
+router.post("/chatbot/stream", requireSalesAllowed, async (req, res) => {
+  try {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ error: "DEEPSEEK_API_KEY not configured" });
+    }
+
+    const body = req.body as {
+      messages?: unknown;
+      stream?: unknown;
+      response_format?: unknown;
+    };
+    const messages = Array.isArray(body.messages) ? body.messages : null;
+    if (!messages || messages.length === 0) {
+      return res.status(400).json({ error: "messages array required" });
+    }
+    // Validate shape and bound size before proxying upstream: each entry must be
+    // { role, content:string }, capped in count and total length.
+    const VALID_ROLES = new Set(["system", "user", "assistant"]);
+    const MAX_MESSAGES = 40;
+    const MAX_TOTAL_CHARS = 60_000;
+    if (messages.length > MAX_MESSAGES) {
+      return res.status(400).json({ error: "too many messages" });
+    }
+    let totalChars = 0;
+    for (const m of messages) {
+      const role = (m as { role?: unknown }).role;
+      const content = (m as { content?: unknown }).content;
+      if (
+        typeof role !== "string" ||
+        !VALID_ROLES.has(role) ||
+        typeof content !== "string"
+      ) {
+        return res.status(400).json({ error: "invalid message shape" });
+      }
+      totalChars += content.length;
+    }
+    if (totalChars > MAX_TOTAL_CHARS) {
+      return res.status(400).json({ error: "messages too large" });
+    }
+    const wantsStream = body.stream !== false;
+
+    // Only forward a whitelisted response_format so we never proxy arbitrary
+    // client-controlled fields into the upstream request body.
+    const responseFormat =
+      body.response_format &&
+      typeof body.response_format === "object" &&
+      (body.response_format as { type?: unknown }).type === "json_object"
+        ? { type: "json_object" as const }
+        : undefined;
+
+    const upstream = await fetch(
+      "https://api.deepseek.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages,
+          stream: wantsStream,
+          ...(responseFormat ? { response_format: responseFormat } : {}),
+        }),
+      },
+    );
+
+    if (!upstream.ok || !upstream.body) {
+      const errText = await upstream.text().catch(() => "");
+      return res.status(upstream.status || 502).json({
+        error: `DeepSeek ${upstream.status}: ${errText.slice(0, 200) || upstream.statusText}`,
+      });
+    }
+
+    // Pass through the upstream content-type: SSE when streaming,
+    // application/json for the non-streaming intent-routing call.
+    const upstreamType =
+      upstream.headers.get("content-type") ??
+      "text/event-stream; charset=utf-8";
+    res.setHeader("Content-Type", upstreamType);
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    const reader = upstream.body.getReader();
+    req.on("close", () => reader.cancel().catch(() => {}));
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+  } catch (err) {
+    req.log.error({ err }, "Error streaming Chatbot response");
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    } else {
+      res.end();
+    }
+  }
+});
+
 /* ── helpers for full-audit ─────────────────────────────────────────────── */
 
 interface SiteData {
@@ -1551,8 +1668,17 @@ router.post("/explain-performance", requireSalesAllowed, async (req, res) => {
     /* DeepSeek returns the JSON object; strip any stray code fence, then parse
        leniently. On any parse failure, fall back to putting the whole reply in
        the overall section so the UI still shows something useful. */
-    const raw = completion.content.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    let sections: ExplainSections = { overall: "", trend: "", movers: "", platforms: "" };
+    const raw = completion.content
+      .trim()
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/, "")
+      .trim();
+    let sections: ExplainSections = {
+      overall: "",
+      trend: "",
+      movers: "",
+      platforms: "",
+    };
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       for (const k of EXPLAIN_SECTION_KEYS) {
