@@ -21,6 +21,12 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
 import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
+import {
+  getGlossaryPayload,
+  availableReportDates,
+} from "../lib/summary-content";
+import { generateSummaryNarrative } from "../lib/summary-narrative";
+import { buildSummaryReport, type SummaryScope } from "./portal";
 
 const router = Router();
 
@@ -1856,6 +1862,120 @@ router.get("/:id/screenshot-url", requireSalesAllowed, async (req, res) => {
   } catch (err) {
     req.log.error({ err, id }, "Error generating screenshot URL");
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ─── Summary Report (admin) ───────────────────────────────────
+   Admin-panel counterparts of the portal Summary Report routes.
+   Same shared builders → identical content; scoped by ?clientId. */
+
+function parseAdminScope(v: unknown): SummaryScope {
+  return v === "business" || v === "campaign" ? v : "client";
+}
+
+/** GET /api/ranking-reports/glossary — same payload as the portal glossary. */
+router.get("/glossary", requireSalesAllowed, (_req, res) => {
+  res.json(getGlossaryPayload());
+});
+
+/** GET /api/ranking-reports/summary/available-dates?clientId=... */
+router.get(
+  "/summary/available-dates",
+  requireSalesAllowed,
+  async (req, res) => {
+    try {
+      const clientId = req.query.clientId
+        ? parseInt(req.query.clientId as string, 10)
+        : null;
+      if (clientId == null || Number.isNaN(clientId)) {
+        return res.status(400).json({ error: "clientId is required" });
+      }
+      const businessId = req.query.businessId
+        ? parseInt(req.query.businessId as string, 10)
+        : undefined;
+      const aeoPlanId = req.query.aeoPlanId
+        ? parseInt(req.query.aeoPlanId as string, 10)
+        : undefined;
+      const dates = await availableReportDates(clientId, {
+        businessId,
+        aeoPlanId,
+      });
+      res.json({ dates });
+    } catch (err) {
+      logger.error({ err }, "Admin summary available-dates error");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+/** GET /api/ranking-reports/summary?clientId=&scope=&businessId=&aeoPlanId=&date= */
+router.get("/summary", requireSalesAllowed, async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    if (clientId == null || Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    const scope = parseAdminScope(req.query.scope);
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : undefined;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : undefined;
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    res.json(report);
+  } catch (err) {
+    logger.error({ err }, "Admin summary error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/ranking-reports/summary/narrative?clientId=&scope=&businessId=&aeoPlanId=&date= */
+router.get("/summary/narrative", requireSalesAllowed, async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    if (clientId == null || Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    const scope = parseAdminScope(req.query.scope);
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : undefined;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : undefined;
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    const narrative = await generateSummaryNarrative(
+      report,
+      clientId,
+      Date.now(),
+    );
+    res.json(narrative);
+  } catch (err) {
+    logger.error({ err }, "Admin summary narrative error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
   }
 });
 

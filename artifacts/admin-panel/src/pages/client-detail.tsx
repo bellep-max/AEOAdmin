@@ -61,6 +61,7 @@ import {
   Mail,
   User,
   CalendarDays,
+  FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getPlanMeta } from "@/lib/plan-meta";
@@ -418,6 +419,15 @@ export default function ClientDetail() {
         clientId={clientId}
         scopeName={client.businessName}
       />
+
+      <div className="flex justify-end">
+        <Link href={`/clients/${clientId}/summary-report`}>
+          <Button variant="outline" size="sm" className="gap-1.5">
+            <FileText className="h-4 w-4" />
+            View Summary Report
+          </Button>
+        </Link>
+      </div>
 
       {/* ═══ BUSINESSES ═══ */}
       <BusinessesSection clientId={clientId} clientName={client.businessName} />

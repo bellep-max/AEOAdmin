@@ -37,6 +37,7 @@ import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
 import Archived from "@/pages/archived";
+import SummaryReport from "@/pages/summary-report";
 
 import type { ComponentType } from "react";
 
@@ -127,6 +128,7 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/clients" component={Clients} />
         <Route path="/businesses" component={Businesses} />
+        <Route path="/clients/:id/summary-report" component={SummaryReport} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
           path="/clients/:clientId/businesses/:businessId"

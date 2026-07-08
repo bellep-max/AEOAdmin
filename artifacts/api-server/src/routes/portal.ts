@@ -30,6 +30,12 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { chatCompletion } from "../services/llm-client";
+import {
+  getGlossaryPayload,
+  availableReportDates,
+  GLOSSARY_VERSION,
+} from "../lib/summary-content";
+import { generateSummaryNarrative } from "../lib/summary-narrative";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -2932,6 +2938,8 @@ export interface EnrichedKeyword {
   businessName: string | null;
   latestPosition: number | null;
   latestDate: string | null;
+  firstPosition: number | null;
+  priorPosition: number | null;
   platforms: Record<string, { position: number | null; date: string | null }>;
   sparkline: number[];
   totalRuns: number;
@@ -2960,7 +2968,14 @@ function dayOf(date: string | null, createdAt: Date | null): string {
  */
 export async function scanClientKeywords(
   clientId: number,
-  opts: { aeoPlanId?: number; businessId?: number; keywordId?: number },
+  opts: {
+    aeoPlanId?: number;
+    businessId?: number;
+    keywordId?: number;
+    /** Restrict the rank series to runs on or before this YYYY-MM-DD (inclusive).
+     *  Used by the period-ending Summary Report; omit for all-time. */
+    asOfDate?: string;
+  },
 ): Promise<EnrichedKeyword[]> {
   const conditions = [eq(keywordsTable.clientId, clientId)];
   if (opts.aeoPlanId != null)
@@ -3020,7 +3035,10 @@ export async function scanClientKeywords(
   }
 
   return kws.map((k) => {
-    const rs = byKeyword.get(k.id) ?? [];
+    let rs = byKeyword.get(k.id) ?? [];
+    if (opts.asOfDate) {
+      rs = rs.filter((r) => dayOf(r.date, r.createdAt) <= opts.asOfDate!);
+    }
 
     // Per-platform latest rank (oldest-first → last write wins = latest).
     const platforms: EnrichedKeyword["platforms"] = {};
@@ -3050,6 +3068,8 @@ export async function scanClientKeywords(
       totalRuns > 0 ? Math.round((top3Runs / totalRuns) * 100) : 0;
     const latestPosition = totalRuns > 0 ? series[series.length - 1] : null;
     const latestDate = days.length > 0 ? days[days.length - 1] : null;
+    const firstPosition = totalRuns > 0 ? series[0] : null;
+    const priorPosition = totalRuns >= 2 ? series[series.length - 2] : null;
 
     let trend: EnrichedKeyword["trend"] = "steady";
     if (series.length >= 2) {
@@ -3090,6 +3110,8 @@ export async function scanClientKeywords(
       businessName: k.businessName ?? null,
       latestPosition,
       latestDate,
+      firstPosition,
+      priorPosition,
       platforms,
       sparkline: series.slice(-12),
       totalRuns,
@@ -3139,6 +3161,279 @@ function parseIntOrUndefined(v: unknown): number | undefined {
   if (typeof v !== "string") return undefined;
   const n = Number.parseInt(v, 10);
   return Number.isNaN(n) ? undefined : n;
+}
+
+/* ─── Summary Report builder (shared by portal + admin namespaces) ───
+   The single source of truth for the Summary Report payload. Both the
+   customer portal and the admin panel fetch through routes that call
+   this ONE function, so the content is guaranteed identical. Pure read;
+   derives everything from ranking_reports via scanClientKeywords. */
+
+const SUMMARY_PLATFORM_LABEL: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+export type SummaryScope = "client" | "business" | "campaign";
+
+export interface SummaryMetrics {
+  tracked: number;
+  withRank: number;
+  top3: number;
+  improved: number;
+  declined: number;
+  steady: number;
+  avgCurrent: number | null;
+  avgFirst: number | null;
+}
+
+export interface SummaryPlatformAggregate {
+  platform: string;
+  label: string;
+  tracked: number;
+  top3: number;
+  avgCurrent: number | null;
+}
+
+export interface SummaryMover {
+  keyword: string;
+  first: number | null;
+  current: number | null;
+}
+
+export interface SummaryLockedPlatform {
+  platform: string;
+  label: string;
+  position: number | null;
+  reason: string;
+}
+
+export interface SummaryLocked {
+  keyword: string;
+  campaignName: string | null;
+  businessName: string | null;
+  platforms: SummaryLockedPlatform[];
+}
+
+export interface SummaryWatch {
+  keyword: string;
+  latestPosition: number | null;
+  stallingSince: string | null;
+}
+
+export interface SummaryDecline {
+  keyword: string;
+  from: number | null;
+  to: number | null;
+  reason: string;
+}
+
+export interface SummaryReport {
+  scope: SummaryScope;
+  businessId: number | null;
+  aeoPlanId: number | null;
+  date: string | null;
+  /** "prior-run" when a period-ending date is chosen; "all-time" otherwise. */
+  comparison: "prior-run" | "all-time";
+  metrics: SummaryMetrics;
+  platforms: SummaryPlatformAggregate[];
+  movers: SummaryMover[];
+  locked: SummaryLocked[];
+  watch: SummaryWatch[];
+  declines: SummaryDecline[];
+  glossaryVersion: string;
+}
+
+function roundedAvg(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+/**
+ * Build the Summary Report payload for a client scope. When `date` is set the
+ * report ends on that day and per-keyword movement is measured vs the PRIOR
+ * run (bi-weekly delta); otherwise it is all-time (current vs first-ever run).
+ * All figures are derived from ranking_reports — never asserted.
+ */
+export async function buildSummaryReport(
+  clientId: number,
+  opts: {
+    scope: SummaryScope;
+    businessId?: number | null;
+    aeoPlanId?: number | null;
+    date?: string | null;
+  },
+): Promise<SummaryReport> {
+  const date = opts.date ?? null;
+  const enriched = await scanClientKeywords(clientId, {
+    businessId: opts.businessId ?? undefined,
+    aeoPlanId: opts.aeoPlanId ?? undefined,
+    asOfDate: date ?? undefined,
+  });
+
+  // Baseline for movement: prior run when a date is chosen, else first-ever run.
+  const baselineOf = (k: EnrichedKeyword): number | null =>
+    date ? k.priorPosition : k.firstPosition;
+
+  let improved = 0;
+  let declined = 0;
+  let steady = 0;
+  const currents: number[] = [];
+  const baselines: number[] = [];
+  let top3 = 0;
+
+  for (const k of enriched) {
+    const cur = k.latestPosition;
+    const base = baselineOf(k);
+    if (cur != null) {
+      currents.push(cur);
+      if (cur <= TOP3) top3 += 1;
+    }
+    if (base != null) baselines.push(base);
+    if (cur != null && base != null) {
+      if (cur < base) improved += 1;
+      else if (cur > base) declined += 1;
+      else steady += 1;
+    }
+  }
+
+  const metrics: SummaryMetrics = {
+    tracked: enriched.length,
+    withRank: currents.length,
+    top3,
+    improved,
+    declined,
+    steady,
+    avgCurrent: roundedAvg(currents),
+    avgFirst: roundedAvg(baselines),
+  };
+
+  // Per-platform aggregates from the latest per-platform position.
+  const platforms: SummaryPlatformAggregate[] = [];
+  for (const platform of Object.keys(SUMMARY_PLATFORM_LABEL)) {
+    const positions: number[] = [];
+    let pTop3 = 0;
+    for (const k of enriched) {
+      const pos = k.platforms[platform]?.position;
+      if (pos != null) {
+        positions.push(pos);
+        if (pos <= TOP3) pTop3 += 1;
+      }
+    }
+    if (positions.length > 0) {
+      platforms.push({
+        platform,
+        label: SUMMARY_PLATFORM_LABEL[platform],
+        tracked: positions.length,
+        top3: pTop3,
+        avgCurrent: roundedAvg(positions),
+      });
+    }
+  }
+
+  // Movers: biggest improvements (baseline → current), best first.
+  const movers: SummaryMover[] = enriched
+    .filter((k) => {
+      const base = baselineOf(k);
+      return (
+        base != null && k.latestPosition != null && k.latestPosition < base
+      );
+    })
+    .sort(
+      (a, b) =>
+        baselineOf(b)! -
+        b.latestPosition! -
+        (baselineOf(a)! - a.latestPosition!),
+    )
+    .slice(0, 5)
+    .map((k) => ({
+      keyword: k.keywordText,
+      first: baselineOf(k),
+      current: k.latestPosition,
+    }));
+
+  // Locked: won phrases, with a read-time per-platform reason derived from the
+  // latest per-platform position (never from the generic archive_reason text).
+  const locked: SummaryLocked[] = enriched
+    .filter((k) => k.status === "locked")
+    .map((k) => {
+      const platformReasons: SummaryLockedPlatform[] = [];
+      for (const platform of Object.keys(SUMMARY_PLATFORM_LABEL)) {
+        const pos = k.platforms[platform]?.position;
+        if (pos == null) continue;
+        const label = SUMMARY_PLATFORM_LABEL[platform];
+        platformReasons.push({
+          platform,
+          label,
+          position: pos,
+          reason:
+            pos <= TOP3
+              ? `Holding the top 3 (currently #${pos}) on ${label} — secured, so we rotated a fresh phrase in.`
+              : `Won earlier on ${label}; latest check was #${pos}.`,
+        });
+      }
+      return {
+        keyword: k.keywordText,
+        campaignName: k.campaignName,
+        businessName: k.businessName,
+        platforms: platformReasons,
+      };
+    });
+
+  // Watch: active phrases slipping out of the top 3 over recent checks.
+  const watch: SummaryWatch[] = enriched
+    .filter((k) => k.atRisk)
+    .map((k) => ({
+      keyword: k.keywordText,
+      latestPosition: k.latestPosition,
+      stallingSince: k.stallingSince,
+    }));
+
+  // Declines: genuine position movement only (current worse than baseline).
+  // NOTE(erven): the "platform not measured in period" decline reason is
+  // intentionally NOT asserted here — it requires cross-referencing sessions
+  // and success ranking_reports counts per (keyword, platform). Deferred to a
+  // follow-up so we never claim an outage the data doesn't prove.
+  const declines: SummaryDecline[] = enriched
+    .filter((k) => {
+      const base = baselineOf(k);
+      return (
+        base != null && k.latestPosition != null && k.latestPosition > base
+      );
+    })
+    .sort(
+      (a, b) =>
+        b.latestPosition! -
+        baselineOf(b)! -
+        (a.latestPosition! - baselineOf(a)!),
+    )
+    .slice(0, 5)
+    .map((k) => {
+      const from = baselineOf(k);
+      const to = k.latestPosition;
+      return {
+        keyword: k.keywordText,
+        from,
+        to,
+        reason: `Slipped from #${from} to #${to} — we're working it back up.`,
+      };
+    });
+
+  return {
+    scope: opts.scope,
+    businessId: opts.businessId ?? null,
+    aeoPlanId: opts.aeoPlanId ?? null,
+    date,
+    comparison: date ? "prior-run" : "all-time",
+    metrics,
+    platforms,
+    movers,
+    locked,
+    watch,
+    declines,
+    glossaryVersion: GLOSSARY_VERSION,
+  };
 }
 
 /** GET /api/portal/insights/locked-keywords — won (top-3, status=locked). */
@@ -3421,6 +3716,105 @@ router.post("/reports/summarize", requirePortalAuth, async (req, res) => {
     res.json({ summary, cached: false });
   } catch (err) {
     req.log.error({ err }, "Portal report summarize error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
+  }
+});
+
+/* ─── Summary Report (client-scoped) ──────────────────────────
+   Customer-facing endpoints. Content is produced by the shared
+   builders (getGlossaryPayload / availableReportDates /
+   buildSummaryReport) so it matches the admin panel exactly. */
+
+/** GET /api/portal/glossary — plain-English term definitions. */
+router.get("/glossary", requirePortalAuth, (_req, res) => {
+  res.json(getGlossaryPayload());
+});
+
+function parseScope(v: unknown): SummaryScope {
+  return v === "business" || v === "campaign" ? v : "client";
+}
+
+/** GET /api/portal/summary/available-dates — calendar dates with report data. */
+router.get("/summary/available-dates", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const dates = await availableReportDates(clientId, {
+      businessId,
+      aeoPlanId,
+    });
+    res.json({ dates });
+  } catch (err) {
+    req.log.error({ err }, "Portal summary available-dates error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/summary — Summary Report payload for scope + optional date. */
+router.get("/summary", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const scope = parseScope(req.query.scope);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    res.json(report);
+  } catch (err) {
+    req.log.error({ err }, "Portal summary error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/summary/narrative — plain-English AI narrative + how-AEO-works. */
+router.get("/summary/narrative", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const scope = parseScope(req.query.scope);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    const narrative = await generateSummaryNarrative(
+      report,
+      clientId,
+      Date.now(),
+    );
+    res.json(narrative);
+  } catch (err) {
+    req.log.error({ err }, "Portal summary narrative error");
     res.status(500).json({ error: "Could not generate a summary right now." });
   }
 });
