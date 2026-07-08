@@ -21,7 +21,7 @@ const scope: ChatScope = {
   clientId: 1,
   clientName: "Acme",
   businessId: null,
-  businessName: null,
+  businessName: null, aeoPlanId: null, campaignName: null,
 };
 
 const rows = [
@@ -204,7 +204,7 @@ describe("useChatbot pipeline", () => {
         clientId: 2,
         clientName: "Other",
         businessId: null,
-        businessName: null,
+        businessName: null, aeoPlanId: null, campaignName: null,
       }),
     );
     expect(result.current.turns).toHaveLength(0);

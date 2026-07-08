@@ -11,6 +11,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import type { ChatScope, ChatTurn, Intent, IntentKind } from "./types";
+import { scopeFocus } from "./types";
 import { buildRouterMessages, parseIntent } from "./intents";
 import { fetchDataset, resolveTimeframe, type DataDeps } from "./data";
 import { buildNarrativeMessages } from "./narrative";
@@ -161,7 +162,7 @@ export function useChatbot(): UseChatbot {
           intent,
           dataset,
           text: `I don't have any ranking data for ${
-            activeScope.businessName ?? activeScope.clientName
+            scopeFocus(activeScope).name
           } in this range yet. Once an audit run records rankings, I'll be able to summarize them.`,
         });
         return;

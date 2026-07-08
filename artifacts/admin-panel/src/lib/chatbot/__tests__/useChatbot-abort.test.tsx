@@ -12,8 +12,8 @@ import { callJsonCompletion, streamNarrative } from "../llm-client";
 import { rawFetch } from "../../period-comparison";
 import type { ChatScope } from "../types";
 
-const scopeA: ChatScope = { clientId: 1, clientName: "Acme", businessId: null, businessName: null };
-const scopeB: ChatScope = { clientId: 2, clientName: "Other", businessId: null, businessName: null };
+const scopeA: ChatScope = { clientId: 1, clientName: "Acme", businessId: null, businessName: null, aeoPlanId: null, campaignName: null };
+const scopeB: ChatScope = { clientId: 2, clientName: "Other", businessId: null, businessName: null, aeoPlanId: null, campaignName: null };
 
 const ROWS = [
   { keywordId: 1, keyword: "best dentist", platform: "chatgpt", date: "2026-05-01", rankingPosition: 8, status: "success", searchAddress: null },

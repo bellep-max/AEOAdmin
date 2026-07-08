@@ -6,7 +6,7 @@ import type { Dataset } from "../types";
 function ds(): Dataset {
   return {
     intentKind: "business_summary",
-    scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null },
+    scope: { clientId: 1, clientName: "Acme", businessId: null, businessName: null, aeoPlanId: null, campaignName: null },
     coverage: { earliest: "2026-05-01", latest: "2026-06-30", rowCount: 8, platforms: ["chatgpt"] },
     summary: {
       keywords: [

@@ -20,7 +20,7 @@ const scope: ChatScope = {
   clientId: 1,
   clientName: "Acme",
   businessId: null,
-  businessName: null,
+  businessName: null, aeoPlanId: null, campaignName: null,
 };
 
 function rows(): RankingRow[] {
@@ -211,8 +211,13 @@ describe("fetchDataset", () => {
         return { data: rows() };
       },
     };
-    await fetchDataset(summaryIntent, { ...scope, businessId: 9, businessName: "Biz" }, deps);
+    await fetchDataset(
+      summaryIntent,
+      { ...scope, businessId: 9, businessName: "Biz", aeoPlanId: 7, campaignName: "Camp" },
+      deps,
+    );
     expect(seenPath).toContain("clientId=1");
     expect(seenPath).toContain("businessId=9");
+    expect(seenPath).toContain("aeoPlanId=7");
   });
 });

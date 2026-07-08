@@ -235,6 +235,7 @@ export function findMatchingKeywords(
 function scopeQuery(scope: ChatScope): string {
   const parts = [`clientId=${scope.clientId}`];
   if (scope.businessId !== null) parts.push(`businessId=${scope.businessId}`);
+  if (scope.aeoPlanId !== null) parts.push(`aeoPlanId=${scope.aeoPlanId}`);
   return parts.join("&");
 }
 
