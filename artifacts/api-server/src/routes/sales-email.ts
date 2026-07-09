@@ -381,26 +381,31 @@ function prepareSalesEmail(
  *  Grouping on meta->>'keywordId' keeps null-keyword rows in the result so they
  *  still count toward the account-level value. */
 async function getLastSentInfo(clientId: number): Promise<{
-  perKeyword: Map<number, string>;
+  perKeyword: Map<number, { lastSent: string; count: number }>;
   accountLast: string | null;
 }> {
   const result = await db.execute(sql`
-    SELECT meta->>'keywordId' AS kid, MAX(sent_at) AS last_sent
+    SELECT meta->>'keywordId' AS kid, MAX(sent_at) AS last_sent, COUNT(*)::int AS n
     FROM email_sends
     WHERE client_id = ${clientId}
       AND kind = 'sales'
       AND status = 'sent'
     GROUP BY meta->>'keywordId'
   `);
-  const rows = result.rows as Array<{ kid: string | null; last_sent: Date }>;
-  const perKeyword = new Map<number, string>();
+  const rows = result.rows as Array<{
+    kid: string | null;
+    last_sent: Date;
+    n: number;
+  }>;
+  const perKeyword = new Map<number, { lastSent: string; count: number }>();
   let accountLast: string | null = null;
   for (const row of rows) {
     if (!row.last_sent) continue;
     const iso = new Date(row.last_sent).toISOString();
     if (accountLast == null || iso > accountLast) accountLast = iso;
     const kid = row.kid != null ? Number.parseInt(row.kid, 10) : NaN;
-    if (Number.isFinite(kid)) perKeyword.set(kid, iso);
+    if (Number.isFinite(kid))
+      perKeyword.set(kid, { lastSent: iso, count: row.n });
   }
   return { perKeyword, accountLast };
 }
@@ -408,13 +413,14 @@ async function getLastSentInfo(clientId: number): Promise<{
 /* Keyword/platform options for the FE picker, strongest improvement first. */
 function keywordOptions(
   data: ImprovementData,
-  lastSentByKeyword: Map<number, string>,
+  lastSentByKeyword: Map<number, { lastSent: string; count: number }>,
 ) {
   return data.keywords.map((k) => ({
     keywordId: k.keywordId,
     keyword: k.keyword,
     maxImproved: k.maxImproved,
-    lastSentAt: lastSentByKeyword.get(k.keywordId) ?? null,
+    lastSentAt: lastSentByKeyword.get(k.keywordId)?.lastSent ?? null,
+    sentCount: lastSentByKeyword.get(k.keywordId)?.count ?? 0,
     platforms: PLATFORM_ORDER.filter((p) => k.platforms[p]).map((p) => ({
       platform: p,
       beforeRank: k.platforms[p].first.rank,
