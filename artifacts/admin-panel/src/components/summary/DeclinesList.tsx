@@ -40,7 +40,7 @@ export function DeclinesList({ declines }: { declines: DeclineKeyword[] }) {
                     {fmtPos(d.from)}
                   </span>
                   <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                  <span className="font-semibold text-red-600 dark:text-red-400">
+                  <span className="font-semibold text-foreground">
                     {fmtPos(d.to)}
                   </span>
                 </div>
