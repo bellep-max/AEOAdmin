@@ -149,15 +149,15 @@ function defaultIntro(a: SalesEmailArgs): string {
   const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
   return `${hi}
 
-We've added a new service for ${SENDER_ORG} customers: an AI Ranking Service. We now work to get ${a.business} named as the answer when people ask ChatGPT, Gemini, and Perplexity for what you do.
+We built new technology to get local businesses named in AI searches, and we turned it on for your business. ${a.business} is already improving in the search results. The proof is in the screenshots.
 
-Here's your first keyword ranking:`;
+When someone asks ChatGPT, Gemini, and Perplexity "${a.keyword}", ${a.business} is NOW the answer.`;
 }
 
-function defaultOffer(a: SalesEmailArgs): string {
-  return `This is a real, screenshot-verified result: ${a.business} is now showing up as the AI answer for "${a.keyword}."
+function defaultOffer(_a: SalesEmailArgs): string {
+  return `With this, you are first to market. Your business is showing up in AI search results before your competitors know this channel exists.
 
-We'll be ranking a few more of your keywords over the next couple weeks. If you want the rest now, or want to hear more about how the service works, just reply — or pick a time below.`;
+We'll continue to run for the next few weeks, but we'd love to tell you more. Schedule a time with our team to learn more about AI Search and to lock in your presence in the search results.`;
 }
 
 export function buildSalesEmailHtml(a: SalesEmailArgs): string {
