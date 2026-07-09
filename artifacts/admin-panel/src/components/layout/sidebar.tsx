@@ -174,6 +174,7 @@ const navGroups: NavGroup[] = [
         href: "/sent-emails",
         icon: MailCheck,
         salesAllowed: true,
+        chucksLocalAllowed: true,
       },
       { name: "Metrics", href: "/metrics", icon: BarChart3 },
       { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },
