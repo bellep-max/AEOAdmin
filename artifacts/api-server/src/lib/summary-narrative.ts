@@ -19,8 +19,16 @@ export interface NarrativeSections {
   declines: string;
 }
 
+/** One titled block of the long-form Overview write-up. `body` may hold several
+ *  paragraphs, separated by "\n\n". */
+export interface OverviewBlock {
+  heading: string;
+  body: string;
+}
+
 export interface SummaryNarrative {
   sections: NarrativeSections;
+  overview: OverviewBlock[];
   howAeoWorks: HowAeoWorksStep[];
   cached: boolean;
 }
@@ -51,15 +59,21 @@ function scopeIdOf(report: SummaryReport, clientId: number): number {
   return clientId;
 }
 
-/** Stable hash of the inputs that would change the prose. */
+/** Stable hash of the inputs that would change the prose. `v` is bumped when the
+ *  cached payload shape changes so old rows (pre-Overview) miss and regenerate. */
 function contentHash(report: SummaryReport): string {
   const shape = {
+    v: 2,
     metrics: report.metrics,
     platforms: report.platforms,
     movers: report.movers,
     locked: report.locked.map((l) => ({
       k: l.keyword,
       p: l.platforms.map((x) => `${x.platform}:${x.position}`),
+    })),
+    watch: report.watch.map((w) => ({
+      k: w.keyword,
+      p: w.latestPosition,
     })),
     declines: report.declines,
     comparison: report.comparison,
@@ -72,6 +86,9 @@ function buildFacts(report: SummaryReport): string[] {
   const started =
     report.comparison === "prior-run" ? "the prior check" : "when we started";
   const facts: string[] = [
+    report.date
+      ? `Reporting period ends ${report.date} (movement measured against the prior check).`
+      : `Reporting period: all-time (movement measured against the first-ever check).`,
     `Search phrases tracked across ChatGPT, Gemini and Perplexity: ${m.tracked} (${m.withRank} have a ranking so far).`,
     `Phrases now in the top 3: ${m.top3}.`,
     `Since ${started} — improved: ${m.improved}, slipped: ${m.declined}, steady: ${m.steady}.`,
@@ -104,6 +121,18 @@ function buildFacts(report: SummaryReport): string[] {
         ".",
     );
   }
+  if (report.watch.length) {
+    facts.push(
+      "Phrases being watched (stalled / on the radar): " +
+        report.watch
+          .map(
+            (w) =>
+              `"${w.keyword}"${w.latestPosition != null ? ` (latest #${w.latestPosition})` : ""}`,
+          )
+          .join("; ") +
+        ".",
+    );
+  }
   if (report.declines.length) {
     facts.push(
       "Phrases that slipped (data-derived movement only): " +
@@ -130,12 +159,61 @@ const SYSTEM_PROMPT =
   '- "declines": 1-2 sentences, honest but reassuring, on phrases that slipped and are being worked back up. If none, return "".\n' +
   "Plain English, warm and encouraging but honest, addressed as 'you' / 'your business'. No markdown inside values. Do not invent numbers beyond the ones given.";
 
+const OVERVIEW_SYSTEM_PROMPT =
+  "You write a long-form, client-facing Summary Overview for a business owner, explaining how their business is showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) for businesses like theirs. A position closer to #1 means they appear nearer the top of the AI's answer. " +
+  'Respond with ONLY a JSON object (no markdown, no code fences) of the form { "blocks": [ { "heading": string, "body": string }, ... ] }. ' +
+  "Each body may contain several sentences; separate paragraphs inside a body with a blank line (\\n\\n). Produce the blocks below, IN THIS ORDER, but SKIP any block that has no supporting data in the facts:\n" +
+  '1. "Overview" — phrases tracked, how many reached the top 3, the average position and whether it is steady/up/down, and the improved/slipped/steady movement breakdown.\n' +
+  '2. "Visibility by platform" — each assistant\'s standing, plus a short plain-language note on why platforms can differ (each AI weighs sources and freshness differently).\n' +
+  '3. "Biggest movers" — name the top improvements, and explain briefly why jumps happen (fresh, relevant content the assistants pick up).\n' +
+  '4. "Locked wins" — name the locked phrases; explain that "locked" means the top 3 was held across two checks, that we rotate a fresh phrase in to chase new ground, and the trade-off that a locked phrase can soften over time because it is no longer actively reinforced.\n' +
+  '5. "Watching" — name the phrases that are stalled or on the radar, and explain that "watching" means we are keeping an eye on them and ready to act before they slip.\n' +
+  '6. "Needs attention" — name the phrases that slipped and give common, reassuring reasons phrases decline (competitor gains, AI model updates, content freshness gaps, reduced reinforcement), framed as now back in active rotation.\n' +
+  '7. "How it works, end to end" — walk through the pipeline in plain language: tracked phrases become variant questions, we run them on ChatGPT, Gemini and Perplexity, record the positions, then either keep watching / give needs-attention phrases more attention, or lock a win and rotate a fresh phrase in.\n' +
+  '8. A final closing block titled "Our commitment" — warm, encouraging, reassuring the client we will keep working to improve their visibility and grow their business.\n' +
+  "Warm, encouraging and honest, addressed as 'you' / 'your business'. Never invent numbers or phrase names beyond the facts given. No markdown syntax inside headings or bodies.";
+
+/** Strip code fences a model sometimes wraps JSON in. */
+function stripFences(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/, "")
+    .trim();
+}
+
+function parseOverview(raw: string): OverviewBlock[] {
+  const cleaned = stripFences(raw);
+  try {
+    const parsed = JSON.parse(cleaned) as { blocks?: unknown };
+    const blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+    const out: OverviewBlock[] = [];
+    for (const b of blocks) {
+      if (b && typeof b === "object") {
+        const rec = b as Record<string, unknown>;
+        const heading =
+          typeof rec.heading === "string" ? rec.heading.trim() : "";
+        const body = typeof rec.body === "string" ? rec.body.trim() : "";
+        if (heading || body) out.push({ heading, body });
+      }
+    }
+    return out.length ? out : [{ heading: "Summary", body: cleaned }];
+  } catch {
+    return [{ heading: "Summary", body: cleaned }];
+  }
+}
+
+interface CachedNarrative {
+  sections: NarrativeSections;
+  overview: OverviewBlock[];
+}
+
 async function readCache(
   scope: string,
   scopeId: number,
   reportDate: string,
   hash: string,
-): Promise<NarrativeSections | null> {
+): Promise<CachedNarrative | null> {
   const { rows } = await pool.query(
     `SELECT input_summary, report_markdown FROM daily_reports
      WHERE scope = $1 AND scope_id = $2 AND report_date = $3
@@ -147,13 +225,28 @@ async function readCache(
   const summary = row.input_summary as { hash?: string } | null;
   if (!summary || summary.hash !== hash) return null;
   try {
-    const parsed = JSON.parse(
-      row.report_markdown,
-    ) as Partial<NarrativeSections>;
+    const parsed = JSON.parse(row.report_markdown) as {
+      sections?: Partial<NarrativeSections>;
+      overview?: unknown;
+    };
+    const sectionsIn = parsed.sections ?? {};
     const sections = { ...EMPTY_SECTIONS };
     for (const k of SECTION_KEYS)
-      sections[k] = typeof parsed[k] === "string" ? (parsed[k] as string) : "";
-    return sections;
+      sections[k] =
+        typeof sectionsIn[k] === "string" ? (sectionsIn[k] as string) : "";
+    const overview: OverviewBlock[] = Array.isArray(parsed.overview)
+      ? (parsed.overview as unknown[]).flatMap((b) => {
+          if (!b || typeof b !== "object") return [];
+          const rec = b as Record<string, unknown>;
+          return [
+            {
+              heading: typeof rec.heading === "string" ? rec.heading : "",
+              body: typeof rec.body === "string" ? rec.body : "",
+            },
+          ];
+        })
+      : [];
+    return { sections, overview };
   } catch {
     return null;
   }
@@ -166,6 +259,7 @@ async function writeCache(
   hash: string,
   report: SummaryReport,
   sections: NarrativeSections,
+  overview: OverviewBlock[],
   model: string,
   durationMs: number,
   costUsd: number,
@@ -180,7 +274,7 @@ async function writeCache(
       scopeId,
       model,
       JSON.stringify({ hash, metrics: report.metrics }),
-      JSON.stringify(sections),
+      JSON.stringify({ sections, overview }),
       Math.round(durationMs),
       costUsd.toFixed(4),
     ],
@@ -201,12 +295,11 @@ export async function generateSummaryNarrative(
 
   // No ranking data yet — no AI call, no cache.
   if (report.metrics.withRank === 0) {
+    const emptyMessage =
+      "No ranking data has come in yet for this selection. This fills in once the tracked search phrases have been checked on the AI assistants.";
     return {
-      sections: {
-        ...EMPTY_SECTIONS,
-        overall:
-          "No ranking data has come in yet for this selection. This fills in once the tracked search phrases have been checked on the AI assistants.",
-      },
+      sections: { ...EMPTY_SECTIONS, overall: emptyMessage },
+      overview: [{ heading: "Overview", body: emptyMessage }],
       howAeoWorks,
       cached: false,
     };
@@ -221,30 +314,51 @@ export async function generateSummaryNarrative(
 
   if (cacheDate) {
     const cached = await readCache(scope, scopeId, cacheDate, hash);
-    if (cached) return { sections: cached, howAeoWorks, cached: true };
+    if (cached)
+      return {
+        sections: cached.sections,
+        overview: cached.overview,
+        howAeoWorks,
+        cached: true,
+      };
   }
 
   const start = nowMs;
-  const completion = await chatCompletion({
-    model: "deepseek-chat",
-    temperature: 0.4,
-    maxTokens: 640,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content:
-          "Here are this report's numbers. Return the JSON object of per-section explanations:\n\n" +
-          buildFacts(report).join("\n"),
-      },
-    ],
-  });
+  const facts = buildFacts(report).join("\n");
+  // Two calls: the short per-section blurbs and the long-form Overview. Run them
+  // together so one round-trip's latency covers both.
+  const [sectionsCompletion, overviewCompletion] = await Promise.all([
+    chatCompletion({
+      model: "deepseek-chat",
+      temperature: 0.4,
+      maxTokens: 640,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content:
+            "Here are this report's numbers. Return the JSON object of per-section explanations:\n\n" +
+            facts,
+        },
+      ],
+    }),
+    chatCompletion({
+      model: "deepseek-chat",
+      temperature: 0.5,
+      maxTokens: 1100,
+      messages: [
+        { role: "system", content: OVERVIEW_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content:
+            "Here are this report's numbers. Return the JSON object of Overview blocks:\n\n" +
+            facts,
+        },
+      ],
+    }),
+  ]);
 
-  const raw = completion.content
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
+  const raw = stripFences(sectionsCompletion.content);
   let sections: NarrativeSections = { ...EMPTY_SECTIONS };
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -255,6 +369,8 @@ export async function generateSummaryNarrative(
     sections = { ...EMPTY_SECTIONS, overall: raw };
   }
 
+  const overview = parseOverview(overviewCompletion.content);
+
   if (cacheDate) {
     try {
       await writeCache(
@@ -264,14 +380,15 @@ export async function generateSummaryNarrative(
         hash,
         report,
         sections,
-        completion.model,
+        overview,
+        sectionsCompletion.model,
         Date.now() - start,
-        completion.costUsd,
+        sectionsCompletion.costUsd + overviewCompletion.costUsd,
       );
     } catch {
       // Cache write is best-effort; never fail the request over it.
     }
   }
 
-  return { sections, howAeoWorks, cached: false };
+  return { sections, overview, howAeoWorks, cached: false };
 }

@@ -90,7 +90,13 @@ export interface NarrativeSections {
   declines: string;
 }
 
+export interface OverviewBlock {
+  heading: string;
+  body: string;
+}
+
 export interface SummaryNarrative {
+  overview: OverviewBlock[];
   sections: NarrativeSections;
   howAeoWorks: NarrativeStep[];
   cached: boolean;
