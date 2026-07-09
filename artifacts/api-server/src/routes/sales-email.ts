@@ -17,7 +17,7 @@
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
 import { clientsTable, emailSendsTable } from "@workspace/db/schema";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles } from "../middlewares/role-auth";
@@ -375,12 +375,46 @@ function prepareSalesEmail(
   };
 }
 
+/** Last successful sales-send timestamps for a client, in one round-trip:
+ *  a per-keyword map (keyed by the keywordId stored in meta) plus the overall
+ *  account-level max across ALL sales sends (including sends with no keywordId).
+ *  Grouping on meta->>'keywordId' keeps null-keyword rows in the result so they
+ *  still count toward the account-level value. */
+async function getLastSentInfo(clientId: number): Promise<{
+  perKeyword: Map<number, string>;
+  accountLast: string | null;
+}> {
+  const result = await db.execute(sql`
+    SELECT meta->>'keywordId' AS kid, MAX(sent_at) AS last_sent
+    FROM email_sends
+    WHERE client_id = ${clientId}
+      AND kind = 'sales'
+      AND status = 'sent'
+    GROUP BY meta->>'keywordId'
+  `);
+  const rows = result.rows as Array<{ kid: string | null; last_sent: Date }>;
+  const perKeyword = new Map<number, string>();
+  let accountLast: string | null = null;
+  for (const row of rows) {
+    if (!row.last_sent) continue;
+    const iso = new Date(row.last_sent).toISOString();
+    if (accountLast == null || iso > accountLast) accountLast = iso;
+    const kid = row.kid != null ? Number.parseInt(row.kid, 10) : NaN;
+    if (Number.isFinite(kid)) perKeyword.set(kid, iso);
+  }
+  return { perKeyword, accountLast };
+}
+
 /* Keyword/platform options for the FE picker, strongest improvement first. */
-function keywordOptions(data: ImprovementData) {
+function keywordOptions(
+  data: ImprovementData,
+  lastSentByKeyword: Map<number, string>,
+) {
   return data.keywords.map((k) => ({
     keywordId: k.keywordId,
     keyword: k.keyword,
     maxImproved: k.maxImproved,
+    lastSentAt: lastSentByKeyword.get(k.keywordId) ?? null,
     platforms: PLATFORM_ORDER.filter((p) => k.platforms[p]).map((p) => ({
       platform: p,
       beforeRank: k.platforms[p].first.rank,
@@ -418,6 +452,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     };
 
     const scope = parseScope(req.query as Record<string, unknown>);
+    const lastSent = await getLastSentInfo(clientId);
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
       strict: strictMode,
@@ -435,6 +470,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         html: null,
         selected: null,
         keywords: [],
+        lastCommunicationAt: lastSent.accountLast,
         strictMode,
       });
 
@@ -455,7 +491,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         reason: prepared.reason,
         html: null,
         selected: null,
-        keywords: keywordOptions(r.data),
+        keywords: keywordOptions(r.data, lastSent.perKeyword),
+        lastCommunicationAt: lastSent.accountLast,
         strictMode,
       });
 
@@ -489,7 +526,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       },
       defaultIntro: defaultIntro(dArgs),
       defaultOffer: defaultOffer(dArgs),
-      keywords: keywordOptions(r.data),
+      keywords: keywordOptions(r.data, lastSent.perKeyword),
+      lastCommunicationAt: lastSent.accountLast,
       strictMode,
     });
   } catch (err) {

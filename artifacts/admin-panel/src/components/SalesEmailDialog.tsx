@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { format } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,8 @@ interface KeywordOption {
   keyword: string | null;
   maxImproved: number;
   platforms: PlatformOption[];
+  /* ISO timestamp of the last sales email sent for this keyword; null = never. */
+  lastSentAt?: string | null;
 }
 
 interface SalesPreviewResponse {
@@ -86,6 +89,8 @@ interface SalesPreviewResponse {
   defaultIntro?: string;
   defaultOffer?: string;
   keywords: KeywordOption[];
+  /* ISO timestamp of the most recent sales email sent to this client; null = none. */
+  lastCommunicationAt?: string | null;
   strictMode: boolean;
 }
 
@@ -438,6 +443,13 @@ export function SalesEmailDialog({
               ? `Email ${defaults.businessName} their before/after ranking proof.`
               : "Email the selected client their before/after ranking proof."}
           </DialogDescription>
+          {preview != null && (
+            <p className="text-xs text-muted-foreground">
+              {preview.lastCommunicationAt
+                ? `Last email sent: ${format(new Date(preview.lastCommunicationAt), "MMM d, yyyy")}`
+                : "No emails sent yet."}
+            </p>
+          )}
         </DialogHeader>
 
         <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4 overflow-hidden min-h-0">
@@ -510,6 +522,11 @@ export function SalesEmailDialog({
                         <QualityMark quality={keywordQuality(k)} />
                         {k.keyword ?? `Keyword ${k.keywordId}`} (▲
                         {k.maxImproved})
+                        {k.lastSentAt && (
+                          <span className="text-muted-foreground">
+                            · sent {format(new Date(k.lastSentAt), "MMM d")}
+                          </span>
+                        )}
                       </span>
                     </SelectItem>
                   ))}
