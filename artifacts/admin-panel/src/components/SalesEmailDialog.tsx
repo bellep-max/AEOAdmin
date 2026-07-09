@@ -70,6 +70,8 @@ interface KeywordOption {
   platforms: PlatformOption[];
   /* ISO timestamp of the last sales email sent for this keyword; null = never. */
   lastSentAt?: string | null;
+  /* How many sales emails have been sent for this keyword (1 = first email). */
+  sentCount?: number;
 }
 
 interface SalesPreviewResponse {
@@ -524,7 +526,8 @@ export function SalesEmailDialog({
                         {k.maxImproved})
                         {k.lastSentAt && (
                           <span className="text-muted-foreground">
-                            · sent {format(new Date(k.lastSentAt), "MMM d")}
+                            · {k.sentCount === 1 ? "first email sent" : "sent"}{" "}
+                            {format(new Date(k.lastSentAt), "MMM d")}
                           </span>
                         )}
                       </span>
