@@ -267,12 +267,6 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
       </div>
     </div>
 
-    <!-- Footer -->
-    <div style="padding:18px 20px;text-align:center">
-      <p style="margin:0 0 4px 0;font-size:11px;font-weight:800;letter-spacing:2px;color:#64748b;text-transform:uppercase">${SENDER_ORG}</p>
-      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. Reply &ldquo;unsubscribe&rdquo; and we&rsquo;ll take you off the list.</p>
-    </div>
-
   </div>
 </body>
 </html>`;
