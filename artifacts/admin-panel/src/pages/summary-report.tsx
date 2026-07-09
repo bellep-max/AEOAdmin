@@ -26,6 +26,7 @@ import {
 } from "@/components/summary/ScopeSelector";
 import { DateCalendar } from "@/components/summary/DateCalendar";
 import { MetricsCards } from "@/components/summary/MetricsCards";
+import { OverviewNarrative } from "@/components/summary/OverviewNarrative";
 import { NarrativeBlock } from "@/components/summary/NarrativeBlock";
 import { PlatformAggregates } from "@/components/summary/PlatformAggregates";
 import { MoversList } from "@/components/summary/MoversList";
@@ -128,6 +129,12 @@ export default function SummaryReport() {
         </div>
       ) : (
         <>
+          {/* 0 · Summary Overview — client-facing write-up, above everything */}
+          <OverviewNarrative
+            blocks={narrative?.overview ?? []}
+            isLoading={narrativeLoading}
+          />
+
           {/* 1 · Metrics */}
           <MetricsCards metrics={report.metrics} />
 

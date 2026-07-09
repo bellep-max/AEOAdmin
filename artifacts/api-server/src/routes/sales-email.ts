@@ -17,7 +17,7 @@
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
 import { clientsTable, emailSendsTable } from "@workspace/db/schema";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles } from "../middlewares/role-auth";
@@ -149,15 +149,15 @@ function defaultIntro(a: SalesEmailArgs): string {
   const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
   return `${hi}
 
-We've added a new service for ${SENDER_ORG} customers: an AI Ranking Service. We now work to get ${a.business} named as the answer when people ask ChatGPT, Gemini, and Perplexity for what you do.
+We built new technology to get local businesses named in AI searches, and we turned it on for your business. ${a.business} is already improving in the search results. The proof is in the screenshots.
 
-Here's your first keyword ranking:`;
+When someone asks ChatGPT, Gemini, and Perplexity "${a.keyword}", ${a.business} is NOW the answer.`;
 }
 
-function defaultOffer(a: SalesEmailArgs): string {
-  return `This is a real, screenshot-verified result: ${a.business} is now showing up as the AI answer for "${a.keyword}."
+function defaultOffer(_a: SalesEmailArgs): string {
+  return `With this, you are first to market. Your business is showing up in AI search results before your competitors know this channel exists.
 
-We'll be ranking a few more of your keywords over the next couple weeks. If you want the rest now, or want to hear more about how the service works, just reply — or pick a time below.`;
+We'll continue to run for the next few weeks, but we'd love to tell you more. Schedule a time with our team to learn more about AI Search and to lock in your presence in the search results.`;
 }
 
 export function buildSalesEmailHtml(a: SalesEmailArgs): string {
@@ -265,12 +265,6 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
       <div style="padding:14px 30px 26px 30px">
         <p style="margin:0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${SENDER_NAME}<br/><span style="color:#64748b">${SENDER_ORG}</span></p>
       </div>
-    </div>
-
-    <!-- Footer -->
-    <div style="padding:18px 20px;text-align:center">
-      <p style="margin:0 0 4px 0;font-size:11px;font-weight:800;letter-spacing:2px;color:#64748b;text-transform:uppercase">${SENDER_ORG}</p>
-      <p style="margin:0;color:#94a3b8;font-size:11px;line-height:1.6">You&rsquo;re receiving this because of your relationship with ${SENDER_ORG}. Reply &ldquo;unsubscribe&rdquo; and we&rsquo;ll take you off the list.</p>
     </div>
 
   </div>
@@ -381,12 +375,46 @@ function prepareSalesEmail(
   };
 }
 
+/** Last successful sales-send timestamps for a client, in one round-trip:
+ *  a per-keyword map (keyed by the keywordId stored in meta) plus the overall
+ *  account-level max across ALL sales sends (including sends with no keywordId).
+ *  Grouping on meta->>'keywordId' keeps null-keyword rows in the result so they
+ *  still count toward the account-level value. */
+async function getLastSentInfo(clientId: number): Promise<{
+  perKeyword: Map<number, string>;
+  accountLast: string | null;
+}> {
+  const result = await db.execute(sql`
+    SELECT meta->>'keywordId' AS kid, MAX(sent_at) AS last_sent
+    FROM email_sends
+    WHERE client_id = ${clientId}
+      AND kind = 'sales'
+      AND status = 'sent'
+    GROUP BY meta->>'keywordId'
+  `);
+  const rows = result.rows as Array<{ kid: string | null; last_sent: Date }>;
+  const perKeyword = new Map<number, string>();
+  let accountLast: string | null = null;
+  for (const row of rows) {
+    if (!row.last_sent) continue;
+    const iso = new Date(row.last_sent).toISOString();
+    if (accountLast == null || iso > accountLast) accountLast = iso;
+    const kid = row.kid != null ? Number.parseInt(row.kid, 10) : NaN;
+    if (Number.isFinite(kid)) perKeyword.set(kid, iso);
+  }
+  return { perKeyword, accountLast };
+}
+
 /* Keyword/platform options for the FE picker, strongest improvement first. */
-function keywordOptions(data: ImprovementData) {
+function keywordOptions(
+  data: ImprovementData,
+  lastSentByKeyword: Map<number, string>,
+) {
   return data.keywords.map((k) => ({
     keywordId: k.keywordId,
     keyword: k.keyword,
     maxImproved: k.maxImproved,
+    lastSentAt: lastSentByKeyword.get(k.keywordId) ?? null,
     platforms: PLATFORM_ORDER.filter((p) => k.platforms[p]).map((p) => ({
       platform: p,
       beforeRank: k.platforms[p].first.rank,
@@ -424,6 +452,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     };
 
     const scope = parseScope(req.query as Record<string, unknown>);
+    const lastSent = await getLastSentInfo(clientId);
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
       strict: strictMode,
@@ -441,6 +470,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         html: null,
         selected: null,
         keywords: [],
+        lastCommunicationAt: lastSent.accountLast,
         strictMode,
       });
 
@@ -461,7 +491,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         reason: prepared.reason,
         html: null,
         selected: null,
-        keywords: keywordOptions(r.data),
+        keywords: keywordOptions(r.data, lastSent.perKeyword),
+        lastCommunicationAt: lastSent.accountLast,
         strictMode,
       });
 
@@ -495,7 +526,8 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       },
       defaultIntro: defaultIntro(dArgs),
       defaultOffer: defaultOffer(dArgs),
-      keywords: keywordOptions(r.data),
+      keywords: keywordOptions(r.data, lastSent.perKeyword),
+      lastCommunicationAt: lastSent.accountLast,
       strictMode,
     });
   } catch (err) {
