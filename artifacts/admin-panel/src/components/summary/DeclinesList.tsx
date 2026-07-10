@@ -6,7 +6,15 @@ import type { DeclineKeyword } from "@/lib/summary-report";
 
 const fmtPos = (n: number | null): string => (n != null ? `#${n}` : "—");
 
-export function DeclinesList({ declines }: { declines: DeclineKeyword[] }) {
+export function DeclinesList({
+  declines,
+  narrative,
+  narrativeLoading,
+}: {
+  declines: DeclineKeyword[];
+  narrative?: string;
+  narrativeLoading?: boolean;
+}) {
   return (
     <Card className="border-border/50">
       <CardHeader className="pb-3">
@@ -47,6 +55,25 @@ export function DeclinesList({ declines }: { declines: DeclineKeyword[] }) {
               </li>
             ))}
           </ul>
+        )}
+        {narrative?.trim() ? (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            {narrative.trim()}
+          </p>
+        ) : narrativeLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Writing…</p>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            A few phrases eased down since the last check —{" "}
+            <strong className="font-semibold text-foreground">
+              completely normal
+            </strong>{" "}
+            as the AI varies its answers day to day. They're already{" "}
+            <strong className="font-semibold text-foreground">
+              back in our active work queue
+            </strong>
+            .
+          </p>
         )}
       </CardContent>
     </Card>

@@ -100,7 +100,7 @@ router.post("/", requireEditor, async (req, res) => {
  */
 router.patch("/:id", requireEditor, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id), 10);
 
     const [task] = await db
       .update(tasksTable)
@@ -133,7 +133,7 @@ router.delete("/:id", requireEditor, async (req, res) => {
   try {
     await db
       .delete(tasksTable)
-      .where(eq(tasksTable.id, parseInt(req.params.id)));
+      .where(eq(tasksTable.id, parseInt(String(req.params.id), 10)));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Error deleting task");
@@ -148,7 +148,7 @@ router.delete("/:id", requireEditor, async (req, res) => {
  */
 router.post("/:id/subtasks", requireEditor, async (req, res) => {
   try {
-    const taskId = parseInt(req.params.id);
+    const taskId = parseInt(String(req.params.id), 10);
 
     const [subtask] = await db
       .insert(subtasksTable)
@@ -176,7 +176,7 @@ router.patch(
   requireEditor,
   async (req, res) => {
     try {
-      const subtaskId = parseInt(req.params.subtaskId);
+      const subtaskId = parseInt(String(req.params.subtaskId), 10);
 
       const [subtask] = await db
         .update(subtasksTable)

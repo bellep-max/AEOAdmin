@@ -12,7 +12,15 @@ function delta(m: SummaryMover): number | null {
   return m.first - m.current;
 }
 
-export function MoversList({ movers }: { movers: SummaryMover[] }) {
+export function MoversList({
+  movers,
+  narrative,
+  narrativeLoading,
+}: {
+  movers: SummaryMover[];
+  narrative?: string;
+  narrativeLoading?: boolean;
+}) {
   return (
     <Card className="border-border/50">
       <CardHeader className="pb-3">
@@ -58,6 +66,23 @@ export function MoversList({ movers }: { movers: SummaryMover[] }) {
               );
             })}
           </ul>
+        )}
+        {narrative?.trim() ? (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            {narrative.trim()}
+          </p>
+        ) : narrativeLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Writing…</p>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            Your fastest-rising phrases since the last check. A jump like{" "}
+            <strong className="font-semibold text-foreground">#12 → #4</strong>{" "}
+            means you went from barely mentioned to one of the{" "}
+            <strong className="font-semibold text-foreground">
+              first names
+            </strong>{" "}
+            the AI gives.
+          </p>
         )}
       </CardContent>
     </Card>

@@ -63,7 +63,7 @@ function scopeIdOf(report: SummaryReport, clientId: number): number {
  *  cached payload shape changes so old rows (pre-Overview) miss and regenerate. */
 function contentHash(report: SummaryReport): string {
   const shape = {
-    v: 2,
+    v: 3,
     metrics: report.metrics,
     platforms: report.platforms,
     movers: report.movers,
@@ -148,16 +148,16 @@ function buildFacts(report: SummaryReport): string[] {
 }
 
 const SYSTEM_PROMPT =
-  "You explain an AI-search ranking Summary Report in plain English to a business owner. " +
-  "This report measures how often the business shows up when people ask AI assistants (ChatGPT, Gemini, Perplexity) for businesses like theirs; a position closer to #1 means it appears nearer the top of the AI's answer. " +
-  "Write a SEPARATE short explanation for each part. Respond with ONLY a JSON object (no markdown, no code fences) with exactly these string keys:\n" +
-  '- "overall": 1-2 sentences on overall standing — phrases tracked, how many reached the top 3, average position and direction.\n' +
-  '- "trend": 1-2 sentences on how the ranking has moved since the comparison point.\n' +
-  '- "movers": 1-2 sentences naming one or two of the largest improvements. If none, say progress is holding steady.\n' +
-  '- "platforms": 1-2 sentences on how visibility differs across the AI assistants. If no per-assistant data, return "".\n' +
-  '- "locked": 1-2 sentences on phrases that were won and locked in, and that a fresh phrase rotates in next. If none, return "".\n' +
-  '- "declines": 1-2 sentences, honest but reassuring, on phrases that slipped and are being worked back up. If none, return "".\n' +
-  "Plain English, warm and encouraging but honest, addressed as 'you' / 'your business'. No markdown inside values. Do not invent numbers beyond the ones given.";
+  "You are the account manager for a local business, writing a warm, personal update to the owner about how their business is showing up in AI search. When someone asks ChatGPT, Gemini or Perplexity to recommend a business like theirs, we track whether the AI names them and how near the top — position #1 means the AI mentions them first. " +
+  "Write like a real person who genuinely cares about this client and wants to keep them for the long run. Be warm, confident, specific and genuinely encouraging — your job is to help them understand what's happening AND to feel great about the progress and proud to be working with us. Sound human, never like a report or a machine: no jargon, no hype, no stiff 'AI voice', and don't lean on dashes. Always connect the numbers to what they MEAN for the business — more people discovering them, trusting them, and choosing them when they ask AI for a recommendation. Keep every part constructive and motivating; frame dips as a normal, temporary part of the work that you are already actively handling, and end those on a confident, we've-got-this note. " +
+  "Write in a bit more depth than a one-liner — enough to reassure and win them over, without padding. Respond with ONLY a JSON object (no markdown, no code fences) with exactly these string keys:\n" +
+  '- "overall": 3-4 warm sentences on where they stand right now, what it means for getting found and chosen, and why it is worth being excited about.\n' +
+  '- "trend": 2-3 sentences on which way things are moving and what that momentum means for them, kept upbeat.\n' +
+  '- "movers": 3-5 sentences that really celebrate one or two phrases that climbed — name them, spell out the jump in plain terms, and paint what that win means (more customers seeing them named first, more calls and visits). If none, reassure them progress is holding steady and building.\n' +
+  '- "platforms": 3-4 sentences on how they show up across ChatGPT, Gemini and Perplexity, what the differences mean, and a simple, non-technical reason the assistants can vary. If no per-assistant data, return "".\n' +
+  '- "locked": 3-4 sentences on phrases they have won and are holding — reassure them these are secured and defended, celebrate the milestone, and note a fresh phrase gets worked next so momentum keeps going. If none, return "".\n' +
+  '- "declines": 3-4 sentences, honest but genuinely reassuring, explaining that a few phrases eased down (completely normal as the AI varies its answers, competitors move, or content freshness shifts), that this is expected and temporary, and exactly that you already have them back in active work and expect them to recover. Leave them confident, never worried. If none, return "".\n' +
+  "Address them as 'you' / 'your business'. Never invent numbers or phrase names beyond the facts given. No markdown inside values.";
 
 const OVERVIEW_SYSTEM_PROMPT =
   "You write a long-form, client-facing Summary Overview for a business owner, explaining how their business is showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) for businesses like theirs. A position closer to #1 means they appear nearer the top of the AI's answer. " +
@@ -330,8 +330,8 @@ export async function generateSummaryNarrative(
   const [sectionsCompletion, overviewCompletion] = await Promise.all([
     chatCompletion({
       model: "deepseek-chat",
-      temperature: 0.4,
-      maxTokens: 640,
+      temperature: 0.5,
+      maxTokens: 1400,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {

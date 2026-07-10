@@ -1,17 +1,23 @@
 /**
  * Summary Report page. Reads the client from the route, lets the user pick a
  * scope (client / business / campaign) and a date (all-time or a single run),
- * then renders the metrics, AI narrative, platform, movers, locked, watch, and
- * declines sections plus a static "How AEO works" and a collapsible glossary.
+ * then presents a fixed "hero" (client-facing Summary Overview + headline
+ * metrics + overall/trend narrative) followed by the deep-dive sections behind
+ * sticky tabs: Platforms, Movers, Won, Watch, Declines, How AEO works, Glossary.
+ *
+ * Tabs keep the summary in view instead of forcing a long scroll. Each tab's AI
+ * narrative is folded into its own panel. Panels use forceMount so every section
+ * stays in the DOM — an @media print rule (index.css) expands them all, so a
+ * future "Export PDF" renders the whole report, not just the active tab.
  *
  * The four admin endpoints all take ?clientId=; empty AI narrative sections are
  * hidden and numbers are never invented — every figure comes from the payload.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetClient } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, FileText } from "lucide-react";
 import {
@@ -27,7 +33,6 @@ import {
 import { DateCalendar } from "@/components/summary/DateCalendar";
 import { MetricsCards } from "@/components/summary/MetricsCards";
 import { OverviewNarrative } from "@/components/summary/OverviewNarrative";
-import { NarrativeBlock } from "@/components/summary/NarrativeBlock";
 import { PlatformAggregates } from "@/components/summary/PlatformAggregates";
 import { MoversList } from "@/components/summary/MoversList";
 import { LockedList } from "@/components/summary/LockedList";
@@ -82,6 +87,100 @@ export default function SummaryReport() {
 
   const sections = narrative?.sections;
 
+  // Build the tab set from what the payload actually has: data-bearing tabs are
+  // only shown when non-empty; reference tabs (How it works, Glossary) are shown
+  // when their content exists. Each entry carries the count badge and its panel.
+  const tabs = useMemo(() => {
+    if (!report) return [];
+    const defs: {
+      key: string;
+      label: string;
+      count?: number;
+      node: React.ReactNode;
+    }[] = [];
+
+    if (report.platforms?.length)
+      defs.push({
+        key: "platforms",
+        label: "Platforms",
+        count: report.platforms.length,
+        node: (
+          <PlatformAggregates
+            platforms={report.platforms}
+            narrative={sections?.platforms}
+            narrativeLoading={narrativeLoading}
+          />
+        ),
+      });
+    if (report.movers?.length)
+      defs.push({
+        key: "movers",
+        label: "Movers",
+        count: report.movers.length,
+        node: (
+          <MoversList
+            movers={report.movers}
+            narrative={sections?.movers}
+            narrativeLoading={narrativeLoading}
+          />
+        ),
+      });
+    if (report.locked?.length)
+      defs.push({
+        key: "won",
+        label: "Won",
+        count: report.locked.length,
+        node: (
+          <LockedList
+            locked={report.locked}
+            narrative={sections?.locked}
+            narrativeLoading={narrativeLoading}
+          />
+        ),
+      });
+    if (report.watch?.length)
+      defs.push({
+        key: "watch",
+        label: "Watch",
+        count: report.watch.length,
+        node: <WatchList watch={report.watch} />,
+      });
+    if (report.declines?.length)
+      defs.push({
+        key: "declines",
+        label: "Declines",
+        count: report.declines.length,
+        node: (
+          <DeclinesList
+            declines={report.declines}
+            narrative={sections?.declines}
+            narrativeLoading={narrativeLoading}
+          />
+        ),
+      });
+    if (narrative?.howAeoWorks?.length)
+      defs.push({
+        key: "how",
+        label: "How it works",
+        node: <HowAeoWorks steps={narrative.howAeoWorks} />,
+      });
+    if (glossary)
+      defs.push({
+        key: "glossary",
+        label: "Glossary",
+        node: <GlossaryPanel glossary={glossary} />,
+      });
+
+    return defs;
+  }, [report, narrative, glossary, sections, narrativeLoading]);
+
+  // Keep the active tab valid as the scope/date (and thus the tab set) changes.
+  const [tab, setTab] = useState<string>("");
+  useEffect(() => {
+    if (tabs.length === 0) return;
+    if (!tabs.some((t) => t.key === tab)) setTab(tabs[0].key);
+  }, [tabs, tab]);
+
   return (
     <div className="space-y-6">
       {/* ── Breadcrumb + heading ── */}
@@ -129,59 +228,44 @@ export default function SummaryReport() {
         </div>
       ) : (
         <>
-          {/* 0 · Summary Overview — client-facing write-up, above everything */}
+          {/* ── Hero: always-visible summary ── */}
           <OverviewNarrative
             blocks={narrative?.overview ?? []}
             isLoading={narrativeLoading}
           />
-
-          {/* 1 · Metrics */}
-          <MetricsCards metrics={report.metrics} />
-
-          {/* 2 · Narrative: overall + trend */}
-          <div className="space-y-2">
-            <NarrativeBlock
-              text={sections?.overall}
-              isLoading={narrativeLoading}
-            />
-            <NarrativeBlock
-              text={sections?.trend}
-              isLoading={narrativeLoading}
-            />
-          </div>
-
-          {/* 3 · Platform aggregates */}
-          <PlatformAggregates platforms={report.platforms} />
-
-          {/* 4 · Movers + narrative */}
-          <MoversList movers={report.movers} />
-          <NarrativeBlock
-            text={sections?.movers}
-            isLoading={narrativeLoading}
+          <MetricsCards
+            metrics={report.metrics}
+            narrative={sections?.overall}
+            narrativeLoading={narrativeLoading}
           />
 
-          {/* 5 · Locked + narrative */}
-          <LockedList locked={report.locked} />
-          <NarrativeBlock
-            text={sections?.locked}
-            isLoading={narrativeLoading}
-          />
-
-          {/* 6 · Watch */}
-          <WatchList watch={report.watch} />
-
-          {/* 7 · Declines + narrative */}
-          <DeclinesList declines={report.declines} />
-          <NarrativeBlock
-            text={sections?.declines}
-            isLoading={narrativeLoading}
-          />
-
-          {/* 8 · How AEO works */}
-          {narrative && <HowAeoWorks steps={narrative.howAeoWorks} />}
-
-          {/* 9 · Glossary (collapsible) */}
-          {glossary && <GlossaryPanel glossary={glossary} />}
+          {/* ── Deep-dive tabs ── */}
+          {tabs.length > 0 && (
+            <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+              <TabsList className="report-tabs-list sticky top-0 z-20 flex h-auto w-full flex-wrap justify-start gap-1 bg-background/85 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                {tabs.map((t) => (
+                  <TabsTrigger key={t.key} value={t.key} className="gap-2">
+                    {t.label}
+                    {t.count != null && (
+                      <span className="rounded-full bg-muted px-1.5 text-xs font-bold text-muted-foreground data-[active]:bg-primary/15">
+                        {t.count}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {tabs.map((t) => (
+                <TabsContent
+                  key={t.key}
+                  value={t.key}
+                  forceMount
+                  className="report-tab mt-0 focus-visible:outline-none data-[state=inactive]:hidden"
+                >
+                  {t.node}
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
         </>
       )}
     </div>

@@ -768,7 +768,7 @@ function KeywordCard({
                 e.stopPropagation();
                 onEdit();
               }}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-100 transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-primary hover:bg-primary/10 transition-colors"
             >
               <Pencil className="w-4 h-4" />
             </button>
@@ -993,7 +993,7 @@ function KeywordCard({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setEditLink(link)}
-                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-blue-100 hover:text-blue-600 text-slate-600 transition-colors"
+                        className="w-5 h-5 flex items-center justify-center rounded hover:bg-primary/10 hover:text-primary text-slate-600 transition-colors"
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
@@ -1028,7 +1028,7 @@ function KeywordCard({
                             href={url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-sm text-blue-600 hover:underline max-w-full font-medium"
+                            className="flex items-center gap-1 text-sm text-primary hover:underline max-w-full font-medium"
                           >
                             <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
                             <span className="truncate">{url}</span>
@@ -1897,7 +1897,7 @@ export default function Keywords() {
                 typeFilter === t.id
                   ? t.id === "4"
                     ? "bg-emerald-600 text-white border-emerald-600"
-                    : "bg-blue-600 text-white border-blue-600"
+                    : "bg-primary text-primary-foreground border-primary"
                   : "border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-slate-400 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-900"
               }`}
             >
@@ -1948,7 +1948,7 @@ export default function Keywords() {
           {isEditor && (
             <Button
               size="lg"
-              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white text-lg px-6 py-4 font-bold"
+              className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground text-lg px-6 py-4 font-bold"
               onClick={() => setAddOpen(true)}
             >
               <Plus className="w-5 h-5" /> Add first keyword
@@ -2039,7 +2039,7 @@ export default function Keywords() {
                     <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
                     <Link
                       href={`/clients/${clientId}`}
-                      className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                      className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-primary"
                     >
                       <Building2 className="w-4 h-4" />
                       {clientName}
@@ -2059,7 +2059,7 @@ export default function Keywords() {
                 >
                   {/* Business header */}
                   <div
-                    className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 dark:bg-slate-800 border-b border-blue-300 dark:border-blue-700" : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                    className={`flex items-center gap-0 transition-colors ${isOpen ? "bg-slate-50 dark:bg-slate-800 border-b border-primary/40" : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"}`}
                   >
                     <button
                       onClick={() =>
@@ -2071,10 +2071,10 @@ export default function Keywords() {
                           return n;
                         })
                       }
-                      className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 dark:border-slate-700 transition-colors ${isOpen ? "text-blue-600 font-bold" : "text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white"}`}
+                      className={`flex items-center gap-3 px-4 py-4 flex-1 min-w-0 text-left border-r border-slate-300 dark:border-slate-700 transition-colors ${isOpen ? "text-primary font-bold" : "text-slate-700 dark:text-slate-300 hover:text-black dark:hover:text-white"}`}
                     >
                       <div
-                        className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${isOpen ? "bg-blue-100 text-blue-600" : "bg-blue-50 text-blue-600"}`}
+                        className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${isOpen ? "bg-primary/10 text-primary" : "bg-primary/10 text-primary"}`}
                       >
                         {initials}
                       </div>
@@ -2162,7 +2162,7 @@ export default function Keywords() {
                         </div>
                       </div>
                       <ChevronDown
-                        className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? "rotate-180 text-blue-600" : "text-slate-600 dark:text-slate-400"}`}
+                        className={`w-5 h-5 flex-shrink-0 transition-transform ${isOpen ? "rotate-180 text-primary" : "text-slate-600 dark:text-slate-400"}`}
                       />
                     </button>
 
@@ -2194,7 +2194,7 @@ export default function Keywords() {
                       {biz && (
                         <Link
                           href={`/clients/${clientId}/businesses/${businessId}`}
-                          className="flex items-center gap-2 text-base text-blue-600 hover:text-blue-700 font-bold border-2 border-blue-300 hover:border-blue-400 rounded-lg px-4 py-2 hover:bg-blue-50 transition-all"
+                          className="flex items-center gap-2 text-base text-primary hover:text-primary/90 font-bold border-2 border-primary/40 hover:border-primary/60 rounded-lg px-4 py-2 hover:bg-primary/10 transition-all"
                         >
                           <Building2 className="w-5 h-5" /> Profile
                         </Link>
@@ -2220,7 +2220,7 @@ export default function Keywords() {
                               bizFilter === t.id
                                 ? t.id === "4"
                                   ? "bg-emerald-600 text-white border-emerald-600"
-                                  : "bg-blue-600 text-white border-blue-600"
+                                  : "bg-primary text-primary-foreground border-primary"
                                 : "border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-slate-400 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-900"
                             }`}
                           >
@@ -2272,7 +2272,7 @@ export default function Keywords() {
                                     <>
                                       <Link
                                         href={`/clients/${clientId}/businesses/${businessId}/campaigns/${plan.id}`}
-                                        className="text-sm font-bold text-blue-700 dark:text-blue-400 hover:underline"
+                                        className="text-sm font-bold text-primary hover:underline"
                                       >
                                         {plan.name ?? plan.planType}
                                       </Link>

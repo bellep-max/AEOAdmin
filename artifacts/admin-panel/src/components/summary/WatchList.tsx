@@ -40,6 +40,14 @@ export function WatchList({ watch }: { watch: WatchKeyword[] }) {
             ))}
           </ul>
         )}
+        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          Phrases sitting{" "}
+          <strong className="font-semibold text-foreground">
+            just outside the top 3
+          </strong>
+          . They're close, and we're actively working to push them into the top
+          answers.
+        </p>
       </CardContent>
     </Card>
   );

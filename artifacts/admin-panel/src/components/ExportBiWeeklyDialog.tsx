@@ -147,8 +147,8 @@ export function ExportBiWeeklyDialog({
       <DialogContent className="sm:max-w-[640px] bg-white max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
-              <Icon className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Icon className="w-5 h-5 text-primary" />
             </div>
             <div>
               <DialogTitle className="text-lg font-bold text-black">

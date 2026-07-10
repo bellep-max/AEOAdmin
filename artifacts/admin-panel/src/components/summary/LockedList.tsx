@@ -4,7 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock } from "lucide-react";
 import type { LockedKeyword } from "@/lib/summary-report";
 
-export function LockedList({ locked }: { locked: LockedKeyword[] }) {
+export function LockedList({
+  locked,
+  narrative,
+  narrativeLoading,
+}: {
+  locked: LockedKeyword[];
+  narrative?: string;
+  narrativeLoading?: boolean;
+}) {
   return (
     <Card className="border-border/50">
       <CardHeader className="pb-3">
@@ -59,6 +67,23 @@ export function LockedList({ locked }: { locked: LockedKeyword[] }) {
               </li>
             ))}
           </ul>
+        )}
+        {narrative?.trim() ? (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            {narrative.trim()}
+          </p>
+        ) : narrativeLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Writing…</p>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            Phrases where you've reached the{" "}
+            <strong className="font-semibold text-foreground">top 3</strong> and
+            held it across checks —{" "}
+            <strong className="font-semibold text-foreground">
+              secured wins
+            </strong>{" "}
+            where the AI names you consistently when people ask.
+          </p>
         )}
       </CardContent>
     </Card>

@@ -7,8 +7,12 @@ import type { SummaryPlatform } from "@/lib/summary-report";
 
 export function PlatformAggregates({
   platforms,
+  narrative,
+  narrativeLoading,
 }: {
   platforms: SummaryPlatform[];
+  narrative?: string;
+  narrativeLoading?: boolean;
 }) {
   return (
     <Card className="border-border/50">
@@ -47,14 +51,24 @@ export function PlatformAggregates({
                   <p className="text-2xl font-bold tabular-nums">
                     {p.avgCurrent != null ? `#${p.avgCurrent}` : "—"}
                   </p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    <strong className="text-foreground">{p.top3}</strong> in top
-                    3
-                  </p>
                 </div>
               );
             })}
           </div>
+        )}
+        {narrative?.trim() ? (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            {narrative.trim()}
+          </p>
+        ) : narrativeLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Writing…</p>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            These are the AI assistants people ask for recommendations. The
+            number is your average spot in their answers — the closer to{" "}
+            <strong className="font-semibold text-foreground">#1</strong>, the
+            sooner you get named.
+          </p>
         )}
       </CardContent>
     </Card>
