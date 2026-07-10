@@ -105,6 +105,7 @@ interface ClientRow {
   websiteUrl: string | null;
   gmbUrl: string | null;
   accountUserName: string | null;
+  status: string | null;
 }
 
 interface BusinessRow {
@@ -126,9 +127,13 @@ function resolveClient(
   }
   const email = lc(q.email);
   if (email) {
-    const hit = clients.find(
+    const matches = clients.filter(
       (c) => lc(c.accountEmail) === email || lc(c.contactEmail) === email,
     );
+    // one email can map to several client rows (e.g. an inactive agency shell
+    // plus the real active client that holds the keywords) — never resolve to an
+    // inactive client when an active one shares the address.
+    const hit = matches.find((c) => lc(c.status) !== "inactive") ?? matches[0];
     if (hit) return { client: hit, matchedBy: "email" };
   }
   const cid = lc(q.cid) || cidOf(q.gbp ?? q.gbpUrl ?? "");
@@ -203,6 +208,7 @@ export interface KeywordEntry {
   business: string;
   platforms: Record<string, PlatformRanks>;
   maxImproved: number;
+  bestCurrentRank: number;
 }
 export interface ImprovementData {
   matchedBy: string;
@@ -280,6 +286,7 @@ export async function resolveImprovement(
       websiteUrl: clientsTable.websiteUrl,
       gmbUrl: clientsTable.gmbUrl,
       accountUserName: clientsTable.accountUserName,
+      status: clientsTable.status,
     })
     .from(clientsTable)) as ClientRow[];
 
@@ -429,10 +436,15 @@ export async function resolveImprovement(
     }
     if (Object.keys(platforms).length === 0) continue;
     const improved = maxImproved === -Infinity ? 0 : maxImproved;
-    // only surface keywords that actually improved on at least one platform —
-    // unless the caller opts into manual selection (the operator reviews the
-    // preview and may pick any keyword that has a real screenshot).
-    if (!opts.includeUnimproved && improved <= 0) continue;
+    const bestCurrentRank = Math.min(
+      ...Object.values(platforms).map((pr) => pr.current.rank),
+    );
+    // Surface a keyword when it either improved OR currently sits in the top 3.
+    // A steady #1/top-3 is strong proof in its own right — not every win has a
+    // before→after delta — and a top-3 here already passed the OCR-validated
+    // rank-visible guard above, so it is a real in-list finish, not a hedge.
+    if (!opts.includeUnimproved && improved <= 0 && bestCurrentRank > TOP3)
+      continue;
     const meta = kwMeta.get(keywordId);
     keywords.push({
       keywordId,
@@ -440,6 +452,7 @@ export async function resolveImprovement(
       business: meta?.business ?? client.businessName,
       platforms,
       maxImproved: improved,
+      bestCurrentRank,
     });
   }
   if (keywords.length === 0)
@@ -451,8 +464,17 @@ export async function resolveImprovement(
         : "No improved keywords with a visible rank for this client yet.",
     };
 
-  // strongest improvement first
-  keywords.sort((a, b) => b.maxImproved - a.maxImproved);
+  // Headline the strongest current standing: validated top-3 first (a #1 outranks
+  // a #2 outranks a #3), then everything else by biggest improvement. This makes a
+  // current #1 the default proof, not whichever keyword happened to climb the most.
+  keywords.sort((a, b) => {
+    const at3 = a.bestCurrentRank <= TOP3;
+    const bt3 = b.bestCurrentRank <= TOP3;
+    if (at3 !== bt3) return at3 ? -1 : 1;
+    if (at3 && a.bestCurrentRank !== b.bestCurrentRank)
+      return a.bestCurrentRank - b.bestCurrentRank;
+    return b.maxImproved - a.maxImproved;
+  });
 
   // headline business = most common across the returned keywords
   const bizCounts = new Map<string, number>();
