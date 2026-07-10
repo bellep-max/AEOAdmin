@@ -32,6 +32,7 @@ import {
   Sparkles,
   AlertTriangle,
   CheckCircle2,
+  Trophy,
 } from "lucide-react";
 
 interface EmailConfigResponse {
@@ -128,12 +129,52 @@ function platformQuality(p: PlatformOption): ScreenshotQuality {
   return "unverified";
 }
 
-/** Worst quality across all of a keyword's platform options. */
-function keywordQuality(k: KeywordOption): ScreenshotQuality {
-  const qs = k.platforms.map(platformQuality);
-  if (qs.includes("bad")) return "bad";
-  if (qs.includes("unverified")) return "unverified";
-  return "good";
+const TOP3 = 3;
+
+interface FlatOption {
+  keywordId: number;
+  keyword: string | null;
+  platform: string;
+  beforeRank: number;
+  afterRank: number;
+  improved: number;
+  quality: ScreenshotQuality;
+  /* top-3 finish AND the rank is OCR-verified visible in the current screenshot */
+  topAndVisible: boolean;
+  lastSentAt: string | null;
+  sentCount: number;
+}
+
+/** Every keyword × platform screenshot flattened into one tagged, sorted list.
+ *  Order: verified top-3 finishes first (a #1 before a #2), then good
+ *  screenshots, then the rest — nothing is hidden, only tagged. Tags describe
+ *  the current/"after" proof screenshot. */
+function buildFlatOptions(keywords: KeywordOption[]): FlatOption[] {
+  const qRank = (q: ScreenshotQuality) =>
+    q === "good" ? 0 : q === "unverified" ? 1 : 2;
+  const opts: FlatOption[] = [];
+  for (const k of keywords)
+    for (const p of k.platforms)
+      opts.push({
+        keywordId: k.keywordId,
+        keyword: k.keyword,
+        platform: p.platform,
+        beforeRank: p.beforeRank,
+        afterRank: p.afterRank,
+        improved: p.improved,
+        quality: platformQuality(p),
+        topAndVisible: p.afterRank <= TOP3 && p.afterRankVisible === true,
+        lastSentAt: k.lastSentAt ?? null,
+        sentCount: k.sentCount ?? 0,
+      });
+  return opts.sort((a, b) => {
+    if (a.topAndVisible !== b.topAndVisible) return a.topAndVisible ? -1 : 1;
+    if (a.topAndVisible && a.afterRank !== b.afterRank)
+      return a.afterRank - b.afterRank;
+    if (qRank(a.quality) !== qRank(b.quality))
+      return qRank(a.quality) - qRank(b.quality);
+    return b.improved - a.improved;
+  });
 }
 
 function QualityMark({ quality }: { quality: ScreenshotQuality }) {
@@ -498,16 +539,25 @@ export function SalesEmailDialog({
               </div>
             )}
 
-            {/* Keyword picker — strongest improvement first */}
+            {/* Proof picker — one flat list of every keyword × platform
+                screenshot, tagged by quality and top-3 visibility */}
             <div className="space-y-2">
-              <Label>Keyword</Label>
+              <Label>Screenshot to feature</Label>
               <Select
                 value={
-                  selectedKeywordId != null ? String(selectedKeywordId) : "auto"
+                  selectedKeywordId != null && selectedPlatform != null
+                    ? `${selectedKeywordId}:${selectedPlatform}`
+                    : "auto"
                 }
                 onValueChange={(v) => {
-                  setSelectedKeywordId(v === "auto" ? null : Number(v));
-                  setSelectedPlatform(null);
+                  if (v === "auto") {
+                    setSelectedKeywordId(null);
+                    setSelectedPlatform(null);
+                    return;
+                  }
+                  const [kid, plat] = v.split(":");
+                  setSelectedKeywordId(Number(kid));
+                  setSelectedPlatform(plat);
                 }}
                 disabled={!preview?.keywords?.length}
               >
@@ -518,16 +568,36 @@ export function SalesEmailDialog({
                   <SelectItem value="auto">
                     Strongest improvement (default)
                   </SelectItem>
-                  {preview?.keywords.map((k) => (
-                    <SelectItem key={k.keywordId} value={String(k.keywordId)}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <QualityMark quality={keywordQuality(k)} />
-                        {k.keyword ?? `Keyword ${k.keywordId}`} (▲
-                        {k.maxImproved})
-                        {k.lastSentAt && (
+                  {buildFlatOptions(preview?.keywords ?? []).map((o) => (
+                    <SelectItem
+                      key={`${o.keywordId}:${o.platform}`}
+                      value={`${o.keywordId}:${o.platform}`}
+                    >
+                      <span className="inline-flex items-center gap-1.5 flex-wrap">
+                        {o.topAndVisible ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Trophy className="w-3 h-3" /> Top {o.afterRank} ·
+                            visible
+                          </span>
+                        ) : (
+                          <QualityMark quality={o.quality} />
+                        )}
+                        <span className="font-medium">
+                          {o.keyword ?? `Keyword ${o.keywordId}`}
+                        </span>
+                        <span className="text-muted-foreground">
+                          · {platformLabel(o.platform)} · #{o.beforeRank} → #
+                          {o.afterRank}
+                        </span>
+                        {o.quality === "bad" && !o.topAndVisible && (
+                          <span className="text-[10px] text-red-600">
+                            bad screenshot
+                          </span>
+                        )}
+                        {o.lastSentAt && (
                           <span className="text-muted-foreground">
-                            · {k.sentCount === 1 ? "first email sent" : "sent"}{" "}
-                            {format(new Date(k.lastSentAt), "MMM d")}
+                            · {o.sentCount === 1 ? "first email sent" : "sent"}{" "}
+                            {format(new Date(o.lastSentAt), "MMM d")}
                           </span>
                         )}
                       </span>
@@ -535,39 +605,11 @@ export function SalesEmailDialog({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            {/* Platform picker — scoped to the chosen keyword */}
-            <div className="space-y-2">
-              <Label>Platform</Label>
-              <Select
-                value={selectedPlatform ?? "auto"}
-                onValueChange={(v) =>
-                  setSelectedPlatform(v === "auto" ? null : v)
-                }
-                disabled={!activeKeyword}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Biggest improvement (default)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">
-                    Biggest improvement (default)
-                  </SelectItem>
-                  {activeKeyword?.platforms.map((p) => (
-                    <SelectItem key={p.platform} value={p.platform}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <QualityMark quality={platformQuality(p)} />
-                        {platformLabel(p.platform)} · #{p.beforeRank} → #
-                        {p.afterRank}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <p className="text-[11px] text-muted-foreground">
-                The email shows one before/after pair. Defaults pick the
-                strongest verified improvement.
+                One before/after pair per email, across all platforms. 🏆 = a
+                top-3 finish verified visible in the screenshot; ✓ =
+                OCR-verified; ⚠ = rank not clearly visible — review before
+                sending.
               </p>
               {activePlatformOption &&
                 platformQuality(activePlatformOption) === "bad" && (
