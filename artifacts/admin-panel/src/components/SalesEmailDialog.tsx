@@ -573,33 +573,23 @@ export function SalesEmailDialog({
                       key={`${o.keywordId}:${o.platform}`}
                       value={`${o.keywordId}:${o.platform}`}
                     >
-                      <span className="inline-flex items-center gap-1.5 flex-wrap">
+                      <span className="flex w-full min-w-0 items-center gap-2">
                         {o.topAndVisible ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <Trophy className="w-3 h-3" /> Top {o.afterRank} ·
-                            visible
+                          <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Trophy className="w-3 h-3" /> Top {o.afterRank}
                           </span>
                         ) : (
-                          <QualityMark quality={o.quality} />
+                          <span className="shrink-0">
+                            <QualityMark quality={o.quality} />
+                          </span>
                         )}
-                        <span className="font-medium">
+                        <span className="truncate font-medium">
                           {o.keyword ?? `Keyword ${o.keywordId}`}
                         </span>
-                        <span className="text-muted-foreground">
-                          · {platformLabel(o.platform)} · #{o.beforeRank} → #
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {platformLabel(o.platform)} · #{o.beforeRank}→#
                           {o.afterRank}
                         </span>
-                        {o.quality === "bad" && !o.topAndVisible && (
-                          <span className="text-[10px] text-red-600">
-                            bad screenshot
-                          </span>
-                        )}
-                        {o.lastSentAt && (
-                          <span className="text-muted-foreground">
-                            · {o.sentCount === 1 ? "first email sent" : "sent"}{" "}
-                            {format(new Date(o.lastSentAt), "MMM d")}
-                          </span>
-                        )}
                       </span>
                     </SelectItem>
                   ))}
