@@ -372,12 +372,20 @@ export async function resolveImprovement(
         // become a "before" rank or it makes the improvement look fake.
         sql`${rankingReportsTable.rankingPosition} BETWEEN 1 AND ${MAX_RANK}`,
         sql`${rankingReportsTable.screenshotUrl} LIKE 's3://%'`,
-        // strict = only OCR-confirmed rank-visible screenshots (true); the
-        // default treats unchecked (null) as visible. The GHL sync uses strict
-        // so a not-yet-validated or inaccurate screenshot never reaches a CRM.
-        opts.strict
-          ? sql`${rankingReportsTable.screenshotRankVisible} = true`
-          : sql`COALESCE(${rankingReportsTable.screenshotRankVisible}, true) = true`,
+        // Rank-visibility gate is TOP-3-ONLY. A top-3 finish is a bold headline
+        // claim, so require an OCR-validated in-list entry (strict = true; lenient
+        // treats unchecked null as visible; the GHL sync uses strict so a
+        // not-yet-validated or inaccurate top-3 never reaches a CRM). Ranks below
+        // the top 3 are only ever "before" context showing a worse starting point
+        // — never a bold claim — so they pass regardless of rank-visibility.
+        // Without this split, a validated #12 "before" gets dropped and the
+        // #12->#1 improvement story collapses to #3->#1. The headline itself stays
+        // fabrication-proof via the current.rankVisible===true guard below.
+        sql`(${rankingReportsTable.rankingPosition} > ${TOP3} OR ${
+          opts.strict
+            ? sql`${rankingReportsTable.screenshotRankVisible} = true`
+            : sql`COALESCE(${rankingReportsTable.screenshotRankVisible}, true) = true`
+        })`,
       ),
     )) as RankRow[];
 
