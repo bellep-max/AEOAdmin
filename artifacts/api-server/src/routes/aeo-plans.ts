@@ -11,17 +11,23 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable } from "@workspace/db/schema";
 import { clientsTable } from "@workspace/db/schema";
-import { eq, asc } from "drizzle-orm";
-import { requireViewer } from "../middlewares/role-auth";
+import { eq, asc, inArray } from "drizzle-orm";
+import { requireSalesAllowed } from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 
 const router = Router();
 
 /**
  * GET /api/aeo-plans
  * Returns all AEO plans across all clients, joined with client businessName.
+ * Scoped roles (sales / account-manager / chuckslocal) only see plans for
+ * clients within their slice — see getScopedClientIds.
  */
-router.get("/", requireViewer, async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null && eligibleIds.length === 0) return res.json([]);
+
     const plans = await db
       .select({
         id: clientAeoPlansTable.id,
@@ -51,6 +57,11 @@ router.get("/", requireViewer, async (req, res) => {
       })
       .from(clientAeoPlansTable)
       .leftJoin(clientsTable, eq(clientAeoPlansTable.clientId, clientsTable.id))
+      .where(
+        eligibleIds !== null
+          ? inArray(clientAeoPlansTable.clientId, eligibleIds)
+          : undefined,
+      )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
     res.json(

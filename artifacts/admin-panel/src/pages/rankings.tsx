@@ -48,8 +48,9 @@ import {
 } from "@/components/ExportRankingsDialog";
 import { SendReportDialog } from "@/components/SendReportDialog";
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth";
-import { Mail, TrendingUp } from "lucide-react";
+import { Mail, TrendingUp, ScanEye, Loader2 } from "lucide-react";
 
 interface ClientRow {
   id: number;
@@ -587,8 +588,13 @@ export default function Rankings() {
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
   const [sendReportOpen, setSendReportOpen] = useState(false);
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
-  const { isOwner, isSales, isAdmin } = useAuth();
+  const [scanning, setScanning] = useState(false);
+  const { isOwner, isSales, isAdmin, isChucksLocal } = useAuth();
   const canSendSalesEmail = isOwner || isSales || isAdmin;
+  // isAdmin subsumes chuckslocal (plan-scoped, admin-like for CRUD) — the
+  // screenshot scanner hits every client's rows, so it must stay strictly
+  // admin/owner, never chuckslocal.
+  const isStrictAdmin = isAdmin && !isChucksLocal;
   const queryClient = useQueryClient();
 
   const effectivePeriod: Period =
@@ -620,6 +626,37 @@ export default function Rankings() {
       return res.json();
     },
   });
+
+  const { data: unscannedCount } = useQuery<number>({
+    queryKey: ["/api/screenshot-scan/unscanned-count"],
+    queryFn: async () => {
+      const res = await rawFetch("/api/screenshot-scan/unscanned-count");
+      if (!res.ok) throw new Error("Failed");
+      const body = await res.json();
+      return body.count as number;
+    },
+    enabled: isStrictAdmin,
+  });
+
+  async function handleScanScreenshots() {
+    setScanning(true);
+    try {
+      let remaining = 1;
+      while (remaining > 0) {
+        const res = await rawFetch("/api/screenshot-scan/scan", {
+          method: "POST",
+        });
+        if (!res.ok) throw new Error("Scan failed");
+        const body = await res.json();
+        remaining = body.remaining as number;
+      }
+    } finally {
+      setScanning(false);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/screenshot-scan/unscanned-count"],
+      });
+    }
+  }
 
   const byName = (a: string | null | undefined, b: string | null | undefined) =>
     (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
@@ -737,6 +774,26 @@ export default function Rankings() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isStrictAdmin && !!unscannedCount && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-violet-300 text-violet-600 hover:text-violet-700 hover:bg-violet-50 font-semibold"
+              onClick={handleScanScreenshots}
+              disabled={scanning}
+              title="Vision-validate top-3 screenshots that are pending review before they surface in proofs/reports"
+            >
+              {scanning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ScanEye className="w-3.5 h-3.5" />
+              )}
+              Scan screenshots
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {unscannedCount}
+              </Badge>
+            </Button>
+          )}
           <Button
             variant={comparisonOnly ? "default" : "outline"}
             size="sm"

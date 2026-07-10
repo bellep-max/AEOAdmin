@@ -84,6 +84,21 @@ function AdminTierGate({
   return <Component />;
 }
 
+/** Routes chuckslocal is explicitly allowed on (scoped to his plan slice by
+ *  the BE), plus the admin chain. Sales and account-manager still get
+ *  redirected away. Used for /archived — chuckslocal can view/archive/
+ *  restore his own clients but has no other admin-tier access. */
+function AdminTierOrChucksLocalGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isAccountManager, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || isSales || isAccountManager) return <Redirect to="/" />;
+  return <Component />;
+}
+
 /** Routes account-manager is explicitly allowed on, plus the admin chain.
  *  Sales still gets redirected away. Used for /keywords routes where account-
  *  manager is in scope but sales is not. */
@@ -124,7 +139,7 @@ function ProtectedRoutes() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/archived">
-          <AdminTierGate component={Archived} />
+          <AdminTierOrChucksLocalGate component={Archived} />
         </Route>
         <Route path="/clients" component={Clients} />
         <Route path="/businesses" component={Businesses} />

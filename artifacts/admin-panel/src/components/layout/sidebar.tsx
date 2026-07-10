@@ -121,7 +121,13 @@ const navGroups: NavGroup[] = [
         salesAllowed: true,
         accountManagerAllowed: true,
       },
-      { name: "Archived", href: "/archived", icon: Archive, adminOnly: true },
+      {
+        name: "Archived",
+        href: "/archived",
+        icon: Archive,
+        adminOnly: true,
+        chucksLocalAllowed: true,
+      },
       {
         name: "Keywords",
         href: "/keywords",

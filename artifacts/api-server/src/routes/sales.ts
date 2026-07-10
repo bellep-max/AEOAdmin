@@ -575,9 +575,18 @@ router.get("/screenshot", async (req, res) => {
     const s3Uri = which === "first" ? ranks.first.s3Uri : ranks.current.s3Uri;
     const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
     if (!m) return res.status(500).send("bad screenshot reference");
-    const obj = await s3.send(
-      new GetObjectCommand({ Bucket: m[1], Key: m[2] }),
-    );
+    let obj;
+    try {
+      obj = await s3.send(new GetObjectCommand({ Bucket: m[1], Key: m[2] }));
+    } catch (err) {
+      const name = (err as { name?: string })?.name;
+      const httpStatus = (err as { $metadata?: { httpStatusCode?: number } })
+        ?.$metadata?.httpStatusCode;
+      if (name === "NoSuchKey" || name === "NotFound" || httpStatus === 404) {
+        return res.status(404).send("screenshot unavailable");
+      }
+      throw err;
+    }
     res.setHeader("Content-Type", obj.ContentType ?? "image/png");
     res.setHeader("Cache-Control", "public, max-age=300");
     (obj.Body as Readable).pipe(res);

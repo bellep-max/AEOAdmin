@@ -30,6 +30,7 @@ import locationRouter from "./location";
 import ingestRouter from "./ingest";
 import salesRouter from "./sales";
 import salesEmailRouter from "./sales-email";
+import screenshotScanRouter from "./screenshot-scan";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use("/location", locationRouter);
 router.use("/ingest", ingestRouter);
 router.use("/sales", salesRouter);
 router.use("/sales", salesEmailRouter);
+router.use("/screenshot-scan", screenshotScanRouter);
 
 export default router;
