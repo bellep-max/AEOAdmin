@@ -50,9 +50,18 @@ export class VisionValidationError extends Error {
   }
 }
 
+/** Result of one screenshot validation. `verdict` is the headline pass/fail
+ *  (in the numbered list AT the claimed position); `inList` / `position`
+ *  expose what the model actually saw so callers can surface detail. */
+export interface VisionVerdict {
+  verdict: boolean;
+  inList: boolean;
+  position: number | null;
+}
+
 /**
- * Validates ONE ranking_reports row against its top-3 screenshot. Returns
- * true iff the tracked business is a numbered-list entry at exactly
+ * Validates ONE ranking_reports row against its screenshot. `verdict` is true
+ * iff the tracked business is a numbered-list entry at exactly
  * `rankingPosition`; false if it's absent or at a different position.
  * Throws VisionValidationError on any failure to get a usable verdict.
  */
@@ -60,7 +69,7 @@ export async function validateScreenshotRank(params: {
   rankingPosition: number;
   screenshotUrl: string;
   businessName: string;
-}): Promise<boolean> {
+}): Promise<VisionVerdict> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new VisionValidationError("OPENROUTER_API_KEY not configured");
@@ -123,8 +132,10 @@ export async function validateScreenshotRank(params: {
       throw new VisionValidationError("could not parse model response");
     }
     const inList = parsed.trackedInList === true;
-    const position = Number(parsed.trackedPosition);
-    return inList && position === params.rankingPosition;
+    const rawPosition = Number(parsed.trackedPosition);
+    const position = Number.isFinite(rawPosition) ? rawPosition : null;
+    const verdict = inList && position === params.rankingPosition;
+    return { verdict, inList, position };
   }
   throw new VisionValidationError("rate limited after 3 attempts");
 }
