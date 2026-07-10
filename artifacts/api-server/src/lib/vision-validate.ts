@@ -16,7 +16,7 @@ const MODEL = "qwen/qwen3-vl-8b-instruct";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? "us-east-1" });
 
-const SYSTEM_PROMPT = `You are shown a screenshot of an AI assistant answer that recommends local businesses, usually as a NUMBERED LIST (1., 2., 3., ...), sometimes with a burned-in "[RANK: X/Y]" footer and a narrative paragraph. Consider spelling/format variations when matching the tracked business (e.g. "Jenhaug" == "Jennifer Haug"). A business only mentioned in a paragraph but NOT as a numbered list entry is NOT "in the list".`;
+const SYSTEM_PROMPT = `You are shown a screenshot of an AI assistant answer that recommends local businesses as a NUMBERED LIST (1., 2., 3., ...), sometimes followed by a burned-in "[RANK: X/Y]" footer and a narrative/summary paragraph. Judge the tracked business by its EXACT name and ONLY as a genuine numbered LIST ENTRY. Do NOT count it as "in the list" when: (a) it appears only in a narrative/summary sentence (e.g. "X ranks around position 4", "X is an emerging presence") — that is NOT a list entry; (b) the listed name is a DIFFERENT business with a similar or partially-overlapping name (e.g. "Crown Roofing" is NOT "Crown Industrial Roofing"; "Mend Spa" is NOT "Mend - Grapevine"). Minor punctuation, casing or spacing differences are fine, but the core business name must match exactly.`;
 
 function buildUserPrompt(businessName: string): string {
   return `Tracked business: "${businessName}". Return ONLY strict minified JSON: {"trackedInList":true|false,"trackedPosition":<int or null>,"trackedNamedAs":"<how shown or ABSENT>","burnedRankLabel":"<X/Y or null>"}`;

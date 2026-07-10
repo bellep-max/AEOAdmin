@@ -29,10 +29,11 @@ const router = Router();
 const SCAN_BATCH_SIZE = 25;
 const SCAN_CONCURRENCY = 6;
 
-/** Shared WHERE clause: unscanned top-3 rows with an S3 screenshot. */
+/** Shared WHERE clause: unscanned ranked rows (1–50, so both before and
+ *  after screenshots at any rank get validated) with an S3 screenshot. */
 const UNSCANNED_CONDITIONS = and(
   isNull(rankingReportsTable.screenshotRankVisible),
-  between(rankingReportsTable.rankingPosition, 1, 3),
+  between(rankingReportsTable.rankingPosition, 1, 50),
   like(rankingReportsTable.screenshotUrl, "s3://%"),
 );
 
