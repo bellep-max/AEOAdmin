@@ -43,25 +43,14 @@ const GENERIC = new Set([
   "dr", "shop", "store", "services", "service", "company", "group",
 ]);
 
-/** True when the client's business appears as a NUMBERED LIST ENTRY in the
- *  answer (its brand name right after a "N." marker on its own line), above the
- *  burned-in "[RANK:]" footer. Tuned to reject narrative/summary mentions,
- *  cross-line bleed, substring hits, and shared-city tokens — so it means "the
- *  client is actually shown at their rank", not "merely named somewhere". */
-function entryVisibleInList(fullText, business) {
-  const m = /\[?\s*rank\s*[:#]?\s*\d+\s*\/\s*\d+/i.exec(fullText);
-  const region = fullText.slice(0, m ? m.index : fullText.length);
-  // brand only — drop the ", City [State]" suffix shared by every competitor
-  const brand = (business || "").split(",")[0];
-  const dist = norm(brand)
-    .split(" ")
-    .filter((t) => t.length >= 3 && !GENERIC.has(t))
-    .slice(0, 3);
-  if (dist.length === 0) return false;
-  const need = Math.max(1, Math.ceil(dist.length / 2));
+/** Parse numbered list entries ("N. Name …") from the region above the burned-in
+ *  "[RANK:]" footer. Returns [{ num, words }] where words is the whole-word set of
+ *  the entry's own line (first ~60 chars) — no cross-line bleed. */
+function listEntries(region) {
   // a list marker is "N." / "N)" followed by whitespace (ratings like "4.8"
   // have no space after the dot, so they don't match)
   const re = /(?:^|\n|\s)(\d{1,2})\s*[.)]\s+/g;
+  const out = [];
   let mm;
   while ((mm = re.exec(region)) !== null) {
     const start = mm.index + mm[0].length;
@@ -70,9 +59,41 @@ function entryVisibleInList(fullText, business) {
     const words = new Set(
       norm(rest.slice(0, nl === -1 ? 60 : Math.min(nl, 60))).split(" "),
     ); // whole-word match: "restore" != "restoration"
-    if (dist.filter((t) => words.has(t)).length >= need) return true;
+    out.push({ num: Number(mm[1]), words });
   }
-  return false;
+  return out;
+}
+
+/** True when the client's business appears as a NUMBERED LIST ENTRY in the answer
+ *  (its distinctive brand tokens on an "N." entry line), above the burned-in
+ *  "[RANK:]" footer. This rejects the common fabrication where the AI lists real
+ *  competitors and then only names the client in a hedged narrative ("ranks
+ *  approximately around position N") — the client is claimed at a top rank but is
+ *  not actually in the list (e.g. Fortress shown at #1, client only named below).
+ *  Distinctiveness is DYNAMIC: a brand token shared by >=2 list entries is an
+ *  industry term (e.g. "pressure"/"washing" among pressure-washing rivals,
+ *  "foundation" among foundation-repair rivals) and cannot distinguish the client,
+ *  so it is dropped. Presence-based, not position-based: position mismatches are
+ *  too noisy under OCR to flip safely, but total absence is an unambiguous fake. */
+function entryVisibleInList(fullText, business) {
+  const m = /\[?\s*rank\s*[:#]?\s*\d+\s*\/\s*\d+/i.exec(fullText);
+  const region = fullText.slice(0, m ? m.index : fullText.length);
+  const entries = listEntries(region);
+  // brand only — drop the ", City [State]" suffix shared by every competitor
+  const brand = (business || "").split(",")[0];
+  const base = norm(brand)
+    .split(" ")
+    .filter((t) => t.length >= 3 && !GENERIC.has(t));
+  if (base.length === 0) return false;
+  const shared = new Set(
+    base.filter((t) => entries.filter((e) => e.words.has(t)).length >= 2),
+  );
+  const dist = base.filter((t) => !shared.has(t));
+  const tokens = dist.length ? dist : base; // all shared → fall back to base
+  const need = Math.max(1, Math.ceil(tokens.length / 2));
+  return entries.some(
+    (e) => tokens.filter((t) => e.words.has(t)).length >= need,
+  );
 }
 
 const rows = (

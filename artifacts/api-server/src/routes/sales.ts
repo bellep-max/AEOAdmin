@@ -408,6 +408,14 @@ export async function resolveImprovement(
     for (const p of wantPlatforms) {
       const fc = firstAndCurrent(rows.filter((r) => r.platform === p));
       if (!fc) continue;
+      // A headline top-3 finish must be an OCR-VALIDATED in-list entry. A NULL
+      // (never-checked) or false rank-visible top-3 is often a narrative-hedge
+      // fake — the AI lists real competitors and then only says the client
+      // "ranks approximately around #1" below the list, so the client is claimed
+      // at a top rank while a competitor actually holds it. Require true here
+      // even in lenient mode (which otherwise treats NULL as visible); ranks
+      // below the top 3 aren't bold claims and stay lenient.
+      if (fc.current.rank <= TOP3 && fc.current.rankVisible !== true) continue;
       // a top-3 headline must have a positive summary, or its screenshot text
       // could undercut the rank — drop those; leave everything else as-is.
       if (
