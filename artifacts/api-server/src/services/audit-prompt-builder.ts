@@ -29,11 +29,11 @@ export const AUDIT_PROMPT_TEMPLATE_V2 = `You're someone trying to figure out the
 
 Give me the top 3 actual businesses you'd recommend — for each, share the name, 2–3 sentences on what makes them stand out, and whether they appear on Google Maps (yes/no). Plain text only — no images, maps, or embedded content.
 
-Then look at where {biz_name} ({biz_url}) lands in the broader local business landscape for this query. Output this exact line on its own:
+Then place {biz_name} ({biz_url}) HONESTLY within that same local landscape. If it is one of the businesses you listed above, X is its exact position in that list; if it is further down, X is its real position — do not round up, hedge, or give it a better position than it has actually earned, and if it does not genuinely belong among the ranked businesses, say so rather than assigning a flattering number. Output this exact line on its own:
 
 [RANK: X/Y]
 
-…where X is the position and Y is the total count of relevant businesses you considered (e.g., [RANK: 7/25]). After that line, give one sentence on why they landed there.
+…where X is that honest position and Y is the total count of relevant businesses you considered (e.g., [RANK: 7/25]). After that line, give one sentence on why they landed there.
 
 Keep the whole reply under 200 words.`;
 
@@ -46,17 +46,17 @@ export interface BuildAuditPromptInput {
 }
 
 export interface BuildAuditPromptOutput {
-  keywordId:    number;
-  keywordText:  string;
-  variantId:    number | null;
-  variantText:  string;
+  keywordId: number;
+  keywordText: string;
+  variantId: number | null;
+  variantText: string;
   variantTimesUsed: number | null;
-  platform:     string | null;
-  prompt:       string;
-  bizName:      string | null;
-  bizUrl:       string | null;
-  city:         string | null;
-  state:        string | null;
+  platform: string | null;
+  prompt: string;
+  bizName: string | null;
+  bizUrl: string | null;
+  city: string | null;
+  state: string | null;
   searchAddress: string | null;
   templateVersion: "v2";
 }
@@ -67,7 +67,9 @@ export interface BuildAuditPromptOutput {
  * - falls back to the keyword text if there are no variants
  * - leaves the [RANK: X/Y] contract intact
  */
-export async function buildAuditPrompt(input: BuildAuditPromptInput): Promise<BuildAuditPromptOutput> {
+export async function buildAuditPrompt(
+  input: BuildAuditPromptInput,
+): Promise<BuildAuditPromptOutput> {
   const ctx = await loadSessionContext(input.keywordId);
   if (!ctx) throw new Error(`Keyword ${input.keywordId} not found`);
 
@@ -76,26 +78,26 @@ export async function buildAuditPrompt(input: BuildAuditPromptInput): Promise<Bu
 
   const prompt = render(AUDIT_PROMPT_TEMPLATE_V2, {
     keyword_phrase: variantText,
-    city:           ctx.city  ?? "",
-    state:          ctx.state ?? "",
-    biz_name:       ctx.bizName    ?? "",
-    biz_url:        ctx.websiteUrl ?? ctx.gmbUrl ?? "",
+    city: ctx.city ?? "",
+    state: ctx.state ?? "",
+    biz_name: ctx.bizName ?? "",
+    biz_url: ctx.websiteUrl ?? ctx.gmbUrl ?? "",
   });
 
   return {
-    keywordId:        ctx.keywordId,
-    keywordText:      ctx.keywordText,
-    variantId:        picked?.id ?? null,
+    keywordId: ctx.keywordId,
+    keywordText: ctx.keywordText,
+    variantId: picked?.id ?? null,
     variantText,
     variantTimesUsed: picked?.timesUsed ?? null,
-    platform:         input.platform ?? null,
+    platform: input.platform ?? null,
     prompt,
-    bizName:          ctx.bizName,
-    bizUrl:           ctx.websiteUrl ?? ctx.gmbUrl ?? null,
-    city:             ctx.city,
-    state:            ctx.state,
-    searchAddress:    ctx.searchAddress,
-    templateVersion:  "v2",
+    bizName: ctx.bizName,
+    bizUrl: ctx.websiteUrl ?? ctx.gmbUrl ?? null,
+    city: ctx.city,
+    state: ctx.state,
+    searchAddress: ctx.searchAddress,
+    templateVersion: "v2",
   };
 }
 
@@ -115,10 +117,10 @@ export function renderAuditPrompt(opts: {
 }): string {
   return render(AUDIT_PROMPT_TEMPLATE_V2, {
     keyword_phrase: opts.keywordPhrase,
-    city:           opts.city  ?? "",
-    state:          opts.state ?? "",
-    biz_name:       opts.bizName ?? "",
-    biz_url:        opts.bizUrl  ?? "",
+    city: opts.city ?? "",
+    state: opts.state ?? "",
+    biz_name: opts.bizName ?? "",
+    biz_url: opts.bizUrl ?? "",
   });
 }
 
@@ -137,31 +139,35 @@ export type { SessionContext };
 
 export interface BuildAuditPromptStaticInput {
   keyword_phrase: string;
-  city?:          string | null;
-  state?:         string | null;
-  biz_name?:      string | null;
-  biz_url?:       string | null;
+  city?: string | null;
+  state?: string | null;
+  biz_name?: string | null;
+  biz_url?: string | null;
 }
 
 export interface BuildAuditPromptStaticOutput {
-  keywordPhrase:   string;
-  prompt:          string;
+  keywordPhrase: string;
+  prompt: string;
   templateVersion: "v2";
 }
 
-export function buildAuditPromptStatic(input: BuildAuditPromptStaticInput): BuildAuditPromptStaticOutput {
+export function buildAuditPromptStatic(
+  input: BuildAuditPromptStaticInput,
+): BuildAuditPromptStaticOutput {
   if (!input.keyword_phrase || typeof input.keyword_phrase !== "string") {
-    throw new Error("keyword_phrase is required and must be a non-empty string");
+    throw new Error(
+      "keyword_phrase is required and must be a non-empty string",
+    );
   }
   const prompt = renderAuditPrompt({
     keywordPhrase: input.keyword_phrase,
-    city:          input.city  ?? null,
-    state:         input.state ?? null,
-    bizName:       input.biz_name ?? null,
-    bizUrl:        input.biz_url  ?? null,
+    city: input.city ?? null,
+    state: input.state ?? null,
+    bizName: input.biz_name ?? null,
+    bizUrl: input.biz_url ?? null,
   });
   return {
-    keywordPhrase:   input.keyword_phrase,
+    keywordPhrase: input.keyword_phrase,
     prompt,
     templateVersion: "v2",
   };

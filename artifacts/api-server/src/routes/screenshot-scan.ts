@@ -2,12 +2,19 @@
  * @file screenshot-scan.ts
  * @route /api/screenshot-scan
  *
- * Admin-only "Scan screenshots" tool. New top-3 ranking screenshots arrive
- * with screenshot_rank_visible = NULL and are held from surfacing (sales
- * proof, portal, etc.) until a vision model confirms the tracked business is
- * actually in the numbered list at the claimed position. This endpoint lets
- * an admin run that validation from the Rankings page instead of only via
+ * Admin-only "Scan screenshots" tool. New ranking screenshots arrive with
+ * screenshot_rank_visible = NULL and are held from surfacing (sales proof,
+ * portal, etc.) until a vision model confirms the tracked business is actually
+ * in the numbered list at the claimed position. This endpoint lets an admin run
+ * that validation from the Rankings page instead of only via
  * scripts/validate-screenshot-ranks-vision.mjs.
+ *
+ * ROOT-CAUSE FIX: the stored rank is the AI's self-reported "[RANK: X/Y]"
+ * number, which it inflates (claims "#1" while the business is really list item
+ * #3, or only in prose). When the vision check finds the business genuinely
+ * WORSE than its stored rank in a real ranking, it de-inflates ranking_position
+ * to the true list position (downgrade-only — a "better" read is never trusted,
+ * so no fabricated upgrades). See validateScreenshotRank / correctedRank.
  */
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -106,15 +113,32 @@ router.post("/scan", requireAdmin, async (req, res) => {
           continue;
         }
         try {
-          const { verdict } = await validateScreenshotRank({
+          const { verdict, correctedRank } = await validateScreenshotRank({
             rankingPosition: row.rankingPosition,
             screenshotUrl: row.screenshotUrl,
             businessName: row.businessName,
           });
           await db
             .update(rankingReportsTable)
-            .set({ screenshotRankVisible: verdict })
+            .set(
+              correctedRank != null
+                ? {
+                    screenshotRankVisible: verdict,
+                    rankingPosition: correctedRank,
+                  }
+                : { screenshotRankVisible: verdict },
+            )
             .where(eq(rankingReportsTable.id, row.id));
+          if (correctedRank != null) {
+            req.log.info(
+              {
+                rankingReportId: row.id,
+                from: row.rankingPosition,
+                to: correctedRank,
+              },
+              "Screenshot scan: de-inflated self-reported rank to genuine list position",
+            );
+          }
           scanned++;
         } catch (err) {
           if (err instanceof VisionValidationError) {
@@ -224,22 +248,43 @@ router.post("/verify", async (req, res) => {
       businessName = body.businessName.trim();
     }
 
-    const { verdict, inList, position } = await validateScreenshotRank({
-      rankingPosition,
-      screenshotUrl,
-      businessName,
-    });
+    const { verdict, inList, position, listKind, correctedRank } =
+      await validateScreenshotRank({
+        rankingPosition,
+        screenshotUrl,
+        businessName,
+      });
 
     let updated = false;
+    let effectiveRank = rankingPosition;
     if (rankingReportId !== null) {
       await db
         .update(rankingReportsTable)
-        .set({ screenshotRankVisible: verdict })
+        .set(
+          correctedRank != null
+            ? { screenshotRankVisible: verdict, rankingPosition: correctedRank }
+            : { screenshotRankVisible: verdict },
+        )
         .where(eq(rankingReportsTable.id, rankingReportId));
       updated = true;
+      if (correctedRank != null) {
+        effectiveRank = correctedRank;
+        req.log.info(
+          { rankingReportId, from: rankingPosition, to: correctedRank },
+          "Screenshot verify: de-inflated self-reported rank to genuine list position",
+        );
+      }
     }
 
-    res.json({ valid: verdict, inList, position, rankingPosition, updated });
+    res.json({
+      valid: verdict,
+      inList,
+      position,
+      listKind,
+      rankingPosition: effectiveRank,
+      correctedRank,
+      updated,
+    });
   } catch (err) {
     if (err instanceof VisionValidationError) {
       req.log.warn({ err }, "Screenshot verify: could not validate");
