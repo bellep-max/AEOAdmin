@@ -18,7 +18,9 @@ const s3 = new S3Client({ region: process.env.AWS_REGION ?? "us-east-1" });
 
 const SYSTEM_PROMPT = `You are shown a screenshot of an AI assistant answer that recommends local businesses. It usually contains a NUMBERED LIST (1., 2., 3., ...), sometimes a burned-in "[RANK: X/Y]" footer, and a narrative/summary paragraph.
 
-Judge the tracked business by its EXACT name. Minor punctuation, casing or spacing differences are fine, but a DIFFERENT business with a similar or partially-overlapping name is NOT a match (e.g. "Crown Roofing" is NOT "Crown Industrial Roofing"; "Mend Spa" is NOT "Mend - Grapevine").
+Match the tracked business by EXACT IDENTITY — both name AND location:
+- Name: minor punctuation, casing or spacing differences are fine, but a DIFFERENT business with a similar or partially-overlapping name is NOT a match (e.g. "Crown Roofing" is NOT "Crown Industrial Roofing"; "Mend Spa" is NOT "Mend - Grapevine").
+- Location: when a tracked location (city / address) is given and the screenshot shows a location, address, or city for a same-named entry that is DIFFERENT from the tracked one, it is NOT a match — it is a different branch/business (e.g. tracked "East Lyme Oral Surgery, Old Lyme" is NOT the "East Lyme" location on Flanders Rd). If the listed entry shows no location at all, match on the exact name.
 
 Report TWO things:
 1. trackedInList / trackedPosition: whether the tracked business appears as a genuine NUMBERED LIST ENTRY and at which position. Do NOT count it as "in the list" when it appears only in a narrative/summary sentence (e.g. "X ranks around position 4", "X is an emerging presence").
@@ -29,8 +31,13 @@ Report TWO things:
 
 The item's list order is only meaningful as a rank when listKind is "ranking". Do NOT infer a good position from mere list order when the list is "unordered".`;
 
-function buildUserPrompt(businessName: string): string {
-  return `Tracked business: "${businessName}". Return ONLY strict minified JSON: {"trackedInList":true|false,"trackedPosition":<int or null>,"listKind":"ranking"|"unordered"|"none","trackedNamedAs":"<how shown or ABSENT>","burnedRankLabel":"<X/Y or null>"}`;
+function buildUserPrompt(
+  businessName: string,
+  location?: string | null,
+): string {
+  const loc =
+    location && location.trim() ? ` located at "${location.trim()}"` : "";
+  return `Tracked business: "${businessName}"${loc}. Return ONLY strict minified JSON: {"trackedInList":true|false,"trackedPosition":<int or null>,"listKind":"ranking"|"unordered"|"none","trackedNamedAs":"<how shown or ABSENT>","locationMatches":true|false|null,"burnedRankLabel":"<X/Y or null>"}. Set locationMatches=false only when the listed same-named entry clearly shows a DIFFERENT location than the tracked one; true when it matches; null when no location is shown.`;
 }
 
 export type ListKind = "ranking" | "unordered" | "none" | "unknown";
@@ -45,6 +52,7 @@ interface VisionVerdictJson {
   trackedInList?: boolean;
   trackedPosition?: number | string | null;
   listKind?: unknown;
+  locationMatches?: boolean | null;
 }
 
 function parseVisionResponse(
@@ -101,6 +109,9 @@ export async function validateScreenshotRank(params: {
   rankingPosition: number;
   screenshotUrl: string;
   businessName: string;
+  /** City/state or address of the tracked business, used to reject a
+   *  same-named entry at a DIFFERENT location. Optional. */
+  businessLocation?: string | null;
 }): Promise<VisionVerdict> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -130,7 +141,10 @@ export async function validateScreenshotRank(params: {
       {
         role: "user",
         content: [
-          { type: "text", text: buildUserPrompt(params.businessName) },
+          {
+            type: "text",
+            text: buildUserPrompt(params.businessName, params.businessLocation),
+          },
           {
             type: "image_url",
             image_url: { url: `data:image/png;base64,${base64}` },
@@ -163,7 +177,12 @@ export async function validateScreenshotRank(params: {
     if (!parsed) {
       throw new VisionValidationError("could not parse model response");
     }
-    const inList = parsed.trackedInList === true;
+    // A same-named entry at a DIFFERENT location is not our business — treat it
+    // as absent so its rank is neither validated nor written back. Only false
+    // (an explicit location conflict) disqualifies; null (no location shown)
+    // falls back to name-only matching.
+    const locationConflict = parsed.locationMatches === false;
+    const inList = parsed.trackedInList === true && !locationConflict;
     const rawPosition = Number(parsed.trackedPosition);
     const position = Number.isFinite(rawPosition) ? rawPosition : null;
     const listKind = normalizeListKind(parsed.listKind);

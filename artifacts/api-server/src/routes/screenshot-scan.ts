@@ -85,6 +85,10 @@ router.post("/scan", requireAdmin, async (req, res) => {
         businessName: sql<
           string | null
         >`COALESCE(${businessesTable.name}, ${clientsTable.businessName})`,
+        businessLocation: sql<string | null>`COALESCE(
+          NULLIF(TRIM(CONCAT_WS(', ', ${businessesTable.city}, ${businessesTable.state})), ''),
+          NULLIF(TRIM(CONCAT_WS(', ', ${clientsTable.city}, ${clientsTable.state})), '')
+        )`,
       })
       .from(rankingReportsTable)
       .innerJoin(
@@ -117,6 +121,7 @@ router.post("/scan", requireAdmin, async (req, res) => {
             rankingPosition: row.rankingPosition,
             screenshotUrl: row.screenshotUrl,
             businessName: row.businessName,
+            businessLocation: row.businessLocation,
           });
           await db
             .update(rankingReportsTable)
@@ -181,6 +186,7 @@ router.post("/verify", async (req, res) => {
       rankingReportId?: unknown;
       screenshotUrl?: unknown;
       businessName?: unknown;
+      businessLocation?: unknown;
       rankingPosition?: unknown;
     };
 
@@ -188,6 +194,7 @@ router.post("/verify", async (req, res) => {
     let rankingPosition: number;
     let screenshotUrl: string;
     let businessName: string;
+    let businessLocation: string | null = null;
 
     if (body.rankingReportId !== undefined) {
       const id = Number(body.rankingReportId);
@@ -201,6 +208,10 @@ router.post("/verify", async (req, res) => {
           businessName: sql<
             string | null
           >`COALESCE(${businessesTable.name}, ${clientsTable.businessName})`,
+          businessLocation: sql<string | null>`COALESCE(
+            NULLIF(TRIM(CONCAT_WS(', ', ${businessesTable.city}, ${businessesTable.state})), ''),
+            NULLIF(TRIM(CONCAT_WS(', ', ${clientsTable.city}, ${clientsTable.state})), '')
+          )`,
         })
         .from(rankingReportsTable)
         .innerJoin(
@@ -229,6 +240,7 @@ router.post("/verify", async (req, res) => {
       rankingPosition = row.rankingPosition;
       screenshotUrl = row.screenshotUrl;
       businessName = row.businessName;
+      businessLocation = row.businessLocation;
     } else {
       const position = Number(body.rankingPosition);
       if (
@@ -246,6 +258,11 @@ router.post("/verify", async (req, res) => {
       rankingPosition = position;
       screenshotUrl = body.screenshotUrl.trim();
       businessName = body.businessName.trim();
+      businessLocation =
+        typeof body.businessLocation === "string" &&
+        body.businessLocation.trim()
+          ? body.businessLocation.trim()
+          : null;
     }
 
     const { verdict, inList, position, listKind, correctedRank } =
@@ -253,6 +270,7 @@ router.post("/verify", async (req, res) => {
         rankingPosition,
         screenshotUrl,
         businessName,
+        businessLocation,
       });
 
     let updated = false;
