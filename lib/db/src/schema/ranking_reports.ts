@@ -54,6 +54,13 @@ export const rankingReportsTable = pgTable("ranking_reports", {
      matches ranking_position; false when not; null when not yet checked. The
      sales improvement endpoint only surfaces screenshots that aren't false. */
   screenshotRankVisible: boolean("screenshot_rank_visible"),
+  /* The genuine numbered-list position the vision check actually read for the
+     tracked business (exact name + location), regardless of direction; null
+     when it isn't a genuine ranking entry or hasn't been scanned. Lets the
+     sales logic detect a "fabricated-bad" before — a stored rank WORSE than the
+     position vision observed (e.g. stored #19 while really list #3) — and skip
+     it as a before so it can't inflate a before→after improvement. */
+  screenshotObservedRank: integer("screenshot_observed_rank"),
   /* ── Proxy ── */
   proxyStatus: text("proxy_status"),
   proxyUsername: text("proxy_username"),

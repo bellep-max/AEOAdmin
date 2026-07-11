@@ -182,6 +182,9 @@ interface RankRow {
   rankingPosition: number;
   screenshotUrl: string;
   rankVisible: boolean | null;
+  /** Genuine list position vision observed (either direction), or null. Used to
+   *  drop a fabricated-bad before whose stored rank is worse than reality. */
+  observedRank: number | null;
 }
 
 async function presign(s3Uri: string): Promise<string | null> {
@@ -238,7 +241,14 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
   const earlier = dated.filter(
     (r) =>
       (r.date ?? "") < (current.date ?? "") &&
-      r.rankingPosition > current.rankingPosition,
+      r.rankingPosition > current.rankingPosition &&
+      // Skip a "fabricated-bad" before: the vision check read the business at a
+      // genuinely BETTER position than its stored rank (e.g. stored #19 while
+      // really list #3), so the stored bad rank overstates how bad the start
+      // was and would inflate the improvement. A before only has to be an honest
+      // weak start — absent, narrative, or a consistent worse rank all qualify;
+      // it is NOT required to be a validated in-list entry (rankVisible).
+      !(r.observedRank != null && r.observedRank < r.rankingPosition),
   );
   if (earlier.length === 0) return null;
   const first = earlier.reduce((a, b) =>
@@ -361,6 +371,7 @@ export async function resolveImprovement(
       rankingPosition: rankingReportsTable.rankingPosition,
       screenshotUrl: rankingReportsTable.screenshotUrl,
       rankVisible: rankingReportsTable.screenshotRankVisible,
+      observedRank: rankingReportsTable.screenshotObservedRank,
     })
     .from(rankingReportsTable)
     .where(

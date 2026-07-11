@@ -94,6 +94,11 @@ export interface VisionVerdict {
   position: number | null;
   listKind: ListKind;
   correctedRank: number | null;
+  /** The genuine numbered-list position observed for the tracked business
+   *  (exact name + location, genuine ranking), in EITHER direction — null when
+   *  it isn't such an entry. Unlike correctedRank (downgrade-only), this records
+   *  a better-than-stored read too, so callers can flag a fabricated-bad rank. */
+  observedRank: number | null;
 }
 
 /**
@@ -198,6 +203,10 @@ export async function validateScreenshotRank(params: {
     //     hold the row instead of fabricating a better rank.
     let verdict = false;
     let correctedRank: number | null = null;
+    // observedRank records the genuine list position in EITHER direction (for
+    // the sales before-check); correctedRank only ever de-inflates (downgrade).
+    const observedRank =
+      genuineRanking && inList && position !== null ? position : null;
     if (genuineRanking && inList && position !== null) {
       if (position === params.rankingPosition) {
         verdict = true;
@@ -206,7 +215,7 @@ export async function validateScreenshotRank(params: {
         verdict = true; // screenshot matches the corrected (worse) rank
       }
     }
-    return { verdict, inList, position, listKind, correctedRank };
+    return { verdict, inList, position, listKind, correctedRank, observedRank };
   }
   throw new VisionValidationError("rate limited after 3 attempts");
 }

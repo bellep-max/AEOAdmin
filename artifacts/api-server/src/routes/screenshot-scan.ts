@@ -117,12 +117,13 @@ router.post("/scan", requireAdmin, async (req, res) => {
           continue;
         }
         try {
-          const { verdict, correctedRank } = await validateScreenshotRank({
-            rankingPosition: row.rankingPosition,
-            screenshotUrl: row.screenshotUrl,
-            businessName: row.businessName,
-            businessLocation: row.businessLocation,
-          });
+          const { verdict, correctedRank, observedRank } =
+            await validateScreenshotRank({
+              rankingPosition: row.rankingPosition,
+              screenshotUrl: row.screenshotUrl,
+              businessName: row.businessName,
+              businessLocation: row.businessLocation,
+            });
           await db
             .update(rankingReportsTable)
             .set(
@@ -130,8 +131,12 @@ router.post("/scan", requireAdmin, async (req, res) => {
                 ? {
                     screenshotRankVisible: verdict,
                     rankingPosition: correctedRank,
+                    screenshotObservedRank: observedRank,
                   }
-                : { screenshotRankVisible: verdict },
+                : {
+                    screenshotRankVisible: verdict,
+                    screenshotObservedRank: observedRank,
+                  },
             )
             .where(eq(rankingReportsTable.id, row.id));
           if (correctedRank != null) {
@@ -265,7 +270,7 @@ router.post("/verify", async (req, res) => {
           : null;
     }
 
-    const { verdict, inList, position, listKind, correctedRank } =
+    const { verdict, inList, position, listKind, correctedRank, observedRank } =
       await validateScreenshotRank({
         rankingPosition,
         screenshotUrl,
@@ -280,8 +285,15 @@ router.post("/verify", async (req, res) => {
         .update(rankingReportsTable)
         .set(
           correctedRank != null
-            ? { screenshotRankVisible: verdict, rankingPosition: correctedRank }
-            : { screenshotRankVisible: verdict },
+            ? {
+                screenshotRankVisible: verdict,
+                rankingPosition: correctedRank,
+                screenshotObservedRank: observedRank,
+              }
+            : {
+                screenshotRankVisible: verdict,
+                screenshotObservedRank: observedRank,
+              },
         )
         .where(eq(rankingReportsTable.id, rankingReportId));
       updated = true;
@@ -301,6 +313,7 @@ router.post("/verify", async (req, res) => {
       listKind,
       rankingPosition: effectiveRank,
       correctedRank,
+      observedRank,
       updated,
     });
   } catch (err) {
