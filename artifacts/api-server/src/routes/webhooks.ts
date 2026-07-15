@@ -36,6 +36,16 @@ interface SendgridEvent {
   [k: string]: unknown;
 }
 
+/* Parse a provider timestamp defensively — providers send varied formats
+   (unix ms/seconds, ISO, locale strings). An unparseable value must yield null,
+   not an Invalid Date, which would throw when the row is serialized for insert. */
+function safeDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  const d =
+    typeof value === "number" ? new Date(value) : new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 async function findSendByColumn(
   column:
     | typeof emailSendsTable.sendgridMessageId
@@ -91,7 +101,9 @@ router.post("/sendgrid", async (req, res) => {
           event: normalized,
           rawEvent: ev.event ?? null,
           providerEventId: ev.sg_event_id ?? null,
-          occurredAt: ev.timestamp ? new Date(ev.timestamp * 1000) : null,
+          occurredAt: safeDate(
+            ev.timestamp != null ? ev.timestamp * 1000 : null,
+          ),
           payload: ev as Record<string, unknown>,
         })
         .onConflictDoNothing();
@@ -154,7 +166,7 @@ router.post("/ghl", async (req, res) => {
         event: normalized,
         rawEvent: rawEvent || null,
         providerEventId: providerEventId || null,
-        occurredAt: tsRaw ? new Date(String(tsRaw)) : null,
+        occurredAt: safeDate(tsRaw),
         payload: body,
       })
       .onConflictDoNothing();
