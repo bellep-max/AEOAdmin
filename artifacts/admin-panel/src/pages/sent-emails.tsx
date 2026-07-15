@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,15 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { rawFetch } from "@/lib/period-comparison";
-import { MailCheck, Eye, RefreshCw } from "lucide-react";
+import {
+  MailCheck,
+  Eye,
+  RefreshCw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 
 interface SendRow {
   id: number;
@@ -91,9 +100,65 @@ const LIFECYCLE: Record<
   failed: { label: "Failed", cls: "border-red-300 text-red-700 bg-red-50" },
 };
 
+/* The lifecycle key a row displays as (mirrors LifecycleBadge). */
+function effectiveStatus(row: SendRow): string {
+  return row.status === "failed" ? "failed" : (row.latestStatus ?? row.status);
+}
+
+/* Coarse bucket for the summary tiles + status filter. Hard failures collapse
+   into one "failed" bucket; everything pre-delivery counts as "sent". */
+function statusBucket(
+  row: SendRow,
+): "sent" | "delivered" | "opened" | "clicked" | "failed" {
+  const s = effectiveStatus(row);
+  if (["failed", "bounced", "dropped", "spam"].includes(s)) return "failed";
+  if (s === "delivered" || s === "opened" || s === "clicked") return s;
+  return "sent";
+}
+
+const PAGE_SIZE = 20;
+
+/* Summary tiles — also act as one-click status filters. */
+const TILES: Array<{
+  key: "all" | "delivered" | "opened" | "clicked" | "failed";
+  label: string;
+  active: string;
+  idle: string;
+}> = [
+  {
+    key: "all",
+    label: "Total",
+    active: "border-primary bg-primary/10 text-foreground",
+    idle: "border-border bg-card text-foreground hover:border-primary/50",
+  },
+  {
+    key: "delivered",
+    label: "Delivered",
+    active: "border-sky-400 bg-sky-100 text-sky-800",
+    idle: "border-border bg-card text-sky-700 hover:border-sky-300",
+  },
+  {
+    key: "opened",
+    label: "Opened",
+    active: "border-amber-400 bg-amber-100 text-amber-800",
+    idle: "border-border bg-card text-amber-700 hover:border-amber-300",
+  },
+  {
+    key: "clicked",
+    label: "Clicked",
+    active: "border-emerald-400 bg-emerald-100 text-emerald-800",
+    idle: "border-border bg-card text-emerald-700 hover:border-emerald-300",
+  },
+  {
+    key: "failed",
+    label: "Failed",
+    active: "border-red-400 bg-red-100 text-red-800",
+    idle: "border-border bg-card text-red-700 hover:border-red-300",
+  },
+];
+
 function LifecycleBadge({ row }: { row: SendRow }) {
-  const key =
-    row.status === "failed" ? "failed" : (row.latestStatus ?? row.status);
+  const key = effectiveStatus(row);
   const meta = LIFECYCLE[key] ?? {
     label: key,
     cls: "border-slate-300 text-slate-600 bg-slate-50",
@@ -146,6 +211,9 @@ function GhlChip({ status }: { status: string | null }) {
 
 export default function SentEmails() {
   const [kind, setKind] = useState<string>("all");
+  const [status, setStatus] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
+  const [page, setPage] = useState<number>(1);
   const [viewId, setViewId] = useState<number | null>(null);
   const qc = useQueryClient();
 
@@ -192,11 +260,64 @@ export default function SentEmails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
-  const sends = data?.sends ?? [];
+  const sends = useMemo(() => data?.sends ?? [], [data]);
+
+  // Search filter (subject / client / recipients / keyword) — independent of the
+  // status filter so the tiles can show every status's count within the search.
+  const searched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sends;
+    return sends.filter((s) => {
+      const hay = [
+        s.subject,
+        s.clientName ?? "",
+        (s.recipients ?? []).join(" "),
+        (s.intendedRecipients ?? []).join(" "),
+        s.meta?.keyword ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [sends, search]);
+
+  const counts = useMemo(() => {
+    const c = {
+      all: searched.length,
+      sent: 0,
+      delivered: 0,
+      opened: 0,
+      clicked: 0,
+      failed: 0,
+    };
+    for (const s of searched) c[statusBucket(s)]++;
+    return c;
+  }, [searched]);
+
+  const filtered = useMemo(
+    () =>
+      status === "all"
+        ? searched
+        : searched.filter((s) => statusBucket(s) === status),
+    [searched, status],
+  );
+
+  // Keep the page in range whenever the result set shrinks.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, status, kind]);
+
+  const start = (page - 1) * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+  const hasFilters = search.trim() !== "" || status !== "all";
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center">
             <MailCheck className="w-5 h-5 text-primary" />
@@ -209,31 +330,92 @@ export default function SentEmails() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => refresh.mutate()}
-            disabled={refresh.isPending}
-            title="Pull the latest delivered / opened / clicked status from GHL"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${refresh.isPending ? "animate-spin" : ""}`}
-            />
-            {refresh.isPending ? "Refreshing…" : "Refresh status"}
-          </Button>
-          <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All kinds</SelectItem>
-              <SelectItem value="sales">Sales emails</SelectItem>
-              <SelectItem value="report">Ranking reports</SelectItem>
-            </SelectContent>
-          </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => refresh.mutate()}
+          disabled={refresh.isPending}
+          title="Pull the latest delivered / opened / clicked status from GHL"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${refresh.isPending ? "animate-spin" : ""}`}
+          />
+          {refresh.isPending ? "Refreshing…" : "Refresh status"}
+        </Button>
+      </div>
+
+      {/* Summary tiles — click one to filter by that status. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {TILES.map((t) => {
+          const isActive =
+            status === t.key || (t.key === "all" && status === "all");
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setStatus(t.key)}
+              className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+                isActive ? t.active : t.idle
+              }`}
+            >
+              <div className="text-2xl font-bold tabular-nums">
+                {counts[t.key]}
+              </div>
+              <div className="text-xs font-medium uppercase tracking-wide opacity-80">
+                {t.label}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search + filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search subject, client, recipient, keyword…"
+            className="pl-9"
+          />
         </div>
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="delivered">Delivered</SelectItem>
+            <SelectItem value="opened">Opened</SelectItem>
+            <SelectItem value="clicked">Clicked</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={kind} onValueChange={setKind}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All kinds</SelectItem>
+            <SelectItem value="sales">Sales emails</SelectItem>
+            <SelectItem value="report">Ranking reports</SelectItem>
+          </SelectContent>
+        </Select>
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground"
+            onClick={() => {
+              setSearch("");
+              setStatus("all");
+            }}
+          >
+            <X className="w-3.5 h-3.5" /> Clear
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -250,12 +432,14 @@ export default function SentEmails() {
           {isLoading && (
             <div className="p-6 text-sm text-muted-foreground">Loading…</div>
           )}
-          {!isLoading && sends.length === 0 && (
+          {!isLoading && filtered.length === 0 && (
             <div className="p-6 text-sm text-muted-foreground">
-              No emails sent yet.
+              {sends.length === 0
+                ? "No emails sent yet."
+                : "No emails match your filters."}
             </div>
           )}
-          {sends.map((s) => (
+          {paged.map((s) => (
             <div
               key={s.id}
               className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm border-b last:border-b-0 hover:bg-muted/30"
@@ -309,6 +493,42 @@ export default function SentEmails() {
               </div>
             </div>
           ))}
+
+          {/* Pagination */}
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-t text-sm">
+              <span className="text-xs text-muted-foreground">
+                Showing {start + 1}–
+                {Math.min(start + PAGE_SIZE, filtered.length)} of{" "}
+                {filtered.length}
+                {filtered.length !== sends.length &&
+                  ` (filtered from ${sends.length})`}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  Page {page} / {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Next <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
