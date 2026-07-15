@@ -1,0 +1,16 @@
+**/node_modules
+.git
+.github
+**/dist
+**/*.log
+**/test-results
+**/playwright-report
+*.csv
+*.html
+scratchpad
+.env
+.env.*
+!.env.example
+artifacts/admin-panel/dist
+docs
+worklogs
