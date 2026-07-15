@@ -26,6 +26,7 @@ import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles } from "../middlewares/role-auth";
 import { getScopedClientIds } from "../lib/scoped-access";
+import { refreshGhlSendStatuses } from "../services/email-status-ghl";
 import {
   resolveImprovement,
   buildScreenshotUrlByClient,
@@ -909,6 +910,43 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/* POST /api/sales/email-sends/refresh-status?clientId=&kind=
+   Pull the current GHL lifecycle status for recent, non-terminal GHL sends and
+   advance latest_status. GHL workflow webhooks can't carry the message id, so
+   this poll (by the messageId we store on send) is the source of truth for
+   delivered/opened/clicked. Bounded + best-effort; returns {polled, updated}. */
+router.post(
+  "/email-sends/refresh-status",
+  requireSalesEmail,
+  async (req, res) => {
+    try {
+      const clientId = req.query.clientId
+        ? Number.parseInt(String(req.query.clientId), 10)
+        : null;
+      const kind = req.query.kind ? String(req.query.kind) : null;
+      const scopedIds = await getScopedClientIds(req);
+      if (
+        scopedIds !== null &&
+        clientId != null &&
+        !scopedIds.includes(clientId)
+      )
+        return res
+          .status(403)
+          .json({ error: "Client outside your plan scope" });
+      const result = await refreshGhlSendStatuses({
+        clientId:
+          clientId != null && Number.isFinite(clientId) ? clientId : null,
+        clientIds: scopedIds,
+        kind,
+      });
+      return res.json(result);
+    } catch (err) {
+      req.log.error({ err }, "Error refreshing GHL email statuses");
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* GET /api/sales/email-sends/:id — full record incl. the exact HTML sent. */
 router.get("/email-sends/:id", requireSalesEmail, async (req, res) => {

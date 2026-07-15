@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { rawFetch } from "@/lib/period-comparison";
-import { MailCheck, Eye } from "lucide-react";
+import { MailCheck, Eye, RefreshCw } from "lucide-react";
 
 interface SendRow {
   id: number;
@@ -147,6 +147,7 @@ function GhlChip({ status }: { status: string | null }) {
 export default function SentEmails() {
   const [kind, setKind] = useState<string>("all");
   const [viewId, setViewId] = useState<number | null>(null);
+  const qc = useQueryClient();
 
   const { data, isLoading } = useQuery<{ sends: SendRow[] }>({
     queryKey: ["/api/sales/email-sends", kind],
@@ -169,6 +170,28 @@ export default function SentEmails() {
     },
   });
 
+  // GHL lifecycle status is pulled on demand (no webhook drives it). Refresh
+  // recent non-terminal sends on load and via the button, then reload the list.
+  const refresh = useMutation({
+    mutationFn: async () => {
+      const p = new URLSearchParams();
+      if (kind !== "all") p.set("kind", kind);
+      const res = await rawFetch(`/api/sales/email-sends/refresh-status?${p}`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to refresh statuses");
+      return res.json() as Promise<{ polled: number; updated: number }>;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["/api/sales/email-sends", kind] }),
+  });
+
+  useEffect(() => {
+    refresh.mutate();
+    // Re-poll when the kind filter changes; refresh identity is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
   const sends = data?.sends ?? [];
 
   return (
@@ -186,16 +209,31 @@ export default function SentEmails() {
             </p>
           </div>
         </div>
-        <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All kinds</SelectItem>
-            <SelectItem value="sales">Sales emails</SelectItem>
-            <SelectItem value="report">Ranking reports</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => refresh.mutate()}
+            disabled={refresh.isPending}
+            title="Pull the latest delivered / opened / clicked status from GHL"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${refresh.isPending ? "animate-spin" : ""}`}
+            />
+            {refresh.isPending ? "Refreshing…" : "Refresh status"}
+          </Button>
+          <Select value={kind} onValueChange={setKind}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All kinds</SelectItem>
+              <SelectItem value="sales">Sales emails</SelectItem>
+              <SelectItem value="report">Ranking reports</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Card>
