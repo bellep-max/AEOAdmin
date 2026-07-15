@@ -16,8 +16,12 @@
  */
 import { Router, type Request } from "express";
 import { db } from "@workspace/db";
-import { clientsTable, emailSendsTable } from "@workspace/db/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+  clientsTable,
+  emailSendsTable,
+  emailEventsTable,
+} from "@workspace/db/schema";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles } from "../middlewares/role-auth";
@@ -798,6 +802,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         status: sendError ? "failed" : "sent",
         sendgridMessageId:
           deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        deliveredVia: deliveredVia ?? null,
+        ghlMessageId: deliveredVia === "ghl" ? (messageId ?? null) : null,
+        latestStatus: sendError ? "failed" : "sent",
         error: sendError,
         kind: "sales",
         html,
@@ -875,6 +882,11 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
         meta: emailSendsTable.meta,
         ghlStatus: emailSendsTable.ghlStatus,
         error: emailSendsTable.error,
+        deliveredVia: emailSendsTable.deliveredVia,
+        latestStatus: emailSendsTable.latestStatus,
+        latestEventAt: emailSendsTable.latestEventAt,
+        openedCount: emailSendsTable.openedCount,
+        clickedCount: emailSendsTable.clickedCount,
       })
       .from(emailSendsTable)
       .leftJoin(clientsTable, eq(emailSendsTable.clientId, clientsTable.id))
@@ -914,7 +926,18 @@ router.get("/email-sends/:id", requireSalesEmail, async (req, res) => {
       !(await isClientInSalesScope(req, row.clientId))
     )
       return res.status(403).json({ error: "Client outside your plan scope" });
-    return res.json(row);
+    const events = await db
+      .select({
+        id: emailEventsTable.id,
+        provider: emailEventsTable.provider,
+        event: emailEventsTable.event,
+        occurredAt: emailEventsTable.occurredAt,
+        createdAt: emailEventsTable.createdAt,
+      })
+      .from(emailEventsTable)
+      .where(eq(emailEventsTable.emailSendId, id))
+      .orderBy(asc(emailEventsTable.occurredAt));
+    return res.json({ ...row, events });
   } catch (err) {
     req.log.error({ err }, "Error fetching email send detail");
     return res.status(500).json({ error: "Internal server error" });

@@ -31,6 +31,7 @@ import ingestRouter from "./ingest";
 import salesRouter from "./sales";
 import salesEmailRouter from "./sales-email";
 import screenshotScanRouter from "./screenshot-scan";
+import webhooksRouter from "./webhooks";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use("/ingest", ingestRouter);
 router.use("/sales", salesRouter);
 router.use("/sales", salesEmailRouter);
 router.use("/screenshot-scan", screenshotScanRouter);
+router.use("/webhooks", webhooksRouter);
 
 export default router;
