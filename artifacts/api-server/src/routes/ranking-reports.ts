@@ -965,6 +965,20 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       const prev = previous.get(key);
       const firstEverRow = first.get(key);
       const lastEver = ever.get(key);
+      /* A top-3 whose screenshot the vision check couldn't confirm
+         (screenshot_rank_visible = false). The rank is still reported as
+         measured — the flag only marks the row for a re-run, since the
+         validator currently rejects ~58% of top-3 claims including ones
+         whose screenshot plainly shows the business. Applies per part. */
+      const isUnverifiedTop3 = (r: typeof cur): boolean =>
+        !!r &&
+        r.screenshotRankVisible === false &&
+        r.rankingPosition != null &&
+        r.rankingPosition <= 3;
+      const currentUnverified = isUnverifiedTop3(cur);
+      const previousUnverified = isUnverifiedTop3(prev);
+      const firstUnverified = isUnverifiedTop3(firstEverRow);
+
       const change =
         cur?.rankingPosition != null && prev?.rankingPosition != null
           ? prev.rankingPosition - cur.rankingPosition
@@ -1009,12 +1023,15 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
            backfilled rows where created_at = midnight-ET (T04:00:00Z). */
         currentDate: cur?.date ?? null,
         currentVariant: cur?.keywordVariant ?? null,
+        currentUnverified,
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
         previousDate: prev?.date ?? null,
+        previousUnverified,
         firstReportId: firstEverRow?.id ?? null,
         firstPosition: firstEverRow?.rankingPosition ?? null,
         firstDate: firstEverRow?.date ?? null,
+        firstUnverified,
         change,
         status,
         freshness,

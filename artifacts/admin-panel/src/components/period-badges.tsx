@@ -5,10 +5,24 @@ import {
   Minus,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   Ban,
 } from "lucide-react";
 import type { Status, Freshness } from "@/lib/period-comparison";
 import { PLATFORM_COLORS } from "@/lib/period-comparison";
+
+/** Marks a top-3 rank whose screenshot the vision check couldn't confirm.
+ *  The rank shown is what was measured — this flags it for a re-run. */
+export function UnverifiedMark({ date }: { date?: string | null }) {
+  return (
+    <span
+      title={`Screenshot not verified${date ? ` — re-run ${date}` : ""}`}
+      className="ml-1 inline-flex items-center align-middle text-amber-500 dark:text-amber-400"
+    >
+      <AlertTriangle className="w-3 h-3" />
+    </span>
+  );
+}
 
 export function StatusBadge({ status }: { status: Status }) {
   const map: Record<
