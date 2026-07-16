@@ -93,11 +93,22 @@ function pickSelection(
   data: ImprovementData,
   keywordId: number | null,
   platform: string | null,
+  opts?: { avoidKeywordIds?: Set<number> },
 ): Selection | null {
+  // For an "update" email the auto-pick prefers a keyword not yet emailed, so
+  // the second email features a fresh keyword. Fall back to the full list when
+  // every keyword has already been sent.
+  const avoid = opts?.avoidKeywordIds;
+  const autoPool =
+    keywordId == null && avoid && avoid.size > 0
+      ? data.keywords.filter((k) => !avoid.has(k.keywordId)).length > 0
+        ? data.keywords.filter((k) => !avoid.has(k.keywordId))
+        : data.keywords
+      : data.keywords;
   const entry =
     (keywordId != null
       ? data.keywords.find((k) => k.keywordId === keywordId)
-      : null) ?? data.keywords[0];
+      : null) ?? autoPool[0];
   if (!entry) return null;
   const available = PLATFORM_ORDER.filter((p) => entry.platforms[p]);
   if (available.length === 0) return null;
@@ -150,6 +161,9 @@ interface SalesEmailArgs {
   offerText?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  /* Which copy template drives the hero headline + default intro/offer/CTA.
+     Defaults to the original "first proof" email. */
+  template?: SalesTemplateKey;
 }
 
 function defaultIntro(a: SalesEmailArgs): string {
@@ -165,6 +179,73 @@ function defaultOffer(_a: SalesEmailArgs): string {
   return `With this, you are first to market. Your business is showing up in AI search results before your competitors know this channel exists.
 
 We'll continue to run for the next few weeks, but we'd love to tell you more. Schedule a time with our team to learn more about AI Search and to lock in your presence in the search results.`;
+}
+
+/* Second email in the sequence: a NEW keyword landed (proof they've now seen it
+   work twice) + the Founder's Discount offer with free-trial urgency. Same
+   layout as the first proof — only the copy, hero, subject, and CTA change. */
+function secondKeywordIntro(a: SalesEmailArgs): string {
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
+
+Another keyword just came in for ${a.business}.
+
+When someone asks ChatGPT, Gemini, and Perplexity "${a.keyword}", your business is showing up in AI search.`;
+}
+
+function secondKeywordOffer(_a: SalesEmailArgs): string {
+  return `Here is what this means for you.
+
+We have been running a limited free trial to prove our technology works. You have now seen it work. We use patent-pending device farm technology to get local businesses named in AI search before their competitors know this channel exists.
+
+The free trial ends soon. When it does, this becomes a paid service. The Founder's Discount is $100 off your monthly plan, locked in for as long as you stay active. It is reserved for clients who have already seen the results firsthand, and it goes away when the free trial closes.
+
+Schedule a call to claim it before this window closes.`;
+}
+
+export type SalesTemplateKey = "first_proof" | "second_keyword";
+
+interface SalesTemplate {
+  key: SalesTemplateKey;
+  label: string;
+  heroHeadline: string;
+  defaultSubject: string;
+  defaultCtaLabel: string;
+  buildIntro: (a: SalesEmailArgs) => string;
+  buildOffer: (a: SalesEmailArgs) => string;
+  /* When true, the "auto" keyword pick skips keywords already emailed to this
+     client so an "update" email naturally features a fresh keyword. */
+  preferUnsent: boolean;
+}
+
+const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
+  first_proof: {
+    key: "first_proof",
+    label: "First proof — your first AI ranking is in",
+    heroHeadline: "Your first AI ranking is in.",
+    defaultSubject: "Your first AI ranking is in",
+    defaultCtaLabel: DEFAULT_CTA_LABEL,
+    buildIntro: defaultIntro,
+    buildOffer: defaultOffer,
+    preferUnsent: false,
+  },
+  second_keyword: {
+    key: "second_keyword",
+    label: "Update — another keyword + Founder's Discount",
+    heroHeadline: "Another keyword just showed up in AI Search.",
+    defaultSubject: "Another keyword just showed up in AI Search.",
+    defaultCtaLabel: "Claim Your Founder's Discount",
+    buildIntro: secondKeywordIntro,
+    buildOffer: secondKeywordOffer,
+    preferUnsent: true,
+  },
+};
+
+function resolveTemplate(key: string | null | undefined): SalesTemplate {
+  return (
+    (key && SALES_TEMPLATES[key as SalesTemplateKey]) ||
+    SALES_TEMPLATES.first_proof
+  );
 }
 
 export function buildSalesEmailHtml(a: SalesEmailArgs): string {
@@ -199,9 +280,10 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
       )
       .join("");
 
-  const intro = paragraphs(a.introMessage?.trim() || defaultIntro(a));
-  const offer = paragraphs(a.offerText?.trim() || defaultOffer(a));
-  const ctaLabel = a.ctaLabel?.trim() || DEFAULT_CTA_LABEL;
+  const tpl = resolveTemplate(a.template);
+  const intro = paragraphs(a.introMessage?.trim() || tpl.buildIntro(a));
+  const offer = paragraphs(a.offerText?.trim() || tpl.buildOffer(a));
+  const ctaLabel = a.ctaLabel?.trim() || tpl.defaultCtaLabel;
   const ctaUrl = a.ctaUrl?.trim() || DEFAULT_CTA_URL;
 
   const shot = (
@@ -227,7 +309,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
     <div style="background:linear-gradient(150deg,#0b1120 0%,#1e293b 100%);background-color:${NAVY};padding:22px 28px 56px 28px;text-align:center">
       ${kicker(`${SENDER_ORG} · AI Ranking`)}
-      <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">Your first AI ranking is in.</h1>
+      <h1 style="margin:10px 0 6px 0;color:#fff;font-size:26px;line-height:1.2;letter-spacing:-0.5px">${tpl.heroHeadline}</h1>
       <p style="margin:0;color:#94a3b8;font-size:13px">${a.business}</p>
     </div>
 
@@ -292,6 +374,7 @@ interface SalesEmailCopy {
   offerText?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  template?: SalesTemplateKey;
 }
 
 interface SalesEmailScope {
@@ -340,8 +423,13 @@ function prepareSalesEmail(
   copy: SalesEmailCopy,
   scope: SalesEmailScope,
   firstName: string | null,
+  avoidKeywordIds: Set<number>,
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
-  const selection = pickSelection(data, keywordId, platform);
+  // The update template auto-picks a keyword the client hasn't been emailed yet.
+  const preferUnsent = resolveTemplate(copy.template).preferUnsent;
+  const selection = pickSelection(data, keywordId, platform, {
+    avoidKeywordIds: preferUnsent ? avoidKeywordIds : undefined,
+  });
   if (!selection)
     return {
       ok: false,
@@ -457,15 +545,18 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       : null;
     const platform = req.query.platform ? String(req.query.platform) : null;
     const qs = (k: string) => (req.query[k] ? String(req.query[k]) : undefined);
+    const template = resolveTemplate(qs("template"));
     const copy: SalesEmailCopy = {
       introMessage: qs("introMessage"),
       offerText: qs("offerText"),
       ctaLabel: qs("ctaLabel"),
       ctaUrl: qs("ctaUrl"),
+      template: template.key,
     };
 
     const scope = parseScope(req.query as Record<string, unknown>);
     const lastSent = await getLastSentInfo(clientId);
+    const sentKeywordIds = new Set(lastSent.perKeyword.keys());
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
       strict: strictMode,
@@ -497,6 +588,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       copy,
       scope,
       firstName,
+      sentKeywordIds,
     );
     if (!prepared.ok)
       return res.json({
@@ -537,8 +629,11 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         afterRank: sel.ranks.current.rank,
         improved: sel.improved,
       },
-      defaultIntro: defaultIntro(dArgs),
-      defaultOffer: defaultOffer(dArgs),
+      template: template.key,
+      defaultSubject: template.defaultSubject,
+      defaultCtaLabel: template.defaultCtaLabel,
+      defaultIntro: template.buildIntro(dArgs),
+      defaultOffer: template.buildOffer(dArgs),
       keywords: keywordOptions(r.data, lastSent.perKeyword),
       lastCommunicationAt: lastSent.accountLast,
       strictMode,
@@ -561,6 +656,7 @@ interface SendSalesEmailBody {
   offerText?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  template?: SalesTemplateKey;
 }
 
 /* POST /api/sales/send-email */
@@ -604,6 +700,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       includeUnimproved: true,
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
+    const template = resolveTemplate(body.template);
+    const lastSent = await getLastSentInfo(body.clientId);
+    const sentKeywordIds = new Set(lastSent.perKeyword.keys());
     const firstName = await firstNameOfClient(body.clientId);
     const prepared = prepareSalesEmail(
       body.clientId,
@@ -616,9 +715,11 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         offerText: body.offerText,
         ctaLabel: body.ctaLabel,
         ctaUrl: body.ctaUrl,
+        template: template.key,
       },
       scope,
       firstName,
+      sentKeywordIds,
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;
@@ -643,7 +744,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
     const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
 
-    const subject = body.subject?.trim() || "Your first AI ranking is in";
+    const subject = body.subject?.trim() || template.defaultSubject;
 
     /* Delivery routing:
        - GHL sending is disabled in safe mode (a test must never email a real
@@ -820,6 +921,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           beforeDate: selection.ranks.first.date,
           afterDate: selection.ranks.current.date,
           business,
+          template: template.key,
           deliveredVia,
           messageId: messageId ?? null,
         },
