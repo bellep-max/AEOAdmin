@@ -11,7 +11,11 @@ import {
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import {
+  StatusBadge,
+  ChangeCell,
+  UnverifiedMark,
+} from "@/components/period-badges";
 
 interface Props {
   period: Period;
@@ -40,6 +44,7 @@ function PlatformChip({ row }: { row: PeriodRow }) {
       <span className="font-bold">
         {fmtPos(row.currentPosition)}
         {arrow}
+        {row.currentUnverified && <UnverifiedMark date={row.currentDate} />}
       </span>
     </span>
   );
@@ -161,9 +166,15 @@ export function PeriodKeywordsCompact({
                         </div>
                         <div className="col-span-3 text-muted-foreground">
                           {fmtPos(p.previousPosition)}
+                          {p.previousUnverified && (
+                            <UnverifiedMark date={p.previousDate} />
+                          )}
                         </div>
                         <div className="col-span-3 font-semibold">
                           {fmtPos(p.currentPosition)}
+                          {p.currentUnverified && (
+                            <UnverifiedMark date={p.currentDate} />
+                          )}
                         </div>
                         <div className="col-span-2">
                           <ChangeCell change={p.change} />

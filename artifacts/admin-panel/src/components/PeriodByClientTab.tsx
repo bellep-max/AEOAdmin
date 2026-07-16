@@ -17,7 +17,11 @@ import {
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import {
+  StatusBadge,
+  ChangeCell,
+  UnverifiedMark,
+} from "@/components/period-badges";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
 interface Props {
@@ -410,6 +414,7 @@ export function PeriodByClientTab({
                                     rank={p.firstPosition}
                                     date={p.firstDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.firstUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -419,6 +424,7 @@ export function PeriodByClientTab({
                                     rank={p.previousPosition}
                                     date={p.previousDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.previousUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -428,6 +434,7 @@ export function PeriodByClientTab({
                                     rank={p.currentPosition}
                                     date={p.currentDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.currentUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -481,6 +488,8 @@ interface RankCellButtonProps {
   rank: number | null;
   date: string | null;
   label: string;
+  /** Top-3 whose screenshot the vision check could not confirm. */
+  unverified?: boolean;
   onPick: (cell: {
     id: number;
     label: string;
@@ -496,11 +505,18 @@ function RankCellButton({
   rank,
   date,
   label,
+  unverified,
   onPick,
 }: RankCellButtonProps) {
   const text = fmtPos(rank);
+  const mark = unverified ? <UnverifiedMark date={date} /> : null;
   if (reportId == null) {
-    return <span>{text}</span>;
+    return (
+      <span>
+        {text}
+        {mark}
+      </span>
+    );
   }
   return (
     <button
@@ -510,6 +526,7 @@ function RankCellButton({
       title="View screenshot"
     >
       {text}
+      {mark}
     </button>
   );
 }
