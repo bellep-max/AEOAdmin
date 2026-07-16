@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp } from "lucide-react";
 import { rawFetch, fmtShortET } from "@/lib/period-comparison";
+import { ordinal, placeText } from "@/lib/plain-language";
 import { AIExplain } from "@/components/AIExplain";
 
 /** AI platforms drawn as separate lines, in a fixed order with hex colors that
@@ -188,9 +189,9 @@ export function RankTrendChart({
                   allowDecimals={false}
                   tick={{ fontSize: 11 }}
                   domain={[1, "auto"]}
-                  tickFormatter={(v: number) => `#${v}`}
+                  tickFormatter={(v: number) => ordinal(v)}
                   label={{
-                    value: "Rank",
+                    value: "Position (1st = top answer)",
                     angle: -90,
                     position: "insideLeft",
                     style: {
@@ -207,7 +208,7 @@ export function RankTrendChart({
                     fontSize: "0.75rem",
                   }}
                   formatter={(value: number, name: string) => [
-                    `#${value}`,
+                    placeText(value),
                     name,
                   ]}
                 />

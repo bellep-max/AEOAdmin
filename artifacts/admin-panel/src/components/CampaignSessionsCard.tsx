@@ -29,7 +29,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Activity, ChevronDown, ChevronRight } from "lucide-react";
-import { rawFetch } from "@/lib/period-comparison";
+import { rawFetch, platformLabel } from "@/lib/period-comparison";
+import { checkStatusText } from "@/lib/plain-language";
 import {
   fmtDateTime,
   fmtDuration,
@@ -183,9 +184,9 @@ export function CampaignSessionsCard({ campaignId }: Props) {
               )}
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Activity className="w-4 h-4 text-primary" />
-                Daily Sessions
+                Daily checks
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  · times in America/New_York (ET)
+                  · every time we asked the AI where you rank (times in ET)
                 </span>
               </CardTitle>
             </button>
@@ -234,9 +235,9 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                   </SelectTrigger>
                   <SelectContent className={POPOVER_MAX_H}>
                     <SelectItem value={ALL}>All</SelectItem>
-                    <SelectItem value="success">Success</SelectItem>
-                    <SelectItem value="error">Error</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="success">Checked OK</SelectItem>
+                    <SelectItem value="error">Couldn't check</SelectItem>
+                    <SelectItem value="pending">In progress</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -311,15 +312,15 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        Time{" "}
+                        When{" "}
                         <span className="text-xs font-normal text-muted-foreground">
                           (ET)
                         </span>
                       </TableHead>
-                      <TableHead>Keyword</TableHead>
-                      <TableHead>Platform</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Duration</TableHead>
+                      <TableHead>Phrase</TableHead>
+                      <TableHead>AI assistant</TableHead>
+                      <TableHead>Result</TableHead>
+                      <TableHead>How long</TableHead>
                       <TableHead>Backlink</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -350,7 +351,7 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                                   {s.keywordVariant}
                                 </span>
                                 <div className="text-xs text-muted-foreground">
-                                  ↳{" "}
+                                  from:{" "}
                                   {s.keywordId ? (
                                     <Link
                                       href={`/keywords?keywordId=${s.keywordId}`}
@@ -379,11 +380,13 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary">{s.aiPlatform}</Badge>
+                            <Badge variant="secondary">
+                              {platformLabel(s.aiPlatform)}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge className={statusBadgeClass(s.status)}>
-                              {s.status}
+                              {checkStatusText(s.status)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm">
@@ -453,7 +456,7 @@ export function CampaignSessionsCard({ campaignId }: Props) {
                 </Section>
 
                 <Section title="Run">
-                  <Row label="Status" value={open.status} />
+                  <Row label="Status" value={checkStatusText(open.status)} />
                   <Row label="Type" value={open.type} />
                   <Row
                     label="Duration"

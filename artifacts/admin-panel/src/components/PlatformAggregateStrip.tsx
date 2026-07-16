@@ -21,6 +21,15 @@ import {
   PLATFORM_COLORS,
   type Period,
 } from "@/lib/period-comparison";
+import { ordinal, movementText } from "@/lib/plain-language";
+
+/** Proper display names — CSS `capitalize` would render "Chatgpt". */
+const PLATFORM_NAMES: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+const platformName = (p: string) => PLATFORM_NAMES[p] ?? p;
 
 interface Props {
   clientId: number | null;
@@ -104,6 +113,11 @@ export function PlatformAggregateStrip({
           )}
         </div>
 
+        <p className="text-sm leading-relaxed text-foreground mb-3">
+          This is your typical spot in the AI answers on each assistant. 1st
+          place is the very top answer, so a smaller number is better.
+        </p>
+
         {isLoading ? (
           <p className="text-xs text-muted-foreground py-4 text-center">
             Loading…
@@ -126,60 +140,65 @@ export function PlatformAggregateStrip({
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-semibold capitalize ${cls}`}
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}
                     >
-                      {a.platform}
+                      {platformName(a.platform)}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
-                      {a.keywordCount} keyword{a.keywordCount !== 1 ? "s" : ""}
+                      {a.keywordCount} phrase{a.keywordCount !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
                     <p className="text-2xl font-bold">
-                      {a.avgCurrent != null ? `#${a.avgCurrent}` : "—"}
+                      {a.avgCurrent != null ? ordinal(a.avgCurrent) : "—"}
                     </p>
-                    {change != null && change !== 0 && (
-                      <span
-                        className={`inline-flex items-center gap-0.5 text-xs font-semibold ${
-                          change > 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}
-                      >
-                        {change > 0 ? (
-                          <TrendingUp className="w-3 h-3" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3" />
-                        )}
-                        {change > 0 ? `+${change}` : change}
-                      </span>
-                    )}
-                    {change === 0 && (
-                      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-muted-foreground">
-                        <Minus className="w-3 h-3" /> 0
-                      </span>
-                    )}
+                    <span className="text-[10px] text-muted-foreground">
+                      average position
+                    </span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    {label.previousLabel}:{" "}
-                    {a.avgPrevious != null ? `#${a.avgPrevious}` : "—"}
+                  {change != null && (
+                    <p
+                      className={`text-xs font-semibold mt-1 inline-flex items-center gap-1 ${
+                        change > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : change < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-muted-foreground"
+                      }`}
+                    >
+                      {change > 0 ? (
+                        <TrendingUp className="w-3 h-3" />
+                      ) : change < 0 ? (
+                        <TrendingDown className="w-3 h-3" />
+                      ) : (
+                        <Minus className="w-3 h-3" />
+                      )}
+                      {change === 0
+                        ? "No change from 2 weeks ago"
+                        : `${movementText(change)} vs 2 weeks ago`}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    Two weeks ago:{" "}
+                    {a.avgPrevious != null ? ordinal(a.avgPrevious) : "—"}
                   </p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    First: {a.avgFirst != null ? `#${a.avgFirst}` : "—"}
+                    When we started:{" "}
+                    {a.avgFirst != null ? ordinal(a.avgFirst) : "—"}
                   </p>
                   <div className="flex items-center gap-3 mt-2 text-[10px]">
                     <span className="text-muted-foreground">
-                      <strong className="text-foreground">{a.topRank}</strong>{" "}
-                      in top {a.topRankThreshold}
+                      <strong className="text-foreground">{a.topRank}</strong> of{" "}
+                      {a.keywordCount} in the top {a.topRankThreshold} answers
                     </span>
                     {a.improved > 0 && (
                       <span className="text-emerald-600 dark:text-emerald-400">
-                        ↑ {a.improved}
+                        {a.improved} improved
                       </span>
                     )}
                     {a.declined > 0 && (
                       <span className="text-red-600 dark:text-red-400">
-                        ↓ {a.declined}
+                        {a.declined} slipped
                       </span>
                     )}
                   </div>

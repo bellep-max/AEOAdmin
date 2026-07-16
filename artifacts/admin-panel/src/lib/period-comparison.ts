@@ -208,6 +208,18 @@ export function fmtRelative(s: string | null): string {
 
 export const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"] as const;
 
+/** Proper display names for the AI platforms — CSS `capitalize` would render
+ *  "chatgpt" as "Chatgpt". Falls back to the raw value for anything unknown. */
+const PLATFORM_LABELS: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+export function platformLabel(platform: string): string {
+  return PLATFORM_LABELS[platform] ?? platform;
+}
+
 export const PLATFORM_COLORS: Record<string, string> = {
   chatgpt:
     "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",

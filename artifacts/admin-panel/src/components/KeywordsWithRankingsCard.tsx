@@ -33,15 +33,19 @@ import { format } from "date-fns";
 import {
   usePeriodComparison,
   countStatuses,
-  fmtPos,
-  periodLabel,
   rawFetch,
   PLATFORM_COLORS,
   TOP_RANK_THRESHOLD,
   sortPlatformsWithUnavailable,
+  platformLabel,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
+import {
+  placeShort,
+  movementWord,
+  movementText,
+} from "@/lib/plain-language";
 import {
   StatusBadge,
   ChangeCell,
@@ -148,14 +152,8 @@ function PlatformChip({
     ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
     : (PLATFORM_COLORS[row.platform] ??
       "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
-  const arrow =
-    row.change == null
-      ? ""
-      : row.change > 0
-        ? " ↑"
-        : row.change < 0
-          ? " ↓"
-          : " =";
+  const move =
+    row.change == null || row.change === 0 ? "" : ` (${movementWord(row.change)})`;
   const clickable =
     !unavailable && onClick != null && row.currentReportId != null;
   const interactive = clickable
@@ -199,13 +197,13 @@ function PlatformChip({
       title={clickable ? "Click to view screenshot" : undefined}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
     >
-      <span className="capitalize">{row.platform}</span>
+      <span>{platformLabel(row.platform)}</span>
       {unavailable ? (
         <span className="font-medium opacity-80">Unavailable</span>
       ) : (
         <span className="font-bold">
-          {fmtPos(row.currentPosition)}
-          {arrow}
+          {placeShort(row.currentPosition)}
+          {move}
           {row.currentUnverified && <UnverifiedMark date={row.currentDate} />}
         </span>
       )}
@@ -239,7 +237,7 @@ function RankShotCell({
   onOpen: (target: ScreenshotTarget) => void;
   onUnavailable: () => void;
 }) {
-  const text = fmtPos(position);
+  const text = placeShort(position);
   const mark = unverified ? <UnverifiedMark date={date} /> : null;
   if (reportId != null) {
     return (
@@ -309,8 +307,6 @@ export function KeywordsWithRankingsCard({
     businessId,
     aeoPlanId,
   });
-  const label = periodLabel(period);
-
   // ── Auto-rotation (lock-on-win) ───────────────────────────────────────────
   const [rotateOpen, setRotateOpen] = useState(false);
   const [rotateBusy, setRotateBusy] = useState<false | "preview" | "run">(
@@ -526,22 +522,22 @@ export function KeywordsWithRankingsCard({
           <div className="flex items-center gap-1.5 flex-wrap pt-2">
             {counts.improved > 0 && (
               <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
-                ↑ {counts.improved}
+                {counts.improved} improved
               </Badge>
             )}
             {!lockedView && counts.declined > 0 && (
               <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">
-                ↓ {counts.declined}
+                {counts.declined} slipped
               </Badge>
             )}
             {counts.steady > 0 && (
               <Badge variant="outline" className="text-[10px]">
-                = {counts.steady}
+                {counts.steady} no change
               </Badge>
             )}
             {counts.newCount > 0 && (
               <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">
-                + {counts.newCount} new
+                {counts.newCount} new
               </Badge>
             )}
           </div>
@@ -673,14 +669,12 @@ export function KeywordsWithRankingsCard({
                     {isOpen && hasData && (
                       <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
                         <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
-                          <div className="col-span-2">Platform</div>
-                          <div className="col-span-2">First</div>
-                          <div className="col-span-2">
-                            {label.previousLabel}
-                          </div>
-                          <div className="col-span-2">{label.currentLabel}</div>
-                          <div className="col-span-2">Change</div>
-                          <div className="col-span-2">Status</div>
+                          <div className="col-span-2">AI assistant</div>
+                          <div className="col-span-2">When we started</div>
+                          <div className="col-span-2">Two weeks ago</div>
+                          <div className="col-span-2">Now</div>
+                          <div className="col-span-2">Movement</div>
+                          <div className="col-span-2">Result</div>
                         </div>
                         {sorted.map((p) => (
                           <div
@@ -688,8 +682,8 @@ export function KeywordsWithRankingsCard({
                             className="px-1 py-1"
                           >
                             <div className="grid grid-cols-12 gap-2 items-center text-sm">
-                              <div className="col-span-2 capitalize font-semibold">
-                                {p.platform}
+                              <div className="col-span-2 font-semibold">
+                                {platformLabel(p.platform)}
                               </div>
                               <div className="col-span-2 text-muted-foreground">
                                 <RankShotCell
@@ -735,9 +729,9 @@ export function KeywordsWithRankingsCard({
                                   <span className="text-xs text-muted-foreground">
                                     {p.change == null
                                       ? "—"
-                                      : p.change > 0
-                                        ? `+${p.change}`
-                                        : String(p.change)}
+                                      : p.change === 0
+                                        ? "No change"
+                                        : movementText(p.change)}
                                   </span>
                                 ) : (
                                   <ChangeCell change={p.change} />
