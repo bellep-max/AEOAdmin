@@ -33,6 +33,7 @@ interface SendRow {
   id: number;
   clientId: number | null;
   clientName: string | null;
+  campaignName: string | null;
   sentAt: string;
   recipients: string[];
   intendedRecipients: string[] | null;
@@ -271,6 +272,7 @@ export default function SentEmails() {
       const hay = [
         s.subject,
         s.clientName ?? "",
+        s.campaignName ?? "",
         (s.recipients ?? []).join(" "),
         (s.intendedRecipients ?? []).join(" "),
         s.meta?.keyword ?? "",
@@ -423,8 +425,9 @@ export default function SentEmails() {
           <div className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] uppercase tracking-wide text-muted-foreground border-b">
             <div className="col-span-2">Sent</div>
             <div className="col-span-2">Client</div>
-            <div className="col-span-3">Subject</div>
-            <div className="col-span-2">Proof</div>
+            <div className="col-span-2">Campaign</div>
+            <div className="col-span-2">Subject</div>
+            <div className="col-span-1">Proof</div>
             <div className="col-span-1">Kind</div>
             <div className="col-span-1">Status</div>
             <div className="col-span-1" />
@@ -450,10 +453,16 @@ export default function SentEmails() {
               <div className="col-span-2 truncate font-medium">
                 {s.clientName ?? "—"}
               </div>
-              <div className="col-span-3 truncate" title={s.subject}>
+              <div
+                className="col-span-2 truncate text-muted-foreground"
+                title={s.campaignName ?? undefined}
+              >
+                {s.campaignName ?? "—"}
+              </div>
+              <div className="col-span-2 truncate" title={s.subject}>
                 {s.subject}
               </div>
-              <div className="col-span-2 text-xs text-muted-foreground truncate">
+              <div className="col-span-1 text-xs text-muted-foreground truncate">
                 {s.meta?.keyword ? (
                   <>
                     “{s.meta.keyword}” · #{s.meta.beforeRank} → #

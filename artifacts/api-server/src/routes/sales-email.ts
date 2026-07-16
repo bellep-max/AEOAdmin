@@ -18,6 +18,8 @@ import { Router, type Request } from "express";
 import { db } from "@workspace/db";
 import {
   clientsTable,
+  clientAeoPlansTable,
+  keywordsTable,
   emailSendsTable,
   emailEventsTable,
 } from "@workspace/db/schema";
@@ -874,6 +876,7 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
         id: emailSendsTable.id,
         clientId: emailSendsTable.clientId,
         clientName: clientsTable.businessName,
+        campaignName: clientAeoPlansTable.name,
         sentAt: emailSendsTable.sentAt,
         recipients: emailSendsTable.recipients,
         intendedRecipients: emailSendsTable.intendedRecipients,
@@ -891,6 +894,16 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
       })
       .from(emailSendsTable)
       .leftJoin(clientsTable, eq(emailSendsTable.clientId, clientsTable.id))
+      // Campaign = the plan of the keyword this email is about. Sends rarely set
+      // aeo_plan_id directly, but sales emails carry meta.keywordId → keyword's plan.
+      .leftJoin(
+        keywordsTable,
+        sql`${keywordsTable.id} = NULLIF(${emailSendsTable.meta} ->> 'keywordId', '')::int`,
+      )
+      .leftJoin(
+        clientAeoPlansTable,
+        sql`${clientAeoPlansTable.id} = COALESCE(${keywordsTable.aeoPlanId}, ${emailSendsTable.aeoPlanId})`,
+      )
       .where(
         and(
           clientId != null && Number.isFinite(clientId)
