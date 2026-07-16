@@ -1,15 +1,18 @@
 /**
  * Sustained-win rotation engine.
  *
- * A keyword is "won" only when its TWO most recent bi-weekly runs on the SAME
- * platform (chatgpt OR gemini OR perplexity) are BOTH top-3 (position 1, 2, or
- * 3). A single top-3 run no longer locks — the win must hold across two
- * consecutive cycles (one cycle ≈ 14 days). On a confirmed win we LOCK the
- * keyword (status='locked') and ROTATE in a fresh replacement keyword for the
- * same business/campaign. Won-but-rankable: a locked keyword STAYS is_active=true
- * and is NOT archived, so the bi-weekly pipeline keeps ranking it to confirm it
- * holds top-3 — it just moves to the "Locked/Won" view and is excluded from the
- * winner scan. (Truly retiring a keyword is a separate manual archive.)
+ * A keyword is "won" only when EVERY platform (chatgpt AND gemini AND
+ * perplexity) has its TWO most recent bi-weekly runs BOTH top-3 (position 1, 2,
+ * or 3). Winning a subset is not a win: a keyword sitting #1 on ChatGPT while
+ * #12 on Gemini still has ground for the client to gain, so it stays in
+ * rotation. A single top-3 run never locks either — each platform's win must
+ * hold across two consecutive cycles (one cycle ≈ 14 days). On a confirmed win
+ * we LOCK the keyword (status='locked') and ROTATE in a fresh replacement
+ * keyword for the same business/campaign. Won-but-rankable: a locked keyword
+ * STAYS is_active=true and is NOT archived, so the bi-weekly pipeline keeps
+ * ranking it to confirm it holds top-3 — it just moves to the "Locked/Won" view
+ * and is excluded from the winner scan. (Truly retiring a keyword is a separate
+ * manual archive.)
  *
  * Why two runs: the previous immediate-on-single-top-3 rule, combined with
  * back-fill imports, cascade-locked ~1,457 keywords in June 2026 (every
@@ -49,10 +52,14 @@ import { logger } from "../lib/logger";
 
 export const TOP3_THRESHOLD = 3;
 
-// A win must hold across this many consecutive bi-weekly runs on one platform
-// before the keyword locks. Guards against single-run flukes on a bi-weekly
-// cadence (one run ≈ every 14 days).
+// A win must hold across this many consecutive bi-weekly runs on a platform
+// before that platform counts as won. Guards against single-run flukes on a
+// bi-weekly cadence (one run ≈ every 14 days).
 export const SUSTAINED_RUNS = 2;
+
+// Every one of these must be won before the keyword locks. Winning a subset is
+// not a win — the client still has ground to gain on the rest.
+export const ROTATION_PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
 
 export interface RotationLock {
   keywordId: number;
@@ -168,24 +175,28 @@ export async function rotateWinners(
       runsByPlatform.set(r.platform, list);
     }
 
-    // Lock only when the SUSTAINED_RUNS most recent runs on the SAME platform are
-    // all top-3 — a win held across consecutive bi-weekly cycles. Among platforms
-    // that qualify, pick the strongest (lowest latest position) as the trigger.
-    let triggerPlatform: string | null = null;
-    let triggerPosition = Infinity;
-    for (const [platform, runs] of runsByPlatform) {
-      if (runs.length < SUSTAINED_RUNS) continue;
-      const lastRuns = runs
-        .slice()
-        .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
-        .slice(0, SUSTAINED_RUNS);
-      const allTop3 = lastRuns.every((x) => x.pos <= TOP3_THRESHOLD);
-      if (allTop3 && lastRuns[0].pos < triggerPosition) {
-        triggerPlatform = platform;
-        triggerPosition = lastRuns[0].pos;
-      }
-    }
-    if (triggerPlatform == null) continue; // no sustained top-3 on any platform
+    // Lock only when EVERY platform has held top-3 across its SUSTAINED_RUNS
+    // most recent runs. A keyword that wins on one platform while still ranking
+    // poorly on another is not won — the client has ground left to gain there,
+    // so it stays in rotation. Among the winning platforms the strongest (lowest
+    // latest position) is recorded as the trigger.
+    const wins: Array<{ platform: string; position: number } | null> =
+      ROTATION_PLATFORMS.map((platform) => {
+        const runs = runsByPlatform.get(platform) ?? [];
+        if (runs.length < SUSTAINED_RUNS) return null;
+        const lastRuns = runs
+          .slice()
+          .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+          .slice(0, SUSTAINED_RUNS);
+        return lastRuns.every((x) => x.pos <= TOP3_THRESHOLD)
+          ? { platform: String(platform), position: lastRuns[0].pos }
+          : null;
+      });
+    const won = wins.flatMap((w) => (w ? [w] : []));
+    if (won.length < ROTATION_PLATFORMS.length) continue; // not won everywhere
+    const strongest = won.reduce((a, b) => (b.position < a.position ? b : a));
+    const triggerPlatform: string = strongest.platform;
+    const triggerPosition: number = strongest.position;
 
     let replacement = `best ${kw.keywordText}`;
     let newKeywordId: number | null = null;
@@ -237,7 +248,7 @@ export async function rotateWinners(
         .update(keywordsTable)
         .set({
           status: "locked", // "Locked/Won" — still rankable, just won
-          archiveReason: `locked (won): top-3 on ${triggerPlatform} for ${SUSTAINED_RUNS} consecutive runs (#${triggerPosition}) — auto-rotation`,
+          archiveReason: `locked (won): all ${ROTATION_PLATFORMS.length} platforms top-3 for ${SUSTAINED_RUNS} consecutive runs — strongest top-3 on ${triggerPlatform} (#${triggerPosition}) — auto-rotation`,
           replacementSuggestion: replacement,
         })
         .where(
