@@ -22,8 +22,7 @@ export type Status =
   | "declined"
   | "missing"
   | "pending"
-  | "unavailable"
-  | "no_ranking";
+  | "unavailable";
 export type Freshness = "fresh" | "stale" | "cold" | "never";
 
 export interface PeriodRow {
@@ -43,13 +42,9 @@ export interface PeriodRow {
   previousReportId: number | null;
   previousPosition: number | null;
   previousDate: string | null;
-  /* That part's screenshot failed the OCR quality check on a top-3 claim —
-     the position is fake and comes back null. Applies per part. */
-  previousNoRanking?: boolean;
   firstReportId: number | null;
   firstPosition: number | null;
   firstDate: string | null;
-  firstNoRanking?: boolean;
   change: number | null;
   status: Status;
   freshness: Freshness;
@@ -122,27 +117,6 @@ export function usePeriodComparison(
 
 export function fmtPos(n: number | null | undefined): string {
   return n == null ? "—" : `#${n}`;
-}
-
-/** Rank display that shows "No ranking yet" when the current screenshot failed
- *  the quality check (status "no_ranking") — the AI claimed a top-3 rank the
- *  client isn't actually shown at — instead of a misleading position. */
-export function fmtPosOrNoRanking(
-  n: number | null | undefined,
-  status: Status,
-): string {
-  if (status === "no_ranking") return "No ranking yet";
-  return fmtPos(n);
-}
-
-/** Same, but for the First/Previous parts, which flag fakes with a boolean
- *  (per part) instead of the row-level status. */
-export function fmtPosOrNoRankingFlag(
-  n: number | null | undefined,
-  noRanking: boolean | undefined,
-): string {
-  if (noRanking) return "No ranking yet";
-  return fmtPos(n);
 }
 
 export function fmtWindow(s: string): string {

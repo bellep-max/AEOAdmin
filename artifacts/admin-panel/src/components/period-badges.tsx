@@ -57,12 +57,6 @@ export function StatusBadge({ status }: { status: Status }) {
       label: "Unavailable",
       icon: <Ban className="w-3 h-3" />,
     },
-    no_ranking: {
-      bg: "bg-slate-500/10 border-slate-400/30",
-      text: "text-muted-foreground",
-      label: "No ranking yet",
-      icon: <AlertCircle className="w-3 h-3" />,
-    },
   };
   const p = map[status];
   return (
