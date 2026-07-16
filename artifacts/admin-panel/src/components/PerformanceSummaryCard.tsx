@@ -1,20 +1,19 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Trophy,
-  ArrowRight,
-  Gauge,
-} from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Trophy, Gauge } from "lucide-react";
 import {
   usePeriodComparison,
-  fmtPos,
   summarizeProgress,
   sortMovers,
+  type PerformanceSummary,
 } from "@/lib/period-comparison";
+import {
+  ordinal,
+  placeShort,
+  moverSentence,
+  movementText,
+} from "@/lib/plain-language";
 import { AIExplain } from "@/components/AIExplain";
 
 interface StatProps {
@@ -47,6 +46,21 @@ function Stat({ label, value, sub, tone = "default" }: StatProps) {
 }
 
 const MAX_MOVERS = 10;
+
+/** One plain-English sentence that says what the numbers below mean, so a
+ *  non-technical reader gets the takeaway before reading any tile. */
+function buildIntro(s: PerformanceSummary, tracked: number): string {
+  const phrases = tracked === 1 ? "phrase" : "phrases";
+  const lead =
+    s.inTop3 > 0
+      ? `${s.inTop3} of the ${tracked} ${phrases} we track now show up in the top 3 answers when people ask AI assistants.`
+      : `We're tracking ${tracked} ${phrases} that your customers ask AI assistants like ChatGPT.`;
+  const moved =
+    s.improved > 0 || s.declined > 0
+      ? ` Since we started, ${s.improved} moved up${s.declined > 0 ? ` and ${s.declined} slipped a little` : ""}.`
+      : "";
+  return lead + moved;
+}
 
 interface Props {
   clientId: number | null;
@@ -103,33 +117,43 @@ export function PerformanceSummaryCard({
           </p>
         ) : (
           <div className="space-y-4">
+            <p className="text-sm leading-relaxed text-foreground">
+              {buildIntro(s, trackedCount)}
+            </p>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Stat
-                label="Keywords tracked"
+                label="Phrases we track"
                 value={String(trackedCount)}
-                sub={`${s.withRank} with a ranking`}
+                sub={`${s.withRank} have a ranking so far`}
               />
               <Stat
-                label="In top 3"
+                label="In the top 3 answers"
                 value={String(s.inTop3)}
                 sub={
                   s.withRank
-                    ? `${Math.round((s.inTop3 / s.withRank) * 100)}% of ranked`
+                    ? `${Math.round((s.inTop3 / s.withRank) * 100)}% of the ranked ones`
                     : undefined
                 }
                 tone="emerald"
               />
               <Stat
-                label="Improved"
+                label="Moved up since start"
                 value={String(s.improved)}
-                sub={s.declined > 0 ? `${s.declined} declined` : "since start"}
+                sub={
+                  s.declined > 0
+                    ? `${s.declined} slipped a little`
+                    : "since we began"
+                }
                 tone="blue"
               />
               <Stat
-                label="Avg rank now"
-                value={s.avgCurrent != null ? `#${s.avgCurrent}` : "—"}
+                label="Average position now"
+                value={s.avgCurrent != null ? ordinal(s.avgCurrent) : "—"}
                 sub={
-                  s.avgFirst != null ? `started at #${s.avgFirst}` : undefined
+                  s.avgFirst != null
+                    ? `started around ${ordinal(s.avgFirst)}`
+                    : undefined
                 }
               />
             </div>
@@ -146,9 +170,11 @@ export function PerformanceSummaryCard({
               <div className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
                   <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-xs font-semibold">Biggest movers</span>
+                  <span className="text-xs font-semibold">
+                    What moved the most
+                  </span>
                   <span className="text-[10px] text-muted-foreground">
-                    most improved first
+                    biggest wins first
                   </span>
                 </div>
                 <div className="divide-y divide-border/40">
@@ -157,18 +183,20 @@ export function PerformanceSummaryCard({
                     return (
                       <div
                         key={k.keywordId}
-                        className="flex items-center gap-3 px-3 py-2"
+                        className="flex items-start gap-3 px-3 py-2"
                       >
-                        <span className="text-sm font-medium flex-1 min-w-0 truncate">
-                          {k.keywordText}
-                        </span>
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 tabular-nums">
-                          {fmtPos(k.firstBest)}
-                          <ArrowRight className="w-3 h-3 opacity-60" />
-                          <span className="font-semibold text-foreground">
-                            {fmtPos(k.currentBest)}
-                          </span>
-                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            “{k.keywordText}”
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {moverSentence(
+                              k.firstBest,
+                              k.currentBest,
+                              k.improvement as number,
+                            )}
+                          </p>
+                        </div>
                         <Badge
                           className={`gap-0.5 text-[10px] shrink-0 ${
                             up
@@ -181,7 +209,7 @@ export function PerformanceSummaryCard({
                           ) : (
                             <TrendingDown className="w-2.5 h-2.5" />
                           )}
-                          {up ? `+${k.improvement}` : k.improvement}
+                          {movementText(k.improvement as number)}
                         </Badge>
                       </div>
                     );

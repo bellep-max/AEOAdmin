@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { Status, Freshness } from "@/lib/period-comparison";
 import { PLATFORM_COLORS } from "@/lib/period-comparison";
+import { movementText } from "@/lib/plain-language";
 
 /** Marks a top-3 rank whose screenshot the vision check couldn't confirm.
  *  The rank shown is what was measured — this flags it for a re-run. */
@@ -38,13 +39,13 @@ export function StatusBadge({ status }: { status: Status }) {
     declined: {
       bg: "bg-yellow-500/10 border-yellow-500/30",
       text: "text-yellow-700 dark:text-yellow-400",
-      label: "Declined",
+      label: "Slipped",
       icon: <TrendingDown className="w-3 h-3" />,
     },
     steady: {
       bg: "bg-slate-500/10 border-slate-500/30",
       text: "text-slate-600 dark:text-slate-400",
-      label: "Steady",
+      label: "No change",
       icon: <Minus className="w-3 h-3" />,
     },
     new: {
@@ -56,7 +57,7 @@ export function StatusBadge({ status }: { status: Status }) {
     missing: {
       bg: "bg-amber-500/10 border-amber-500/30",
       text: "text-amber-600 dark:text-amber-400",
-      label: "Missing",
+      label: "No recent check",
       icon: <AlertCircle className="w-3 h-3" />,
     },
     pending: {
@@ -133,14 +134,14 @@ export function ChangeCell({ change }: { change: number | null }) {
   if (change > 0)
     return (
       <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-        +{change}
+        {movementText(change)}
       </span>
     );
   if (change < 0)
     return (
       <span className="text-yellow-700 dark:text-yellow-400 font-semibold">
-        {change}
+        {movementText(change)}
       </span>
     );
-  return <span className="text-muted-foreground">0</span>;
+  return <span className="text-muted-foreground">No change</span>;
 }

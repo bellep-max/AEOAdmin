@@ -19,7 +19,8 @@ import {
   Download,
   FileDown,
 } from "lucide-react";
-import { rawFetch } from "@/lib/period-comparison";
+import { rawFetch, platformLabel } from "@/lib/period-comparison";
+import { placeShort, checkStatusText } from "@/lib/plain-language";
 import { format } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -74,20 +75,20 @@ export function CampaignAuditRankingsCard({
     if (!data) return;
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const headers = [
-      "Date",
-      "Keyword",
-      "Platform",
-      "Rank",
-      "Status",
-      "Duration",
+      "When",
+      "Phrase",
+      "AI assistant",
+      "Where it ranked",
+      "Result",
+      "How long",
     ];
     const rows = data.map((a) =>
       [
         esc(format(new Date(a.timestamp), "yyyy-MM-dd HH:mm")),
         esc(a.keywordText ?? ""),
-        esc(a.platform),
-        a.rankPosition != null ? `#${a.rankPosition}` : "—",
-        esc(a.status),
+        esc(platformLabel(a.platform)),
+        a.rankPosition != null ? placeShort(a.rankPosition) : "not ranked",
+        esc(checkStatusText(a.status)),
         fmtDuration(a.durationSeconds),
       ].join(","),
     );
@@ -114,7 +115,7 @@ export function CampaignAuditRankingsCard({
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text("Audit Rankings", 10, 9);
+    doc.text("AI Check History", 10, 9);
     doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(148, 163, 184);
@@ -127,15 +128,24 @@ export function CampaignAuditRankingsCard({
     const body = data.map((a) => [
       format(new Date(a.timestamp), "MMM d, h:mm a"),
       a.keywordText ?? "—",
-      a.platform,
-      a.rankPosition != null ? `#${a.rankPosition}` : "—",
-      a.status,
+      platformLabel(a.platform),
+      a.rankPosition != null ? placeShort(a.rankPosition) : "not ranked",
+      checkStatusText(a.status),
       fmtDuration(a.durationSeconds),
     ]);
 
     autoTable(doc, {
       startY: 22,
-      head: [["Date", "Keyword", "Platform", "Rank", "Status", "Duration"]],
+      head: [
+        [
+          "When",
+          "Phrase",
+          "AI assistant",
+          "Where it ranked",
+          "Result",
+          "How long",
+        ],
+      ],
       body,
       theme: "striped",
       headStyles: {
@@ -176,11 +186,11 @@ export function CampaignAuditRankingsCard({
             </div>
             <div className="flex-1 min-w-0">
               <CardTitle className="text-sm font-semibold">
-                Audit Rankings
+                AI check history
               </CardTitle>
               <p className="text-xs text-muted-foreground">
                 {data != null
-                  ? `${data.length} audit log${data.length !== 1 ? "s" : ""}`
+                  ? `${data.length} check${data.length !== 1 ? "s" : ""} — every time we asked an AI where you rank`
                   : "Click to load"}
               </p>
             </div>
@@ -216,18 +226,18 @@ export function CampaignAuditRankingsCard({
             </div>
           ) : !data || data.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              No audit rankings yet
+              No checks yet
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Keyword</TableHead>
-                  <TableHead>Platform</TableHead>
-                  <TableHead>Rank</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Duration</TableHead>
+                  <TableHead>When</TableHead>
+                  <TableHead>Phrase</TableHead>
+                  <TableHead>AI assistant</TableHead>
+                  <TableHead>Where it ranked</TableHead>
+                  <TableHead>Result</TableHead>
+                  <TableHead>How long</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -257,16 +267,20 @@ export function CampaignAuditRankingsCard({
                       </TableCell>
                       <TableCell>
                         <Badge
-                          className={`text-[10px] border capitalize ${pc}`}
+                          className={`text-[10px] border ${pc}`}
                           variant="outline"
                         >
-                          {a.platform}
+                          {platformLabel(a.platform)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs font-semibold">
-                        {a.rankPosition != null ? `#${a.rankPosition}` : "—"}
+                        {a.rankPosition != null
+                          ? placeShort(a.rankPosition)
+                          : "not ranked"}
                       </TableCell>
-                      <TableCell className="text-xs">{a.status}</TableCell>
+                      <TableCell className="text-xs">
+                        {checkStatusText(a.status)}
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {fmtDuration(a.durationSeconds)}
                       </TableCell>
