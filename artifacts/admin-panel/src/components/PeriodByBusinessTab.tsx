@@ -6,8 +6,6 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
-  fmtPosOrNoRanking,
-  fmtPosOrNoRankingFlag,
   periodLabel,
   type Period,
   type PeriodRow,
@@ -187,13 +185,10 @@ export function PeriodByBusinessTab({
                           <PlatformPill platform={r.platform} />
                         </div>
                         <div className="col-span-2 text-muted-foreground">
-                          {fmtPosOrNoRankingFlag(
-                            r.previousPosition,
-                            r.previousNoRanking,
-                          )}
+                          {fmtPos(r.previousPosition)}
                         </div>
                         <div className="col-span-2 font-semibold">
-                          {fmtPosOrNoRanking(r.currentPosition, r.status)}
+                          {fmtPos(r.currentPosition)}
                         </div>
                         <div className="col-span-1">
                           <ChangeCell change={r.change} />

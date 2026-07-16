@@ -5,8 +5,6 @@ import {
   usePeriodComparison,
   countStatuses,
   fmtPos,
-  fmtPosOrNoRanking,
-  fmtPosOrNoRankingFlag,
   periodLabel,
   PLATFORM_ORDER,
   PLATFORM_COLORS,
@@ -40,7 +38,7 @@ function PlatformChip({ row }: { row: PeriodRow }) {
     >
       <span className="capitalize">{row.platform}</span>
       <span className="font-bold">
-        {fmtPosOrNoRanking(row.currentPosition, row.status)}
+        {fmtPos(row.currentPosition)}
         {arrow}
       </span>
     </span>
@@ -162,13 +160,10 @@ export function PeriodKeywordsCompact({
                           {p.platform}
                         </div>
                         <div className="col-span-3 text-muted-foreground">
-                          {fmtPosOrNoRankingFlag(
-                            p.previousPosition,
-                            p.previousNoRanking,
-                          )}
+                          {fmtPos(p.previousPosition)}
                         </div>
                         <div className="col-span-3 font-semibold">
-                          {fmtPosOrNoRanking(p.currentPosition, p.status)}
+                          {fmtPos(p.currentPosition)}
                         </div>
                         <div className="col-span-2">
                           <ChangeCell change={p.change} />
