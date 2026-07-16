@@ -89,6 +89,9 @@ interface SalesPreviewResponse {
     afterRank: number;
     improved: number;
   } | null;
+  template?: SalesTemplateKey;
+  defaultSubject?: string;
+  defaultCtaLabel?: string;
   defaultIntro?: string;
   defaultOffer?: string;
   keywords: KeywordOption[];
@@ -96,6 +99,16 @@ interface SalesPreviewResponse {
   lastCommunicationAt?: string | null;
   strictMode: boolean;
 }
+
+type SalesTemplateKey = "first_proof" | "second_keyword";
+
+const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
+  { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
+  {
+    key: "second_keyword",
+    label: "Update — another keyword + Founder’s Discount",
+  },
+];
 
 interface SalesEmailDialogProps {
   open: boolean;
@@ -200,6 +213,7 @@ export function SalesEmailDialog({
   const [offerText, setOfferText] = useState("");
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
+  const [template, setTemplate] = useState<SalesTemplateKey>("first_proof");
   const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
@@ -245,20 +259,36 @@ export function SalesEmailDialog({
   }, [defaults]);
 
   /* Keyword/platform picks from a previous scope are meaningless for the
-     next one — reset to "strongest improvement" whenever the scope changes. */
+     next one — reset to "strongest improvement" and the first template
+     whenever the scope changes. */
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
     setIntroMessage("");
     setOfferText("");
+    setTemplate("first_proof");
     seededRef.current = false;
   }, [clientId, businessId, aeoPlanId]);
+
+  /* Switching templates loads that template's copy — clear the editable boxes
+     and re-seed from the new defaults, and drop the keyword pick so the update
+     email auto-features a keyword the client hasn't been emailed yet. */
+  useEffect(() => {
+    setSelectedKeywordId(null);
+    setSelectedPlatform(null);
+    setIntroMessage("");
+    setOfferText("");
+    setSubject("");
+    setCtaLabel("");
+    seededRef.current = false;
+  }, [template]);
 
   const previewQueryParams = useMemo(() => {
     if (clientId == null) return null;
     const p = new URLSearchParams({ clientId: String(clientId) });
     if (businessId != null) p.set("businessId", String(businessId));
     if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
+    p.set("template", template);
     if (selectedKeywordId != null)
       p.set("keywordId", String(selectedKeywordId));
     if (selectedPlatform != null) p.set("platform", selectedPlatform);
@@ -271,6 +301,7 @@ export function SalesEmailDialog({
     clientId,
     businessId,
     aeoPlanId,
+    template,
     selectedKeywordId,
     selectedPlatform,
     introMessage,
@@ -301,8 +332,12 @@ export function SalesEmailDialog({
       setIntroMessage(preview.defaultIntro);
     if (offerText === "" && preview.defaultOffer)
       setOfferText(preview.defaultOffer);
+    if (subject === "" && preview.defaultSubject)
+      setSubject(preview.defaultSubject);
+    if (ctaLabel === "" && preview.defaultCtaLabel)
+      setCtaLabel(preview.defaultCtaLabel);
     seededRef.current = true;
-  }, [preview, introMessage, offerText]);
+  }, [preview, introMessage, offerText, subject, ctaLabel]);
 
   const activeKeyword = useMemo<KeywordOption | null>(() => {
     if (!preview?.keywords?.length) return null;
@@ -369,6 +404,7 @@ export function SalesEmailDialog({
           aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selectedKeywordId ?? undefined,
           platform: selectedPlatform ?? undefined,
+          template,
           recipients,
           subject: subject.trim() || undefined,
           introMessage: introMessage.trim() || undefined,
@@ -425,6 +461,7 @@ export function SalesEmailDialog({
     setCtaUrl("");
     setAiInstruction("");
     setSubject("");
+    setTemplate("first_proof");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
     seededRef.current = false;
@@ -539,6 +576,30 @@ export function SalesEmailDialog({
               </div>
             )}
 
+            {/* Email template */}
+            <div className="space-y-2">
+              <Label>Email template</Label>
+              <Select
+                value={template}
+                onValueChange={(v) => setTemplate(v as SalesTemplateKey)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_OPTIONS.map((t) => (
+                    <SelectItem key={t.key} value={t.key}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                The update email features a different keyword and the Founder’s
+                Discount offer. Switching reloads the subject and copy.
+              </p>
+            </div>
+
             {/* Proof picker — one flat list of every keyword × platform
                 screenshot, tagged by quality and top-3 visibility */}
             <div className="space-y-2">
@@ -586,7 +647,24 @@ export function SalesEmailDialog({
                         <span className="truncate font-medium">
                           {o.keyword ?? `Keyword ${o.keywordId}`}
                         </span>
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {o.sentCount > 0 && (
+                          <span
+                            className="ml-auto shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                            title={
+                              o.lastSentAt
+                                ? `Last emailed ${format(new Date(o.lastSentAt), "MMM d, yyyy")}${o.sentCount > 1 ? ` · ${o.sentCount} sends` : ""}`
+                                : "Already emailed"
+                            }
+                          >
+                            Sent
+                            {o.lastSentAt
+                              ? ` ${format(new Date(o.lastSentAt), "MMM d")}`
+                              : ""}
+                          </span>
+                        )}
+                        <span
+                          className={`${o.sentCount > 0 ? "" : "ml-auto "}shrink-0 text-xs text-muted-foreground tabular-nums`}
+                        >
                           {platformLabel(o.platform)} · #{o.beforeRank}→#
                           {o.afterRank}
                         </span>
@@ -599,7 +677,8 @@ export function SalesEmailDialog({
                 One before/after pair per email, across all platforms. 🏆 = a
                 top-3 finish verified visible in the screenshot; ✓ =
                 OCR-verified; ⚠ = rank not clearly visible — review before
-                sending.
+                sending. An amber “Sent” tag marks a keyword already emailed to
+                this client; the update email skips those by default.
               </p>
               {activePlatformOption &&
                 platformQuality(activePlatformOption) === "bad" && (
