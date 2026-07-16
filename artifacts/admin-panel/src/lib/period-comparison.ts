@@ -39,12 +39,17 @@ export interface PeriodRow {
   currentPosition: number | null;
   currentDate: string | null;
   currentVariant: string | null;
+  /* Top-3 whose screenshot the vision check couldn't confirm. The rank is
+     real and shown as measured — this only marks the row for a re-run. */
+  currentUnverified?: boolean;
   previousReportId: number | null;
   previousPosition: number | null;
   previousDate: string | null;
+  previousUnverified?: boolean;
   firstReportId: number | null;
   firstPosition: number | null;
   firstDate: string | null;
+  firstUnverified?: boolean;
   change: number | null;
   status: Status;
   freshness: Freshness;

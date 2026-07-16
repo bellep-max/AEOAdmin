@@ -14,6 +14,7 @@ import {
   StatusBadge,
   PlatformPill,
   ChangeCell,
+  UnverifiedMark,
 } from "@/components/period-badges";
 
 interface Props {
@@ -186,9 +187,15 @@ export function PeriodByBusinessTab({
                         </div>
                         <div className="col-span-2 text-muted-foreground">
                           {fmtPos(r.previousPosition)}
+                          {r.previousUnverified && (
+                            <UnverifiedMark date={r.previousDate} />
+                          )}
                         </div>
                         <div className="col-span-2 font-semibold">
                           {fmtPos(r.currentPosition)}
+                          {r.currentUnverified && (
+                            <UnverifiedMark date={r.currentDate} />
+                          )}
                         </div>
                         <div className="col-span-1">
                           <ChangeCell change={r.change} />

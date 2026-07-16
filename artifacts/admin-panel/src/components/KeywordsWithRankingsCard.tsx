@@ -42,7 +42,11 @@ import {
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import {
+  StatusBadge,
+  ChangeCell,
+  UnverifiedMark,
+} from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
@@ -202,6 +206,7 @@ function PlatformChip({
         <span className="font-bold">
           {fmtPos(row.currentPosition)}
           {arrow}
+          {row.currentUnverified && <UnverifiedMark date={row.currentDate} />}
         </span>
       )}
     </span>
@@ -218,6 +223,7 @@ function RankShotCell({
   platform,
   keywordText,
   emphasis,
+  unverified,
   onOpen,
   onUnavailable,
 }: {
@@ -228,10 +234,13 @@ function RankShotCell({
   keywordText: string;
   /** Current-column cell uses the stronger foreground weight. */
   emphasis?: boolean;
+  /** Top-3 whose screenshot the vision check could not confirm. */
+  unverified?: boolean;
   onOpen: (target: ScreenshotTarget) => void;
   onUnavailable: () => void;
 }) {
   const text = fmtPos(position);
+  const mark = unverified ? <UnverifiedMark date={date} /> : null;
   if (reportId != null) {
     return (
       <button
@@ -243,6 +252,7 @@ function RankShotCell({
         title="Click to view screenshot"
       >
         {text}
+        {mark}
       </button>
     );
   }
@@ -254,6 +264,7 @@ function RankShotCell({
       title="Screenshot not available for this period"
     >
       {text}
+      {mark}
     </button>
   );
 }
@@ -687,6 +698,7 @@ export function KeywordsWithRankingsCard({
                                   date={p.firstDate}
                                   platform={p.platform}
                                   keywordText={p.keywordText}
+                                  unverified={p.firstUnverified}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
@@ -698,6 +710,7 @@ export function KeywordsWithRankingsCard({
                                   date={p.previousDate}
                                   platform={p.platform}
                                   keywordText={p.keywordText}
+                                  unverified={p.previousUnverified}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
@@ -710,6 +723,7 @@ export function KeywordsWithRankingsCard({
                                   platform={p.platform}
                                   keywordText={p.keywordText}
                                   emphasis
+                                  unverified={p.currentUnverified}
                                   onOpen={setScreenshotTarget}
                                   onUnavailable={notifyNoShot}
                                 />
