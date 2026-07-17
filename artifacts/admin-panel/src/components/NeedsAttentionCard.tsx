@@ -41,22 +41,22 @@ const STATUS_META: Record<
   needs_attention: {
     label: "Needs attention",
     cls: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400",
-    hint: "Half or more of its campaigns lost momentum",
+    hint: "Half or more of its campaigns stalled for two checks in a row",
   },
   review_recommended: {
     label: "Review recommended",
     cls: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400",
-    hint: "Some campaigns lost momentum, but under half",
+    hint: "At least one campaign stalled, but under half of them",
   },
   on_track: {
     label: "On track",
     cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    hint: "No campaign is losing momentum",
+    hint: "Every campaign is still making progress",
   },
   ramping_up: {
     label: "Ramping up",
     cls: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
-    hint: "Too new to judge — needs a few more audits",
+    hint: "Too new to judge — needs three rounds of checks first",
   },
 };
 
@@ -68,6 +68,35 @@ const ORDER: MomentumStatus[] = [
 ];
 
 const MAX_LISTED = 5;
+
+/** Plain-English read of the portfolio, so the numbers mean something without
+ *  hovering a tooltip or knowing the rule. */
+function buildNarrative(
+  counts: Record<MomentumStatus, number>,
+  total: number,
+): string {
+  const n = (s: MomentumStatus) => counts[s] ?? 0;
+  const biz = (c: number) => `${c} business${c === 1 ? "" : "es"}`;
+
+  const lead =
+    n("needs_attention") > 0
+      ? `${biz(n("needs_attention"))} need${n("needs_attention") === 1 ? "s" : ""} a look now — half or more of their campaigns have stalled for two checks running.`
+      : `Nothing needs attention right now — no business has half or more of its campaigns stalled.`;
+
+  const rest: string[] = [];
+  if (n("review_recommended") > 0)
+    rest.push(
+      `${biz(n("review_recommended"))} worth a review (some campaigns stalled, but under half)`,
+    );
+  if (n("on_track") > 0) rest.push(`${n("on_track")} on track`);
+  if (n("ramping_up") > 0)
+    rest.push(
+      `${n("ramping_up")} still ramping up — too new to judge, they need three rounds of checks first`,
+    );
+
+  const tail = rest.length ? ` Of the rest: ${rest.join(", ")}.` : "";
+  return `${lead}${tail} ${total} business${total === 1 ? "" : "es"} have audit history.`;
+}
 
 /** Business-level momentum flag for the dashboard. A business is flagged when
  *  its growth cycle stalls across campaigns — never because one keyword moved.
@@ -117,20 +146,24 @@ export function NeedsAttentionCard() {
           </p>
         ) : (
           <div className="space-y-3">
+            <p className="text-sm leading-relaxed text-foreground">
+              {buildNarrative(data!.counts, total)}
+            </p>
+
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               {ORDER.map((s) => {
                 const m = STATUS_META[s];
                 return (
-                  <div
-                    key={s}
-                    className={`rounded-lg border p-3 ${m.cls}`}
-                    title={m.hint}
-                  >
+                  <div key={s} className={`rounded-lg border p-3 ${m.cls}`}>
                     <p className="text-2xl font-bold tabular-nums leading-none">
                       {data?.counts?.[s] ?? 0}
                     </p>
                     <p className="mt-1 text-[11px] font-semibold leading-tight">
                       {m.label}
+                    </p>
+                    {/* Spelled out, not a tooltip — nobody hovers a tile. */}
+                    <p className="mt-1 text-[10px] leading-snug opacity-80">
+                      {m.hint}
                     </p>
                   </div>
                 );
@@ -161,6 +194,17 @@ export function NeedsAttentionCard() {
                 )}
               </div>
             )}
+
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-foreground">
+                How this is decided:
+              </span>{" "}
+              a campaign counts as stalled when no keyword reached the top 3 and
+              most of its keywords were flat or slipping — and that happened two
+              bi-weekly checks in a row. One bad round is normal; two is a
+              pattern. A business is flagged when half or more of its campaigns
+              are stalled.
+            </p>
           </div>
         )}
       </CardContent>
