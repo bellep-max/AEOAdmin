@@ -34,10 +34,26 @@ The item's list order is only meaningful as a rank when listKind is "ranking". D
 function buildUserPrompt(
   businessName: string,
   location?: string | null,
+  alsoKnownAs?: string | null,
 ): string {
   const loc =
     location && location.trim() ? ` located at "${location.trim()}"` : "";
-  return `Tracked business: "${businessName}"${loc}. Return ONLY strict minified JSON: {"trackedInList":true|false,"trackedPosition":<int or null>,"listKind":"ranking"|"unordered"|"none","trackedNamedAs":"<how shown or ABSENT>","locationMatches":true|false|null,"burnedRankLabel":"<X/Y or null>"}. Set locationMatches=false only when the listed same-named entry clearly shows a DIFFERENT location than the tracked one; true when it matches; null when no location is shown.`;
+  /* Exact-identity matching (above) is deliberate, but it rejects a genuine win
+     when the platform lists the business under its trading name rather than the
+     name we store — "Wichita Florist" appears as "Flower Factory Flowers". Those
+     are the same business, so name them as equivalents rather than loosening the
+     rule, which would let a merely-similar competitor through. */
+  const aka =
+    alsoKnownAs && alsoKnownAs.trim()
+      ? ` This business also trades as: ${alsoKnownAs
+          .split(",")
+          .map((a) => `"${a.trim()}"`)
+          .filter((a) => a.length > 2)
+          .join(
+            ", ",
+          )} — an entry listed under any of those names IS the tracked business, not a competitor.`
+      : "";
+  return `Tracked business: "${businessName}"${loc}.${aka} Return ONLY strict minified JSON: {"trackedInList":true|false,"trackedPosition":<int or null>,"listKind":"ranking"|"unordered"|"none","trackedNamedAs":"<how shown or ABSENT>","locationMatches":true|false|null,"burnedRankLabel":"<X/Y or null>"}. Set locationMatches=false only when the listed same-named entry clearly shows a DIFFERENT location than the tracked one; true when it matches; null when no location is shown.`;
 }
 
 export type ListKind = "ranking" | "unordered" | "none" | "unknown";
@@ -117,6 +133,9 @@ export async function validateScreenshotRank(params: {
   /** City/state or address of the tracked business, used to reject a
    *  same-named entry at a DIFFERENT location. Optional. */
   businessLocation?: string | null;
+  /** Comma-separated trading names the platforms list this business under
+   *  (businesses.also_known_as). Optional. */
+  businessAlsoKnownAs?: string | null;
 }): Promise<VisionVerdict> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -148,7 +167,11 @@ export async function validateScreenshotRank(params: {
         content: [
           {
             type: "text",
-            text: buildUserPrompt(params.businessName, params.businessLocation),
+            text: buildUserPrompt(
+              params.businessName,
+              params.businessLocation,
+              params.businessAlsoKnownAs,
+            ),
           },
           {
             type: "image_url",

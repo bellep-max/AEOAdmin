@@ -89,6 +89,7 @@ router.post("/scan", requireAdmin, async (req, res) => {
           NULLIF(TRIM(CONCAT_WS(', ', ${businessesTable.city}, ${businessesTable.state})), ''),
           NULLIF(TRIM(CONCAT_WS(', ', ${clientsTable.city}, ${clientsTable.state})), '')
         )`,
+        businessAlsoKnownAs: businessesTable.alsoKnownAs,
       })
       .from(rankingReportsTable)
       .innerJoin(
@@ -123,6 +124,7 @@ router.post("/scan", requireAdmin, async (req, res) => {
               screenshotUrl: row.screenshotUrl,
               businessName: row.businessName,
               businessLocation: row.businessLocation,
+              businessAlsoKnownAs: row.businessAlsoKnownAs,
             });
           await db
             .update(rankingReportsTable)

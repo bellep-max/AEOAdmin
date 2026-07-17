@@ -220,7 +220,15 @@ router.get("/", requireApiToken, async (req, res) => {
         eq(rankingReportsTable.keywordId, keywordsTable.id),
       )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(rankingReportsTable.createdAt))
+      /* id breaks ties: created_at is noon-UTC-of-the-row's-date, so hundreds of
+         rows share one value (755 on 2026-07-09). Postgres does not order ties
+         deterministically, so limit/offset paging sliced a tie group differently
+         per request — adjacent pages overlapped by ~134 rows and a full 23-page
+         sweep returned 20,499 of 22,520 distinct rows, silently dropping 9%. */
+      .orderBy(
+        desc(rankingReportsTable.createdAt),
+        desc(rankingReportsTable.id),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -249,11 +257,26 @@ router.get("/", requireApiToken, async (req, res) => {
   }
 });
 
+/* Adjudicated top-3 verdict supplied by the importer (pre-import validation),
+   so a validated row lands already-marked and needs no scan pass. Accept only
+   true/false/null — anything else is a caller bug and must not be coerced into
+   a verdict. `undefined` means "not supplied": the caller is silent about
+   visibility, which is NOT the same as "unverified", so the stored value is
+   left untouched. That distinction matters because this route upserts — an
+   error retry re-POSTs the row without the field and would otherwise erase a
+   verdict that was written by the scan or by hand. */
+function parseRankVisible(raw: unknown): boolean | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || typeof raw === "boolean") return raw;
+  return undefined;
+}
+
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
     const platform =
       typeof body.platform === "string" ? body.platform.toLowerCase() : null;
+    const rankVisible = parseRankVisible(body.screenshotRankVisible);
 
     /* Upsert key: prefer body.date for backfills (so re-running an import for
        a past day finds yesterday's row), else fall back to today's date. */
@@ -305,6 +328,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
           mapsUrl: body.mapsUrl ?? null,
           isInitialRanking: body.isInitialRanking ?? false,
           screenshotUrl: body.screenshotUrl ?? null,
+          ...(rankVisible !== undefined
+            ? { screenshotRankVisible: rankVisible }
+            : {}),
           textRanking: body.textRanking ?? null,
           proxyStatus: body.proxyStatus ?? null,
           proxyUsername: body.proxyUsername ?? null,
@@ -356,6 +382,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
         mapsUrl: body.mapsUrl ?? null,
         isInitialRanking: body.isInitialRanking ?? false,
         screenshotUrl: body.screenshotUrl ?? null,
+        ...(rankVisible !== undefined
+          ? { screenshotRankVisible: rankVisible }
+          : {}),
         textRanking: body.textRanking ?? null,
         proxyStatus: body.proxyStatus ?? null,
         proxyUsername: body.proxyUsername ?? null,

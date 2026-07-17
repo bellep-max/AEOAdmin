@@ -1,59 +1,67 @@
-# Session Handover — 2026-05-05
+# Session Handover — 2026-07-16
 
-**Bot:** Claude Code (deepseek-v4-pro)
+**Bot:** Claude Code (AEOAdmin)
 **Project:** /Users/seolocalph/projects/AEOAdmin
+**Branch:** fix/unverified-mark (built on feat/summary-report-redesign work)
 
 ## Completed This Session
-- PROJ-76: Rankings grouped by campaign, inline platform details with First/Previous/Current dates
-- PROJ-77: Keywords dropdown sidebar, All Keywords table page, Keyword Detail page (status/notes/rankings/sessions)
-- PROJ-78: CampaignAuditRankingsCard on campaign detail with CSV/PDF export
-- PROJ-79: Dashboard keyword stat cards (total keywords, backlinks, errors, active)
-- Fixed platform case bug in CSV/PDF exports (ChatGPT → chatgpt key mismatch)
-- All collapsible sections now start expanded (flipped to `collapsed` set tracking)
-- RankingRunBanner auto-detects latest from ranking_reports (not stale ranking_runs)
-- "Latest run" filter button on rankings page
-- Date corrections: April 19 → April 17, May 5 → May 4
-- 55 keywords without 2-week history removed from May 4 push
-- May 4 daily sessions imported (424 rows), May 4 audit rankings imported (117 keywords, 351 rows)
-- Rank date labels added below First/Previous/Current in rankings and keyword cards
+
+- **Verified + committed the `safeDate()` webhook fix** (`42a3b59`) — was deployed but uncommitted.
+- **Diagnosed GHL email status end-to-end.** Proved the GHL workflow "Email Events → Webhook" payload is a **contact record** (has `contact_id`/`email`, but **no messageId, no event type**) via a live webhook.site capture — so workflow webhooks can't drive status.
+- **Discovered the real solution: PULL.** `GET /conversations/messages/email/{ghl_message_id}` (PIT token) returns the true lifecycle status (**delivered/opened/clicked**, incl. Delivered which the workflow trigger never emits).
+- **Built + deployed the GHL status poller** (`80781e6`): `services/email-status-ghl.ts` + `POST /api/sales/email-sends/refresh-status` (advance-only, bounded, best-effort) + FE refresh-on-load & "Refresh status" button. Backfilled statuses on ~40 sends.
+- **Sent Emails UX overhaul** (`86335c8`): clickable summary tiles (Total/Delivered/Opened/Clicked/Failed), search, status + kind filters, client-side pagination.
+- **Added Campaign column** (`a7e7fa3`): resolved as `client_aeo_plans.name` via the send's keyword (`meta.keywordId → keyword.aeo_plan_id`, COALESCE with send's own `aeo_plan_id`).
+- **Deployed the ranking "unverified top-3" BE change** (`b2928fd`, already on bellep/main): `/period-comparison` now shows measured top-3 ranks flagged `currentUnverified/previousUnverified/firstUnverified` instead of blanking them as `no_ranking`.
+- **Reverted client 11 (Belle) `account_email`** back to `belle.p@appstango.com` (temp swap to erven.i@ for testing is undone; temp memory deleted).
+- Pushed all AEOAdmin work to **both remotes**: `bellep/main` and `origin`=DeviceFarm1 `feat/summary-report-redesign`.
 
 ## Current State
-Backend deploy in progress for timezone fix (ET display in banner). All other changes deployed.
-Ranking data in DB:
-- Apr 17: 360 rows (120 keywords) — Previous window
-- Apr 23: 570 rows, Apr 28: 417, Apr 29: 37, May 4: 351 — Current window
+
+App Runner (`aeo-admin-api` / jjm59vpn3y) is **RUNNING** on image `b2928fd` (includes safeDate + poller + campaign column + unverified-mark). Working tree clean except `HANDOVER.md`. Branch `fix/unverified-mark` is in sync with `bellep/main` for api-server + admin-panel.
 
 ## Open Items
-1. Verify banner shows "May 4" after deploy completes
-2. Verify "Latest run" filter button shows "May 4"
-3. Worklog entry needed for AEO-31+
+
+1. **SendGrid is dead at the ACCOUNT level.** Both the old key AND a user-supplied new key (`SG.uTDRmH--…`) return `401` on every endpoint (global+EU, scopes+mail/send). A brand-new key failing ⇒ account suspended/disabled, not a key problem. The API cannot report the reason (401 is pre-auth). User must check app.sendgrid.com dashboard (suspension banner / email / Settings→API Keys) or use a NEW SendGrid account. Nothing installed.
+2. **SendGrid status "like GHL" research (done, awaiting account fix):** pull analog = Email Activity API (`/v3/messages/{msg_id}`) but it's a **paid add-on**; the FREE equivalent = the **Event Webhook** — handler `/api/webhooks/sendgrid` is **already built** (safeDate + signature verify), just needs the webhook configured + `SENDGRID_WEBHOOK_PUBLIC_KEY`. Recommend the free webhook over paying for pull.
+3. **Multi-recipient sends:** GHL path = one message (client=To, others=CC) → one `ghl_message_id` → one **message-level** status (can't attribute per-recipient). Non-GHL sends are skipped by the poller (no error). Offered but not built: per-recipient (one GHL message per contact) OR a clear "GHL only delivers to the client's own email" block instead of falling to dead SendGrid.
 
 ## Key Decisions
-- Biweekly window = 14-day sliding from today (ET midnight)
-- Only keywords with 2+ weeks history should be in audit push
-- All collapsible sections start expanded
-- Ranking dates display in ET (America/New_York)
-- Session dedup = keyword+platform+status+search_address (not just keyword+platform+status)
+
+- **PULL over webhooks for GHL status** — GHL workflow webhooks structurally lack messageId/event; the message-status API is deterministic, free, and includes Delivered.
+- **Campaign via keyword, not send.aeo_plan_id** — only 21/230 sends set `aeo_plan_id`; 229/230 are sales sends with `meta.keywordId`, so join through the keyword.
+- **Did NOT install the new SendGrid key** — it 401s; installing a dead key just reproduces failures.
+- **Deploy env gotcha (zsh):** `$ECR:latest` mangles to `aeo-admin-apiatest` (`:l` = zsh lowercase modifier). Use `${ECR}:latest`.
+- **Two App Runner services:** live = `aeo-admin-api` (jjm59vpn3y); ignore `seo-admin-api` (q7kpdvukd2).
 
 ## Files Modified
-- `artifacts/admin-panel/src/components/PeriodByClientTab.tsx` — campaign cards, latest run filter, date labels, collapsed→expanded
-- `artifacts/admin-panel/src/components/KeywordsWithRankingsCard.tsx` — date labels, collapsed→expanded, format import
-- `artifacts/admin-panel/src/components/RankingRunBanner.tsx` — ET timezone, auto-detect from ranking_reports
-- `artifacts/admin-panel/src/components/CampaignAuditRankingsCard.tsx` — audit card + CSV/PDF, starts expanded
-- `artifacts/admin-panel/src/pages/keywords-all.tsx` — All Keywords table
-- `artifacts/admin-panel/src/pages/keyword-detail.tsx` — keyword detail page
-- `artifacts/admin-panel/src/pages/rankings.tsx` — First column in pivotRows + export, platform case fix
-- `artifacts/admin-panel/src/pages/keywords.tsx` — collapsed→expanded, CSV/PDF fixes, platform case fix
-- `artifacts/admin-panel/src/pages/dashboard.tsx` — keyword stat cards
-- `artifacts/admin-panel/src/pages/sessions-audit.tsx` — remove /12 rank suffix
-- `artifacts/admin-panel/src/components/layout/sidebar.tsx` — Keywords dropdown
-- `artifacts/admin-panel/src/components/layout/main-layout.tsx` — page title for /keywords/all
-- `artifacts/admin-panel/src/App.tsx` — new routes
-- `artifacts/api-server/src/routes/ranking-runs.ts` — latest/latest-detail/latest-records, execute→.rows fix
-- `artifacts/api-server/src/routes/ranking-reports.ts` — period-comparison (first/current/previous)
-- `artifacts/api-server/src/routes/dashboard.ts` — keyword stats in summary
-- `artifacts/api-server/src/routes/keywords.ts` — joined client/business/campaign names, PATCH status/notes/implementedBy
-- `lib/db/src/schema/keywords.ts` — status, notes, implementedBy columns
+
+- `artifacts/api-server/src/routes/webhooks.ts` — safeDate (committed 42a3b59)
+- `artifacts/api-server/src/services/email-status-ghl.ts` — NEW: GHL status poller
+- `artifacts/api-server/src/routes/sales-email.ts` — refresh-status endpoint + campaignName join
+- `artifacts/admin-panel/src/pages/sent-emails.tsx` — poller refresh, summary tiles, search, filters, pagination, Campaign column
+- `artifacts/api-server/src/routes/ranking-reports.ts` — unverified-top-3 (from bellep/main, deployed)
 
 ## Next Action
-> Verify backend deploy finished (check App Runner status), refresh Rankings page to confirm banner shows "May 4" and "Latest run" filter works correctly.
+
+> If the user reports what the SendGrid dashboard shows (suspended? key missing? under review?), act on it: for a working key → update `SENDGRID_API_KEY` in `aeo-admin/prod` + redeploy; then wire the **free SendGrid Event Webhook** (handler already exists) rather than paid Email Activity. Otherwise there is no pending AEOAdmin work — everything else is deployed and pushed to both remotes.
+
+---
+
+## Session Opener (paste at start of next session)
+
+```
+Continuing AEOAdmin. Last session: shipped GHL email-status tracking via a PULL
+poller (GET /conversations/messages/email/{id}) — deployed to App Runner and
+pushed to bellep/main + origin(DeviceFarm1); also added Sent Emails UX (summary
+tiles/search/filters/pagination + Campaign column) and deployed the ranking
+"unverified top-3" BE change. Client 11 email reverted; SendGrid unchanged.
+The one open blocker is SendGrid: both the old and a NEW key return 401 on every
+endpoint → the ACCOUNT is suspended/disabled (a fresh key failing proves it's not
+the key), and the API can't report the reason. Next: user checks app.sendgrid.com
+for a suspension banner/email; if they get a working key, update SENDGRID_API_KEY
+in aeo-admin/prod + redeploy, then wire the free SendGrid Event Webhook (handler
+/api/webhooks/sendgrid already exists) instead of the paid Email Activity pull.
+Deploy note: live service is aeo-admin-api (jjm59vpn3y); use ${ECR}:latest brace-
+quoting to dodge the zsh :l gotcha.
+```
