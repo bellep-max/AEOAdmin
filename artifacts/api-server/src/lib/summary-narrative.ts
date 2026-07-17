@@ -51,6 +51,31 @@ const EMPTY_SECTIONS: NarrativeSections = {
   declines: "",
 };
 
+/**
+ * Rescue the per-section text when the model's JSON won't parse — almost always
+ * because it hit the token ceiling and the object is cut off before its closing
+ * brace, leaving the earlier (complete) sections perfectly usable.
+ *
+ * Pulls each key's string out directly. A raw JSON blob must NEVER reach the
+ * report: this used to fall back to `overall: raw`, which rendered the entire
+ * object — braces, quotes, every section — as one wall of text in the client's
+ * summary. Any key we can't recover is simply left empty and its section hides.
+ */
+function salvageSections(raw: string): NarrativeSections {
+  const out: NarrativeSections = { ...EMPTY_SECTIONS };
+  for (const k of SECTION_KEYS) {
+    // "key": "…text…"  — tolerate escaped quotes inside the value.
+    const m = new RegExp(`"${k}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(raw);
+    if (!m) continue;
+    try {
+      out[k] = (JSON.parse(`"${m[1]}"`) as string).trim();
+    } catch {
+      // Unescaping failed — better to drop this section than show it mangled.
+    }
+  }
+  return out;
+}
+
 function scopeIdOf(report: SummaryReport, clientId: number): number {
   if (report.scope === "campaign" && report.aeoPlanId != null)
     return report.aeoPlanId;
@@ -60,10 +85,12 @@ function scopeIdOf(report: SummaryReport, clientId: number): number {
 }
 
 /** Stable hash of the inputs that would change the prose. `v` is bumped when the
- *  cached payload shape changes so old rows (pre-Overview) miss and regenerate. */
+ *  cached payload shape changes so old rows (pre-Overview) miss and regenerate.
+ *  v4: narratives cached before the truncation fix hold a raw JSON blob in
+ *  `overall` — bump so every one of them misses and is rewritten. */
 function contentHash(report: SummaryReport): string {
   const shape = {
-    v: 3,
+    v: 4,
     metrics: report.metrics,
     platforms: report.platforms,
     movers: report.movers,
@@ -330,8 +357,11 @@ export async function generateSummaryNarrative(
   const [sectionsCompletion, overviewCompletion] = await Promise.all([
     chatCompletion({
       model: "deepseek-chat",
+      // Six sections of 3-4 sentences each, JSON-escaped, overran 1400 and the
+      // object came back without its closing brace — unparseable. Headroom here
+      // is far cheaper than a salvaged (or lost) narrative.
+      maxTokens: 3000,
       temperature: 0.5,
-      maxTokens: 1400,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -366,7 +396,7 @@ export async function generateSummaryNarrative(
       sections[k] =
         typeof parsed[k] === "string" ? (parsed[k] as string).trim() : "";
   } catch {
-    sections = { ...EMPTY_SECTIONS, overall: raw };
+    sections = salvageSections(raw);
   }
 
   const overview = parseOverview(overviewCompletion.content);
