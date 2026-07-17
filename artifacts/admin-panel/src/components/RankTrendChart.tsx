@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp } from "lucide-react";
 import { rawFetch, fmtShortET } from "@/lib/period-comparison";
 import { ordinal, placeText } from "@/lib/plain-language";
-import { AIExplain } from "@/components/AIExplain";
 
 /** AI platforms drawn as separate lines, in a fixed order with hex colors that
  *  match the platform chips used elsewhere (emerald / blue / purple). */
@@ -122,8 +121,6 @@ interface Props {
   clientId?: number | null;
   businessId?: number | null;
   aeoPlanId?: number | null;
-  /** Scope display name — enables the AI "what this means" blurb under the chart. */
-  scopeName?: string | null;
 }
 
 /** "Ranking over time" line chart, designed to be understood at a glance: #1
@@ -136,7 +133,6 @@ export function RankTrendChart({
   clientId = null,
   businessId = null,
   aeoPlanId = null,
-  scopeName,
 }: Props) {
   const { data: reports, isLoading } = useScopedReports({
     clientId,
@@ -229,13 +225,6 @@ export function RankTrendChart({
             </ResponsiveContainer>
           </div>
         )}
-        <AIExplain
-          section="trend"
-          name={scopeName}
-          clientId={clientId}
-          businessId={businessId}
-          aeoPlanId={aeoPlanId}
-        />
       </CardContent>
     </Card>
   );

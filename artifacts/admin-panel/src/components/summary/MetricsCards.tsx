@@ -3,8 +3,8 @@
  *  stat carries a plain-language caption so a client can read the number and
  *  understand what it means without asking. */
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight } from "lucide-react";
 import type { SummaryMetrics } from "@/lib/summary-report";
+import { ordinal } from "@/lib/plain-language";
 
 function Stat({
   label,
@@ -15,7 +15,7 @@ function Stat({
   label: string;
   value: string;
   sub?: string;
-  tone?: "default" | "emerald" | "blue" | "amber" | "red";
+  tone?: "default" | "emerald" | "blue" | "amber";
 }) {
   const valueCls =
     tone === "emerald"
@@ -24,9 +24,7 @@ function Stat({
         ? "text-blue-600 dark:text-blue-400"
         : tone === "amber"
           ? "text-amber-600 dark:text-amber-400"
-          : tone === "red"
-            ? "text-red-600 dark:text-red-400"
-            : "text-foreground";
+          : "text-foreground";
   return (
     <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -44,8 +42,6 @@ function Stat({
   );
 }
 
-const fmtPos = (n: number | null): string => (n != null ? `#${n}` : "—");
-
 export function MetricsCards({
   metrics,
   narrative,
@@ -60,21 +56,21 @@ export function MetricsCards({
       <CardContent className="py-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Stat
-            label="Tracked"
+            label="Phrases we track"
             value={String(metrics.tracked)}
             sub="Search phrases we monitor for you across the three AIs"
           />
           <Stat
-            label="In top 3"
+            label="In the top 3"
             value={String(metrics.top3)}
             tone="emerald"
             sub="Named among the AI's first 3 picks — the spots people notice"
           />
           <Stat
-            label="Improved"
+            label="Moved up"
             value={String(metrics.improved)}
             tone="emerald"
-            sub="Moved up since the last check"
+            sub="Climbed since the last check"
           />
           <Stat
             label="Slipped"
@@ -83,27 +79,22 @@ export function MetricsCards({
             sub="Eased down a little since the last check — normal, and worked on"
           />
           <Stat
-            label="Steady"
+            label="No change"
             value={String(metrics.steady)}
             sub="Held the same spot as last time"
           />
-          <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Avg position
-            </p>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-lg font-semibold text-muted-foreground tabular-nums">
-                {fmtPos(metrics.avgFirst)}
-              </span>
-              <ArrowRight className="h-3 w-3 text-muted-foreground" />
-              <span className="text-2xl font-bold text-primary tabular-nums">
-                {fmtPos(metrics.avgCurrent)}
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-              Your typical spot, first check → now. Closer to #1 is better.
-            </p>
-          </div>
+          <Stat
+            label="Average position"
+            value={
+              metrics.avgCurrent != null ? ordinal(metrics.avgCurrent) : "—"
+            }
+            tone="blue"
+            sub={
+              metrics.avgFirst != null
+                ? `Started around ${ordinal(metrics.avgFirst)}. 1st is the top answer, so a smaller number is better.`
+                : "1st is the top answer, so a smaller number is better."
+            }
+          />
         </div>
 
         {/* How you're doing — client-specific, written fresh each period. */}
@@ -118,8 +109,8 @@ export function MetricsCards({
             We track the phrases your customers ask ChatGPT, Gemini, and
             Perplexity, and whether the AI names your business. Landing in the{" "}
             <strong className="font-semibold text-foreground">top 3</strong> is
-            what matters most — that's usually all the AI reads out, so it's
-            what gets you seen and chosen.
+            what matters most — that&rsquo;s usually all the AI reads out, so
+            it&rsquo;s what gets you seen and chosen.
           </p>
         )}
       </CardContent>

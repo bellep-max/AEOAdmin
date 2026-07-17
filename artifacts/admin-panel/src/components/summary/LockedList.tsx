@@ -2,6 +2,7 @@
  *  reason chip with the position it locked at. */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock } from "lucide-react";
+import { ordinal } from "@/lib/plain-language";
 import type { LockedKeyword } from "@/lib/summary-report";
 
 export function LockedList({
@@ -50,12 +51,10 @@ export function LockedList({
                       className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10px]"
                       title={p.reason}
                     >
-                      <span className="font-semibold capitalize">
-                        {p.label}
-                      </span>
+                      <span className="font-semibold">{p.label}</span>
                       {p.position != null && (
                         <span className="tabular-nums text-muted-foreground">
-                          #{p.position}
+                          {ordinal(p.position)}
                         </span>
                       )}
                       <span className="text-muted-foreground">

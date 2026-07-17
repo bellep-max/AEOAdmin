@@ -30,6 +30,7 @@ import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
 import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
 import { CampaignAuditRankingsCard } from "@/components/CampaignAuditRankingsCard";
@@ -461,7 +462,6 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         title="Overall Performance summary · this campaign"
-        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
       />
 
       <RankTrendChart
@@ -469,7 +469,13 @@ export default function CampaignDetail() {
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={campaignId}
-        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
+      />
+
+      <BiWeeklyGraphsCard
+        scope="campaign"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
       />
 
       <PlatformAggregateStrip
@@ -477,7 +483,6 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         title={`Overall ranking · Campaign — ${campaign.name ?? campaign.planType}`}
-        scopeName={campaign.name ?? `${campaign.planType} Campaign`}
       />
 
       <KeywordsWithRankingsCard

@@ -2,6 +2,7 @@
  *  eye on. */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye } from "lucide-react";
+import { ordinal } from "@/lib/plain-language";
 import type { WatchKeyword } from "@/lib/summary-report";
 
 export function WatchList({ watch }: { watch: WatchKeyword[] }) {
@@ -28,7 +29,7 @@ export function WatchList({ watch }: { watch: WatchKeyword[] }) {
                 <span className="truncate text-sm">{w.keyword}</span>
                 <div className="flex shrink-0 items-center gap-3 text-xs">
                   <span className="font-semibold tabular-nums">
-                    {w.latestPosition != null ? `#${w.latestPosition}` : "—"}
+                    {w.latestPosition != null ? ordinal(w.latestPosition) : "—"}
                   </span>
                   {w.stallingSince && (
                     <span className="text-muted-foreground">

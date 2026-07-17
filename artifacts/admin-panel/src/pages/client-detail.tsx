@@ -47,6 +47,7 @@ import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
 import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { CreatedByField } from "@/components/CreatedByField";
 import {
   ExternalLink,
@@ -411,14 +412,14 @@ export default function ClientDetail() {
         businessId={null}
         aeoPlanId={null}
         title="Overall Performance summary · this client"
-        scopeName={client.businessName}
       />
 
       <RankTrendChart
         scope="client"
         clientId={clientId}
-        scopeName={client.businessName}
       />
+
+      <BiWeeklyGraphsCard scope="client" clientId={clientId} />
 
       <div className="flex justify-end">
         <Link href={`/clients/${clientId}/summary-report`}>

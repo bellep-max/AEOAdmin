@@ -42,6 +42,7 @@ import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
 import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -475,14 +476,18 @@ export default function BusinessDetail() {
         businessId={businessId}
         aeoPlanId={null}
         title="Overall Performance summary · this business"
-        scopeName={business.name}
       />
 
       <RankTrendChart
         scope="business"
         clientId={clientId}
         businessId={businessId}
-        scopeName={business.name}
+      />
+
+      <BiWeeklyGraphsCard
+        scope="business"
+        clientId={clientId}
+        businessId={businessId}
       />
 
       <PlatformAggregateStrip
@@ -490,7 +495,6 @@ export default function BusinessDetail() {
         businessId={businessId}
         aeoPlanId={null}
         title={`Overall ranking · Business — ${business?.name ?? "Business"}`}
-        scopeName={business.name}
       />
 
       <CampaignFormDialog

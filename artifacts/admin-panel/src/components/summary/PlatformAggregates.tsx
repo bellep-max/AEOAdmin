@@ -2,7 +2,8 @@
  *  average current position. Lower position is better. */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy } from "lucide-react";
-import { PLATFORM_COLORS } from "@/lib/period-comparison";
+import { PLATFORM_COLORS, platformLabel } from "@/lib/period-comparison";
+import { ordinal } from "@/lib/plain-language";
 import type { SummaryPlatform } from "@/lib/summary-report";
 
 export function PlatformAggregates({
@@ -35,12 +36,12 @@ export function PlatformAggregates({
                 "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
               return (
                 <div
-                  key={p.platform}
+                  key={platformLabel(p.platform)}
                   className="rounded-lg border border-border/50 bg-muted/20 p-3"
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${cls}`}
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`}
                     >
                       {p.label}
                     </span>
@@ -49,7 +50,7 @@ export function PlatformAggregates({
                     </span>
                   </div>
                   <p className="text-2xl font-bold tabular-nums">
-                    {p.avgCurrent != null ? `#${p.avgCurrent}` : "—"}
+                    {p.avgCurrent != null ? ordinal(p.avgCurrent) : "—"}
                   </p>
                 </div>
               );
