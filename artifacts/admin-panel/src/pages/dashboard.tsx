@@ -1,6 +1,13 @@
 import React, { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { NeedsAttentionCard } from "@/components/NeedsAttentionCard";
 import {
   useGetDashboardSummary,
   useGetSessionActivity,
@@ -9,26 +16,53 @@ import {
   useGetClients,
 } from "@workspace/api-client-react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, RadialBarChart, RadialBar,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  RadialBarChart,
+  RadialBar,
 } from "recharts";
 import {
-  Activity, HeartPulse, ArrowUpRight, ArrowRight, Clock,
-  UserCheck, UserX, UserPlus, Key, AlertTriangle, Link2, CheckCircle2,
-  Lock, Archive, ShieldAlert, Trophy, TrendingUp, RotateCcw,
+  Activity,
+  HeartPulse,
+  ArrowUpRight,
+  ArrowRight,
+  Clock,
+  UserCheck,
+  UserX,
+  UserPlus,
+  Key,
+  AlertTriangle,
+  Link2,
+  CheckCircle2,
+  Lock,
+  Archive,
+  ShieldAlert,
+  Trophy,
+  TrendingUp,
+  RotateCcw,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
 const platformColors: Record<string, string> = {
-  "gemini":     "hsl(217,91%,62%)",
-  "chatgpt":    "hsl(142,71%,47%)",
-  "perplexity": "hsl(43,96%,58%)",
+  gemini: "hsl(217,91%,62%)",
+  chatgpt: "hsl(142,71%,47%)",
+  perplexity: "hsl(43,96%,58%)",
 };
 
 function ChartTooltip({
-  active, payload, label,
+  active,
+  payload,
+  label,
 }: {
   active?: boolean;
   payload?: Array<{ color: string; name: string; value: number }>;
@@ -40,9 +74,14 @@ function ChartTooltip({
       <p className="font-medium text-muted-foreground mb-1.5">{label}</p>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{ background: p.color }}
+          />
           <span className="text-foreground/70 capitalize">{p.name}</span>
-          <span className="ml-auto font-bold tabular-nums text-foreground">{p.value}</span>
+          <span className="ml-auto font-bold tabular-nums text-foreground">
+            {p.value}
+          </span>
         </div>
       ))}
     </div>
@@ -50,36 +89,61 @@ function ChartTooltip({
 }
 
 export default function Dashboard() {
-  const { data: summary,           isLoading: isSummaryLoading  } = useGetDashboardSummary();
-  const { data: activity,          isLoading: isActivityLoading  } = useGetSessionActivity();
-  const { data: platformBreakdown, isLoading: isPlatformLoading  } = useGetPlatformBreakdown();
-  const { data: health,            isLoading: isHealthLoading    } = useGetNetworkHealth();
-  const { data: clients,           isLoading: isClientsLoading   } = useGetClients();
+  const { data: summary, isLoading: isSummaryLoading } =
+    useGetDashboardSummary();
+  const { data: activity, isLoading: isActivityLoading } =
+    useGetSessionActivity();
+  const { data: platformBreakdown, isLoading: isPlatformLoading } =
+    useGetPlatformBreakdown();
+  const { data: health, isLoading: isHealthLoading } = useGetNetworkHealth();
+  const { data: clients, isLoading: isClientsLoading } = useGetClients();
 
-  const topClients = clients
-    ?.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5) || [];
+  const topClients =
+    clients
+      ?.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .slice(0, 5) || [];
 
-  const oneWeekAgo     = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const activeCount    = clients?.filter((c) => c.status === "active").length ?? 0;
-  const inactiveCount  = clients?.filter((c) => c.status === "inactive").length ?? 0;
-  const newThisWeek    = clients?.filter((c) => new Date(c.createdAt) >= oneWeekAgo).length ?? 0;
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const activeCount = clients?.filter((c) => c.status === "active").length ?? 0;
+  const inactiveCount =
+    clients?.filter((c) => c.status === "inactive").length ?? 0;
+  const newThisWeek =
+    clients?.filter((c) => new Date(c.createdAt) >= oneWeekAgo).length ?? 0;
 
-  const now     = new Date();
-  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "America/New_York" });
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/New_York" });
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/New_York",
+  });
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
 
   return (
     <div className="space-y-6 pb-4">
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Network Overview</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Monitor AEO campaigns and infrastructure health</p>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+            Network Overview
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Monitor AEO campaigns and infrastructure health
+          </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground bg-card border border-border/50 rounded-lg px-3 py-2">
           <Clock className="w-3.5 h-3.5" />
-          <span>{timeStr} ET · {dateStr}</span>
+          <span>
+            {timeStr} ET · {dateStr}
+          </span>
         </div>
       </div>
 
@@ -134,9 +198,21 @@ export default function Dashboard() {
           loading={isHealthLoading}
           subtext={`${health?.activeProxies ?? 0} proxies active`}
           icon={HeartPulse}
-          iconColor={health?.score && health.score > 90 ? "text-emerald-400" : "text-amber-400"}
-          iconBg={health?.score && health.score > 90 ? "bg-emerald-500/10" : "bg-amber-500/10"}
-          barClass={health?.score && health.score > 90 ? "gradient-bar-green" : "gradient-bar-amber"}
+          iconColor={
+            health?.score && health.score > 90
+              ? "text-emerald-400"
+              : "text-amber-400"
+          }
+          iconBg={
+            health?.score && health.score > 90
+              ? "bg-emerald-500/10"
+              : "bg-amber-500/10"
+          }
+          barClass={
+            health?.score && health.score > 90
+              ? "gradient-bar-green"
+              : "gradient-bar-amber"
+          }
         />
       </div>
 
@@ -196,12 +272,20 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base">Session Activity</CardTitle>
-                <CardDescription className="text-xs mt-0.5">Last 14 days — by AI platform</CardDescription>
+                <CardDescription className="text-xs mt-0.5">
+                  Last 14 days — by AI platform
+                </CardDescription>
               </div>
               <div className="flex gap-3">
                 {Object.entries(platformColors).map(([name, color]) => (
-                  <div key={name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+                  <div
+                    key={name}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ background: color }}
+                    />
                     <span className="capitalize">{name}</span>
                   </div>
                 ))}
@@ -213,18 +297,51 @@ export default function Dashboard() {
               <Skeleton className="w-full h-full rounded-xl" />
             ) : activity && activity.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <AreaChart
+                  data={activity}
+                  margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+                >
                   <defs>
                     {Object.entries(platformColors).map(([name, color]) => (
-                      <linearGradient key={name} id={`grad-${name}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%"  stopColor={color} stopOpacity={0.25} />
-                        <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                      <linearGradient
+                        key={name}
+                        id={`grad-${name}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={color}
+                          stopOpacity={0.25}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={color}
+                          stopOpacity={0.02}
+                        />
                       </linearGradient>
                     ))}
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222,47%,18%)" vertical={false} />
-                  <XAxis dataKey="date" stroke="hsl(215,20%,35%)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(215,20%,35%)" fontSize={11} tickLine={false} axisLine={false} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(222,47%,18%)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="date"
+                    stroke="hsl(215,20%,35%)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    stroke="hsl(215,20%,35%)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
                   <RechartsTooltip content={<ChartTooltip />} />
                   {Object.entries(platformColors).map(([name, color]) => (
                     <Area
@@ -249,7 +366,9 @@ export default function Dashboard() {
         <Card className="border-border/50 card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">AI Platforms</CardTitle>
-            <CardDescription className="text-sm mt-0.5">Session distribution</CardDescription>
+            <CardDescription className="text-sm mt-0.5">
+              Session distribution
+            </CardDescription>
           </CardHeader>
           <CardContent className="h-64 flex flex-col items-center justify-center gap-4 pt-2">
             {isPlatformLoading ? (
@@ -260,8 +379,10 @@ export default function Dashboard() {
                   <PieChart>
                     <Pie
                       data={platformBreakdown}
-                      cx="50%" cy="50%"
-                      innerRadius={48} outerRadius={72}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={72}
                       paddingAngle={4}
                       dataKey="count"
                       nameKey="platform"
@@ -269,7 +390,10 @@ export default function Dashboard() {
                       {platformBreakdown.map((entry, i) => (
                         <Cell
                           key={i}
-                          fill={platformColors[entry.platform.toLowerCase()] ?? "hsl(215,20%,35%)"}
+                          fill={
+                            platformColors[entry.platform.toLowerCase()] ??
+                            "hsl(215,20%,35%)"
+                          }
                           stroke="transparent"
                         />
                       ))}
@@ -279,15 +403,33 @@ export default function Dashboard() {
                 </ResponsiveContainer>
                 <div className="flex flex-col gap-1.5 w-full">
                   {platformBreakdown.map((entry) => {
-                    const total = platformBreakdown.reduce((s, e) => s + e.count, 0);
-                    const pct   = total > 0 ? Math.round((entry.count / total) * 100) : 0;
-                    const color = platformColors[entry.platform.toLowerCase()] ?? "hsl(215,20%,45%)";
+                    const total = platformBreakdown.reduce(
+                      (s, e) => s + e.count,
+                      0,
+                    );
+                    const pct =
+                      total > 0 ? Math.round((entry.count / total) * 100) : 0;
+                    const color =
+                      platformColors[entry.platform.toLowerCase()] ??
+                      "hsl(215,20%,45%)";
                     return (
-                      <div key={entry.platform} className="flex items-center gap-2 text-xs">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                        <span className="text-muted-foreground capitalize flex-1">{entry.platform}</span>
-                        <span className="font-semibold text-foreground tabular-nums">{entry.count}</span>
-                        <span className="text-muted-foreground/60 w-8 text-right">{pct}%</span>
+                      <div
+                        key={entry.platform}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: color }}
+                        />
+                        <span className="text-muted-foreground capitalize flex-1">
+                          {entry.platform}
+                        </span>
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {entry.count}
+                        </span>
+                        <span className="text-muted-foreground/60 w-8 text-right">
+                          {pct}%
+                        </span>
                       </div>
                     );
                   })}
@@ -300,13 +442,19 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Business momentum flag — full width */}
+      <NeedsAttentionCard />
+
       {/* Recent Clients — full width */}
       <Card className="border-border/50 card-hover">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Recent Clients</CardTitle>
             <Link href="/clients">
-              <Badge variant="outline" className="text-xs text-primary border-primary/30 hover:bg-primary/10 cursor-pointer gap-1 transition-colors">
+              <Badge
+                variant="outline"
+                className="text-xs text-primary border-primary/30 hover:bg-primary/10 cursor-pointer gap-1 transition-colors"
+              >
                 View all <ArrowRight className="w-3 h-3" />
               </Badge>
             </Link>
@@ -315,10 +463,17 @@ export default function Dashboard() {
         <CardContent>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {isClientsLoading ? (
-              Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)
+              Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))
             ) : topClients.length > 0 ? (
               topClients.map((client) => {
-                const initials = client.businessName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase();
+                const initials = client.businessName
+                  .split(" ")
+                  .map((w: string) => w[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase();
                 return (
                   <Link
                     key={client.id}
@@ -329,16 +484,38 @@ export default function Dashboard() {
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-foreground truncate">{client.businessName}</p>
-                      {!!(client as unknown as Record<string,unknown>).searchAddress && <p className="text-xs text-muted-foreground truncate">Search: {(client as unknown as Record<string,unknown>).searchAddress as string}</p>}
-                      {!!(client as unknown as Record<string,unknown>).publishedAddress && <p className="text-xs text-muted-foreground truncate">GMB: {(client as unknown as Record<string,unknown>).publishedAddress as string}</p>}
+                      <p className="font-medium text-sm text-foreground truncate">
+                        {client.businessName}
+                      </p>
+                      {!!(client as unknown as Record<string, unknown>)
+                        .searchAddress && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          Search:{" "}
+                          {
+                            (client as unknown as Record<string, unknown>)
+                              .searchAddress as string
+                          }
+                        </p>
+                      )}
+                      {!!(client as unknown as Record<string, unknown>)
+                        .publishedAddress && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          GMB:{" "}
+                          {
+                            (client as unknown as Record<string, unknown>)
+                              .publishedAddress as string
+                          }
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                        client.status === "active"
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "bg-muted text-muted-foreground"
-                      }`}>
+                      <span
+                        className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                          client.status === "active"
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {client.status}
                       </span>
                       <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
@@ -361,37 +538,53 @@ export default function Dashboard() {
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 
 function StatCard({
-  title, value, loading, subtext, icon: Icon, iconColor, iconBg, barClass, href,
+  title,
+  value,
+  loading,
+  subtext,
+  icon: Icon,
+  iconColor,
+  iconBg,
+  barClass,
+  href,
 }: {
-  title:      string;
-  value?:     number | string;
-  loading:    boolean;
-  subtext?:   string;
-  icon:       React.ElementType;
-  iconColor:  string;
-  iconBg:     string;
-  barClass:   string;
-  href?:      string;
+  title: string;
+  value?: number | string;
+  loading: boolean;
+  subtext?: string;
+  icon: React.ElementType;
+  iconColor: string;
+  iconBg: string;
+  barClass: string;
+  href?: string;
 }) {
   const inner = (
     <Card className="border-border/50 card-hover relative overflow-hidden cursor-default group">
       <div className={`absolute top-0 left-0 right-0 h-0.5 ${barClass}`} />
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
-          <div className={`w-9 h-9 rounded-xl ${iconBg} flex items-center justify-center`}>
+          <div
+            className={`w-9 h-9 rounded-xl ${iconBg} flex items-center justify-center`}
+          >
             <Icon className={`w-4.5 h-4.5 ${iconColor}`} />
           </div>
           {href && (
             <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
           )}
         </div>
-        <p className="text-xs text-muted-foreground font-medium mb-1">{title}</p>
+        <p className="text-xs text-muted-foreground font-medium mb-1">
+          {title}
+        </p>
         {loading ? (
           <Skeleton className="h-8 w-20 mt-1" />
         ) : (
           <>
-            <p className="text-3xl font-bold text-foreground tracking-tight">{value ?? 0}</p>
-            {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+            <p className="text-3xl font-bold text-foreground tracking-tight">
+              {value ?? 0}
+            </p>
+            {subtext && (
+              <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
+            )}
           </>
         )}
       </CardContent>

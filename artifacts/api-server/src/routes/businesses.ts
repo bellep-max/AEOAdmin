@@ -18,8 +18,24 @@ import {
   assertScopedAccessToClient,
   getScopedClientIds,
 } from "../lib/scoped-access";
+import { computeBusinessMomentum } from "../services/business-momentum";
 
 const router = Router();
+
+/* GET /api/businesses/momentum
+   Business-level "Needs Attention" flagging for the dashboard: per-status
+   counts + the flagged businesses. Declared BEFORE /:id so "momentum" isn't
+   parsed as a business id. Scoped roles only see their own slice. */
+router.get("/momentum", requireExecutorOrSalesAllowed, async (req, res) => {
+  try {
+    const eligibleIds = await getScopedClientIds(req);
+    const summary = await computeBusinessMomentum(eligibleIds);
+    return res.json(summary);
+  } catch (err) {
+    req.log.error({ err }, "Error computing business momentum");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
