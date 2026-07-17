@@ -162,7 +162,7 @@ export function PlatformAggregateStrip({
                         change > 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : change < 0
-                            ? "text-red-600 dark:text-red-400"
+                            ? "text-yellow-700 dark:text-yellow-400"
                             : "text-muted-foreground"
                       }`}
                     >
@@ -197,7 +197,7 @@ export function PlatformAggregateStrip({
                       </span>
                     )}
                     {a.declined > 0 && (
-                      <span className="text-red-600 dark:text-red-400">
+                      <span className="text-yellow-700 dark:text-yellow-400">
                         {a.declined} slipped
                       </span>
                     )}

@@ -26,6 +26,7 @@ import {
   Pencil,
   Trash2,
   Lock,
+  Trophy,
   RefreshCw,
   Loader2,
 } from "lucide-react";
@@ -53,31 +54,6 @@ import {
 } from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
-
-/** A keyword "wins" (locks) when BOTH its previous and current bi-weekly runs are
- *  Top-3 on the SAME platform — a sustained win across two consecutive cycles.
- *  Mirrors the server rule in services/keyword-rotation.ts (SUSTAINED_RUNS = 2);
- *  a single Top-3 run no longer shows a "Locks" badge. */
-function lockTrigger(
-  platforms: PeriodRow[],
-): { platform: string; position: number } | null {
-  let best: { platform: string; position: number } | null = null;
-  for (const p of platforms) {
-    const cur = p.currentPosition;
-    const prev = p.previousPosition;
-    const sustained =
-      cur != null &&
-      cur >= 1 &&
-      cur <= TOP_RANK_THRESHOLD &&
-      prev != null &&
-      prev >= 1 &&
-      prev <= TOP_RANK_THRESHOLD;
-    if (sustained && (best == null || cur < best.position)) {
-      best = { platform: p.platform, position: cur };
-    }
-  }
-  return best;
-}
 
 /** Best (lowest) current rank across all platforms for this keyword. Returns
  *  Infinity when the keyword has no ranking data yet, so unranked keywords
@@ -148,10 +124,18 @@ function PlatformChip({
   onClick?: (target: ScreenshotTarget) => void;
 }) {
   const unavailable = row.status === "unavailable";
+  // A win is per-platform: top-3 on THIS AI is a win on this AI, independent of
+  // the others. (Locking the keyword needs all three — that's separate.)
+  const won =
+    !unavailable &&
+    row.currentPosition != null &&
+    row.currentPosition <= TOP_RANK_THRESHOLD;
   const cls = unavailable
     ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
-    : (PLATFORM_COLORS[row.platform] ??
-      "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
+    : won
+      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-400/50"
+      : (PLATFORM_COLORS[row.platform] ??
+        "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
   const move =
     row.change == null || row.change === 0 ? "" : ` (${movementWord(row.change)})`;
   const clickable =
@@ -197,12 +181,14 @@ function PlatformChip({
       title={clickable ? "Click to view screenshot" : undefined}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
     >
+      {won && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
       <span>{platformLabel(row.platform)}</span>
       {unavailable ? (
         <span className="font-medium opacity-80">Unavailable</span>
       ) : (
-        <span className="font-bold">
+        <span className="font-bold inline-flex items-center gap-1">
           {placeShort(row.currentPosition)}
+          {won && <span className="font-semibold">· Won</span>}
           {move}
           {row.currentUnverified && <UnverifiedMark date={row.currentDate} />}
         </span>
@@ -562,7 +548,6 @@ export function KeywordsWithRankingsCard({
                 // (e.g. Gemini) missing from a keyword that otherwise has data.
                 const sorted = sortPlatformsWithUnavailable(platforms);
                 const hasData = platforms.length > 0;
-                const lock = showRotation ? lockTrigger(platforms) : null;
                 // Freshness at a glance: the most recent Current-rank audit date
                 // across this keyword's platforms, shown on the collapsed row so
                 // the date is visible without expanding.
@@ -601,15 +586,6 @@ export function KeywordsWithRankingsCard({
                         >
                           {keywordText}
                         </Link>
-                        {lock && (
-                          <Badge
-                            className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 shrink-0"
-                            title={`Top-3 on ${lock.platform} (#${lock.position}) — will lock & rotate`}
-                          >
-                            <Lock className="w-2.5 h-2.5" /> Locks ·{" "}
-                            {lock.platform} #{lock.position}
-                          </Badge>
-                        )}
                         {!hasData && (
                           <Badge
                             variant="outline"
