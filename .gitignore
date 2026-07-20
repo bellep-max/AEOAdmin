@@ -53,3 +53,8 @@ worklogs/
 scripts/adjudicate-screenshots/ocr
 scripts/adjudicate-screenshots/__pycache__/
 CLAUDE.local.md
+
+# Secrets / local env — NEVER commit (rotate any key already in git history)
+.env
+.env.*
+!.env.example

@@ -10,10 +10,10 @@ import {
 import { eq, and, desc, count, gte, lte, like, sql, inArray } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireSession } from "../middlewares/session-auth";
 import {
   requireOwner,
   requireViewer,
+  requireAdmin,
   requireSalesAllowed,
 } from "../middlewares/role-auth";
 import { getScopedClientIds } from "../lib/scoped-access";
@@ -301,7 +301,7 @@ router.post("/sync", requireOwner, async (req, res) => {
   }
 });
 
-router.delete("/:id", requireSession, async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

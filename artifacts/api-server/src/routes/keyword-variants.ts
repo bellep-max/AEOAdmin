@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { keywordVariantsTable, keywordsTable } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireSession } from "../middlewares/session-auth";
+import { requireAdmin } from "../middlewares/role-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
 
@@ -121,7 +121,7 @@ router.get(
 /* ────────────────────────────────────────────────────────────
    DELETE /api/keyword-variants/:id
 ──────────────────────────────────────────────────────────── */
-router.delete("/keyword-variants/:id", requireSession, async (req, res) => {
+router.delete("/keyword-variants/:id", requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });

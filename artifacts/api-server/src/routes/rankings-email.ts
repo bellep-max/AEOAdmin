@@ -548,7 +548,7 @@ function summarize(rows: SignedBiWeeklyRow[]): SummaryStats {
 /* GET /api/rankings/email-config
    Reports which sender bits are configured so the FE can show a clear
    "you can't send yet" banner instead of waiting for the send to fail. */
-router.get("/email-config", (_req, res) => {
+router.get("/email-config", requireSalesAllowed, (_req, res) => {
   const fromEmail = process.env.SENDGRID_FROM_EMAIL ?? "";
   const fromName = process.env.SENDGRID_FROM_NAME ?? "";
   const hasApiKey = Boolean(process.env.SENDGRID_API_KEY);

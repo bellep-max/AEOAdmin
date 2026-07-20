@@ -31,10 +31,10 @@ import {
   requireOwner,
   requireExecutorOrOwner,
   requireRoles,
+  requireAdmin,
   requireSalesAllowed,
 } from "../middlewares/role-auth";
 import { chatCompletion } from "../services/llm-client";
-import { requireSession } from "../middlewares/session-auth";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
 import {
@@ -224,7 +224,7 @@ router.get(
 );
 
 /* DELETE /api/llm/variants/by-id/:id — admin override delete */
-router.delete("/variants/by-id/:id", requireSession, async (req, res) => {
+router.delete("/variants/by-id/:id", requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
