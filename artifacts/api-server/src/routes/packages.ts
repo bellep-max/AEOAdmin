@@ -2,12 +2,8 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { customPackagesTable, PACKAGE_CREATORS } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import {
-  requireSalesAllowed,
-  requireAdmin,
-  isSales,
-  isAccountManager,
-} from "../middlewares/role-auth";
+import { requireSalesAllowed, requireAdmin } from "../middlewares/role-auth";
+import { isScopedRole } from "../lib/scoped-access";
 
 const router = Router();
 
@@ -22,8 +18,8 @@ router.get("/", requireSalesAllowed, async (req, res) => {
       .orderBy(customPackagesTable.createdAt);
     const visible = rows.filter((p) => {
       const isFreeTrial = (p.name || "").toLowerCase().includes("free");
-      if (isSales(req)) return isFreeTrial;
-      if (isAccountManager(req)) return !isFreeTrial;
+      // Non-owner (scoped) roles never see the free-trial package; owners see all.
+      if (isScopedRole(req)) return !isFreeTrial;
       return true;
     });
     res.json(visible);

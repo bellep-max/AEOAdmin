@@ -10,12 +10,12 @@ import {
 import { eq, and, desc, asc, sql, gte, lte, inArray } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireApiToken } from "../middlewares/api-token";
+import { requireSalesAllowed, requireRoles } from "../middlewares/role-auth";
 import {
-  requireSalesAllowed,
-  requireRoles,
-  isSales,
-} from "../middlewares/role-auth";
-import { getScopedClientIds } from "../lib/scoped-access";
+  getScopedClientIds,
+  assertScopedAccessToClient,
+  isScopedRole,
+} from "../lib/scoped-access";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
@@ -1848,7 +1848,7 @@ router.get("/:id/screenshot-url", requireSalesAllowed, async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ error: "ranking report not found" });
     }
-    if (isSales(req)) {
+    if (isScopedRole(req)) {
       const eligibleIds = await getScopedClientIds(req);
       if (!eligibleIds || !eligibleIds.includes(rows[0].clientId)) {
         return res.status(404).json({ error: "ranking report not found" });
@@ -1935,6 +1935,8 @@ router.get("/summary", requireSalesAllowed, async (req, res) => {
     if (clientId == null || Number.isNaN(clientId)) {
       return res.status(400).json({ error: "clientId is required" });
     }
+    // A scoped role may only pull a report for a client in its slice.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
     const scope = parseAdminScope(req.query.scope);
     const businessId = req.query.businessId
       ? parseInt(req.query.businessId as string, 10)
@@ -1968,6 +1970,8 @@ router.get("/summary/narrative", requireSalesAllowed, async (req, res) => {
     if (clientId == null || Number.isNaN(clientId)) {
       return res.status(400).json({ error: "clientId is required" });
     }
+    // A scoped role may only pull a narrative for a client in its slice.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
     const scope = parseAdminScope(req.query.scope);
     const businessId = req.query.businessId
       ? parseInt(req.query.businessId as string, 10)

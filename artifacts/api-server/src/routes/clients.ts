@@ -20,8 +20,6 @@ import {
   isNotNull,
 } from "drizzle-orm";
 import {
-  isSales,
-  isAccountManager,
   isChucksLocal,
   requireAdmin,
   requireEditor,
@@ -34,6 +32,7 @@ import {
   getScopedClientIds,
   assertScopedAccessToClient,
   isPlanAllowedForScope,
+  isScopedRole,
   LOCAL_ADMIN_PLAN_TYPES,
 } from "../lib/scoped-access";
 import type { Request, Response, NextFunction } from "express";
@@ -41,16 +40,16 @@ import type { Request, Response, NextFunction } from "express";
 const router = Router();
 
 /**
- * For sales sessions on /:id sub-routes, 404 if the targeted client isn't
- * free-trial-eligible. Non-sales sessions pass through unchanged. The handler
- * still runs its own ownership/auth as needed.
+ * For scoped sessions on /:id sub-routes, 404 if the targeted client isn't in
+ * the caller's local-plan slice. Unscoped sessions pass through unchanged. The
+ * handler still runs its own ownership/auth as needed.
  */
 async function gateClientForScopedRoles(
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  if (!isSales(req) && !isAccountManager(req)) return next();
+  if (!isScopedRole(req)) return next();
   const targetId = Number(req.params.id);
   if (Number.isNaN(targetId)) return next();
   const eligibleIds = await getScopedClientIds(req);

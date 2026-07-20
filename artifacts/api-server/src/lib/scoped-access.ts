@@ -1,19 +1,17 @@
 /**
- * Unified scoped-access helpers for the two parallel client-scoping roles:
+ * Unified scoped-access helpers. Every non-owner admin role is limited to the
+ * local plans (see LOCAL_ADMIN_PLAN_TYPES):
  *
- *   - sales            → sees only clients with at least one Free Trial Plans row
- *   - account-manager  → sees only clients with at least one NON-free-trial row
+ *   - sales / account-manager / chuckslocal → see ONLY clients on a local plan
  *
- * Admin-panel chain roles (viewer/editor/admin/owner) and the executor token
- * see everything — getScopedClientIds returns null for them, which callers
- * treat as "no filter."
+ * Free-trial and every other (non-local) plan are OWNER-ONLY. Admin-panel chain
+ * roles (viewer/editor/admin/owner) and the executor token see everything —
+ * getScopedClientIds returns null for them, which callers treat as "no filter."
  *
- * This module supersedes the older sales-only helpers in sales-scope.ts.
- * Both files exist temporarily during migration; new code should import from
- * here.
+ * This module supersedes the older sales-only helpers in sales-scope.ts (dead).
  */
 import type { Request, Response } from "express";
-import { eq, ne, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable, clientsTable } from "@workspace/db/schema";
 import {
@@ -22,7 +20,15 @@ import {
   isChucksLocal,
 } from "../middlewares/role-auth";
 
-const FREE_TRIAL_PLAN_TYPE = "Free Trial Plans";
+/**
+ * Every non-owner admin role (sales, account-manager, chuckslocal) is a
+ * plan-scoped role limited to the local plans. Owners and the unscoped
+ * admin-panel chain (viewer/editor/admin) are NOT scoped — they see all plans.
+ * Policy: free-trial and every non-local plan are owner-only.
+ */
+export function isScopedRole(req: Request): boolean {
+  return isSales(req) || isAccountManager(req) || isChucksLocal(req);
+}
 
 /**
  * The only plans the `chuckslocal` role may see or assign. Both visibility
@@ -43,7 +49,7 @@ export function isPlanAllowedForScope(
   req: Request,
   planType: string | null | undefined,
 ): boolean {
-  if (!isChucksLocal(req)) return true;
+  if (!isScopedRole(req)) return true;
   return (
     planType != null &&
     (LOCAL_ADMIN_PLAN_TYPES as readonly string[]).includes(planType)
@@ -59,42 +65,26 @@ export function isPlanAllowedForScope(
 export async function getScopedClientIds(
   req: Request,
 ): Promise<number[] | null> {
-  if (isSales(req)) {
-    const rows = await db
-      .select({ clientId: clientAeoPlansTable.clientId })
-      .from(clientAeoPlansTable)
-      .where(eq(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE));
-    return [...new Set(rows.map((r) => r.clientId))];
-  }
-  if (isAccountManager(req)) {
-    const rows = await db
-      .select({ clientId: clientAeoPlansTable.clientId })
-      .from(clientAeoPlansTable)
-      .where(ne(clientAeoPlansTable.planType, FREE_TRIAL_PLAN_TYPE));
-    return [...new Set(rows.map((r) => r.clientId))];
-  }
-  if (isChucksLocal(req)) {
-    // In scope = a formal client_aeo_plans row of one of the two Signal plans,
-    // OR the client's text plan_name is one of them (covers a client chuckslocal
-    // just created with that plan before a formal plan row is attached).
-    const planRows = await db
-      .select({ clientId: clientAeoPlansTable.clientId })
-      .from(clientAeoPlansTable)
-      .where(
-        inArray(clientAeoPlansTable.planType, [...LOCAL_ADMIN_PLAN_TYPES]),
-      );
-    const nameRows = await db
-      .select({ id: clientsTable.id })
-      .from(clientsTable)
-      .where(inArray(clientsTable.planName, [...LOCAL_ADMIN_PLAN_TYPES]));
-    return [
-      ...new Set([
-        ...planRows.map((r) => r.clientId),
-        ...nameRows.map((r) => r.id),
-      ]),
-    ];
-  }
-  return null;
+  // Owners + the unscoped admin chain see everything.
+  if (!isScopedRole(req)) return null;
+  // Every scoped role (sales / account-manager / chuckslocal) sees ONLY clients
+  // on a local plan. In scope = a formal client_aeo_plans row of one of the
+  // local plans, OR the client's text plan_name is one of them (covers a client
+  // just created with that plan before a formal plan row is attached).
+  const planRows = await db
+    .select({ clientId: clientAeoPlansTable.clientId })
+    .from(clientAeoPlansTable)
+    .where(inArray(clientAeoPlansTable.planType, [...LOCAL_ADMIN_PLAN_TYPES]));
+  const nameRows = await db
+    .select({ id: clientsTable.id })
+    .from(clientsTable)
+    .where(inArray(clientsTable.planName, [...LOCAL_ADMIN_PLAN_TYPES]));
+  return [
+    ...new Set([
+      ...planRows.map((r) => r.clientId),
+      ...nameRows.map((r) => r.id),
+    ]),
+  ];
 }
 
 /**
@@ -109,8 +99,7 @@ export async function assertScopedAccessToClient(
   res: Response,
   clientId: number | null,
 ): Promise<boolean> {
-  if (!isSales(req) && !isAccountManager(req) && !isChucksLocal(req))
-    return true;
+  if (!isScopedRole(req)) return true;
   if (clientId == null) {
     res.status(404).json({ error: "Not found" });
     return false;

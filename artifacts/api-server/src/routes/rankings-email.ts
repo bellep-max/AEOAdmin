@@ -6,13 +6,16 @@ import {
   clientAeoPlansTable,
   emailSendsTable,
 } from "@workspace/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
-import { requireSession } from "../middlewares/session-auth";
-import { requireOwner } from "../middlewares/role-auth";
+import { requireOwner, requireSalesAllowed } from "../middlewares/role-auth";
+import {
+  assertScopedAccessToClient,
+  getScopedClientIds,
+} from "../lib/scoped-access";
 
 const router = Router();
 
@@ -561,9 +564,10 @@ router.get("/email-config", (_req, res) => {
   });
 });
 
-router.get("/email-recipients/:clientId", requireSession, async (req, res) => {
+router.get("/email-recipients/:clientId", requireSalesAllowed, async (req, res) => {
   const id = Number.parseInt(req.params.clientId, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertScopedAccessToClient(req, res, id))) return;
   try {
     const rows = await db
       .select({
@@ -601,9 +605,10 @@ function parseFilterQuery(req: {
 }
 
 /* GET /api/rankings/email-preview */
-router.get("/email-preview", requireSession, async (req, res) => {
+router.get("/email-preview", requireSalesAllowed, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
+  if (!(await assertScopedAccessToClient(req, res, filter.clientId))) return;
   try {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
@@ -672,9 +677,10 @@ router.get("/email-preview", requireSession, async (req, res) => {
 });
 
 /* GET /api/rankings/email-templates */
-router.get("/email-templates", requireSession, async (req, res) => {
+router.get("/email-templates", requireSalesAllowed, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
+  if (!(await assertScopedAccessToClient(req, res, filter.clientId))) return;
   try {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
@@ -1020,15 +1026,29 @@ router.post("/send-report", requireOwner, async (req, res) => {
 });
 
 /* GET /api/rankings/email-sends?clientId= */
-router.get("/email-sends", requireSession, async (req, res) => {
+router.get("/email-sends", requireSalesAllowed, async (req, res) => {
   try {
     const clientId = req.query.clientId
       ? Number.parseInt(String(req.query.clientId), 10)
       : null;
+    // Scoped roles only ever see sends for clients in their slice: a specific
+    // clientId is asserted; an unfiltered list is confined to the eligible set.
+    if (clientId != null) {
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+    }
+    const eligibleIds = clientId == null ? await getScopedClientIds(req) : null;
+    if (eligibleIds !== null && eligibleIds.length === 0)
+      return res.json({ sends: [] });
     const rows = await db
       .select()
       .from(emailSendsTable)
-      .where(clientId ? eq(emailSendsTable.clientId, clientId) : sql`true`)
+      .where(
+        clientId
+          ? eq(emailSendsTable.clientId, clientId)
+          : eligibleIds !== null
+            ? inArray(emailSendsTable.clientId, eligibleIds)
+            : sql`true`,
+      )
       .orderBy(desc(emailSendsTable.sentAt))
       .limit(20);
     return res.json({ sends: rows });

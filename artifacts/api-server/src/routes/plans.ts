@@ -17,11 +17,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { plansTable } from "@workspace/db/schema";
-import {
-  requireSalesAllowed,
-  isSales,
-  isAccountManager,
-} from "../middlewares/role-auth";
+import { requireSalesAllowed } from "../middlewares/role-auth";
+import { isScopedRole } from "../lib/scoped-access";
 
 const router = Router();
 
@@ -36,8 +33,8 @@ router.get("/", requireSalesAllowed, async (req, res) => {
     const plans = await db.select().from(plansTable);
     const visible = plans.filter((p) => {
       const isFreeTrial = (p.planName || "").toLowerCase().includes("free");
-      if (isSales(req)) return isFreeTrial;
-      if (isAccountManager(req)) return !isFreeTrial;
+      // Non-owner (scoped) roles never see the free-trial plan; owners see all.
+      if (isScopedRole(req)) return !isFreeTrial;
       return true;
     });
 
