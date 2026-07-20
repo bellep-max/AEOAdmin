@@ -31,6 +31,7 @@ import { getScopedClientIds } from "../lib/scoped-access";
 import { refreshGhlSendStatuses } from "../services/email-status-ghl";
 import {
   resolveImprovement,
+  presign,
   buildScreenshotUrlByClient,
   ghlFindContactIdByEmail,
   ghlCreateNote,
@@ -640,6 +641,98 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error building sales email preview");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /api/sales/campaign-screenshots?clientId=&businessId?=&aeoPlanId?=
+   Visual picker feed: every keyword × platform screenshot in the selected
+   campaign scope, with presigned before/after images and the campaign's own
+   street address(es). The operator eyeballs the thumbnails against the target
+   address and clicks the one to feature — the DB has no per-capture street
+   address to auto-match on (ranking_reports.search_address is null/city-level),
+   so the address the AI cited lives only inside the image. */
+router.get("/campaign-screenshots", requireSalesEmail, async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  if (Number.isNaN(clientId))
+    return res.status(400).json({ error: "clientId required" });
+  try {
+    if (!(await isClientInSalesScope(req, clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+
+    const scope = parseScope(req.query as Record<string, unknown>);
+    const r = await resolveImprovement(scopeQuery(clientId, scope), {
+      positiveTop3: false,
+      includeUnimproved: true,
+    });
+
+    // The campaign's own street address(es) in scope — the match target the
+    // operator checks each screenshot against.
+    const plans = await db
+      .select({
+        id: clientAeoPlansTable.id,
+        searchAddress: clientAeoPlansTable.searchAddress,
+      })
+      .from(clientAeoPlansTable)
+      .where(
+        and(
+          eq(clientAeoPlansTable.clientId, clientId),
+          scope.businessId
+            ? eq(clientAeoPlansTable.businessId, scope.businessId)
+            : undefined,
+          scope.aeoPlanId
+            ? eq(clientAeoPlansTable.id, scope.aeoPlanId)
+            : undefined,
+        ),
+      );
+    const targetAddresses = Array.from(
+      new Set(
+        plans.map((p) => p.searchAddress?.trim()).filter((a): a is string => !!a),
+      ),
+    );
+
+    if (!r.ok) return res.json({ targetAddresses, shots: [] });
+
+    const shots = (
+      await Promise.all(
+        r.data.keywords.flatMap((k) =>
+          PLATFORM_ORDER.filter((p) => k.platforms[p]).map(async (p) => {
+            const pr = k.platforms[p];
+            const [beforeUrl, afterUrl] = await Promise.all([
+              presign(pr.first.s3Uri),
+              presign(pr.current.s3Uri),
+            ]);
+            return {
+              keywordId: k.keywordId,
+              keyword: k.keyword,
+              platform: p,
+              beforeRank: pr.first.rank,
+              afterRank: pr.current.rank,
+              beforeDate: pr.first.date,
+              afterDate: pr.current.date,
+              improved: pr.first.rank - pr.current.rank,
+              afterRankVisible: pr.current.rankVisible,
+              beforeUrl,
+              afterUrl,
+            };
+          }),
+        ),
+      )
+    ).filter((s) => s.afterUrl != null);
+
+    // Strongest, verified-top-3-first — same order as the dropdown.
+    shots.sort((a, b) => {
+      const av = a.afterRank <= 3 && a.afterRankVisible === true ? 0 : 1;
+      const bv = b.afterRank <= 3 && b.afterRankVisible === true ? 0 : 1;
+      if (av !== bv) return av - bv;
+      if (av === 0 && a.afterRank !== b.afterRank)
+        return a.afterRank - b.afterRank;
+      return b.improved - a.improved;
+    });
+
+    return res.json({ targetAddresses, shots });
+  } catch (err) {
+    req.log.error({ err }, "Error listing campaign screenshots");
     return res.status(500).json({ error: "Internal server error" });
   }
 });

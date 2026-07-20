@@ -100,6 +100,26 @@ interface SalesPreviewResponse {
   strictMode: boolean;
 }
 
+interface CampaignShot {
+  keywordId: number;
+  keyword: string | null;
+  platform: string;
+  beforeRank: number;
+  afterRank: number;
+  beforeDate: string | null;
+  afterDate: string | null;
+  improved: number;
+  afterRankVisible: boolean | null;
+  beforeUrl: string | null;
+  afterUrl: string | null;
+}
+
+interface CampaignScreenshotsResponse {
+  /* The campaign's own street address(es) — the target to match each shot against. */
+  targetAddresses: string[];
+  shots: CampaignShot[];
+}
+
 type SalesTemplateKey = "first_proof" | "second_keyword";
 
 const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
@@ -322,6 +342,29 @@ export function SalesEmailDialog({
         return res.json();
       },
     });
+
+  /* Campaign-scoped screenshot gallery — the operator sees the actual images
+     for the selected campaign and clicks the one to feature, matching each
+     against the campaign's own street address (shown above the grid). */
+  const galleryParams = useMemo(() => {
+    if (clientId == null) return null;
+    const p = new URLSearchParams({ clientId: String(clientId) });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
+    return p.toString();
+  }, [clientId, businessId, aeoPlanId]);
+
+  const { data: gallery } = useQuery<CampaignScreenshotsResponse>({
+    enabled: open && galleryParams != null,
+    queryKey: ["/api/sales/campaign-screenshots", galleryParams],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/sales/campaign-screenshots?${galleryParams}`,
+      );
+      if (!res.ok) throw new Error("Failed to load campaign screenshots");
+      return res.json();
+    },
+  });
 
   /* Seed the editable Intro/Offer boxes with the resolved default template so
      the operator sees the actual copy and can extend it. Seed once per scope;
@@ -673,6 +716,82 @@ export function SalesEmailDialog({
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Visual picker — the selected campaign's actual screenshots.
+                  Match each against the target address, click to feature. */}
+              {gallery && gallery.shots.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  {gallery.targetAddresses.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Campaign address —{" "}
+                      <span className="font-medium text-foreground">
+                        {gallery.targetAddresses.join(" · ")}
+                      </span>
+                      . Click the screenshot whose result matches it.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-3 gap-2 max-h-[320px] overflow-y-auto pr-1">
+                    {gallery.shots.map((shot) => {
+                      const featured =
+                        selectedKeywordId != null && selectedPlatform != null
+                          ? shot.keywordId === selectedKeywordId &&
+                            shot.platform === selectedPlatform
+                          : shot.keywordId === preview?.selected?.keywordId &&
+                            shot.platform === preview?.selected?.platform;
+                      const verified =
+                        shot.afterRank <= TOP3 &&
+                        shot.afterRankVisible === true;
+                      return (
+                        <button
+                          type="button"
+                          key={`${shot.keywordId}:${shot.platform}`}
+                          onClick={() => {
+                            setSelectedKeywordId(shot.keywordId);
+                            setSelectedPlatform(shot.platform);
+                          }}
+                          title={`${shot.keyword ?? `Keyword ${shot.keywordId}`} · ${platformLabel(shot.platform)} · #${shot.beforeRank} → #${shot.afterRank}`}
+                          className={`group relative rounded-md border overflow-hidden text-left transition ${
+                            featured
+                              ? "border-primary ring-2 ring-primary"
+                              : "border-border hover:border-primary/60"
+                          }`}
+                        >
+                          {shot.afterUrl ? (
+                            <img
+                              src={shot.afterUrl}
+                              alt={`${shot.keyword ?? ""} ${shot.platform}`}
+                              loading="lazy"
+                              className="w-full h-24 object-cover object-top bg-muted"
+                            />
+                          ) : (
+                            <div className="w-full h-24 bg-muted" />
+                          )}
+                          <div className="absolute top-1 left-1 flex items-center gap-1">
+                            <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-black/70 text-white tabular-nums">
+                              #{shot.afterRank}
+                            </span>
+                            {verified && (
+                              <span className="px-1 py-0.5 rounded text-[9px] font-semibold bg-emerald-500 text-white inline-flex items-center gap-0.5">
+                                <Trophy className="w-2.5 h-2.5" />
+                              </span>
+                            )}
+                          </div>
+                          <div className="px-1.5 py-1 border-t bg-background">
+                            <div className="text-[10px] font-medium truncate">
+                              {shot.keyword ?? `Keyword ${shot.keywordId}`}
+                            </div>
+                            <div className="text-[9px] text-muted-foreground tabular-nums">
+                              {platformLabel(shot.platform)} · #
+                              {shot.beforeRank}→#{shot.afterRank}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <p className="text-[11px] text-muted-foreground">
                 One before/after pair per email, across all platforms. 🏆 = a
                 top-3 finish verified visible in the screenshot; ✓ =

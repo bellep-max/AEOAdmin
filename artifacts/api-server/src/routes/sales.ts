@@ -187,7 +187,7 @@ interface RankRow {
   observedRank: number | null;
 }
 
-async function presign(s3Uri: string): Promise<string | null> {
+export async function presign(s3Uri: string): Promise<string | null> {
   const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
   if (!m) return null;
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: m[1], Key: m[2] }), {
