@@ -31,19 +31,17 @@ export function isScopedRole(req: Request): boolean {
 }
 
 /**
- * The only plans the `chuckslocal` role may see or assign. Both visibility
+ * The only plan every scoped role (sales / account-manager / chuckslocal) may
+ * see or assign: "AEO SEO Local Plan" and nothing else. Both visibility
  * (getScopedClientIds) and plan-assignment validation (isPlanAllowedForScope)
- * key off this list, so widening chuckslocal's scope is a one-line change here.
+ * key off this list, so widening scope is a one-line change here.
  */
-export const LOCAL_ADMIN_PLAN_TYPES = [
-  "AEO SEO Local Plan",
-  "Signal AEO SEO Local",
-] as const;
+export const LOCAL_ADMIN_PLAN_TYPES = ["AEO SEO Local Plan"] as const;
 
 /**
  * For a scoped writer, returns whether `planType` is one they're allowed to
- * assign. chuckslocal may only attach the two Signal local plans; unscoped
- * roles may assign anything (returns true).
+ * assign. Scoped roles may only attach "AEO SEO Local Plan"; unscoped roles
+ * may assign anything (returns true).
  */
 export function isPlanAllowedForScope(
   req: Request,

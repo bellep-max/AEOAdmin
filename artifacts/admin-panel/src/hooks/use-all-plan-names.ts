@@ -3,12 +3,9 @@ import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-/** The only plans the chuckslocal role may assign. Mirrors LOCAL_ADMIN_PLAN_TYPES
+/** The only plan the chuckslocal role may assign. Mirrors LOCAL_ADMIN_PLAN_TYPES
  *  on the server (lib/scoped-access.ts). */
-export const LOCAL_ADMIN_PLAN_NAMES = [
-  "AEO SEO Local Plan",
-  "Signal AEO SEO Local",
-];
+export const LOCAL_ADMIN_PLAN_NAMES = ["AEO SEO Local Plan"];
 
 function rawFetch(path: string): Promise<Response> {
   const headers: Record<string, string> = {};
@@ -49,8 +46,8 @@ export function useAllPlanNames(): string[] {
       .catch(() => setAllNames([]));
   }, []);
 
-  // chuckslocal may only assign his two Signal plans — restrict the picker to
-  // those (intersected with what actually exists). The server enforces this too.
+  // chuckslocal may only assign "AEO SEO Local Plan" — restrict the picker to
+  // that (intersected with what actually exists). The server enforces this too.
   if (isChucksLocal) {
     return allNames.filter((n) => LOCAL_ADMIN_PLAN_NAMES.includes(n));
   }
