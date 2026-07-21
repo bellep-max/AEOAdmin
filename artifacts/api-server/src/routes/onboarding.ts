@@ -9,6 +9,8 @@ import {
 import { eq, or, and, ne, sql } from "drizzle-orm";
 import { requireOnboardingToken } from "../middlewares/onboarding-auth";
 import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
+import { sendFreeTrialEmails } from "../services/free-trial-email";
+import { fetchStripeBillingDetails } from "../services/stripe-billing";
 
 const router = Router();
 
@@ -191,6 +193,10 @@ interface FreeTrialBody {
   brand: string | null;
   leadRef: string | null;
   source: string | null;
+  /** Stripe customer id (cus_) captured at trial signup — preferred. */
+  stripeCustomerId: string | null;
+  /** Stripe subscription id (sub_) — only once converted to paid. */
+  stripeSubscriptionId: string | null;
 }
 
 function validateFreeTrial(
@@ -222,6 +228,31 @@ function validateFreeTrial(
       return { ok: false, error: `${opt} must be a string if provided` };
     }
   }
+  if (r.stripeCustomerId != null) {
+    if (typeof r.stripeCustomerId !== "string") {
+      return { ok: false, error: "stripeCustomerId must be a string" };
+    }
+    if (r.stripeCustomerId.trim() && !r.stripeCustomerId.startsWith("cus_")) {
+      return {
+        ok: false,
+        error: "stripeCustomerId must be a Stripe customer id (cus_…)",
+      };
+    }
+  }
+  if (r.stripeSubscriptionId != null) {
+    if (typeof r.stripeSubscriptionId !== "string") {
+      return { ok: false, error: "stripeSubscriptionId must be a string" };
+    }
+    if (
+      r.stripeSubscriptionId.trim() &&
+      !r.stripeSubscriptionId.startsWith("sub_")
+    ) {
+      return {
+        ok: false,
+        error: "stripeSubscriptionId must be a Stripe subscription id (sub_…)",
+      };
+    }
+  }
   return {
     ok: true,
     body: {
@@ -235,6 +266,12 @@ function validateFreeTrial(
       brand: isStr(r.brand) ? r.brand.trim() : null,
       leadRef: isStr(r.leadRef) ? r.leadRef.trim() : null,
       source: isStr(r.source) ? r.source.trim() : null,
+      stripeCustomerId: isStr(r.stripeCustomerId)
+        ? r.stripeCustomerId.trim()
+        : null,
+      stripeSubscriptionId: isStr(r.stripeSubscriptionId)
+        ? r.stripeSubscriptionId.trim()
+        : null,
     },
   };
 }
@@ -329,6 +366,16 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
       return res.status(200).json({ ok: true, idempotent: true, ...proof });
     }
 
+    // Stripe billing details (card last-4, billing email, dates). Keyed on the
+    // customer id captured at signup (cus_); a subscription id (sub_) also works
+    // once converted. Fail-soft: never blocks the signup — on any error the
+    // fields stay null. Kept out of the transaction (no network I/O in a DB tx),
+    // and only for genuinely new signups (dups returned above).
+    const stripeRef = body.stripeCustomerId ?? body.stripeSubscriptionId;
+    const billing = stripeRef
+      ? await fetchStripeBillingDetails(stripeRef, { log: req.log })
+      : null;
+
     // 3. Create.
     const result = await db.transaction(async (tx) => {
       const [client] = await tx
@@ -345,6 +392,9 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           brand: body.brand,
           leadRef: body.leadRef,
           source: body.source,
+          subscriptionId: stripeRef,
+          lastFourCard: billing?.cardLast4 ?? null,
+          billingEmail: billing?.billingEmail ?? null,
           idempotencyKey,
           createdBy: "free-trial-signup",
         })
@@ -385,6 +435,10 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           businessName: body.businessName,
           planType: "Free Trial Plans",
           searchAddress: body.address,
+          subscriptionId: stripeRef,
+          cardLast4: billing?.cardLast4 ?? null,
+          subscriptionStartDate: billing?.subscriptionStartDate ?? null,
+          nextBillingDate: billing?.nextBillingDate ?? null,
           createdBy: "free-trial-signup",
         })
         .returning({ id: clientAeoPlansTable.id });
@@ -412,6 +466,24 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         proofClientSlug: slug,
       };
     });
+
+    // New signup only (idempotent replays returned above) — send the welcome +
+    // owner alert. Fail-soft: never let an email issue break the signup.
+    const emailResult = await sendFreeTrialEmails(
+      {
+        businessName: body.businessName,
+        recipientEmail: body.email,
+        clientId: result.clientId,
+        proofClientSlug: result.proofClientSlug,
+        brand: body.brand,
+        leadRef: body.leadRef,
+        source: body.source,
+      },
+      { log: req.log },
+    );
+    if (emailResult.errors.length > 0) {
+      req.log.warn({ emailResult }, "free-trial emails had issues");
+    }
 
     res
       .status(201)

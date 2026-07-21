@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import {
+  sendFreeTrialEmails,
+  type FreeTrialEmailInput,
+} from "./free-trial-email";
+
+/**
+ * Runnable unit test (no test runner / no new deps):
+ *   pnpm --filter @workspace/api-server exec tsx src/services/free-trial-email.test.ts
+ * Uses an injected fake sender — never touches SendGrid or the DB.
+ */
+
+const BASE: FreeTrialEmailInput = {
+  businessName: "Joe's Plumbing",
+  recipientEmail: "customer@example.com",
+  clientId: 4242,
+  proofClientSlug: "joes-plumbing",
+  brand: "acme",
+  leadRef: "L-99",
+  source: "website",
+};
+
+interface Captured {
+  to: string[];
+  from: { email: string; name: string };
+  subject: string;
+  html: string;
+}
+
+function fakeSender(store: Captured[]) {
+  return async (msg: Captured) => {
+    store.push(msg);
+  };
+}
+
+function resetEnv(): void {
+  delete process.env.SENDGRID_API_KEY;
+  delete process.env.ADMIN_FROM_EMAIL;
+  delete process.env.SENDGRID_FROM_EMAIL;
+  delete process.env.ADMIN_FROM_NAME;
+  delete process.env.SAFE_RECIPIENT_OVERRIDE;
+  delete process.env.OWNER_NOTIFY_EMAILS;
+}
+
+const tests: Array<[string, () => Promise<void>]> = [
+  [
+    "sends welcome to customer + alert to owners, FROM admin email",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      const r = await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
+      assert.equal(r.welcome, "sent");
+      assert.equal(r.ownerAlert, "sent");
+      assert.equal(sent.length, 2);
+      const welcome = sent.find((m) =>
+        m.subject.includes("free trial is live"),
+      );
+      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      assert.ok(welcome && owner);
+      assert.deepEqual(welcome.to, ["customer@example.com"]);
+      assert.deepEqual(owner.to, [
+        "admin@signalaeo.com",
+        "erven.i@appstango.com",
+      ]);
+      assert.equal(welcome.from.email, "mary@signalaeo.com");
+      assert.equal(owner.from.email, "mary@signalaeo.com");
+    },
+  ],
+  [
+    "SAFE_RECIPIENT_OVERRIDE redirects ALL mail + tags the subject",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      process.env.SAFE_RECIPIENT_OVERRIDE = "erven.i@appstango.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
+      assert.equal(sent.length, 2);
+      for (const m of sent) {
+        assert.deepEqual(m.to, ["erven.i@appstango.com"]);
+        assert.ok(m.subject.startsWith("[TEST → would have gone to:"));
+      }
+      // The real intended recipients are still visible in the tag.
+      assert.ok(sent.some((m) => m.subject.includes("customer@example.com")));
+    },
+  ],
+  [
+    "fail-soft: a throwing sender yields 'failed', never throws",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const r = await sendFreeTrialEmails(BASE, {
+        send: async () => {
+          throw new Error("SendGrid 401");
+        },
+      });
+      assert.equal(r.welcome, "failed");
+      assert.equal(r.ownerAlert, "failed");
+      assert.equal(r.errors.length, 2);
+      assert.ok(r.errors.every((e) => e.includes("SendGrid 401")));
+    },
+  ],
+  [
+    "no SENDGRID_API_KEY → skipped, nothing sent",
+    async () => {
+      resetEnv();
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      const r = await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
+      assert.equal(r.welcome, "skipped");
+      assert.equal(r.ownerAlert, "skipped");
+      assert.equal(sent.length, 0);
+    },
+  ],
+  [
+    "business name is HTML-escaped (no injection)",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(
+        { ...BASE, businessName: "<script>x</script>Bob & Co" },
+        { send: fakeSender(sent) },
+      );
+      for (const m of sent) {
+        assert.ok(!m.html.includes("<script>"));
+        assert.ok(m.html.includes("&lt;script&gt;"));
+        assert.ok(m.html.includes("Bob &amp; Co"));
+      }
+    },
+  ],
+  [
+    "OWNER_NOTIFY_EMAILS overrides the default owner list",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      process.env.OWNER_NOTIFY_EMAILS = "a@x.com, b@x.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
+      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      assert.deepEqual(owner?.to, ["a@x.com", "b@x.com"]);
+    },
+  ],
+];
+
+async function main(): Promise<void> {
+  let failed = 0;
+  for (const [name, fn] of tests) {
+    try {
+      await fn();
+      console.log(`  ✓ ${name}`);
+    } catch (err) {
+      failed++;
+      console.error(`  ✗ ${name}`);
+      console.error(err instanceof Error ? err.stack : err);
+    }
+  }
+  resetEnv();
+  if (failed > 0) {
+    console.error(`\n${failed}/${tests.length} test(s) failed`);
+    process.exit(1);
+  }
+  console.log(`\nAll ${tests.length} tests passed`);
+}
+
+void main();
