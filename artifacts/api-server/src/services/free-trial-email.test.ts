@@ -19,6 +19,7 @@ const BASE: FreeTrialEmailInput = {
   leadRef: "L-99",
   source: "website",
   firstName: null,
+  isDirect: false,
 };
 
 interface Captured {
@@ -58,7 +59,9 @@ const tests: Array<[string, () => Promise<void>]> = [
       const welcome = sent.find((m) =>
         m.subject.includes("free trial is live"),
       );
-      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      const owner = sent.find((m) =>
+        m.subject.startsWith("New free trial signup:"),
+      );
       assert.ok(welcome && owner);
       assert.deepEqual(welcome.to, ["customer@example.com"]);
       assert.deepEqual(owner.to, [
@@ -168,7 +171,9 @@ const tests: Array<[string, () => Promise<void>]> = [
       process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
       const sent: Captured[] = [];
       await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
-      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      const owner = sent.find((m) =>
+        m.subject.startsWith("New free trial signup:"),
+      );
       assert.deepEqual(owner?.to, [
         "admin@signalaeo.com",
         "erven.i@appstango.com",
@@ -196,6 +201,30 @@ const tests: Array<[string, () => Promise<void>]> = [
     },
   ],
   [
+    "isDirect uses paid welcome copy (no 'free trial' language) + direct owner subject",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(
+        { ...BASE, isDirect: true },
+        { send: fakeSender(sent) },
+      );
+      const welcome = sent.find(
+        (m) => m.subject === "Welcome to Signal AEO 🎉",
+      );
+      assert.ok(welcome, "direct welcome subject");
+      assert.ok(!welcome.html.toLowerCase().includes("free trial"));
+      assert.ok(welcome.html.includes("getting started on"));
+      const owner = sent.find((m) =>
+        m.subject.startsWith("New direct signup:"),
+      );
+      assert.ok(owner, "direct owner subject");
+      assert.ok(owner.html.includes("Direct (Signal AEO Plan)"));
+    },
+  ],
+  [
     "OWNER_NOTIFY_EMAILS overrides the default owner list",
     async () => {
       resetEnv();
@@ -204,7 +233,9 @@ const tests: Array<[string, () => Promise<void>]> = [
       process.env.OWNER_NOTIFY_EMAILS = "a@x.com, b@x.com";
       const sent: Captured[] = [];
       await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
-      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      const owner = sent.find((m) =>
+        m.subject.startsWith("New free trial signup:"),
+      );
       assert.deepEqual(owner?.to, ["a@x.com", "b@x.com"]);
     },
   ],

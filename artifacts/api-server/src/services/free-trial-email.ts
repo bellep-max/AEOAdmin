@@ -27,6 +27,8 @@ export interface FreeTrialEmailInput {
   source: string | null;
   /** Customer first name for the greeting; falls back to "Hi there," when null. */
   firstName: string | null;
+  /** Direct (paid) signup vs free trial — changes the welcome copy. */
+  isDirect: boolean;
 }
 
 export interface FreeTrialEmailResult {
@@ -51,7 +53,9 @@ interface SendOptions {
   log?: Logger;
 }
 
-const WELCOME_SUBJECT = "Welcome to Signal AEO — your free trial is live 🎉";
+const WELCOME_SUBJECT_TRIAL =
+  "Welcome to Signal AEO — your free trial is live 🎉";
+const WELCOME_SUBJECT_DIRECT = "Welcome to Signal AEO 🎉";
 const DEFAULT_OWNER_EMAILS = [
   "admin@signalaeo.com",
   "erven.i@appstango.com",
@@ -78,14 +82,21 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function welcomeHtml(businessName: string, firstName: string | null): string {
+function welcomeHtml(
+  businessName: string,
+  firstName: string | null,
+  isDirect: boolean,
+): string {
   const b = escapeHtml(businessName);
   const greeting = firstName?.trim()
     ? `Hi ${escapeHtml(firstName.trim())},`
     : "Hi there,";
+  const openingLine = isDirect
+    ? `Welcome to Signal AEO! We're getting started on <strong>${b}</strong> now.`
+    : `Welcome to Signal AEO! Your free trial for <strong>${b}</strong> is now active.`;
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:560px">
   <p>${greeting}</p>
-  <p>Welcome to Signal AEO! Your free trial for <strong>${b}</strong> is now active.</p>
+  <p>${openingLine}</p>
   <p>Here's what happens next: we've started working to get ${b} named in AI search. When people ask ChatGPT, Gemini, and Perplexity for businesses like yours, we make sure yours shows up.</p>
   <p>Over the next couple of weeks you'll start seeing ${b} appear in those AI answers — and we'll send you the proof, real screenshots, as your rankings come in.</p>
   <p>There's nothing you need to do right now. Just sit back while we go to work. Questions? Just reply to this email.</p>
@@ -95,6 +106,7 @@ function welcomeHtml(businessName: string, firstName: string | null): string {
 
 function ownerAlertHtml(input: FreeTrialEmailInput): string {
   const rows: Array<[string, string | null]> = [
+    ["Signup type", input.isDirect ? "Direct (Signal AEO Plan)" : "Free trial"],
     ["Business", input.businessName],
     ["Contact", input.firstName],
     ["Email", input.recipientEmail],
@@ -179,13 +191,13 @@ export async function sendFreeTrialEmails(
     deliver(
       "welcome",
       [input.recipientEmail],
-      WELCOME_SUBJECT,
-      welcomeHtml(input.businessName, input.firstName),
+      input.isDirect ? WELCOME_SUBJECT_DIRECT : WELCOME_SUBJECT_TRIAL,
+      welcomeHtml(input.businessName, input.firstName, input.isDirect),
     ),
     deliver(
       "ownerAlert",
       ownerEmails(),
-      `New free trial: ${input.businessName}`,
+      `New ${input.isDirect ? "direct" : "free trial"} signup: ${input.businessName}`,
       ownerAlertHtml(input),
     ),
   ]);

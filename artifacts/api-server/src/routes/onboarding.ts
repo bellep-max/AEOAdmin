@@ -198,6 +198,12 @@ interface FreeTrialBody {
   contactName: string | null;
   /** First token of the contact name, for the welcome greeting; may be null. */
   firstName: string | null;
+  /**
+   * "trial" (default) → Free Trial Plans; "direct" → a paid "Signal AEO Plan"
+   * client (customer chose to start the service, not the trial). Billing start
+   * stays manual either way.
+   */
+  signupType: "trial" | "direct";
   /** Stripe customer id (cus_) captured at trial signup — preferred. */
   stripeCustomerId: string | null;
   /** Stripe subscription id (sub_) — only once converted to paid. */
@@ -283,6 +289,13 @@ function validateFreeTrial(
       };
     }
   }
+  if (
+    r.signupType != null &&
+    r.signupType !== "trial" &&
+    r.signupType !== "direct"
+  ) {
+    return { ok: false, error: 'signupType must be "trial" or "direct"' };
+  }
   return {
     ok: true,
     body: {
@@ -297,6 +310,7 @@ function validateFreeTrial(
       leadRef: isStr(r.leadRef) ? r.leadRef.trim() : null,
       source: isStr(r.source) ? r.source.trim() : null,
       ...resolveNames(r),
+      signupType: r.signupType === "direct" ? "direct" : "trial",
       stripeCustomerId: isStr(r.stripeCustomerId)
         ? r.stripeCustomerId.trim()
         : null,
@@ -407,6 +421,15 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
       ? await fetchStripeBillingDetails(stripeRef, { log: req.log })
       : null;
 
+    // Direct signups become a paid "Signal AEO Plan" client; trials stay on
+    // "Free Trial Plans". The Stripe subscription start is manual in both cases —
+    // this only sets how the client is labelled and routed in the admin.
+    const isDirect = body.signupType === "direct";
+    const accountType = isDirect ? "Retail" : "Free Trial";
+    const planName = isDirect ? "Signal AEO Plan" : "Free Trial";
+    const planType = isDirect ? "Signal AEO Plan" : "Free Trial Plans";
+    const createdBy = isDirect ? "direct-signup" : "free-trial-signup";
+
     // 3. Create.
     const result = await db.transaction(async (tx) => {
       const [client] = await tx
@@ -419,8 +442,8 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           contactEmail: body.email,
           accountEmail: body.email,
           status: "active",
-          accountType: "Free Trial",
-          planName: "Free Trial",
+          accountType,
+          planName,
           brand: body.brand,
           leadRef: body.leadRef,
           source: body.source,
@@ -428,7 +451,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           lastFourCard: billing?.cardLast4 ?? null,
           billingEmail: billing?.billingEmail ?? null,
           idempotencyKey,
-          createdBy: "free-trial-signup",
+          createdBy,
         })
         .returning({ id: clientsTable.id });
 
@@ -454,7 +477,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           websiteUrl: body.website,
           publishedAddress: body.address,
           status: "active",
-          createdBy: "free-trial-signup",
+          createdBy,
         })
         .returning({ id: businessesTable.id });
 
@@ -463,15 +486,15 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         .values({
           clientId: client.id,
           businessId: business.id,
-          name: "Free Trial",
+          name: planName,
           businessName: body.businessName,
-          planType: "Free Trial Plans",
+          planType,
           searchAddress: body.address,
           subscriptionId: stripeRef,
           cardLast4: billing?.cardLast4 ?? null,
           subscriptionStartDate: billing?.subscriptionStartDate ?? null,
           nextBillingDate: billing?.nextBillingDate ?? null,
-          createdBy: "free-trial-signup",
+          createdBy,
         })
         .returning({ id: clientAeoPlansTable.id });
 
@@ -533,6 +556,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         leadRef: body.leadRef,
         source: body.source,
         firstName: body.firstName,
+        isDirect,
       },
       { log: req.log },
     );
