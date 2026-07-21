@@ -18,6 +18,7 @@ const BASE: FreeTrialEmailInput = {
   brand: "acme",
   leadRef: "L-99",
   source: "website",
+  firstName: null,
 };
 
 interface Captured {
@@ -63,6 +64,8 @@ const tests: Array<[string, () => Promise<void>]> = [
       assert.deepEqual(owner.to, [
         "admin@signalaeo.com",
         "erven.i@appstango.com",
+        "mary@signalaeo.com",
+        "belle.p@appstango.com",
       ]);
       assert.equal(welcome.from.email, "mary@signalaeo.com");
       assert.equal(owner.from.email, "mary@signalaeo.com");
@@ -131,6 +134,65 @@ const tests: Array<[string, () => Promise<void>]> = [
         assert.ok(m.html.includes("&lt;script&gt;"));
         assert.ok(m.html.includes("Bob &amp; Co"));
       }
+    },
+  ],
+  [
+    "firstName personalizes the welcome greeting; null falls back to 'Hi there,'",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const withName: Captured[] = [];
+      await sendFreeTrialEmails(
+        { ...BASE, firstName: "Dana" },
+        { send: fakeSender(withName) },
+      );
+      const welcomeNamed = withName.find((m) =>
+        m.subject.includes("free trial is live"),
+      );
+      assert.ok(welcomeNamed?.html.includes("Hi Dana,"));
+
+      const noName: Captured[] = [];
+      await sendFreeTrialEmails(BASE, { send: fakeSender(noName) });
+      const welcomePlain = noName.find((m) =>
+        m.subject.includes("free trial is live"),
+      );
+      assert.ok(welcomePlain?.html.includes("Hi there,"));
+    },
+  ],
+  [
+    "default owner list is the four owners (admin, erven, mary, belle.p)",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(BASE, { send: fakeSender(sent) });
+      const owner = sent.find((m) => m.subject.startsWith("New free trial:"));
+      assert.deepEqual(owner?.to, [
+        "admin@signalaeo.com",
+        "erven.i@appstango.com",
+        "mary@signalaeo.com",
+        "belle.p@appstango.com",
+      ]);
+    },
+  ],
+  [
+    "firstName is HTML-escaped in the greeting (no injection)",
+    async () => {
+      resetEnv();
+      process.env.SENDGRID_API_KEY = "SG.fake";
+      process.env.ADMIN_FROM_EMAIL = "mary@signalaeo.com";
+      const sent: Captured[] = [];
+      await sendFreeTrialEmails(
+        { ...BASE, firstName: "<b>x</b>" },
+        { send: fakeSender(sent) },
+      );
+      const welcome = sent.find((m) =>
+        m.subject.includes("free trial is live"),
+      );
+      assert.ok(!welcome?.html.includes("Hi <b>x</b>,"));
+      assert.ok(welcome?.html.includes("&lt;b&gt;x&lt;/b&gt;"));
     },
   ],
   [

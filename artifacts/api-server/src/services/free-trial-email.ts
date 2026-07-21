@@ -25,6 +25,8 @@ export interface FreeTrialEmailInput {
   brand: string | null;
   leadRef: string | null;
   source: string | null;
+  /** Customer first name for the greeting; falls back to "Hi there," when null. */
+  firstName: string | null;
 }
 
 export interface FreeTrialEmailResult {
@@ -50,7 +52,12 @@ interface SendOptions {
 }
 
 const WELCOME_SUBJECT = "Welcome to Signal AEO — your free trial is live 🎉";
-const DEFAULT_OWNER_EMAILS = ["admin@signalaeo.com", "erven.i@appstango.com"];
+const DEFAULT_OWNER_EMAILS = [
+  "admin@signalaeo.com",
+  "erven.i@appstango.com",
+  "mary@signalaeo.com",
+  "belle.p@appstango.com",
+];
 const DEFAULT_FROM_NAME = "Signal AEO";
 
 function ownerEmails(): string[] {
@@ -71,10 +78,13 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function welcomeHtml(businessName: string): string {
+function welcomeHtml(businessName: string, firstName: string | null): string {
   const b = escapeHtml(businessName);
+  const greeting = firstName?.trim()
+    ? `Hi ${escapeHtml(firstName.trim())},`
+    : "Hi there,";
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:560px">
-  <p>Hi there,</p>
+  <p>${greeting}</p>
   <p>Welcome to Signal AEO! Your free trial for <strong>${b}</strong> is now active.</p>
   <p>Here's what happens next: we've started working to get ${b} named in AI search. When people ask ChatGPT, Gemini, and Perplexity for businesses like yours, we make sure yours shows up.</p>
   <p>Over the next couple of weeks you'll start seeing ${b} appear in those AI answers — and we'll send you the proof, real screenshots, as your rankings come in.</p>
@@ -86,6 +96,7 @@ function welcomeHtml(businessName: string): string {
 function ownerAlertHtml(input: FreeTrialEmailInput): string {
   const rows: Array<[string, string | null]> = [
     ["Business", input.businessName],
+    ["Contact", input.firstName],
     ["Email", input.recipientEmail],
     ["Client ID", String(input.clientId)],
     ["Proof slug", input.proofClientSlug],
@@ -169,7 +180,7 @@ export async function sendFreeTrialEmails(
       "welcome",
       [input.recipientEmail],
       WELCOME_SUBJECT,
-      welcomeHtml(input.businessName),
+      welcomeHtml(input.businessName, input.firstName),
     ),
     deliver(
       "ownerAlert",

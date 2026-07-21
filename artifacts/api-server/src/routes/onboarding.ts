@@ -11,6 +11,7 @@ import { requireOnboardingToken } from "../middlewares/onboarding-auth";
 import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
 import { sendFreeTrialEmails } from "../services/free-trial-email";
 import { fetchStripeBillingDetails } from "../services/stripe-billing";
+import { regenerateForKeyword } from "../services/variant-rotation";
 
 const router = Router();
 
@@ -193,10 +194,39 @@ interface FreeTrialBody {
   brand: string | null;
   leadRef: string | null;
   source: string | null;
+  /** Full contact name as captured (persisted on the client); may be null. */
+  contactName: string | null;
+  /** First token of the contact name, for the welcome greeting; may be null. */
+  firstName: string | null;
   /** Stripe customer id (cus_) captured at trial signup — preferred. */
   stripeCustomerId: string | null;
   /** Stripe subscription id (sub_) — only once converted to paid. */
   stripeSubscriptionId: string | null;
+}
+
+/**
+ * The contact's full name and first name from whatever the signup form sent.
+ * Accepts `contactName`/`customerName` (full) and/or an explicit `firstName`.
+ */
+function resolveNames(r: Record<string, unknown>): {
+  contactName: string | null;
+  firstName: string | null;
+} {
+  const isStr = (v: unknown): v is string =>
+    typeof v === "string" && v.trim().length > 0;
+  const full = isStr(r.contactName)
+    ? r.contactName.trim()
+    : isStr(r.customerName)
+      ? r.customerName.trim()
+      : isStr(r.firstName)
+        ? r.firstName.trim()
+        : null;
+  const firstName = isStr(r.firstName)
+    ? r.firstName.trim()
+    : full
+      ? full.split(/\s+/)[0] || null
+      : null;
+  return { contactName: full, firstName };
 }
 
 function validateFreeTrial(
@@ -266,6 +296,7 @@ function validateFreeTrial(
       brand: isStr(r.brand) ? r.brand.trim() : null,
       leadRef: isStr(r.leadRef) ? r.leadRef.trim() : null,
       source: isStr(r.source) ? r.source.trim() : null,
+      ...resolveNames(r),
       stripeCustomerId: isStr(r.stripeCustomerId)
         ? r.stripeCustomerId.trim()
         : null,
@@ -384,6 +415,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           businessName: body.businessName,
           websiteUrl: body.website,
           publishedAddress: body.address,
+          accountUserName: body.contactName,
           contactEmail: body.email,
           accountEmail: body.email,
           status: "active",
@@ -467,8 +499,30 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
       };
     });
 
-    // New signup only (idempotent replays returned above) — send the welcome +
-    // owner alert. Fail-soft: never let an email issue break the signup.
+    // New signup only. Auto-generate keyword variants so the device-farm has an
+    // active pool to run against — onboarding creates keywords but the runner
+    // only picks up active variants. Fail-soft per keyword (never blocks the
+    // signup) and parallel so total latency ≈ one DeepSeek call, not N.
+    const variantRuns = await Promise.allSettled(
+      result.keywordIds.map((id) => regenerateForKeyword(id)),
+    );
+    const variantFailures = variantRuns.filter((r) => r.status === "rejected");
+    if (variantFailures.length > 0) {
+      req.log.warn(
+        {
+          clientId: result.clientId,
+          failed: variantFailures.length,
+          total: result.keywordIds.length,
+          errors: variantFailures.map((r) =>
+            r.status === "rejected" ? String(r.reason) : "",
+          ),
+        },
+        "free-trial variant generation had failures",
+      );
+    }
+
+    // Send the welcome + owner alert. Fail-soft: never let an email issue break
+    // the signup.
     const emailResult = await sendFreeTrialEmails(
       {
         businessName: body.businessName,
@@ -478,6 +532,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         brand: body.brand,
         leadRef: body.leadRef,
         source: body.source,
+        firstName: body.firstName,
       },
       { log: req.log },
     );
