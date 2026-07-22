@@ -5,6 +5,7 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthUser {
   id: number;
@@ -67,6 +68,7 @@ async function parseJSON(res: Response) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     apiFetch("/api/auth/me")
@@ -97,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await parseJSON(res);
       if (!userData) throw new Error("No user data in response");
+      // Drop any cached data from a previous session in this browser so the new
+      // user only ever sees their own scoped data (never a prior owner's clients).
+      queryClient.clear();
       setUser(userData);
     } catch (err) {
       throw new Error(
@@ -108,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
     setUser(null);
+    // Wipe the query cache so the next user in this browser can't read the
+    // previous session's cached clients/rankings from React Query.
+    queryClient.clear();
   }
 
   const isOwner = user?.role === "owner";
