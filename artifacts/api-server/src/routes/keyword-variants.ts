@@ -3,9 +3,24 @@ import { db } from "@workspace/db";
 import { keywordVariantsTable, keywordsTable } from "@workspace/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireAdmin } from "../middlewares/role-auth";
+import {
+  requireAdmin,
+  requireExecutorOrSalesAllowed,
+  requireScopedEditor,
+} from "../middlewares/role-auth";
+import { assertScopedAccessToClient } from "../lib/scoped-access";
 import { PROMPT_TEMPLATES } from "../services/prompt-templates";
 import { regenerateForKeyword } from "../services/variant-rotation";
+
+/** Resolve a keyword's owning client id (null if the keyword doesn't exist). */
+async function keywordClientId(keywordId: number): Promise<number | null> {
+  const [kw] = await db
+    .select({ clientId: keywordsTable.clientId })
+    .from(keywordsTable)
+    .where(eq(keywordsTable.id, keywordId))
+    .limit(1);
+  return kw ? kw.clientId : null;
+}
 
 const router = Router();
 
@@ -19,57 +34,78 @@ const router = Router();
    GET /api/keywords/:keywordId/variants
    List variants for a keyword. Defaults to active only.
 ──────────────────────────────────────────────────────────── */
-router.get("/keywords/:keywordId/variants", async (req, res) => {
-  try {
-    const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId))
-      return res.status(400).json({ error: "Invalid keywordId" });
+router.get(
+  "/keywords/:keywordId/variants",
+  requireExecutorOrSalesAllowed,
+  async (req, res) => {
+    try {
+      const keywordId = Number(req.params.keywordId);
+      if (Number.isNaN(keywordId))
+        return res.status(400).json({ error: "Invalid keywordId" });
 
-    const includeInactive = req.query.includeInactive === "true";
-    const where = includeInactive
-      ? eq(keywordVariantsTable.keywordId, keywordId)
-      : and(
-          eq(keywordVariantsTable.keywordId, keywordId),
-          eq(keywordVariantsTable.isActive, true),
-        );
+      // Was previously unauthenticated. Resolve the owning client and scope-check
+      // so a non-owner can't read variants for a keyword outside their slice.
+      const clientId = await keywordClientId(keywordId);
+      if (clientId === null)
+        return res.status(404).json({ error: "Keyword not found" });
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
-    const rows = await db
-      .select()
-      .from(keywordVariantsTable)
-      .where(where)
-      .orderBy(desc(keywordVariantsTable.generatedAt));
-    res.json({ variants: rows, total: rows.length });
-  } catch (err) {
-    req.log.error({ err }, "Error listing variants");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      const includeInactive = req.query.includeInactive === "true";
+      const where = includeInactive
+        ? eq(keywordVariantsTable.keywordId, keywordId)
+        : and(
+            eq(keywordVariantsTable.keywordId, keywordId),
+            eq(keywordVariantsTable.isActive, true),
+          );
+
+      const rows = await db
+        .select()
+        .from(keywordVariantsTable)
+        .where(where)
+        .orderBy(desc(keywordVariantsTable.generatedAt));
+      res.json({ variants: rows, total: rows.length });
+    } catch (err) {
+      req.log.error({ err }, "Error listing variants");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* ────────────────────────────────────────────────────────────
    POST /api/keywords/:keywordId/variants/regenerate
    Generate fresh variants for one keyword. Marks prior active
    variants inactive (kept for history) and inserts new batch.
 ──────────────────────────────────────────────────────────── */
-router.post("/keywords/:keywordId/variants/regenerate", async (req, res) => {
-  try {
-    const keywordId = Number(req.params.keywordId);
-    if (Number.isNaN(keywordId))
-      return res.status(400).json({ error: "Invalid keywordId" });
+router.post(
+  "/keywords/:keywordId/variants/regenerate",
+  requireScopedEditor,
+  async (req, res) => {
+    try {
+      const keywordId = Number(req.params.keywordId);
+      if (Number.isNaN(keywordId))
+        return res.status(400).json({ error: "Invalid keywordId" });
 
-    const body = (req.body ?? {}) as { count?: number };
-    const count = body.count != null ? Number(body.count) : undefined;
-    if (count != null && (Number.isNaN(count) || count <= 0 || count > 100)) {
-      return res.status(400).json({ error: "count must be 1-100" });
+      // Was previously unauthenticated (and triggers an LLM call). Gate + scope.
+      const clientId = await keywordClientId(keywordId);
+      if (clientId === null)
+        return res.status(404).json({ error: "Keyword not found" });
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+
+      const body = (req.body ?? {}) as { count?: number };
+      const count = body.count != null ? Number(body.count) : undefined;
+      if (count != null && (Number.isNaN(count) || count <= 0 || count > 100)) {
+        return res.status(400).json({ error: "count must be 1-100" });
+      }
+
+      const out = await regenerateForKeyword(keywordId, count);
+      res.json(out);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      req.log.error({ err }, "Error regenerating variants");
+      res.status(500).json({ error: message });
     }
-
-    const out = await regenerateForKeyword(keywordId, count);
-    res.json(out);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    req.log.error({ err }, "Error regenerating variants");
-    res.status(500).json({ error: message });
-  }
-});
+  },
+);
 
 /* ────────────────────────────────────────────────────────────
    GET /api/keywords/:keywordId/variants/random
@@ -199,7 +235,10 @@ router.post(
    variant + search + followup pipeline. Surfaces them in the
    admin /prompts page so Mary/Russ can audit what is shipping.
 ──────────────────────────────────────────────────────────── */
-router.get("/prompt-templates", async (_req, res) => {
+router.get(
+  "/prompt-templates",
+  requireExecutorOrSalesAllowed,
+  async (_req, res) => {
   res.json({ templates: PROMPT_TEMPLATES });
 });
 

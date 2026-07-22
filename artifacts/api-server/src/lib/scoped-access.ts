@@ -14,20 +14,18 @@ import type { Request, Response } from "express";
 import { inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { clientAeoPlansTable, clientsTable } from "@workspace/db/schema";
-import {
-  isSales,
-  isAccountManager,
-  isChucksLocal,
-} from "../middlewares/role-auth";
 
 /**
- * Every non-owner admin role (sales, account-manager, chuckslocal) is a
- * plan-scoped role limited to the local plans. Owners and the unscoped
- * admin-panel chain (viewer/editor/admin) are NOT scoped — they see all plans.
- * Policy: free-trial and every non-local plan are owner-only.
+ * ONLY the owner sees every plan. Every other logged-in role — sales,
+ * account-manager, chuckslocal, AND the admin-panel chain (viewer/editor/admin)
+ * — is confined to the local plans (LOCAL_ADMIN_PLAN_TYPES). Policy: free-trial
+ * and every non-local plan are OWNER-ONLY. Token-based runners have no session
+ * role and are treated as unscoped (they need full access to do their job).
  */
 export function isScopedRole(req: Request): boolean {
-  return isSales(req) || isAccountManager(req) || isChucksLocal(req);
+  const session = req.session as unknown as Record<string, unknown>;
+  const role = session.userRole as string | undefined;
+  return typeof role === "string" && role !== "owner";
 }
 
 /**
