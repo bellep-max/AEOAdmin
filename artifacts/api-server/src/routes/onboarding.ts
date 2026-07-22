@@ -398,12 +398,19 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
     (body.brand && body.leadRef ? `${body.brand}:${body.leadRef}` : null);
 
   try {
-    // 1. Idempotency by explicit lead key (preferred).
+    // 1. Idempotency by explicit lead key (preferred). Only active clients
+    //    dedup — a soft-deleted (status='inactive') client must not block a
+    //    re-signup, else the customer is "already deleted but not restarting".
     if (idempotencyKey) {
       const [byKey] = await db
         .select({ id: clientsTable.id })
         .from(clientsTable)
-        .where(eq(clientsTable.idempotencyKey, idempotencyKey))
+        .where(
+          and(
+            eq(clientsTable.idempotencyKey, idempotencyKey),
+            ne(clientsTable.status, "inactive"),
+          ),
+        )
         .limit(1);
       if (byKey) {
         const proof = await buildProofResponse(byKey.id);
@@ -412,14 +419,19 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
     }
 
     // 2. Idempotency by email (the floor — never duplicate a client per email).
+    //    Same active-only rule: a deleted client with this email must not
+    //    swallow the new signup.
     const [byEmail] = await db
       .select({ id: clientsTable.id })
       .from(clientsTable)
       .where(
-        or(
-          sql`lower(${clientsTable.contactEmail}) = ${body.email}`,
-          sql`lower(${clientsTable.accountEmail}) = ${body.email}`,
-          sql`lower(${clientsTable.billingEmail}) = ${body.email}`,
+        and(
+          ne(clientsTable.status, "inactive"),
+          or(
+            sql`lower(${clientsTable.contactEmail}) = ${body.email}`,
+            sql`lower(${clientsTable.accountEmail}) = ${body.email}`,
+            sql`lower(${clientsTable.billingEmail}) = ${body.email}`,
+          ),
         ),
       )
       .limit(1);
