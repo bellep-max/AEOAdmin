@@ -12,15 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  LogOut,
-  Bell,
-  Sun,
-  Moon,
-  User,
-  ChevronLeft,
-  UserCircle,
-} from "lucide-react";
+import { LogOut, Sun, Moon, User, ChevronLeft, UserCircle } from "lucide-react";
+import { NotificationBell } from "./NotificationBell";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
@@ -83,13 +76,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {user && (
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground relative"
-              >
-                <Bell className="w-4 h-4" />
-              </Button>
+              <NotificationBell />
 
               {/* Theme Toggle */}
               <Button
