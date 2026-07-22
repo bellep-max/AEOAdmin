@@ -19,6 +19,7 @@ const BASE: FreeTrialEmailInput = {
   leadRef: "L-99",
   source: "website",
   firstName: null,
+  city: null,
   isDirect: false,
 };
 

@@ -27,6 +27,8 @@ export interface FreeTrialEmailInput {
   source: string | null;
   /** Customer first name for the greeting; falls back to "Hi there," when null. */
   firstName: string | null;
+  /** City, used to localize the welcome copy ("...in {city}"); may be null. */
+  city: string | null;
   /** Direct (paid) signup vs free trial — changes the welcome copy. */
   isDirect: boolean;
 }
@@ -82,24 +84,36 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+const CALENDLY_URL =
+  "https://calendly.com/contact-signalaeo/fix-my-ai-ranking-15-min";
+
 function welcomeHtml(
   businessName: string,
   firstName: string | null,
   isDirect: boolean,
+  city: string | null,
 ): string {
   const b = escapeHtml(businessName);
+  const c = city?.trim() ? escapeHtml(city.trim()) : null;
+  const inCity = c ? ` in ${c}` : ""; // localizes the copy only when we have a city
   const greeting = firstName?.trim()
     ? `Hi ${escapeHtml(firstName.trim())},`
     : "Hi there,";
   const openingLine = isDirect
-    ? `Welcome to Signal AEO! We're getting started on <strong>${b}</strong> now.`
-    : `Welcome to Signal AEO! Your free trial for <strong>${b}</strong> is now active.`;
+    ? `Welcome to Signal AEO! We're getting started on <strong>${b}</strong>${inCity} now.`
+    : `Welcome to Signal AEO! Your free trial for <strong>${b}</strong>${inCity} is now active.`;
+  // Trial signups get the "we'll convert you when you rank top 3" promise;
+  // direct (already-paid) signups just get the sit-back line.
+  const closingLine = isDirect
+    ? `<p>There's nothing you need to do right now — just sit back while we go to work.</p>`
+    : `<p>There's nothing you need to do right now. Just sit back while we go to work. We'll convert your free trial to the paid plan when we send you proof that you're ranking in the top 3.</p>`;
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;max-width:560px">
   <p>${greeting}</p>
   <p>${openingLine}</p>
-  <p>Here's what happens next: we've started working to get ${b} named in AI search. When people ask ChatGPT, Gemini, and Perplexity for businesses like yours, we make sure yours shows up.</p>
-  <p>Over the next couple of weeks you'll start seeing ${b} appear in those AI answers — and we'll send you the proof, real screenshots, as your rankings come in.</p>
-  <p>There's nothing you need to do right now. Just sit back while we go to work. Questions? Just reply to this email.</p>
+  <p>Here's what happens next: we've started working to get ${b} named in AI searches${inCity}. When people${inCity} ask ChatGPT, Gemini, and Perplexity for businesses like yours, we make sure you show up in the answer.</p>
+  <p>Over the next couple of weeks you'll start seeing ${b} appear in those AI answers — and we'll send you the proof (real screenshots) as your rankings come in.</p>
+  ${closingLine}
+  <p>Questions? Just reply to this email or <a href="${CALENDLY_URL}">schedule a call with us here</a>.</p>
   <p>Welcome aboard,<br/><strong>The Signal AEO Team</strong></p>
 </div>`;
 }
@@ -192,7 +206,12 @@ export async function sendFreeTrialEmails(
       "welcome",
       [input.recipientEmail],
       input.isDirect ? WELCOME_SUBJECT_DIRECT : WELCOME_SUBJECT_TRIAL,
-      welcomeHtml(input.businessName, input.firstName, input.isDirect),
+      welcomeHtml(
+        input.businessName,
+        input.firstName,
+        input.isDirect,
+        input.city,
+      ),
     ),
     deliver(
       "ownerAlert",

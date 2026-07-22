@@ -192,6 +192,8 @@ interface FreeTrialBody {
   keywords: string[];
   email: string;
   address: string | null;
+  /** City, used to localize the welcome email copy; may be null. */
+  city: string | null;
   website: string | null;
   /** Business service/category, used to generate keywords when none are sent. */
   service: string | null;
@@ -264,6 +266,7 @@ function validateFreeTrial(
   }
   for (const opt of [
     "address",
+    "city",
     "website",
     "service",
     "brand",
@@ -317,6 +320,7 @@ function validateFreeTrial(
             .filter((k) => k.length > 0)
         : [],
       address: isStr(r.address) ? r.address.trim() : null,
+      city: isStr(r.city) ? r.city.trim() : null,
       website: isStr(r.website) ? r.website.trim() : null,
       service: isStr(r.service) ? r.service.trim() : null,
       brand: isStr(r.brand) ? r.brand.trim() : null,
@@ -598,6 +602,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         leadRef: body.leadRef,
         source: body.source,
         firstName: body.firstName,
+        city: body.city,
         isDirect,
       },
       { log: req.log },
