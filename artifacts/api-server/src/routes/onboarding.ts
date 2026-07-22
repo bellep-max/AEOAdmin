@@ -462,6 +462,12 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
     const planName = isDirect ? "Signal AEO Plan" : "Free Trial";
     const planType = isDirect ? "Signal AEO Plan" : "Free Trial Plans";
     const createdBy = isDirect ? "direct-signup" : "free-trial-signup";
+    // Campaign name follows the admin convention "{Business} — {Full address}"
+    // so trial campaigns are identifiable instead of all reading "Free Trial".
+    // Falls back to the business name alone when no address was captured.
+    const campaignName = body.address
+      ? `${body.businessName} — ${body.address}`
+      : body.businessName;
 
     // 3. Create.
     const result = await db.transaction(async (tx) => {
@@ -519,7 +525,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         .values({
           clientId: client.id,
           businessId: business.id,
-          name: planName,
+          name: campaignName,
           businessName: body.businessName,
           planType,
           searchAddress: body.address,
