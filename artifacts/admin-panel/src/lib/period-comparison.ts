@@ -72,6 +72,9 @@ export interface PeriodFilters {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  /** Filter to keywords whose campaign is on this plan type. Role-scoped:
+   *  non-owners can only ever pass "AEO SEO Local Plan". */
+  planType?: string | null;
   /* Optional ET YYYY-MM-DD overrides. When set, that column's source row
      is pinned to the audit on that exact date per (keyword, platform). */
   firstDate?: string | null;
@@ -87,6 +90,7 @@ export function buildPeriodUrl(filters: PeriodFilters): string {
     params.set("businessId", String(filters.businessId));
   if (filters.aeoPlanId != null)
     params.set("aeoPlanId", String(filters.aeoPlanId));
+  if (filters.planType) params.set("planType", filters.planType);
   if (filters.firstDate) params.set("firstDate", filters.firstDate);
   if (filters.prevDate) params.set("prevDate", filters.prevDate);
   if (filters.currentDate) params.set("currentDate", filters.currentDate);
@@ -107,6 +111,7 @@ export function usePeriodComparison(
       filters.clientId,
       filters.businessId,
       filters.aeoPlanId,
+      filters.planType ?? null,
       filters.firstDate ?? null,
       filters.prevDate ?? null,
       filters.currentDate ?? null,

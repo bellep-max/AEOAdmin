@@ -687,7 +687,9 @@ router.get("/campaign-screenshots", requireSalesEmail, async (req, res) => {
       );
     const targetAddresses = Array.from(
       new Set(
-        plans.map((p) => p.searchAddress?.trim()).filter((a): a is string => !!a),
+        plans
+          .map((p) => p.searchAddress?.trim())
+          .filter((a): a is string => !!a),
       ),
     );
 
@@ -1063,6 +1065,9 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
       ? Number.parseInt(String(req.query.clientId), 10)
       : null;
     const kind = req.query.kind ? String(req.query.kind) : null;
+    const planType = req.query.planType
+      ? String(req.query.planType).trim()
+      : null;
     const scopedIds = await getScopedClientIds(req);
     if (scopedIds !== null && scopedIds.length === 0)
       return res.json({ sends: [] });
@@ -1072,6 +1077,7 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
         clientId: emailSendsTable.clientId,
         clientName: clientsTable.businessName,
         campaignName: clientAeoPlansTable.name,
+        planType: clientAeoPlansTable.planType,
         sentAt: emailSendsTable.sentAt,
         recipients: emailSendsTable.recipients,
         intendedRecipients: emailSendsTable.intendedRecipients,
@@ -1105,6 +1111,7 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
             ? eq(emailSendsTable.clientId, clientId)
             : undefined,
           kind ? eq(emailSendsTable.kind, kind) : undefined,
+          planType ? eq(clientAeoPlansTable.planType, planType) : undefined,
           scopedIds !== null
             ? inArray(emailSendsTable.clientId, scopedIds)
             : undefined,

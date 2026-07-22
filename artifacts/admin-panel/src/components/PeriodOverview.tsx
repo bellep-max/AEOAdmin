@@ -14,18 +14,19 @@ interface Props {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  planType?: string | null;
   activePeriod: Period;
   onSelect: (p: Period) => void;
 }
 
 const PERIODS: Exclude<Period, "lifetime">[] = ["weekly", "monthly", "quarterly"];
 
-export function PeriodOverview({ clientId, businessId, aeoPlanId, activePeriod, onSelect }: Props) {
+export function PeriodOverview({ clientId, businessId, aeoPlanId, planType = null, activePeriod, onSelect }: Props) {
   const queries = useQueries({
     queries: PERIODS.map((p) => ({
-      queryKey: ["/api/ranking-reports/period-comparison", p, clientId, businessId, aeoPlanId],
+      queryKey: ["/api/ranking-reports/period-comparison", p, clientId, businessId, aeoPlanId, planType],
       queryFn: async () => {
-        const res = await rawFetch(buildPeriodUrl({ period: p, clientId, businessId, aeoPlanId }));
+        const res = await rawFetch(buildPeriodUrl({ period: p, clientId, businessId, aeoPlanId, planType }));
         if (!res.ok) throw new Error("Failed");
         return res.json() as Promise<PeriodResponse>;
       },

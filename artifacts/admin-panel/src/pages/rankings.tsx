@@ -40,6 +40,7 @@ import {
   type PeriodResponse,
   type PeriodRow,
 } from "@/lib/period-comparison";
+import { usePlanTypes } from "@/lib/plan-types";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -573,6 +574,7 @@ export default function Rankings() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
     null,
   );
+  const [selectedPlanType, setSelectedPlanType] = useState<string | null>(null);
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
   /* Optional per-column date overrides (ET YYYY-MM-DD). When set, the
@@ -627,6 +629,9 @@ export default function Rankings() {
     },
   });
 
+  // Role-scoped plan-type options (owner: all; everyone else: local plan only).
+  const { data: planTypes = [] } = usePlanTypes();
+
   const { data: unscannedCount } = useQuery<number>({
     queryKey: ["/api/screenshot-scan/unscanned-count"],
     queryFn: async () => {
@@ -679,6 +684,7 @@ export default function Rankings() {
     selectedClientId !== null ||
     selectedBusinessId !== null ||
     selectedCampaignId !== null ||
+    selectedPlanType !== null ||
     firstDateOverride !== null ||
     prevDateOverride !== null ||
     currentDateOverride !== null;
@@ -686,13 +692,16 @@ export default function Rankings() {
   // Lazy-load: hold the (large) all-clients fetch until a client is picked.
   // The page lagged badly loading every client up front; now nothing loads
   // until the operator selects a client.
-  const clientChosen = selectedClientId !== null;
+  // A plan-type filter is cross-client, so it also unlocks the query even when
+  // no single client is picked (loads every client on that plan the role sees).
+  const clientChosen = selectedClientId !== null || selectedPlanType !== null;
   const { data: periodData } = usePeriodComparison(
     {
       period: effectivePeriod,
       clientId: selectedClientId,
       businessId: selectedBusinessId,
       aeoPlanId: selectedCampaignId,
+      planType: selectedPlanType,
       firstDate: firstDateOverride,
       prevDate: prevDateOverride,
       currentDate: currentDateOverride,
@@ -942,6 +951,23 @@ export default function Rankings() {
             ))}
           </SelectContent>
         </Select>
+        <span className="text-slate-400">›</span>
+        <Select
+          value={selectedPlanType ?? "all"}
+          onValueChange={(v) => setSelectedPlanType(v === "all" ? null : v)}
+        >
+          <SelectTrigger className="w-52 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
+            <SelectValue placeholder="All Plans" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Plans</SelectItem>
+            {planTypes.map((pt) => (
+              <SelectItem key={pt} value={pt}>
+                {pt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1" />
         <ColumnDatePicker
           label="First"
@@ -996,6 +1022,7 @@ export default function Rankings() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setSelectedPlanType(null);
               setFirstDateOverride(null);
               setPrevDateOverride(null);
               setCurrentDateOverride(null);
@@ -1062,6 +1089,7 @@ export default function Rankings() {
               clientId={selectedClientId}
               businessId={selectedBusinessId}
               aeoPlanId={selectedCampaignId}
+              planType={selectedPlanType}
               activePeriod={period}
               onSelect={(p) => setPeriod(p)}
             />
@@ -1073,6 +1101,7 @@ export default function Rankings() {
             clientId={selectedClientId}
             businessId={selectedBusinessId}
             aeoPlanId={selectedCampaignId}
+            planType={selectedPlanType}
             comparisonOnly={comparisonOnly}
             auditDate={auditDate}
             firstDate={firstDateOverride}

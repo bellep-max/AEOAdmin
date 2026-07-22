@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { rawFetch } from "@/lib/period-comparison";
+import { usePlanTypes } from "@/lib/plan-types";
 import { BarChart3, Building2, X, Download, FileDown } from "lucide-react";
 import {
   ExportBiWeeklyDialog,
@@ -43,7 +44,9 @@ export default function RankingsBiWeekly() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
     null,
   );
+  const [selectedPlanType, setSelectedPlanType] = useState<string | null>(null);
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
+  const { data: planTypes = [] } = usePlanTypes();
 
   const { data: allClients } = useQuery<ClientRow[]>({
     queryKey: ["/api/clients"],
@@ -90,7 +93,8 @@ export default function RankingsBiWeekly() {
   const filtersActive =
     selectedClientId !== null ||
     selectedBusinessId !== null ||
-    selectedCampaignId !== null;
+    selectedCampaignId !== null ||
+    selectedPlanType !== null;
 
   return (
     <div className="space-y-5">
@@ -200,6 +204,23 @@ export default function RankingsBiWeekly() {
             ))}
           </SelectContent>
         </Select>
+        <span className="text-slate-400">›</span>
+        <Select
+          value={selectedPlanType ?? "all"}
+          onValueChange={(v) => setSelectedPlanType(v === "all" ? null : v)}
+        >
+          <SelectTrigger className="w-52 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
+            <SelectValue placeholder="All Plans" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Plans</SelectItem>
+            {planTypes.map((pt) => (
+              <SelectItem key={pt} value={pt}>
+                {pt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {filtersActive && (
           <button
             type="button"
@@ -207,6 +228,7 @@ export default function RankingsBiWeekly() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setSelectedPlanType(null);
             }}
             className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
           >
@@ -215,7 +237,7 @@ export default function RankingsBiWeekly() {
         )}
       </div>
 
-      {selectedClientId === null ? (
+      {selectedClientId === null && selectedPlanType === null ? (
         <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-center">
           <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
           <p className="text-sm font-medium">
@@ -231,6 +253,7 @@ export default function RankingsBiWeekly() {
           clientId={selectedClientId}
           businessId={selectedBusinessId}
           aeoPlanId={selectedCampaignId}
+          planType={selectedPlanType}
         />
       )}
 

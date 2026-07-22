@@ -13,9 +13,39 @@ import { clientAeoPlansTable } from "@workspace/db/schema";
 import { clientsTable } from "@workspace/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { requireSalesAllowed } from "../middlewares/role-auth";
-import { getScopedClientIds } from "../lib/scoped-access";
+import {
+  getScopedClientIds,
+  isScopedRole,
+  LOCAL_ADMIN_PLAN_TYPES,
+} from "../lib/scoped-access";
 
 const router = Router();
+
+/**
+ * GET /api/aeo-plans/plan-types
+ * The distinct plan types the current session may filter by. Owners get every
+ * plan type present in client_aeo_plans; every scoped role gets ONLY the local
+ * plans (they can never see free-trial / non-local plans). Powers the role-aware
+ * "plan type" filter on the Rankings and Sent Emails pages.
+ */
+router.get("/plan-types", requireSalesAllowed, async (req, res) => {
+  try {
+    if (isScopedRole(req)) {
+      return res.json({ planTypes: [...LOCAL_ADMIN_PLAN_TYPES] });
+    }
+    const rows = await db
+      .selectDistinct({ planType: clientAeoPlansTable.planType })
+      .from(clientAeoPlansTable);
+    const planTypes = rows
+      .map((r) => r.planType)
+      .filter((p): p is string => !!p && p.trim().length > 0)
+      .sort((a, b) => a.localeCompare(b));
+    res.json({ planTypes });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching plan types");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /**
  * GET /api/aeo-plans

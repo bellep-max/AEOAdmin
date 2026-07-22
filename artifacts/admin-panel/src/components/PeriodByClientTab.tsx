@@ -29,6 +29,7 @@ interface Props {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  planType?: string | null;
   /* When true, drop keywords where no platform has a prior rank (Loose
      "has comparison" rule). State is owned by the parent so CSV/PDF
      exports respect the same toggle. */
@@ -92,6 +93,7 @@ export function PeriodByClientTab({
   clientId,
   businessId,
   aeoPlanId,
+  planType = null,
   comparisonOnly = false,
   auditDate = "all",
   firstDate = null,
@@ -112,6 +114,7 @@ export function PeriodByClientTab({
     clientId,
     businessId,
     aeoPlanId,
+    planType,
     firstDate,
     prevDate,
     currentDate,

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { rawFetch } from "@/lib/period-comparison";
+import { usePlanTypes } from "@/lib/plan-types";
 import {
   MailCheck,
   Eye,
@@ -213,16 +214,19 @@ function GhlChip({ status }: { status: string | null }) {
 export default function SentEmails() {
   const [kind, setKind] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
+  const [planType, setPlanType] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   const [viewId, setViewId] = useState<number | null>(null);
   const qc = useQueryClient();
+  const { data: planTypes = [] } = usePlanTypes();
 
   const { data, isLoading } = useQuery<{ sends: SendRow[] }>({
-    queryKey: ["/api/sales/email-sends", kind],
+    queryKey: ["/api/sales/email-sends", kind, planType],
     queryFn: async () => {
       const p = new URLSearchParams();
       if (kind !== "all") p.set("kind", kind);
+      if (planType !== "all") p.set("planType", planType);
       const res = await rawFetch(`/api/sales/email-sends?${p}`);
       if (!res.ok) throw new Error("Failed to load sent emails");
       return res.json();
@@ -311,11 +315,15 @@ export default function SentEmails() {
   }, [page, pageCount]);
   useEffect(() => {
     setPage(1);
-  }, [search, status, kind]);
+  }, [search, status, kind, planType]);
 
   const start = (page - 1) * PAGE_SIZE;
   const paged = filtered.slice(start, start + PAGE_SIZE);
-  const hasFilters = search.trim() !== "" || status !== "all";
+  const hasFilters =
+    search.trim() !== "" ||
+    status !== "all" ||
+    kind !== "all" ||
+    planType !== "all";
 
   return (
     <div className="space-y-5">
@@ -405,6 +413,19 @@ export default function SentEmails() {
             <SelectItem value="report">Ranking reports</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={planType} onValueChange={setPlanType}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="All plans" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All plans</SelectItem>
+            {planTypes.map((pt) => (
+              <SelectItem key={pt} value={pt}>
+                {pt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {hasFilters && (
           <Button
             variant="ghost"
@@ -413,6 +434,8 @@ export default function SentEmails() {
             onClick={() => {
               setSearch("");
               setStatus("all");
+              setKind("all");
+              setPlanType("all");
             }}
           >
             <X className="w-3.5 h-3.5" /> Clear

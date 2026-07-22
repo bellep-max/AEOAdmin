@@ -810,6 +810,10 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
     const aeoPlanId = req.query.aeoPlanId
       ? parseInt(req.query.aeoPlanId as string, 10)
       : null;
+    const planType =
+      typeof req.query.planType === "string" && req.query.planType.trim()
+        ? (req.query.planType as string).trim()
+        : null;
 
     /* Optional date overrides — pin one column to a specific ET YYYY-MM-DD.
        When present, that column ignores the period window and picks the
@@ -878,6 +882,11 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       if (clientId != null && kw.clientId !== clientId) return false;
       if (businessId != null && kw.businessId !== businessId) return false;
       if (aeoPlanId != null && kw.aeoPlanId !== aeoPlanId) return false;
+      if (planType != null) {
+        const plan =
+          kw.aeoPlanId != null ? planMap.get(kw.aeoPlanId) : undefined;
+        if (!plan || plan.planType !== planType) return false;
+      }
       return true;
     };
 
@@ -1242,11 +1251,15 @@ router.get(
       const aeoPlanId = req.query.aeoPlanId
         ? parseInt(req.query.aeoPlanId as string, 10)
         : null;
+      const planType =
+        typeof req.query.planType === "string" && req.query.planType.trim()
+          ? (req.query.planType as string).trim()
+          : null;
 
       /* Filter sub-clause and params shared by every CTE. The text-based
          date column requires explicit ::date casts for arithmetic. */
       const conds: string[] = ["date IS NOT NULL"];
-      const params: (number | number[] | null)[] = [];
+      const params: (number | number[] | string | null)[] = [];
       if (clientId !== null) {
         params.push(clientId);
         conds.push(`client_id = $${params.length}`);
@@ -1259,6 +1272,12 @@ router.get(
         params.push(aeoPlanId);
         conds.push(
           `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
+        );
+      }
+      if (planType !== null) {
+        params.push(planType);
+        conds.push(
+          `keyword_id IN (SELECT k.id FROM keywords k JOIN client_aeo_plans p ON k.aeo_plan_id = p.id WHERE p.plan_type = $${params.length})`,
         );
       }
       /* Sales role: restrict to free-trial client ids. Layered ON TOP OF
