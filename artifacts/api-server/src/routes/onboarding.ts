@@ -12,6 +12,7 @@ import { requireFreeTrialToken } from "../middlewares/free-trial-auth";
 import { sendFreeTrialEmails } from "../services/free-trial-email";
 import { fetchStripeBillingDetails } from "../services/stripe-billing";
 import { regenerateForKeyword } from "../services/variant-rotation";
+import { generateKeywords } from "../services/keyword-generator";
 
 const router = Router();
 
@@ -187,10 +188,13 @@ router.post("/", requireOnboardingToken, async (req, res) => {
 // ── Free-trial signup intake (external marketing site) ──
 interface FreeTrialBody {
   businessName: string;
-  email: string;
+  /** May be empty — when so, the admin generates the keyword set server-side. */
   keywords: string[];
+  email: string;
   address: string | null;
   website: string | null;
+  /** Business service/category, used to generate keywords when none are sent. */
+  service: string | null;
   brand: string | null;
   leadRef: string | null;
   source: string | null;
@@ -250,16 +254,22 @@ function validateFreeTrial(
     return { ok: false, error: "email is not a valid email" };
   }
   if (
-    !Array.isArray(r.keywords) ||
-    r.keywords.length === 0 ||
-    !r.keywords.every(isStr)
+    r.keywords != null &&
+    (!Array.isArray(r.keywords) || !r.keywords.every(isStr))
   ) {
     return {
       ok: false,
-      error: "keywords must be a non-empty array of strings",
+      error: "keywords must be an array of strings if provided",
     };
   }
-  for (const opt of ["address", "website", "brand", "leadRef", "source"]) {
+  for (const opt of [
+    "address",
+    "website",
+    "service",
+    "brand",
+    "leadRef",
+    "source",
+  ]) {
     if (r[opt] != null && typeof r[opt] !== "string") {
       return { ok: false, error: `${opt} must be a string if provided` };
     }
@@ -301,11 +311,14 @@ function validateFreeTrial(
     body: {
       businessName: r.businessName.trim(),
       email: r.email.trim().toLowerCase(),
-      keywords: (r.keywords as string[])
-        .map((k) => k.trim())
-        .filter((k) => k.length > 0),
+      keywords: Array.isArray(r.keywords)
+        ? (r.keywords as string[])
+            .map((k) => k.trim())
+            .filter((k) => k.length > 0)
+        : [],
       address: isStr(r.address) ? r.address.trim() : null,
       website: isStr(r.website) ? r.website.trim() : null,
+      service: isStr(r.service) ? r.service.trim() : null,
       brand: isStr(r.brand) ? r.brand.trim() : null,
       leadRef: isStr(r.leadRef) ? r.leadRef.trim() : null,
       source: isStr(r.source) ? r.source.trim() : null,
@@ -421,6 +434,26 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
       ? await fetchStripeBillingDetails(stripeRef, { log: req.log })
       : null;
 
+    // The admin owns the keyword set: when the signup arrives without keywords
+    // (the marketing site no longer generates them), we generate them here from
+    // the business, service, and location. Kept out of the transaction (network
+    // I/O). Fail-soft — the client is still created if generation fails; keywords
+    // can be added later on the admin Keywords page.
+    let keywords = body.keywords;
+    if (keywords.length === 0) {
+      try {
+        const gen = await generateKeywords({
+          businessName: body.businessName,
+          service: body.service,
+          location: body.address,
+          website: body.website,
+        });
+        keywords = gen.keywords;
+      } catch (err) {
+        req.log.error({ err }, "free-trial keyword generation failed");
+      }
+    }
+
     // Direct signups become a paid "Signal AEO Plan" client; trials stay on
     // "Free Trial Plans". The Stripe subscription start is manual in both cases —
     // this only sets how the client is labelled and routed in the admin.
@@ -498,20 +531,23 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
         })
         .returning({ id: clientAeoPlansTable.id });
 
-      const insertedKws = await tx
-        .insert(keywordsTable)
-        .values(
-          body.keywords.map((text, idx) => ({
-            clientId: client.id,
-            businessId: business.id,
-            aeoPlanId: plan.id,
-            keywordText: text,
-            keywordType: 3,
-            isActive: true,
-            isPrimary: idx === 0 ? 1 : 0,
-          })),
-        )
-        .returning({ id: keywordsTable.id });
+      const insertedKws =
+        keywords.length > 0
+          ? await tx
+              .insert(keywordsTable)
+              .values(
+                keywords.map((text, idx) => ({
+                  clientId: client.id,
+                  businessId: business.id,
+                  aeoPlanId: plan.id,
+                  keywordText: text,
+                  keywordType: 3,
+                  isActive: true,
+                  isPrimary: idx === 0 ? 1 : 0,
+                })),
+              )
+              .returning({ id: keywordsTable.id })
+          : [];
 
       return {
         clientId: client.id,
