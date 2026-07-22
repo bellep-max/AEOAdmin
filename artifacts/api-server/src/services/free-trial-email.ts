@@ -1,4 +1,6 @@
 import sgMail from "@sendgrid/mail";
+import { db } from "@workspace/db";
+import { emailSendsTable } from "@workspace/db/schema";
 
 /**
  * Free-trial signup emails: a welcome to the new customer and an alert to the
@@ -220,6 +222,40 @@ export async function sendFreeTrialEmails(
       ownerAlertHtml(input),
     ),
   ]);
+
+  // Record the client-facing welcome send so it shows up (typed "Welcome") on
+  // the Sent Emails page. Fail-soft: a logging failure must never break signup.
+  if (input.clientId != null) {
+    try {
+      await db.insert(emailSendsTable).values({
+        clientId: input.clientId,
+        recipients: safeOverride ? [safeOverride] : [input.recipientEmail],
+        intendedRecipients: safeOverride ? [input.recipientEmail] : null,
+        fromEmail,
+        subject: input.isDirect
+          ? WELCOME_SUBJECT_DIRECT
+          : WELCOME_SUBJECT_TRIAL,
+        status: welcome === "sent" ? "sent" : "failed",
+        latestStatus: welcome === "sent" ? "sent" : "failed",
+        deliveredVia: "sendgrid",
+        kind: "welcome",
+        html: welcomeHtml(
+          input.businessName,
+          input.firstName,
+          input.isDirect,
+          input.city,
+        ),
+        meta: {
+          isDirect: input.isDirect,
+          leadRef: input.leadRef ?? null,
+          source: input.source ?? null,
+        },
+        error: welcome === "sent" ? null : "welcome send failed",
+      });
+    } catch (err) {
+      log?.error({ err }, "failed to record welcome email send");
+    }
+  }
 
   return { welcome, ownerAlert, errors };
 }

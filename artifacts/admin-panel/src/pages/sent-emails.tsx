@@ -48,6 +48,7 @@ interface SendRow {
     afterRank?: number;
     business?: string;
     mode?: string;
+    template?: string;
   } | null;
   ghlStatus: string | null;
   error: string | null;
@@ -101,6 +102,21 @@ const LIFECYCLE: Record<
   },
   failed: { label: "Failed", cls: "border-red-300 text-red-700 bg-red-50" },
 };
+
+/* Human-readable email type: refines the raw `kind` with the sales template so
+   the operator sees Welcome / First Proof / Ranking Report at a glance. */
+function emailTypeLabel(row: SendRow): string {
+  if (row.kind === "welcome") return "Welcome";
+  if (row.kind === "report") return "Ranking Report";
+  if (row.kind === "sales") {
+    const t = row.meta?.template;
+    if (t === "first_proof") return "First Proof";
+    if (t === "free_trial_proof") return "Free-Trial Proof";
+    if (t === "second_keyword") return "Founder's Discount";
+    return "Sales";
+  }
+  return row.kind ?? "—";
+}
 
 /* The lifecycle key a row displays as (mirrors LifecycleBadge). */
 function effectiveStatus(row: SendRow): string {
@@ -408,8 +424,9 @@ export default function SentEmails() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All kinds</SelectItem>
-            <SelectItem value="sales">Sales emails</SelectItem>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="welcome">Welcome</SelectItem>
+            <SelectItem value="sales">Sales / proof</SelectItem>
             <SelectItem value="report">Ranking reports</SelectItem>
           </SelectContent>
         </Select>
@@ -496,9 +513,7 @@ export default function SentEmails() {
                 )}
               </div>
               <div className="col-span-1">
-                <Badge variant="secondary" className="capitalize">
-                  {s.kind ?? "—"}
-                </Badge>
+                <Badge variant="secondary">{emailTypeLabel(s)}</Badge>
               </div>
               <div className="col-span-1 flex flex-col gap-1">
                 <LifecycleBadge row={s} />
