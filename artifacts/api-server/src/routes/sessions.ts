@@ -26,8 +26,12 @@ import {
   requireAdmin,
   requireViewer,
   requireSalesAllowed,
+  requireScopedEditor,
 } from "../middlewares/role-auth";
-import { getScopedClientIds } from "../lib/scoped-access";
+import {
+  getScopedClientIds,
+  assertScopedAccessToClient,
+} from "../lib/scoped-access";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -472,9 +476,21 @@ router.patch("/:id/timestamp", requireExecutorToken, async (req, res) => {
   }
 });
 
-router.patch("/:id/screenshot", async (req, res) => {
+router.patch("/:id/screenshot", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    // Resolve the session's owning client and confirm the caller may touch it
+    // — this endpoint previously had NO auth, so any caller could overwrite the
+    // screenshot on any session, including clients outside a scoped role's slice.
+    const [existing] = await db
+      .select({ clientId: sessionsTable.clientId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, id))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Session not found" });
+    if (!(await assertScopedAccessToClient(req, res, existing.clientId)))
+      return;
     const { screenshotUrl } = req.body;
     const [updated] = await db
       .update(sessionsTable)
@@ -554,13 +570,23 @@ router.get("/:id/screenshot-url", requireViewer, async (req, res) => {
   }
 });
 
-router.patch("/:id/followup", async (req, res) => {
+router.patch("/:id/followup", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
     const { followupText } = req.body;
     if (typeof followupText !== "string") {
       return res.status(400).json({ error: "followupText must be a string" });
     }
+    // Previously unauthenticated — resolve owner + scope-check before writing.
+    const [existing] = await db
+      .select({ clientId: sessionsTable.clientId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, id))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Session not found" });
+    if (!(await assertScopedAccessToClient(req, res, existing.clientId)))
+      return;
     const [updated] = await db
       .update(sessionsTable)
       .set({

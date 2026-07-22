@@ -318,7 +318,15 @@ router.patch("/:planId", requireScopedEditor, async (req, res) => {
     const [updated] = await db
       .update(clientAeoPlansTable)
       .set(update as Partial<typeof clientAeoPlansTable.$inferInsert>)
-      .where(eq(clientAeoPlansTable.id, planId))
+      // Constrain to the asserted clientId too: a scoped role owns this client,
+      // but planId is a global PK — without this a scoped user could patch a
+      // campaign belonging to a non-eligible (e.g. free-trial) client.
+      .where(
+        and(
+          eq(clientAeoPlansTable.id, planId),
+          eq(clientAeoPlansTable.clientId, clientId),
+        ),
+      )
       .returning();
 
     if (!updated) return res.status(404).json({ error: "Plan not found" });
@@ -346,9 +354,20 @@ router.delete("/:planId", requireScopedAdmin, async (req, res) => {
     const clientId = parseInt(req.params.clientId);
     if (!(await assertScopedAccessToClient(req, res, clientId))) return;
 
-    await db
+    const deleted = await db
       .delete(clientAeoPlansTable)
-      .where(eq(clientAeoPlansTable.id, planId));
+      // Constrain to the asserted clientId: planId alone is a global PK, so
+      // without this a scoped role could delete a campaign on a non-eligible
+      // (e.g. free-trial) client.
+      .where(
+        and(
+          eq(clientAeoPlansTable.id, planId),
+          eq(clientAeoPlansTable.clientId, clientId),
+        ),
+      )
+      .returning({ id: clientAeoPlansTable.id });
+    if (deleted.length === 0)
+      return res.status(404).json({ error: "Plan not found" });
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Error deleting client AEO plan");

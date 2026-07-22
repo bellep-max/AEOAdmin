@@ -1313,16 +1313,27 @@ router.get(
        FROM ranking_reports WHERE ${where} AND date = $${currentParamIdx}`,
         paramsWithBatch,
       );
+      const sessConds: string[] = [
+        `to_char(((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') = $1`,
+      ];
+      const sessParams: (string | number | number[])[] = [currentBatchDate];
+      if (clientId !== null) {
+        sessParams.push(clientId);
+        sessConds.push(`client_id = $${sessParams.length}`);
+      }
+      if (businessId !== null) {
+        sessParams.push(businessId);
+        sessConds.push(`business_id = $${sessParams.length}`);
+      }
+      // Scoped roles: the session count must not include clients outside their
+      // eligible set (was previously an unscoped global count).
+      if (eligibleIds) {
+        sessParams.push(eligibleIds);
+        sessConds.push(`client_id = ANY($${sessParams.length}::int[])`);
+      }
       const sessions = await pool.query<{ n: string }>(
-        `SELECT COUNT(*) AS n FROM audit_logs
-       WHERE to_char(((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') = $1
-         ${clientId !== null ? `AND client_id = $2` : ""}
-         ${businessId !== null ? `AND business_id = $${clientId !== null ? 3 : 2}` : ""}`,
-        [
-          currentBatchDate,
-          ...(clientId !== null ? [clientId] : []),
-          ...(businessId !== null ? [businessId] : []),
-        ],
+        `SELECT COUNT(*) AS n FROM audit_logs WHERE ${sessConds.join(" AND ")}`,
+        sessParams,
       );
       const sectA = sA.rows[0];
       const sectionA = {
@@ -1628,9 +1639,12 @@ router.get(
       );
 
       /* Errors — all audit_logs error rows scoped to old file (before current batch) */
-      const errorsParams: (number | string | null)[] = [currentBatchDate];
+      const errorsParams: (number | string | null | number[])[] = [
+        currentBatchDate,
+      ];
       let errClientFilter = "";
       let errBusinessFilter = "";
+      let errScopeFilter = "";
       if (clientId !== null) {
         errorsParams.push(clientId);
         errClientFilter = `AND al.client_id = $${errorsParams.length}`;
@@ -1638,6 +1652,12 @@ router.get(
       if (businessId !== null) {
         errorsParams.push(businessId);
         errBusinessFilter = `AND al.business_id = $${errorsParams.length}`;
+      }
+      // Scoped roles: the error detail rows must be limited to their eligible
+      // clients (was previously every client's error logs).
+      if (eligibleIds) {
+        errorsParams.push(eligibleIds);
+        errScopeFilter = `AND al.client_id = ANY($${errorsParams.length}::int[])`;
       }
       const errorsRows = await pool.query(
         `SELECT
@@ -1661,6 +1681,7 @@ router.get(
          AND ((al.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York')::date < $1::date
          ${errClientFilter}
          ${errBusinessFilter}
+         ${errScopeFilter}
        ORDER BY error_date DESC, client, keyword`,
         errorsParams,
       );
@@ -1908,6 +1929,9 @@ router.get(
       if (clientId == null || Number.isNaN(clientId)) {
         return res.status(400).json({ error: "clientId is required" });
       }
+      // Scoped roles may only read dates for a client in their eligible set —
+      // mirrors /summary and /summary/narrative.
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
       const businessId = req.query.businessId
         ? parseInt(req.query.businessId as string, 10)
         : undefined;
