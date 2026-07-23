@@ -22,6 +22,8 @@ import type { BiWeeklyReport } from "@/components/BiWeeklyReportTab";
 interface ClientRow {
   id: number;
   businessName: string;
+  /* Distinct plan types this client has — drives the plan-scoped client picker. */
+  planTypes?: string[];
 }
 interface BusinessRow {
   id: number;
@@ -76,9 +78,15 @@ export default function RankingsBiWeekly() {
   const byName = (a: string | null | undefined, b: string | null | undefined) =>
     (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
 
-  const clientsSorted = [...(allClients ?? [])].sort((a, b) =>
-    byName(a.businessName, b.businessName),
-  );
+  /* When a plan type is selected, the client picker only lists clients that
+     have it — so the plan filter narrows the whole cascade, not just the rows. */
+  const clientsSorted = [...(allClients ?? [])]
+    .filter(
+      (c) =>
+        selectedPlanType === null ||
+        (c.planTypes ?? []).includes(selectedPlanType),
+    )
+    .sort((a, b) => byName(a.businessName, b.businessName));
   const bizScope = (allBusinesses ?? [])
     .filter((b) => selectedClientId === null || b.clientId === selectedClientId)
     .sort((a, b) => byName(a.name, b.name));
@@ -207,7 +215,22 @@ export default function RankingsBiWeekly() {
         <span className="text-slate-400">›</span>
         <Select
           value={selectedPlanType ?? "all"}
-          onValueChange={(v) => setSelectedPlanType(v === "all" ? null : v)}
+          onValueChange={(v) => {
+            const next = v === "all" ? null : v;
+            setSelectedPlanType(next);
+            // Drop a client selection that doesn't have the new plan type so the
+            // picker and the rows stay in sync.
+            if (next !== null && selectedClientId !== null) {
+              const c = (allClients ?? []).find(
+                (x) => x.id === selectedClientId,
+              );
+              if (!(c?.planTypes ?? []).includes(next)) {
+                setSelectedClientId(null);
+                setSelectedBusinessId(null);
+                setSelectedCampaignId(null);
+              }
+            }
+          }}
         >
           <SelectTrigger className="w-52 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
             <SelectValue placeholder="All Plans" />
