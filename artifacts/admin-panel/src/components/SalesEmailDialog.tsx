@@ -120,17 +120,13 @@ interface CampaignScreenshotsResponse {
   shots: CampaignShot[];
 }
 
-type SalesTemplateKey = "first_proof" | "second_keyword" | "free_trial_proof";
+type SalesTemplateKey = "first_proof" | "second_keyword";
 
 const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
   { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
   {
     key: "second_keyword",
     label: "Update — another keyword + Founder’s Discount",
-  },
-  {
-    key: "free_trial_proof",
-    label: "Free-trial proof — Top-3 ranking, moving to the paid plan",
   },
 ];
 
@@ -142,9 +138,6 @@ interface SalesEmailDialogProps {
      to that business / campaign; null means the client's whole pool. */
   businessId?: number | null;
   aeoPlanId?: number | null;
-  /* Template the dialog opens on (and resets to). Free-trial pages pass
-     "free_trial_proof"; defaults to the first-proof email everywhere else. */
-  defaultTemplate?: SalesTemplateKey;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -231,7 +224,6 @@ export function SalesEmailDialog({
   clientId,
   businessId,
   aeoPlanId,
-  defaultTemplate = "first_proof",
 }: SalesEmailDialogProps) {
   const { toast } = useToast();
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -241,7 +233,7 @@ export function SalesEmailDialog({
   const [offerText, setOfferText] = useState("");
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
-  const [template, setTemplate] = useState<SalesTemplateKey>(defaultTemplate);
+  const [template, setTemplate] = useState<SalesTemplateKey>("first_proof");
   const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
@@ -294,9 +286,9 @@ export function SalesEmailDialog({
     setSelectedPlatform(null);
     setIntroMessage("");
     setOfferText("");
-    setTemplate(defaultTemplate);
+    setTemplate("first_proof");
     seededRef.current = false;
-  }, [clientId, businessId, aeoPlanId, defaultTemplate]);
+  }, [clientId, businessId, aeoPlanId]);
 
   /* Switching templates loads that template's copy — clear the editable boxes
      and re-seed from the new defaults, and drop the keyword pick so the update
@@ -512,7 +504,7 @@ export function SalesEmailDialog({
     setCtaUrl("");
     setAiInstruction("");
     setSubject("");
-    setTemplate(defaultTemplate);
+    setTemplate("first_proof");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
     seededRef.current = false;

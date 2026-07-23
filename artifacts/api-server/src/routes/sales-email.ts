@@ -141,6 +141,9 @@ const DEFAULT_CTA_URL =
 const DEFAULT_CTA_LABEL = process.env.SALES_CTA_LABEL ?? "Pick a Time";
 const SENDER_NAME = process.env.SALES_SENDER_NAME ?? "Chuck";
 const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
+// The free-trial proof is a Signal-AEO-branded email, separate from the SEO
+// Local sales proofs — its own org name drives the header + signature.
+const SENDER_ORG_SIGNAL = process.env.SIGNAL_SENDER_ORG ?? "Signal AEO";
 // From address for GHL-delivered sales emails. Unset → GHL uses the sub-account's
 // default LC Email sender (e.g. mail@seolocal.us). Set GHL_EMAIL_FROM (address, or
 // "Name <address>") to control the From without a redeploy — the address must be an
@@ -204,29 +207,7 @@ The free trial ends soon. When it does, this becomes a paid service. The Founder
 Schedule a call to claim it before this window closes.`;
 }
 
-/* Free-trial graduation proof: the client is on "Free Trial Plans", has landed a
-   Top-3 AI ranking, and this email shows that proof while telling them we're
-   moving them onto the paid Signal AEO plan. Same layout as the other proofs —
-   only the copy, hero, subject, and CTA change. */
-function freeTrialProofIntro(a: SalesEmailArgs): string {
-  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
-  return `${hi}
-
-When your free trial started, we had one job: prove our technology could get ${a.business} named in AI search. It worked.
-
-Ask ChatGPT, Gemini, or Perplexity "${a.keyword}" and ${a.business} is now in the Top 3. The screenshot below is real — a real device, a real AI answer, naming your business.`;
-}
-
-function freeTrialProofOffer(_a: SalesEmailArgs): string {
-  return `Here is what happens next. Because the free trial delivered, we are moving you from the free trial onto the paid Signal AEO Plan so you keep this Top-3 spot — and so we can rank you for more of the searches your customers are already using.
-
-Nothing changes on your end today and your ranking stays live. If you have any questions before your plan starts, grab a time with our team below.`;
-}
-
-export type SalesTemplateKey =
-  | "first_proof"
-  | "second_keyword"
-  | "free_trial_proof";
+export type SalesTemplateKey = "first_proof" | "second_keyword";
 
 interface SalesTemplate {
   key: SalesTemplateKey;
@@ -261,16 +242,6 @@ const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
     buildIntro: secondKeywordIntro,
     buildOffer: secondKeywordOffer,
     preferUnsent: true,
-  },
-  free_trial_proof: {
-    key: "free_trial_proof",
-    label: "Free-trial proof — Top-3 ranking, moving to the paid plan",
-    heroHeadline: "You made the Top 3 of AI Search.",
-    defaultSubject: "You're in the Top 3 — moving you to the Signal AEO Plan",
-    defaultCtaLabel: "Keep My Top-3 Ranking",
-    buildIntro: freeTrialProofIntro,
-    buildOffer: freeTrialProofOffer,
-    preferUnsent: false,
   },
 };
 
@@ -1320,6 +1291,452 @@ ${body.instruction?.trim() ? `User instruction: ${body.instruction.trim()}\n\n` 
     req.log.error({ err }, "Error generating sales email AI copy");
     const detail = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: "AI generation failed", detail });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FREE-TRIAL PROOF — a DIFFERENT email from the sales proofs above:
+   ONE operator-picked screenshot (no before/after comparison), no CTA button,
+   a "reply to this email" close, signed by The Signal AEO Team. Sent to a
+   free-trial client once they have a Top-3 ranking, to graduate them onto the
+   paid plan. Owner-only in the UI. Uses its own builder + delivery so it stays
+   independent of the sales-proof templates.
+   ───────────────────────────────────────────────────────────────────────── */
+
+interface FreeTrialProofArgs {
+  business: string;
+  keyword: string;
+  platform: string;
+  rank: number;
+  cityState: string | null;
+  imageUrl: string;
+  firstName?: string | null;
+}
+
+function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
+  const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  const where = a.cityState?.trim()
+    ? `When people in ${a.cityState.trim()} search for this service using AI, your business is now appearing as one of the recommended answers.`
+    : `When people search for this service using AI, your business is now appearing as one of the recommended answers.`;
+  const p = (html: string) =>
+    `<p style="margin:0 0 16px 0;color:#334155;font-size:15px;line-height:1.7">${html}</p>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:0 0 24px 0">
+
+    <div style="background:${NAVY};padding:16px 28px;text-align:center">
+      <span style="color:#fff;font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase">${SENDER_ORG_SIGNAL}</span>
+    </div>
+
+    <div style="padding:28px 30px 4px 30px">
+      ${p(hi)}
+      ${p(`Amazing news &mdash; <strong style="color:#0f172a">${a.business} is now ranking in the Top ${a.rank} for &ldquo;${a.keyword}&rdquo; on ${pLabel}</strong>! &#127881;`)}
+      ${p(where)}
+      <p style="margin:0 0 12px 0;color:#0f172a;font-size:15px;font-weight:700">Here&rsquo;s your proof:</p>
+    </div>
+
+    <div style="padding:0 30px 8px 30px">
+      <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,0.12)">
+        <div style="text-align:center;padding:8px;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER}">
+          <div style="font-size:9px;font-weight:800;letter-spacing:2px;color:${NAVY};text-transform:uppercase">${pLabel} &middot; &ldquo;${a.keyword}&rdquo;</div>
+          <div style="font-size:30px;font-weight:800;color:${NAVY};line-height:1.15">#${a.rank}</div>
+        </div>
+        <img src="${a.imageUrl}" alt="AI ranking screenshot" width="100%" style="width:100%;height:auto;display:block" />
+      </div>
+    </div>
+
+    <div style="padding:18px 30px 8px 30px">
+      ${p(`This is exactly what we&rsquo;ve been working toward during your Signal AEO free trial. Your business is no longer just listed online &mdash; it&rsquo;s being recommended directly inside AI-generated answers.`)}
+      ${p(`And this is only the beginning. We&rsquo;ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`)}
+      ${p(`As promised, now that we&rsquo;ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`)}
+      ${p(`Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
+      ${p(`Welcome to the future of search!`)}
+      <p style="margin:8px 0 0 0;color:#334155;font-size:15px;line-height:1.6">Best,<br/>The Signal AEO Team</p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+/** Resolve one operator-picked screenshot for the free-trial proof: the current
+ *  ranking for {keywordId, platform} within the client's scope. */
+async function resolveFreeTrialPick(
+  clientId: number,
+  keywordId: number,
+  platform: string,
+  scope: SalesEmailScope,
+): Promise<
+  | {
+      ok: true;
+      keyword: string;
+      business: string;
+      platform: string;
+      rank: number;
+      s3Uri: string;
+      strict: boolean;
+    }
+  | { ok: false; reason: string }
+> {
+  const strict = process.env.GHL_SYNC_STRICT === "1";
+  const r = await resolveImprovement(scopeQuery(clientId, scope), {
+    strict,
+    positiveTop3: false,
+    includeUnimproved: true,
+  });
+  if (!r.ok) return { ok: false, reason: r.reason };
+  const kw = r.data.keywords.find((k) => k.keywordId === keywordId);
+  const pr = kw?.platforms[platform];
+  if (!kw || !pr)
+    return { ok: false, reason: "That screenshot is no longer available." };
+  return {
+    ok: true,
+    keyword: kw.keyword ?? "",
+    business: kw.business || r.data.business,
+    platform,
+    rank: pr.current.rank,
+    s3Uri: pr.current.s3Uri,
+    strict,
+  };
+}
+
+/** "City, State" for the greeting line, from the client record. */
+async function cityStateOfClient(clientId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ city: clientsTable.city, state: clientsTable.state })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId))
+    .limit(1);
+  const parts = [row?.city?.trim(), row?.state?.trim()].filter(
+    (s): s is string => !!s,
+  );
+  return parts.length ? parts.join(", ") : null;
+}
+
+function freeTrialProofSubject(business: string, rank: number): string {
+  return `${business} is now ranking in the Top ${rank} of AI Search`;
+}
+
+/* GET /api/sales/free-trial-proof-preview?clientId=&keywordId=&platform=&cityState= */
+router.get("/free-trial-proof-preview", requireSalesEmail, async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  const keywordId = Number.parseInt(String(req.query.keywordId ?? ""), 10);
+  const platform = String(req.query.platform ?? "").toLowerCase();
+  if (!Number.isFinite(clientId) || !Number.isFinite(keywordId) || !platform)
+    return res
+      .status(400)
+      .json({ error: "clientId, keywordId, platform required" });
+  try {
+    if (!(await isClientInSalesScope(req, clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+    const scope = parseScope(req.query as Record<string, unknown>);
+    const pick = await resolveFreeTrialPick(
+      clientId,
+      keywordId,
+      platform,
+      scope,
+    );
+    if (!pick.ok) return res.status(409).json({ error: pick.reason });
+    const firstName = await firstNameOfClient(clientId);
+    const cityState =
+      typeof req.query.cityState === "string" && req.query.cityState.trim()
+        ? req.query.cityState.trim()
+        : await cityStateOfClient(clientId);
+    const imageUrl = buildScreenshotUrlByClient(
+      clientId,
+      pick.keyword,
+      pick.platform,
+      "current",
+      { strict: pick.strict, ...scope },
+    );
+    const html = buildFreeTrialProofHtml({
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      cityState,
+      imageUrl,
+      firstName,
+    });
+    return res.json({
+      html,
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      cityState,
+      firstName,
+      defaultSubject: freeTrialProofSubject(pick.business, pick.rank),
+    });
+  } catch (err) {
+    req.log.error({ err }, "free-trial proof preview failed");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+interface SendFreeTrialProofBody {
+  clientId: number;
+  keywordId: number;
+  platform: string;
+  recipients: string[];
+  subject?: string;
+  cityState?: string | null;
+  businessId?: number | null;
+  aeoPlanId?: number | null;
+}
+
+/* POST /api/sales/send-free-trial-proof */
+router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
+  const body = req.body as Partial<SendFreeTrialProofBody>;
+  if (
+    !body.clientId ||
+    !body.keywordId ||
+    !body.platform ||
+    !Array.isArray(body.recipients) ||
+    body.recipients.length === 0
+  ) {
+    return res.status(400).json({
+      error: "clientId, keywordId, platform and recipients[] required",
+    });
+  }
+  try {
+    if (!(await isClientInSalesScope(req, body.clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+
+    configureSendGrid();
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
+    const fromName =
+      process.env.FREE_TRIAL_FROM_NAME ?? `The ${SENDER_ORG_SIGNAL} Team`;
+    if (!fromEmail)
+      return res.status(503).json({ error: "Sender email not configured" });
+
+    const scope = parseScope(body as Record<string, unknown>);
+    const pick = await resolveFreeTrialPick(
+      body.clientId,
+      body.keywordId,
+      body.platform,
+      scope,
+    );
+    if (!pick.ok) return res.status(409).json({ error: pick.reason });
+
+    // A broken <img> is worse than no email — verify the object exists first.
+    if (!(await s3Exists(pick.s3Uri)))
+      return res
+        .status(409)
+        .json({ error: "That screenshot is missing from storage." });
+
+    const firstName = await firstNameOfClient(body.clientId);
+    const cityState =
+      typeof body.cityState === "string" && body.cityState.trim()
+        ? body.cityState.trim()
+        : await cityStateOfClient(body.clientId);
+    const imageUrl = buildScreenshotUrlByClient(
+      body.clientId,
+      pick.keyword,
+      pick.platform,
+      "current",
+      { strict: pick.strict, ...scope },
+    );
+    const html = buildFreeTrialProofHtml({
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      cityState,
+      imageUrl,
+      firstName,
+    });
+
+    const intendedRecipients = body.recipients
+      .map((s) => String(s).trim())
+      .filter((s) => EMAIL_RE.test(s));
+    if (intendedRecipients.length === 0)
+      return res.status(400).json({ error: "no valid recipient addresses" });
+    const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
+    const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
+    const subject =
+      body.subject?.trim() || freeTrialProofSubject(pick.business, pick.rank);
+
+    // Delivery mirrors send-email: GHL-first (disabled in safe mode), SendGrid
+    // fallback, then a one-way GHL note.
+    const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
+    const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
+    let contactId: string | null = null;
+    let contactPrimaryEmail: string | null = null;
+    if (ghlEnabled) {
+      try {
+        const [clientRow] = await db
+          .select({
+            accountEmail: clientsTable.accountEmail,
+            contactEmail: clientsTable.contactEmail,
+          })
+          .from(clientsTable)
+          .where(eq(clientsTable.id, body.clientId))
+          .limit(1);
+        contactPrimaryEmail =
+          clientRow?.accountEmail || clientRow?.contactEmail || null;
+        contactId = contactPrimaryEmail
+          ? await ghlFindContactIdByEmail(contactPrimaryEmail)
+          : null;
+      } catch (e) {
+        req.log.warn({ err: e }, "GHL contact lookup failed");
+      }
+    }
+
+    let deliveredVia: "ghl" | "sendgrid" | null = null;
+    let messageId: string | undefined;
+    let sendError: string | null = null;
+    let ghlStatus: string | null = null;
+    let storedSubject = subject;
+    const primaryEmail = (contactPrimaryEmail ?? "").toLowerCase();
+    const recipientsIncludeClient =
+      primaryEmail.length > 0 &&
+      intendedRecipients.some((e) => e.toLowerCase() === primaryEmail);
+
+    if (
+      ghlEnabled &&
+      sendMode === "ghl_first" &&
+      contactId &&
+      recipientsIncludeClient
+    ) {
+      try {
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primaryEmail,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
+        deliveredVia = "ghl";
+        messageId = r.messageId;
+        ghlStatus = "sent_via_ghl";
+      } catch (e) {
+        ghlStatus = `ghl_send_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+        req.log.warn({ err: e }, "GHL send failed — falling back to SendGrid");
+      }
+    }
+
+    if (deliveredVia == null) {
+      const msg = {
+        to: actualRecipients,
+        from: { email: fromEmail, name: fromName },
+        subject: safeOverride
+          ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
+          : subject,
+        html,
+        trackingSettings: {
+          clickTracking: { enable: false, enableText: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false },
+        },
+        mailSettings: { bypassListManagement: { enable: false } },
+      };
+      storedSubject = msg.subject;
+      try {
+        const sgResp = await sgMail.send(msg);
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as
+          | string
+          | undefined;
+        deliveredVia = "sendgrid";
+      } catch (e: unknown) {
+        sendError = e instanceof Error ? e.message : String(e);
+      }
+      if (!sendError) {
+        if (!ghlEnabled)
+          ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
+        else if (!contactId) ghlStatus = ghlStatus ?? "no_contact";
+        else if (!recipientsIncludeClient)
+          ghlStatus = "skipped_note (client not a recipient)";
+        else {
+          try {
+            const pLabelNote = PLATFORM_LABELS[pick.platform] ?? pick.platform;
+            const sentAtEt = new Date().toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              dateStyle: "medium",
+              timeStyle: "short",
+            });
+            await ghlCreateNote(
+              contactId,
+              [
+                "📧 Free-Trial Proof — SENT",
+                `When: ${sentAtEt} ET`,
+                `To: ${intendedRecipients.join(", ")}`,
+                `From: ${fromName} <${fromEmail}>`,
+                `Subject: ${subject}`,
+                `Business: ${pick.business}`,
+                `Proof: "${pick.keyword}" on ${pLabelNote} — Top #${pick.rank}`,
+                "Sent from the AEO admin panel via SendGrid.",
+              ].join("\n"),
+            );
+            ghlStatus = ghlStatus ? `${ghlStatus} + noted` : "noted";
+          } catch (e) {
+            ghlStatus = `note_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+            req.log.warn({ err: e }, "GHL note failed");
+          }
+        }
+      }
+    }
+
+    const [logged] = await db
+      .insert(emailSendsTable)
+      .values({
+        clientId: body.clientId,
+        businessId: scope.businessId,
+        aeoPlanId: scope.aeoPlanId,
+        recipients: actualRecipients,
+        intendedRecipients: safeOverride ? intendedRecipients : null,
+        fromEmail,
+        subject: storedSubject,
+        status: sendError ? "failed" : "sent",
+        sendgridMessageId:
+          deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        deliveredVia: deliveredVia ?? null,
+        ghlMessageId: deliveredVia === "ghl" ? (messageId ?? null) : null,
+        latestStatus: sendError ? "failed" : "sent",
+        error: sendError,
+        kind: "sales",
+        html,
+        meta: {
+          keyword: pick.keyword,
+          keywordId: body.keywordId,
+          platform: pick.platform,
+          afterRank: pick.rank,
+          business: pick.business,
+          template: "free_trial_proof",
+          deliveredVia,
+          messageId: messageId ?? null,
+        },
+        ghlStatus,
+      })
+      .returning({ id: emailSendsTable.id });
+
+    if (sendError)
+      return res
+        .status(502)
+        .json({ error: `Send failed: ${sendError}`, sendId: logged?.id });
+
+    return res.json({
+      ok: true,
+      sendId: logged?.id,
+      messageId: messageId ?? null,
+      deliveredVia,
+      recipientsActual: actualRecipients,
+      recipientsIntended: intendedRecipients,
+      safeModeActive: Boolean(safeOverride),
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      ghlStatus,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error sending free-trial proof");
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 

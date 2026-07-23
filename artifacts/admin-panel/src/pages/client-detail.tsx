@@ -69,7 +69,7 @@ import { format } from "date-fns";
 import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
-import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -124,7 +124,7 @@ export default function ClientDetail() {
   const clientId = Number(params?.id);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isEditor } = useAuth();
+  const { isEditor, isOwner } = useAuth();
 
   const [editBizOpen, setEditBizOpen] = useState(false);
   const [editAccOpen, setEditAccOpen] = useState(false);
@@ -302,14 +302,14 @@ export default function ClientDetail() {
             )}
           </div>
         </div>
-        {isFreeTrial && (
+        {isFreeTrial && isOwner && (
           <Button
             size="sm"
             className="gap-1.5 flex-shrink-0"
             onClick={() => setSalesEmailOpen(true)}
           >
             <Send className="w-4 h-4" />
-            Send proof
+            Send free-trial proof
           </Button>
         )}
       </div>
@@ -430,10 +430,7 @@ export default function ClientDetail() {
         title="Overall Performance summary · this client"
       />
 
-      <RankTrendChart
-        scope="client"
-        clientId={clientId}
-      />
+      <RankTrendChart scope="client" clientId={clientId} />
 
       <BiWeeklyGraphsCard scope="client" clientId={clientId} />
 
@@ -673,12 +670,11 @@ export default function ClientDetail() {
         }}
       />
 
-      {/* ═══ FREE-TRIAL "SEND PROOF" EMAIL ═══ */}
-      <SalesEmailDialog
+      {/* ═══ FREE-TRIAL PROOF EMAIL (owner-only, single screenshot) ═══ */}
+      <FreeTrialProofDialog
         open={salesEmailOpen}
         onClose={() => setSalesEmailOpen(false)}
         clientId={clientId}
-        defaultTemplate="free_trial_proof"
       />
     </div>
   );
