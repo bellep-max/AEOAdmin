@@ -63,11 +63,13 @@ import {
   User,
   CalendarDays,
   FileText,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
+import { SalesEmailDialog } from "@/components/SalesEmailDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -126,6 +128,7 @@ export default function ClientDetail() {
 
   const [editBizOpen, setEditBizOpen] = useState(false);
   const [editAccOpen, setEditAccOpen] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -233,6 +236,9 @@ export default function ClientDetail() {
     );
 
   const c = client as unknown as Record<string, unknown>;
+  const isFreeTrial = ((c.planTypes as string[] | undefined) ?? []).includes(
+    "Free Trial Plans",
+  );
   const initials = client.businessName
     ? client.businessName
         .split(" ")
@@ -296,6 +302,16 @@ export default function ClientDetail() {
             )}
           </div>
         </div>
+        {isFreeTrial && (
+          <Button
+            size="sm"
+            className="gap-1.5 flex-shrink-0"
+            onClick={() => setSalesEmailOpen(true)}
+          >
+            <Send className="w-4 h-4" />
+            Send proof
+          </Button>
+        )}
       </div>
 
       {/* ── Two-column cards ── */}
@@ -655,6 +671,14 @@ export default function ClientDetail() {
           businessName: client.businessName ?? "",
           createdBy: (c.createdBy as string) ?? "",
         }}
+      />
+
+      {/* ═══ FREE-TRIAL "SEND PROOF" EMAIL ═══ */}
+      <SalesEmailDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
+        clientId={clientId}
+        defaultTemplate="free_trial_proof"
       />
     </div>
   );

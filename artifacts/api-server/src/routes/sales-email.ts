@@ -204,7 +204,29 @@ The free trial ends soon. When it does, this becomes a paid service. The Founder
 Schedule a call to claim it before this window closes.`;
 }
 
-export type SalesTemplateKey = "first_proof" | "second_keyword";
+/* Free-trial graduation proof: the client is on "Free Trial Plans", has landed a
+   Top-3 AI ranking, and this email shows that proof while telling them we're
+   moving them onto the paid Signal AEO plan. Same layout as the other proofs —
+   only the copy, hero, subject, and CTA change. */
+function freeTrialProofIntro(a: SalesEmailArgs): string {
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
+
+When your free trial started, we had one job: prove our technology could get ${a.business} named in AI search. It worked.
+
+Ask ChatGPT, Gemini, or Perplexity "${a.keyword}" and ${a.business} is now in the Top 3. The screenshot below is real — a real device, a real AI answer, naming your business.`;
+}
+
+function freeTrialProofOffer(_a: SalesEmailArgs): string {
+  return `Here is what happens next. Because the free trial delivered, we are moving you from the free trial onto the paid Signal AEO Plan so you keep this Top-3 spot — and so we can rank you for more of the searches your customers are already using.
+
+Nothing changes on your end today and your ranking stays live. If you have any questions before your plan starts, grab a time with our team below.`;
+}
+
+export type SalesTemplateKey =
+  | "first_proof"
+  | "second_keyword"
+  | "free_trial_proof";
 
 interface SalesTemplate {
   key: SalesTemplateKey;
@@ -239,6 +261,16 @@ const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
     buildIntro: secondKeywordIntro,
     buildOffer: secondKeywordOffer,
     preferUnsent: true,
+  },
+  free_trial_proof: {
+    key: "free_trial_proof",
+    label: "Free-trial proof — Top-3 ranking, moving to the paid plan",
+    heroHeadline: "You made the Top 3 of AI Search.",
+    defaultSubject: "You're in the Top 3 — moving you to the Signal AEO Plan",
+    defaultCtaLabel: "Keep My Top-3 Ranking",
+    buildIntro: freeTrialProofIntro,
+    buildOffer: freeTrialProofOffer,
+    preferUnsent: false,
   },
 };
 

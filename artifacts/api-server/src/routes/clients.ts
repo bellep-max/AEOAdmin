@@ -278,7 +278,21 @@ router.get(
         .from(clientsTable)
         .where(eq(clientsTable.id, id));
       if (!client) return res.status(404).json({ error: "Not found" });
-      res.json(client);
+      // planTypes mirrors the list endpoint's shape so callers (e.g. the
+      // free-trial "Send proof" button) can gate on plan type without a
+      // second request.
+      const planTypeRows = await db
+        .select({ planType: clientAeoPlansTable.planType })
+        .from(clientAeoPlansTable)
+        .where(eq(clientAeoPlansTable.clientId, id));
+      const planTypes = Array.from(
+        new Set(
+          planTypeRows
+            .map((r) => r.planType)
+            .filter((pt): pt is string => !!pt),
+        ),
+      );
+      res.json({ ...client, planTypes });
     } catch (err) {
       req.log.error({ err }, "Error fetching client");
       res.status(500).json({ error: "Internal server error" });
