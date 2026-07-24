@@ -49,12 +49,16 @@ async function judge(r) {
       const res = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
-        body: JSON.stringify({ model: "deepseek-chat", temperature: 0, max_tokens: 150,
+        body: JSON.stringify({ model: "deepseek-v4-flash", temperature: 0, max_tokens: 2000,
           messages: [{ role: "system", content: SYS }, { role: "user", content: u }] }),
       });
       if (!res.ok) { await new Promise((r) => setTimeout(r, 2000)); continue; }
       const j = await res.json();
-      return JSON.parse(j.choices[0].message.content.trim().replace(/^```json/, "").replace(/```$/, "").trim());
+      // v4 is a reasoning model: the answer is in content (reasoning_content is
+      // separate). If content is empty (token budget starved), retry.
+      const content = (j.choices?.[0]?.message?.content ?? "").trim();
+      if (!content) { await new Promise((r) => setTimeout(r, 2000)); continue; }
+      return JSON.parse(content.replace(/^```json/, "").replace(/```$/, "").trim());
     } catch { await new Promise((r) => setTimeout(r, 2000)); }
   }
   return { listed_position: null, location_matches: null, reason: "api error" };
