@@ -38,6 +38,7 @@ import {
   Sun,
   Moon,
   Box,
+  Tag,
   Key,
   Activity,
   ChevronRight,
@@ -149,6 +150,7 @@ const navGroups: NavGroup[] = [
         ],
       },
       { name: "Plans", href: "/packages", icon: Box, adminOnly: true },
+      { name: "Promo Codes", href: "/promo-codes", icon: Tag, adminOnly: true },
     ],
   },
   {

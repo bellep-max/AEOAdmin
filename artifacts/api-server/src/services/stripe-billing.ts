@@ -185,6 +185,10 @@ export interface StripeChargeRow {
   /** YYYY-MM-DD (UTC). */
   date: string | null;
   description: string | null;
+  /** Stripe invoice id (`in_…`) the charge paid, when there is one. */
+  invoiceId: string | null;
+  /** Human-facing receipt number, when Stripe assigned one. */
+  receiptNumber: string | null;
 }
 
 export interface StripeSubscriptionSummary {
@@ -247,6 +251,45 @@ interface StripeCharge {
   status: string;
   created?: number | null;
   description?: string | null;
+  invoice?: string | { id: string } | null;
+  receipt_number?: string | null;
+}
+
+/**
+ * Every charge on the customer, newest first. Stripe pages at 100/request; we
+ * walk `has_more` with `starting_after`, capped at 10 pages (1,000 charges) as
+ * a runaway guard. Fail-soft: a failed page just ends the walk with what we
+ * have so the rest of the summary still renders.
+ */
+async function fetchAllCharges(
+  customerId: string,
+  apiKey: string,
+  doFetch: FetchFn,
+  log?: Logger,
+): Promise<StripeCharge[]> {
+  const all: StripeCharge[] = [];
+  let startingAfter: string | null = null;
+  for (let page = 0; page < 10; page++) {
+    const qs = new URLSearchParams({ customer: customerId, limit: "100" });
+    if (startingAfter) qs.set("starting_after", startingAfter);
+    const r = await stripeGet<{ data: StripeCharge[]; has_more?: boolean }>(
+      `charges?${qs}`,
+      apiKey,
+      doFetch,
+    );
+    if (!r.ok) {
+      log?.error(
+        { customerId, status: r.status, page },
+        "Stripe charges page failed",
+      );
+      break;
+    }
+    const batch = r.data.data ?? [];
+    all.push(...batch);
+    if (!r.data.has_more || batch.length === 0) break;
+    startingAfter = batch[batch.length - 1].id;
+  }
+  return all;
 }
 
 function summarizeSubscription(
@@ -321,7 +364,7 @@ export async function fetchStripeBillingSummary(
     }
     if (!customerId) return null;
 
-    const [custR, subsR, chargesR] = await Promise.all([
+    const [custR, subsR, allCharges] = await Promise.all([
       stripeGet<StripeCustomer>(
         `customers/${encodeURIComponent(customerId)}?expand[]=invoice_settings.default_payment_method`,
         apiKey,
@@ -332,11 +375,7 @@ export async function fetchStripeBillingSummary(
         apiKey,
         doFetch,
       ),
-      stripeGet<{ data: StripeCharge[] }>(
-        `charges?customer=${encodeURIComponent(customerId)}&limit=50`,
-        apiKey,
-        doFetch,
-      ),
+      fetchAllCharges(customerId, apiKey, doFetch, log),
     ]);
     if (!custR.ok) {
       log?.error(
@@ -362,15 +401,16 @@ export async function fetchStripeBillingSummary(
     const sub = directSub ?? subs[0] ?? null;
     const nowSeconds = Math.floor(Date.now() / 1000);
 
-    const charges: StripeChargeRow[] = (
-      chargesR.ok ? (chargesR.data.data ?? []) : []
-    ).map((ch) => ({
+    const charges: StripeChargeRow[] = allCharges.map((ch) => ({
       id: ch.id,
       amount: ch.amount / 100,
       currency: ch.currency,
       status: ch.status,
       date: toDate(ch.created),
       description: ch.description ?? null,
+      invoiceId:
+        typeof ch.invoice === "string" ? ch.invoice : (ch.invoice?.id ?? null),
+      receiptNumber: ch.receipt_number ?? null,
     }));
     const latestCharge = charges[0] ?? null;
     const lastPaid = charges.find((ch) => ch.status === "succeeded") ?? null;

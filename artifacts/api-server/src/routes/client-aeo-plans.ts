@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable } from "@workspace/db/schema";
+import { clientAeoPlansTable, promoCodesTable } from "@workspace/db/schema";
 import { and, eq, asc, sql } from "drizzle-orm";
 import {
   requireSalesAllowed,
@@ -104,8 +104,19 @@ router.get("/:planId", requireSalesAllowed, async (req, res) => {
         ),
       );
     if (!plan) return res.status(404).json({ error: "Plan not found" });
+    // Attach the promo record so the campaign page can render its Promo Code
+    // Information card without a second round trip.
+    let promo = null;
+    if (plan.promoCodeId != null) {
+      const [row] = await db
+        .select()
+        .from(promoCodesTable)
+        .where(eq(promoCodesTable.id, plan.promoCodeId));
+      promo = row ?? null;
+    }
     res.json({
       ...plan,
+      promo,
       monthlyAeoBudget:
         plan.monthlyAeoBudget != null ? Number(plan.monthlyAeoBudget) : null,
     });
@@ -327,6 +338,25 @@ router.patch("/:planId", requireScopedEditor, async (req, res) => {
         update.canceledAt = new Date().toISOString().slice(0, 10);
       }
       if (cs !== "canceled") update.canceledAt = null;
+    }
+    if ("promoCodeId" in body) {
+      if (body.promoCodeId == null) {
+        update.promoCodeId = null;
+      } else {
+        const promoId = Number(body.promoCodeId);
+        const [promo] = Number.isFinite(promoId)
+          ? await db
+              .select({ id: promoCodesTable.id })
+              .from(promoCodesTable)
+              .where(eq(promoCodesTable.id, promoId))
+          : [];
+        if (!promo) {
+          return res.status(400).json({
+            error: "promoCodeId does not reference an existing promo code",
+          });
+        }
+        update.promoCodeId = promoId;
+      }
     }
     if ("searchBoostTarget" in body)
       update.searchBoostTarget =

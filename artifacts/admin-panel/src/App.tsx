@@ -38,6 +38,7 @@ import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
 import Archived from "@/pages/archived";
 import SummaryReport from "@/pages/summary-report";
+import PromoCodes from "@/pages/promo-codes";
 
 import type { ComponentType } from "react";
 
@@ -173,6 +174,9 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/packages">
           <AdminTierGate component={Packages} />
+        </Route>
+        <Route path="/promo-codes">
+          <AdminTierGate component={PromoCodes} />
         </Route>
         <Route path="/sessions/daily">
           <AdminTierGate component={SessionsDaily} />

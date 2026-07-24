@@ -35,6 +35,7 @@ import {
   Plus,
   Pencil,
   Send,
+  Tag,
   Trash2,
 } from "lucide-react";
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
@@ -82,6 +83,25 @@ interface Campaign {
   trialStartDate: string | null;
   trialEndDate: string | null;
   paidConversionDate: string | null;
+  promoCodeId: number | null;
+  promo?: Promo | null;
+}
+
+interface Promo {
+  id: number;
+  code: string;
+  discountType: string;
+  discountValue: string | number | null;
+  startDate: string | null;
+  endDate: string | null;
+  providedBy: string | null;
+}
+
+function formatDiscount(p: Promo): string | null {
+  if (p.discountValue == null) return null;
+  const n = Number(p.discountValue);
+  if (!Number.isFinite(n)) return null;
+  return p.discountType === "amount" ? `$${n.toFixed(2)}` : `${n}%`;
 }
 
 interface BillingSummary {
@@ -111,6 +131,8 @@ interface BillingSummary {
       status: string;
       date: string | null;
       description: string | null;
+      invoiceId: string | null;
+      receiptNumber: string | null;
     }>;
     paymentStatus: string | null;
     hasFailedPayment: boolean;
@@ -359,6 +381,48 @@ export default function CampaignDetail() {
     enabled: !!clientId && !!campaignId && isAdmin,
     staleTime: 60_000,
   });
+
+  // Promo catalog for the attach picker — admin/owner only (endpoint 403s below).
+  const { data: promoCodes } = useQuery<Promo[]>({
+    queryKey: ["/api/promo-codes"],
+    queryFn: async () => {
+      const res = await rawFetch(`/api/promo-codes`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
+  const [promoPick, setPromoPick] = useState("");
+
+  async function handleSetPromo(promoCodeId: number | null) {
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promoCodeId }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Failed to update the promo code");
+      }
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/promo-codes"] });
+      setPromoPick("");
+      toast({ title: promoCodeId ? "Promo attached" : "Promo removed" });
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+        variant: "destructive",
+      });
+    }
+  }
 
   const { data: keywords, refetch: refetchKeywords } = useQuery<Keyword[]>({
     queryKey: ["/api/keywords", { aeoPlanId: campaignId }],
@@ -709,7 +773,12 @@ export default function CampaignDetail() {
                 campaign={campaign}
                 onSaved={() =>
                   queryClient.invalidateQueries({
-                    queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+                    queryKey: [
+                      "/api/clients",
+                      clientId,
+                      "aeo-plans",
+                      campaignId,
+                    ],
                   })
                 }
               />
@@ -743,7 +812,9 @@ export default function CampaignDetail() {
             />
             <Field
               label="Start Date"
-              value={(campaign.subscriptionStartDate ?? "").slice(0, 10) || null}
+              value={
+                (campaign.subscriptionStartDate ?? "").slice(0, 10) || null
+              }
             />
             <Field
               label="Next Billing Date"
@@ -859,6 +930,12 @@ export default function CampaignDetail() {
                     <span className="text-muted-foreground truncate">
                       {ch.description ?? ""}
                     </span>
+                    <span
+                      className="ml-auto font-mono text-xs text-muted-foreground/70 flex-shrink-0"
+                      title={`Charge ${ch.id}${ch.invoiceId ? ` · Invoice ${ch.invoiceId}` : ""}`}
+                    >
+                      {ch.receiptNumber ?? ch.invoiceId ?? ch.id}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -871,6 +948,79 @@ export default function CampaignDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* Promo Code Information — shown when the campaign has a promo; admins
+          also see it (with the attach picker) so they can add one. */}
+      {(campaign.promo || isAdmin) && (
+        <Card className="border-border/50">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Tag className="w-4 h-4 text-primary" />
+              Promo Code Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {campaign.promo ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
+                <Field label="Promo Code" value={campaign.promo.code} />
+                <Field
+                  label="Discount"
+                  value={formatDiscount(campaign.promo)}
+                />
+                <Field
+                  label="Promo Start Date"
+                  value={(campaign.promo.startDate ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Promo End Date"
+                  value={(campaign.promo.endDate ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Provided / Approved By"
+                  value={campaign.promo.providedBy}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground/60">
+                No promo code on this campaign.
+              </p>
+            )}
+            {isAdmin && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-4">
+                <Select value={promoPick} onValueChange={setPromoPick}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select a promo code…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(promoCodes ?? []).map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.code}
+                        {formatDiscount(p) ? ` — ${formatDiscount(p)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  disabled={!promoPick}
+                  onClick={() => handleSetPromo(Number(promoPick))}
+                >
+                  {campaign.promo ? "Change" : "Attach"}
+                </Button>
+                {campaign.promo && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSetPromo(null)}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <CampaignEmailsCard clientId={clientId} aeoPlanId={campaignId} />
 

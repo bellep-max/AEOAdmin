@@ -25,3 +25,4 @@ export * from "./device_rotations";
 export * from "./email_sends";
 export * from "./email_events";
 export * from "./keyword_verdicts";
+export * from "./promo_codes";
