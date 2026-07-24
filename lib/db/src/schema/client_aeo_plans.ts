@@ -26,6 +26,13 @@ export const clientAeoPlansTable = pgTable("client_aeo_plans", {
   monthlyAeoBudget:       numeric("monthly_aeo_budget", { precision: 10, scale: 2 }),
   schemaImplementor:      text("schema_implementor"),            // "us" | "client_dev" | custom
   searchAddress:          text("search_address"),
+  /* ── Lifecycle (campaign level, distinct from Stripe's subscription state) ── */
+  campaignStatus:         text("campaign_status").notNull().default("active"), // active | paused | canceled
+  cancelReason:           text("cancel_reason"),                // why the client canceled — kept as data
+  canceledAt:             date("canceled_at"),
+  trialStartDate:         date("trial_start_date"),
+  trialEndDate:           date("trial_end_date"),
+  paidConversionDate:     date("paid_conversion_date"),         // trial → paid plan date
   subscriptionId:         text("subscription_id"),
   subscriptionStartDate:  date("subscription_start_date"),
   nextBillingDate:        date("next_billing_date"),

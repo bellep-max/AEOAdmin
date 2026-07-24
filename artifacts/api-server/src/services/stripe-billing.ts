@@ -174,6 +174,225 @@ async function fetchCustomer(
   };
 }
 
+/* ── Full billing summary (campaign Subscription section + charge history) ── */
+
+export interface StripeChargeRow {
+  id: string;
+  /** Major units (e.g. dollars), not cents. */
+  amount: number;
+  currency: string;
+  status: string;
+  /** YYYY-MM-DD (UTC). */
+  date: string | null;
+  description: string | null;
+}
+
+export interface StripeSubscriptionSummary {
+  id: string;
+  status: string;
+  /** Major units per billing interval, from the first subscription item. */
+  monthlyPrice: number | null;
+  currency: string | null;
+  /** e.g. "month", "year". */
+  billingCycle: string | null;
+  trialStartDate: string | null;
+  trialEndDate: string | null;
+  /** Trial over on an active/past_due sub = it converted; the date is trial end. */
+  trialConversionDate: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  /** When the cancellation takes/took effect. */
+  cancelEffectiveDate: string | null;
+  currentPeriodEnd: string | null;
+}
+
+export interface StripeBillingSummary {
+  stripeCustomerId: string | null;
+  billingEmail: string | null;
+  cardLast4: string | null;
+  subscription: StripeSubscriptionSummary | null;
+  charges: StripeChargeRow[];
+  /** Latest charge outcome: "succeeded" | "failed" | "pending" | null. */
+  paymentStatus: string | null;
+  /** True when the latest charge failed or the subscription is past_due/unpaid. */
+  hasFailedPayment: boolean;
+  lastPaymentDate: string | null;
+}
+
+interface StripeSubscriptionFull {
+  id: string;
+  status: string;
+  customer?: string | { id: string } | null;
+  items?: {
+    data?: Array<{
+      price?: {
+        unit_amount?: number | null;
+        currency?: string | null;
+        recurring?: { interval?: string | null } | null;
+      } | null;
+    }>;
+  } | null;
+  trial_start?: number | null;
+  trial_end?: number | null;
+  cancel_at_period_end?: boolean;
+  canceled_at?: number | null;
+  cancel_at?: number | null;
+  current_period_end?: number | null;
+}
+
+interface StripeCharge {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  created?: number | null;
+  description?: string | null;
+}
+
+function summarizeSubscription(
+  sub: StripeSubscriptionFull,
+  nowSeconds: number,
+): StripeSubscriptionSummary {
+  const price = sub.items?.data?.[0]?.price ?? null;
+  const trialEnded =
+    typeof sub.trial_end === "number" && sub.trial_end < nowSeconds;
+  const converted =
+    trialEnded && ["active", "past_due", "unpaid"].includes(sub.status);
+  return {
+    id: sub.id,
+    status: sub.status,
+    monthlyPrice: price?.unit_amount != null ? price.unit_amount / 100 : null,
+    currency: price?.currency ?? null,
+    billingCycle: price?.recurring?.interval ?? null,
+    trialStartDate: toDate(sub.trial_start),
+    trialEndDate: toDate(sub.trial_end),
+    trialConversionDate: converted ? toDate(sub.trial_end) : null,
+    cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end),
+    canceledAt: toDate(sub.canceled_at),
+    cancelEffectiveDate: toDate(
+      sub.cancel_at ??
+        (sub.cancel_at_period_end ? sub.current_period_end : null) ??
+        (sub.status === "canceled" ? sub.canceled_at : null),
+    ),
+    currentPeriodEnd: toDate(sub.current_period_end),
+  };
+}
+
+/**
+ * Everything the campaign page's Subscription section needs, live from Stripe:
+ * customer, most-recent subscription, and the charge history. Fail-soft like
+ * the details lookup — returns null on any hard failure.
+ */
+export async function fetchStripeBillingSummary(
+  stripeId: string,
+  opts: Options = {},
+): Promise<StripeBillingSummary | null> {
+  const apiKey = opts.apiKey ?? process.env.STRIPE_SECRET_KEY;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const log = opts.log;
+  if (!apiKey) {
+    log?.warn({ stripeId }, "STRIPE_SECRET_KEY not set — no billing summary");
+    return null;
+  }
+
+  try {
+    // Resolve the customer id: direct, or via the subscription.
+    let customerId: string | null = null;
+    let directSub: StripeSubscriptionFull | null = null;
+    if (stripeId.startsWith("cus_")) {
+      customerId = stripeId;
+    } else if (stripeId.startsWith("sub_")) {
+      const r = await stripeGet<StripeSubscriptionFull>(
+        `subscriptions/${encodeURIComponent(stripeId)}`,
+        apiKey,
+        doFetch,
+      );
+      if (!r.ok) {
+        log?.error({ stripeId, status: r.status }, "Stripe sub lookup failed");
+        return null;
+      }
+      directSub = r.data;
+      customerId =
+        typeof r.data.customer === "string"
+          ? r.data.customer
+          : (r.data.customer?.id ?? null);
+    } else {
+      return null;
+    }
+    if (!customerId) return null;
+
+    const [custR, subsR, chargesR] = await Promise.all([
+      stripeGet<StripeCustomer>(
+        `customers/${encodeURIComponent(customerId)}?expand[]=invoice_settings.default_payment_method`,
+        apiKey,
+        doFetch,
+      ),
+      stripeGet<{ data: StripeSubscriptionFull[] }>(
+        `subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=10`,
+        apiKey,
+        doFetch,
+      ),
+      stripeGet<{ data: StripeCharge[] }>(
+        `charges?customer=${encodeURIComponent(customerId)}&limit=50`,
+        apiKey,
+        doFetch,
+      ),
+    ]);
+    if (!custR.ok) {
+      log?.error(
+        { customerId, status: custR.status },
+        "Stripe customer lookup failed",
+      );
+      return null;
+    }
+
+    let cardLast4 =
+      custR.data.invoice_settings?.default_payment_method?.card?.last4 ?? null;
+    if (!cardLast4) {
+      const pm = await stripeGet<{ data: StripeCard[] }>(
+        `customers/${encodeURIComponent(customerId)}/payment_methods?type=card&limit=1`,
+        apiKey,
+        doFetch,
+      );
+      if (pm.ok) cardLast4 = pm.data.data?.[0]?.card?.last4 ?? null;
+    }
+
+    // Most relevant subscription: the one we were pointed at, else newest.
+    const subs = subsR.ok ? (subsR.data.data ?? []) : [];
+    const sub = directSub ?? subs[0] ?? null;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    const charges: StripeChargeRow[] = (
+      chargesR.ok ? (chargesR.data.data ?? []) : []
+    ).map((ch) => ({
+      id: ch.id,
+      amount: ch.amount / 100,
+      currency: ch.currency,
+      status: ch.status,
+      date: toDate(ch.created),
+      description: ch.description ?? null,
+    }));
+    const latestCharge = charges[0] ?? null;
+    const lastPaid = charges.find((ch) => ch.status === "succeeded") ?? null;
+
+    return {
+      stripeCustomerId: customerId,
+      billingEmail: custR.data.email ?? null,
+      cardLast4,
+      subscription: sub ? summarizeSubscription(sub, nowSeconds) : null,
+      charges,
+      paymentStatus: latestCharge?.status ?? null,
+      hasFailedPayment:
+        latestCharge?.status === "failed" ||
+        (sub != null && ["past_due", "unpaid"].includes(sub.status)),
+      lastPaymentDate: lastPaid?.date ?? null,
+    };
+  } catch (err: unknown) {
+    log?.error({ err, stripeId }, "Stripe billing summary threw");
+    return null;
+  }
+}
+
 /**
  * Resolve billing details from a Stripe id. Branches on the id prefix:
  * `cus_` → customer + card, `sub_` → subscription + dates.

@@ -55,6 +55,9 @@ interface FreeTrialProofDialogProps {
   open: boolean;
   onClose: () => void;
   clientId: number | null;
+  /* Campaign-page trigger: limit the screenshot pool to one campaign. */
+  businessId?: number | null;
+  aeoPlanId?: number | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,6 +74,8 @@ export function FreeTrialProofDialog({
   open,
   onClose,
   clientId,
+  businessId,
+  aeoPlanId,
 }: FreeTrialProofDialogProps) {
   const { toast } = useToast();
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -97,13 +102,21 @@ export function FreeTrialProofDialog({
     },
   });
 
+  const scopeParams = useMemo(() => {
+    if (clientId == null) return null;
+    const p = new URLSearchParams({ clientId: String(clientId) });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
+    return p.toString();
+  }, [clientId, businessId, aeoPlanId]);
+
   const { data: gallery, isLoading: galleryLoading } =
     useQuery<GalleryResponse>({
-      enabled: open && clientId != null,
-      queryKey: ["/api/sales/campaign-screenshots", clientId],
+      enabled: open && scopeParams != null,
+      queryKey: ["/api/sales/campaign-screenshots", scopeParams],
       queryFn: async () => {
         const res = await rawFetch(
-          `/api/sales/campaign-screenshots?clientId=${clientId}`,
+          `/api/sales/campaign-screenshots?${scopeParams}`,
         );
         if (!res.ok) throw new Error("Failed to load screenshots");
         return res.json();
@@ -137,7 +150,7 @@ export function FreeTrialProofDialog({
     setCityState("");
     setSubject("");
     setResult(null);
-  }, [clientId]);
+  }, [clientId, businessId, aeoPlanId]);
 
   const previewParams = useMemo(() => {
     if (clientId == null || selected == null) return null;
@@ -146,9 +159,11 @@ export function FreeTrialProofDialog({
       keywordId: String(selected.keywordId),
       platform: selected.platform,
     });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (cityState.trim()) p.set("cityState", cityState.trim());
     return p.toString();
-  }, [clientId, selected, cityState]);
+  }, [clientId, businessId, aeoPlanId, selected, cityState]);
 
   const { data: preview, isLoading: previewLoading } =
     useQuery<PreviewResponse>({
@@ -180,6 +195,8 @@ export function FreeTrialProofDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId,
+          businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selected?.keywordId,
           platform: selected?.platform,
           recipients,

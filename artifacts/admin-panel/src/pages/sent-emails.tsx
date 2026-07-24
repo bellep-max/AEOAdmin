@@ -113,6 +113,7 @@ function emailTypeLabel(row: SendRow): string {
     if (t === "first_proof") return "First Proof";
     if (t === "free_trial_proof") return "Free-Trial Proof";
     if (t === "second_keyword") return "Founder's Discount";
+    if (t === "reply") return "Reply";
     return "Sales";
   }
   return row.kind ?? "—";

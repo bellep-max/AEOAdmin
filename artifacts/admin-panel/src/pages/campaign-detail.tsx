@@ -17,15 +17,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft,
   ClipboardList,
+  CreditCard,
   Key,
   Plus,
   Pencil,
+  Send,
   Trash2,
 } from "lucide-react";
+import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
+import { CampaignEmailsCard } from "@/components/CampaignEmailsCard";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
@@ -62,6 +76,46 @@ interface Campaign {
   nextBillingDate: string | null;
   cardLast4: string | null;
   createdBy: string | null;
+  campaignStatus: string;
+  cancelReason: string | null;
+  canceledAt: string | null;
+  trialStartDate: string | null;
+  trialEndDate: string | null;
+  paidConversionDate: string | null;
+}
+
+interface BillingSummary {
+  hasStripeRef: boolean;
+  summary: {
+    stripeCustomerId: string | null;
+    billingEmail: string | null;
+    cardLast4: string | null;
+    subscription: {
+      id: string;
+      status: string;
+      monthlyPrice: number | null;
+      currency: string | null;
+      billingCycle: string | null;
+      trialStartDate: string | null;
+      trialEndDate: string | null;
+      trialConversionDate: string | null;
+      cancelAtPeriodEnd: boolean;
+      canceledAt: string | null;
+      cancelEffectiveDate: string | null;
+      currentPeriodEnd: string | null;
+    } | null;
+    charges: Array<{
+      id: string;
+      amount: number;
+      currency: string;
+      status: string;
+      date: string | null;
+      description: string | null;
+    }>;
+    paymentStatus: string | null;
+    hasFailedPayment: boolean;
+    lastPaymentDate: string | null;
+  } | null;
 }
 
 interface Keyword {
@@ -82,6 +136,7 @@ interface Business {
 interface Client {
   id: number;
   businessName: string;
+  source: string | null;
 }
 
 function Field({
@@ -105,6 +160,140 @@ function Field({
   );
 }
 
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+  paused: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  canceled: "bg-red-500/10 text-red-500 border-red-500/20",
+};
+
+/** Editor-gated inline editor for campaign status, cancel reason and the
+ *  trial/paid dates. PATCHes the plan directly — separate from the big
+ *  CampaignFormDialog so lifecycle changes stay one click away. */
+function CampaignLifecycleEditor({
+  clientId,
+  campaign,
+  onSaved,
+}: {
+  clientId: number;
+  campaign: Campaign;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [status, setStatus] = useState(campaign.campaignStatus || "active");
+  const [cancelReason, setCancelReason] = useState(campaign.cancelReason ?? "");
+  const [trialStart, setTrialStart] = useState(
+    (campaign.trialStartDate ?? "").slice(0, 10),
+  );
+  const [trialEnd, setTrialEnd] = useState(
+    (campaign.trialEndDate ?? "").slice(0, 10),
+  );
+  const [paidDate, setPaidDate] = useState(
+    (campaign.paidConversionDate ?? "").slice(0, 10),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const dirty =
+    status !== (campaign.campaignStatus || "active") ||
+    cancelReason.trim() !== (campaign.cancelReason ?? "").trim() ||
+    trialStart !== (campaign.trialStartDate ?? "").slice(0, 10) ||
+    trialEnd !== (campaign.trialEndDate ?? "").slice(0, 10) ||
+    paidDate !== (campaign.paidConversionDate ?? "").slice(0, 10);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaign.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignStatus: status,
+            cancelReason: cancelReason.trim() || null,
+            trialStartDate: trialStart || null,
+            trialEndDate: trialEnd || null,
+            paidConversionDate: paidDate || null,
+          }),
+        },
+      );
+      if (!res.ok)
+        throw new Error((await res.json().catch(() => ({}))).error ?? "Failed");
+      toast({ title: "Campaign updated" });
+      onSaved();
+    } catch (err: unknown) {
+      toast({
+        title: err instanceof Error ? err.message : "Failed to save",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="col-span-full border-t border-border/50 pt-4 mt-1 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Campaign Status</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="canceled">Canceled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Trial Start Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={trialStart}
+            onChange={(e) => setTrialStart(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Trial End Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={trialEnd}
+            onChange={(e) => setTrialEnd(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Paid / Conversion Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={paidDate}
+            onChange={(e) => setPaidDate(e.target.value)}
+          />
+        </div>
+      </div>
+      {status === "canceled" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Reason they canceled</Label>
+          <Textarea
+            rows={2}
+            placeholder="Why did the client cancel? This is kept as data."
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+          />
+        </div>
+      )}
+      {dirty && (
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function CampaignDetail() {
   const [, params] = useRoute(
     "/clients/:clientId/businesses/:businessId/campaigns/:campaignId",
@@ -114,9 +303,11 @@ export default function CampaignDetail() {
   const campaignId = Number(params?.campaignId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAdmin, isEditor } = useAuth();
+  const { isAdmin, isEditor, isOwner } = useAuth();
   const [, navigate] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const [ftpOpen, setFtpOpen] = useState(false);
   const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
   const [kwDialogOpen, setKwDialogOpen] = useState(false);
   const [savingKw, setSavingKw] = useState(false);
@@ -153,6 +344,20 @@ export default function CampaignDetail() {
       return res.json();
     },
     enabled: !!clientId,
+  });
+
+  // Live Stripe billing — admin/owner only (the endpoint 403s below that).
+  const { data: billing } = useQuery<BillingSummary>({
+    queryKey: ["/api/clients", clientId, "aeo-plans", campaignId, "billing"],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/billing`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!clientId && !!campaignId && isAdmin,
+    staleTime: 60_000,
   });
 
   const { data: keywords, refetch: refetchKeywords } = useQuery<Keyword[]>({
@@ -342,7 +547,24 @@ export default function CampaignDetail() {
             {campaign.searchAddress ?? ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            className="gap-1"
+            onClick={() => setSalesEmailOpen(true)}
+          >
+            <Send className="w-3.5 h-3.5" /> Send proof
+          </Button>
+          {isOwner && campaign.planType === "Free Trial Plans" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1"
+              onClick={() => setFtpOpen(true)}
+            >
+              <Send className="w-3.5 h-3.5" /> Send free-trial proof
+            </Button>
+          )}
           {isEditor && (
             <Button
               variant="outline"
@@ -365,6 +587,23 @@ export default function CampaignDetail() {
           )}
         </div>
       </div>
+
+      {/* Proof emails scoped to THIS campaign — the screenshot pool only
+          offers this campaign's keywords. */}
+      <SalesEmailDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
+      <FreeTrialProofDialog
+        open={ftpOpen}
+        onClose={() => setFtpOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
 
       <CampaignFormDialog
         open={editOpen}
@@ -413,26 +652,68 @@ export default function CampaignDetail() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-            <Field label="Plan Type" value={campaign.planType} />
-            <Field label="Tier" value={meta.tier} />
-            <Field label="Search Address" value={campaign.searchAddress} />
+            <Field label="Product" value="Signal AEO" />
+            <Field label="Plan Tier" value={campaign.planType} />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                Campaign Status
+              </p>
+              <Badge
+                variant="outline"
+                className={`capitalize ${STATUS_BADGE[campaign.campaignStatus] ?? ""}`}
+              >
+                {campaign.campaignStatus || "active"}
+              </Badge>
+            </div>
             <Field
-              label="Answer Presence"
-              value={campaign.currentAnswerPresence}
+              label="Primary Campaign Goal"
+              value="Reach Top 3 in AI answers"
             />
             <Field
-              label="Search Boost Target"
-              value={campaign.searchBoostTarget}
+              label="Primary Search Location"
+              value={campaign.searchAddress}
             />
             <Field
-              label="Monthly AEO Budget"
-              value={campaign.monthlyAeoBudget}
+              label="Signup Source"
+              value={client?.source ?? campaign.createdBy}
             />
             <Field
-              label="Schema Implementor"
-              value={campaign.schemaImplementor}
+              label="Trial Start Date"
+              value={(campaign.trialStartDate ?? "").slice(0, 10) || null}
+            />
+            <Field
+              label="Trial End Date"
+              value={(campaign.trialEndDate ?? "").slice(0, 10) || null}
+            />
+            <Field
+              label="Paid / Conversion Date"
+              value={(campaign.paidConversionDate ?? "").slice(0, 10) || null}
             />
             <Field label="Created By" value={campaign.createdBy} />
+            {campaign.campaignStatus === "canceled" && (
+              <>
+                <Field
+                  label="Canceled On"
+                  value={(campaign.canceledAt ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Reason they canceled"
+                  value={campaign.cancelReason}
+                />
+              </>
+            )}
+            {isEditor && (
+              <CampaignLifecycleEditor
+                key={`${campaign.id}-${campaign.campaignStatus}-${campaign.trialStartDate}-${campaign.trialEndDate}-${campaign.paidConversionDate}-${campaign.cancelReason}`}
+                clientId={clientId}
+                campaign={campaign}
+                onSaved={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+                  })
+                }
+              />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -440,22 +721,158 @@ export default function CampaignDetail() {
       <Card className="border-border/50">
         <CardHeader className="pb-4">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-primary" />
+            <CreditCard className="w-4 h-4 text-primary" />
             Subscription
+            {billing?.summary?.hasFailedPayment && (
+              <Badge variant="destructive" className="ml-1">
+                Payment failed
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Subscription ID" value={campaign.subscriptionId} />
             <Field
               label="Card (last 4)"
-              value={campaign.cardLast4 ? `•••• ${campaign.cardLast4}` : null}
+              value={
+                (billing?.summary?.cardLast4 ?? campaign.cardLast4)
+                  ? `•••• ${billing?.summary?.cardLast4 ?? campaign.cardLast4}`
+                  : null
+              }
             />
-            <Field label="Start Date" value={campaign.subscriptionStartDate} />
-            <Field label="Next Billing Date" value={campaign.nextBillingDate} />
+            <Field
+              label="Start Date"
+              value={(campaign.subscriptionStartDate ?? "").slice(0, 10) || null}
+            />
+            <Field
+              label="Next Billing Date"
+              value={
+                billing?.summary?.subscription?.currentPeriodEnd ??
+                ((campaign.nextBillingDate ?? "").slice(0, 10) || null)
+              }
+            />
           </div>
+
+          {/* Live Stripe state — admin/owner only (the query is gated). */}
+          {billing?.summary && (
+            <div className="border-t border-border/50 pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Subscription Status
+                </p>
+                {billing.summary.subscription ? (
+                  <Badge variant="outline" className="capitalize">
+                    {billing.summary.subscription.status}
+                  </Badge>
+                ) : (
+                  <p className="text-sm text-muted-foreground/60">
+                    No subscription yet — card on file only
+                  </p>
+                )}
+              </div>
+              <Field
+                label="Monthly Price"
+                value={
+                  billing.summary.subscription?.monthlyPrice != null
+                    ? `$${billing.summary.subscription.monthlyPrice.toFixed(2)} ${(billing.summary.subscription.currency ?? "").toUpperCase()}`
+                    : null
+                }
+              />
+              <Field
+                label="Billing Cycle"
+                value={
+                  billing.summary.subscription?.billingCycle
+                    ? `per ${billing.summary.subscription.billingCycle}`
+                    : null
+                }
+              />
+              <Field
+                label="Trial Start (Stripe)"
+                value={billing.summary.subscription?.trialStartDate}
+              />
+              <Field
+                label="Trial Conversion Date"
+                value={billing.summary.subscription?.trialConversionDate}
+              />
+              <Field
+                label="Payment Status"
+                value={billing.summary.paymentStatus}
+              />
+              <Field
+                label="Cancellation Status"
+                value={
+                  billing.summary.subscription
+                    ? billing.summary.subscription.status === "canceled"
+                      ? "canceled"
+                      : billing.summary.subscription.cancelAtPeriodEnd
+                        ? "cancels at period end"
+                        : "not canceled"
+                    : null
+                }
+              />
+              <Field
+                label="Cancellation Effective"
+                value={billing.summary.subscription?.cancelEffectiveDate}
+              />
+              <Field
+                label="Failed-Payment Status"
+                value={billing.summary.hasFailedPayment ? "FAILED" : "none"}
+              />
+              <Field
+                label="Last Payment Date"
+                value={billing.summary.lastPaymentDate}
+              />
+            </div>
+          )}
+
+          {/* Charge history — amount + date, newest first. */}
+          {billing?.summary && billing.summary.charges.length > 0 && (
+            <div className="border-t border-border/50 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2">
+                Charge History
+              </p>
+              <div className="space-y-1.5">
+                {billing.summary.charges.map((ch) => (
+                  <div
+                    key={ch.id}
+                    className="flex items-center gap-3 text-sm border-b border-border/30 last:border-b-0 pb-1.5"
+                  >
+                    <span className="text-muted-foreground w-28 flex-shrink-0">
+                      {ch.date ?? "—"}
+                    </span>
+                    <span className="font-medium w-28 flex-shrink-0">
+                      ${ch.amount.toFixed(2)} {ch.currency.toUpperCase()}
+                    </span>
+                    <Badge
+                      variant={
+                        ch.status === "succeeded"
+                          ? "outline"
+                          : ch.status === "failed"
+                            ? "destructive"
+                            : "secondary"
+                      }
+                      className="capitalize"
+                    >
+                      {ch.status}
+                    </Badge>
+                    <span className="text-muted-foreground truncate">
+                      {ch.description ?? ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {billing != null && !billing.hasStripeRef && (
+            <p className="text-xs text-muted-foreground">
+              No Stripe customer/subscription is linked to this campaign.
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      <CampaignEmailsCard clientId={clientId} aeoPlanId={campaignId} />
 
       <PerformanceSummaryCard
         clientId={clientId}

@@ -20,6 +20,7 @@ import {
   bucketCountsByPlan,
   type KeywordBuckets,
 } from "./portal";
+import { fetchStripeBillingSummary } from "../services/stripe-billing";
 
 const router = Router({ mergeParams: true }); // gives access to :clientId from parent
 
@@ -110,6 +111,41 @@ router.get("/:planId", requireSalesAllowed, async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching AEO plan");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/clients/:clientId/aeo-plans/:planId/billing
+ * Live Stripe billing summary for the campaign's stored subscription/customer
+ * ref: subscription status + price + trial dates, and the charge history.
+ * Admin/owner only — this is raw billing data.
+ */
+router.get("/:planId/billing", requireAdmin, async (req, res) => {
+  try {
+    const clientId = parseInt(req.params.clientId);
+    const planId = parseInt(req.params.planId);
+    if (isNaN(clientId) || isNaN(planId))
+      return res.status(400).json({ error: "Invalid id" });
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+    const [plan] = await db
+      .select({ subscriptionId: clientAeoPlansTable.subscriptionId })
+      .from(clientAeoPlansTable)
+      .where(
+        and(
+          eq(clientAeoPlansTable.clientId, clientId),
+          eq(clientAeoPlansTable.id, planId),
+        ),
+      );
+    if (!plan) return res.status(404).json({ error: "Plan not found" });
+    if (!plan.subscriptionId)
+      return res.json({ hasStripeRef: false, summary: null });
+    const summary = await fetchStripeBillingSummary(plan.subscriptionId, {
+      log: req.log,
+    });
+    return res.json({ hasStripeRef: true, summary });
+  } catch (err) {
+    req.log.error({ err }, "Error fetching plan billing summary");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -268,9 +304,29 @@ router.patch("/:planId", requireScopedEditor, async (req, res) => {
       "nextBillingDate",
       "cardLast4",
       "createdBy",
+      "cancelReason",
+      "canceledAt",
+      "trialStartDate",
+      "trialEndDate",
+      "paidConversionDate",
     ];
     for (const f of fields) {
       if (f in body) update[f] = body[f] ?? null;
+    }
+    if ("campaignStatus" in body) {
+      const cs = String(body.campaignStatus ?? "");
+      if (!["active", "paused", "canceled"].includes(cs)) {
+        return res.status(400).json({
+          error: "campaignStatus must be active, paused, or canceled",
+        });
+      }
+      update.campaignStatus = cs;
+      // Stamp/clear the cancellation date with the status flip so the
+      // "when was it canceled" datum never depends on the operator remembering.
+      if (cs === "canceled" && !("canceledAt" in body)) {
+        update.canceledAt = new Date().toISOString().slice(0, 10);
+      }
+      if (cs !== "canceled") update.canceledAt = null;
     }
     if ("searchBoostTarget" in body)
       update.searchBoostTarget =

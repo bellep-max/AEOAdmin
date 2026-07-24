@@ -1071,6 +1071,9 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
     const planType = req.query.planType
       ? String(req.query.planType).trim()
       : null;
+    const aeoPlanId = req.query.aeoPlanId
+      ? Number.parseInt(String(req.query.aeoPlanId), 10)
+      : null;
     const scopedIds = await getScopedClientIds(req);
     if (scopedIds !== null && scopedIds.length === 0)
       return res.json({ sends: [] });
@@ -1114,6 +1117,16 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
             ? eq(emailSendsTable.clientId, clientId)
             : undefined,
           kind ? eq(emailSendsTable.kind, kind) : undefined,
+          // Campaign view: this campaign's sends, plus (when the client is also
+          // pinned) the client's campaign-less sends like the welcome email.
+          aeoPlanId != null && Number.isFinite(aeoPlanId)
+            ? clientId != null && Number.isFinite(clientId)
+              ? or(
+                  eq(clientAeoPlansTable.id, aeoPlanId),
+                  sql`${clientAeoPlansTable.id} IS NULL`,
+                )
+              : eq(clientAeoPlansTable.id, aeoPlanId)
+            : undefined,
           // Match the send's campaign plan type; sends with no campaign (e.g.
           // welcome emails carry no keyword) fall back to "the client has a
           // plan of this type" so they don't vanish under a plan filter.
@@ -1207,6 +1220,205 @@ router.get("/email-sends/:id", requireSalesEmail, async (req, res) => {
     return res.json({ ...row, events });
   } catch (err) {
     req.log.error({ err }, "Error fetching email send detail");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/sales/email-sends/:id/reply
+   Body: { message, subject? } — a plain follow-up to a previously sent email.
+   Recipients default to the original's intended list; delivery follows the
+   same GHL-first policy so the reply lands in the contact's GHL conversation
+   thread. Recorded to email_sends (meta.template='reply', meta.replyToId). */
+router.post("/email-sends/:id/reply", requireSalesEmail, async (req, res) => {
+  const id = Number.parseInt(String(req.params.id), 10);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
+  const body = req.body as { message?: string; subject?: string };
+  const message = body.message?.trim();
+  if (!message) return res.status(400).json({ error: "message required" });
+  try {
+    const [orig] = await db
+      .select()
+      .from(emailSendsTable)
+      .where(eq(emailSendsTable.id, id))
+      .limit(1);
+    if (!orig) return res.status(404).json({ error: "not found" });
+    if (orig.clientId == null)
+      return res.status(409).json({ error: "Original send has no client" });
+    if (!(await isClientInSalesScope(req, orig.clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+
+    configureSendGrid();
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
+    const fromName =
+      process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`;
+    if (!fromEmail)
+      return res.status(503).json({ error: "Sender email not configured" });
+
+    const intendedRecipients = (
+      (orig.intendedRecipients?.length
+        ? orig.intendedRecipients
+        : orig.recipients) ?? []
+    ).filter((e) => EMAIL_RE.test(e));
+    if (intendedRecipients.length === 0)
+      return res.status(409).json({ error: "Original send has no recipients" });
+    const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
+    const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
+    const origSubject = (orig.subject ?? "").replace(/^\[TEST[^\]]*\]\s*/, "");
+    const subject =
+      body.subject?.trim() ||
+      (origSubject.startsWith("Re:") ? origSubject : `Re: ${origSubject}`);
+
+    const paragraphs = message
+      .split(/\n{2,}/)
+      .map(
+        (p) =>
+          `<p style="margin:0 0 14px 0;color:#334155;font-size:14px;line-height:1.7;white-space:pre-wrap">${p.trim()}</p>`,
+      )
+      .join("");
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" /></head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:600px;margin:0 auto;padding:24px 28px">
+    ${paragraphs}
+    <p style="margin:16px 0 0 0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${SENDER_NAME}<br/><span style="color:#64748b">${SENDER_ORG}</span></p>
+  </div>
+</body></html>`;
+
+    const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
+    const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
+    let contactId: string | null = null;
+    let contactPrimaryEmail: string | null = null;
+    if (ghlEnabled) {
+      try {
+        const [clientRow] = await db
+          .select({
+            accountEmail: clientsTable.accountEmail,
+            contactEmail: clientsTable.contactEmail,
+          })
+          .from(clientsTable)
+          .where(eq(clientsTable.id, orig.clientId))
+          .limit(1);
+        contactPrimaryEmail =
+          clientRow?.accountEmail || clientRow?.contactEmail || null;
+        contactId = contactPrimaryEmail
+          ? await ghlFindContactIdByEmail(contactPrimaryEmail)
+          : null;
+      } catch (e) {
+        req.log.warn({ err: e }, "GHL contact lookup failed");
+      }
+    }
+
+    let deliveredVia: "ghl" | "sendgrid" | null = null;
+    let messageId: string | undefined;
+    let sendError: string | null = null;
+    let ghlStatus: string | null = null;
+    let storedSubject = subject;
+    const primaryEmail = (contactPrimaryEmail ?? "").toLowerCase();
+    const recipientsIncludeClient =
+      primaryEmail.length > 0 &&
+      intendedRecipients.some((e) => e.toLowerCase() === primaryEmail);
+
+    if (
+      ghlEnabled &&
+      sendMode === "ghl_first" &&
+      contactId &&
+      recipientsIncludeClient
+    ) {
+      try {
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primaryEmail,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
+        deliveredVia = "ghl";
+        messageId = r.messageId;
+        ghlStatus = "sent_via_ghl";
+      } catch (e) {
+        ghlStatus = `ghl_send_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+        req.log.warn({ err: e }, "GHL reply failed — falling back to SendGrid");
+      }
+    }
+
+    if (deliveredVia == null) {
+      const msg = {
+        to: actualRecipients,
+        from: { email: fromEmail, name: fromName },
+        subject: safeOverride
+          ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
+          : subject,
+        html,
+        trackingSettings: {
+          clickTracking: { enable: false, enableText: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false },
+        },
+        mailSettings: { bypassListManagement: { enable: false } },
+      };
+      storedSubject = msg.subject;
+      try {
+        const sgResp = await sgMail.send(msg);
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as
+          | string
+          | undefined;
+        deliveredVia = "sendgrid";
+      } catch (e: unknown) {
+        sendError = e instanceof Error ? e.message : String(e);
+      }
+      if (!sendError && !ghlEnabled)
+        ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
+    }
+
+    const [logged] = await db
+      .insert(emailSendsTable)
+      .values({
+        clientId: orig.clientId,
+        businessId: orig.businessId,
+        aeoPlanId: orig.aeoPlanId,
+        recipients: actualRecipients,
+        intendedRecipients: safeOverride ? intendedRecipients : null,
+        fromEmail,
+        subject: storedSubject,
+        status: sendError ? "failed" : "sent",
+        sendgridMessageId:
+          deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        deliveredVia: deliveredVia ?? null,
+        ghlMessageId: deliveredVia === "ghl" ? (messageId ?? null) : null,
+        latestStatus: sendError ? "failed" : "sent",
+        error: sendError,
+        kind: "sales",
+        html,
+        meta: {
+          template: "reply",
+          replyToId: orig.id,
+          // Keep the original's keyword linkage so the campaign view still
+          // groups the reply with the thread it belongs to.
+          keywordId:
+            (orig.meta as { keywordId?: number } | null)?.keywordId ?? null,
+          deliveredVia,
+          messageId: messageId ?? null,
+        },
+        ghlStatus,
+      })
+      .returning({ id: emailSendsTable.id });
+
+    if (sendError)
+      return res
+        .status(502)
+        .json({ error: `Send failed: ${sendError}`, sendId: logged?.id });
+    return res.json({
+      ok: true,
+      sendId: logged?.id,
+      deliveredVia,
+      recipientsActual: actualRecipients,
+      recipientsIntended: intendedRecipients,
+      safeModeActive: Boolean(safeOverride),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error sending reply");
     return res.status(500).json({ error: "Internal server error" });
   }
 });

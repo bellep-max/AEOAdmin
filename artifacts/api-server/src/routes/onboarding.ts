@@ -194,6 +194,12 @@ interface FreeTrialBody {
   address: string | null;
   /** City, used to localize the welcome email copy; may be null. */
   city: string | null;
+  state: string | null;
+  /** Google Business Profile link; when absent we derive one from placeId. */
+  gmbUrl: string | null;
+  placeId: string | null;
+  lat: number | null;
+  lng: number | null;
   website: string | null;
   /** Business service/category, used to generate keywords when none are sent. */
   service: string | null;
@@ -267,6 +273,9 @@ function validateFreeTrial(
   for (const opt of [
     "address",
     "city",
+    "state",
+    "gmbUrl",
+    "placeId",
     "website",
     "service",
     "brand",
@@ -275,6 +284,11 @@ function validateFreeTrial(
   ]) {
     if (r[opt] != null && typeof r[opt] !== "string") {
       return { ok: false, error: `${opt} must be a string if provided` };
+    }
+  }
+  for (const opt of ["lat", "lng"]) {
+    if (r[opt] != null && typeof r[opt] !== "number") {
+      return { ok: false, error: `${opt} must be a number if provided` };
     }
   }
   if (r.stripeCustomerId != null) {
@@ -321,6 +335,11 @@ function validateFreeTrial(
         : [],
       address: isStr(r.address) ? r.address.trim() : null,
       city: isStr(r.city) ? r.city.trim() : null,
+      state: isStr(r.state) ? r.state.trim() : null,
+      gmbUrl: isStr(r.gmbUrl) ? r.gmbUrl.trim() : null,
+      placeId: isStr(r.placeId) ? r.placeId.trim() : null,
+      lat: typeof r.lat === "number" && Number.isFinite(r.lat) ? r.lat : null,
+      lng: typeof r.lng === "number" && Number.isFinite(r.lng) ? r.lng : null,
       website: isStr(r.website) ? r.website.trim() : null,
       service: isStr(r.service) ? r.service.trim() : null,
       brand: isStr(r.brand) ? r.brand.trim() : null,
@@ -486,6 +505,14 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
       : body.businessName;
 
     // 3. Create.
+    // GMB link: explicit when the funnel sends one, else derived from the
+    // Google place id (the canonical maps link for that listing).
+    const gmbUrl =
+      body.gmbUrl ??
+      (body.placeId
+        ? `https://www.google.com/maps/place/?q=place_id:${body.placeId}`
+        : null);
+
     const result = await db.transaction(async (tx) => {
       const [client] = await tx
         .insert(clientsTable)
@@ -493,6 +520,12 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           businessName: body.businessName,
           websiteUrl: body.website,
           publishedAddress: body.address,
+          gmbUrl,
+          placeId: body.placeId,
+          city: body.city,
+          state: body.state,
+          latitude: body.lat,
+          longitude: body.lng,
           accountUserName: body.contactName,
           contactEmail: body.email,
           accountEmail: body.email,
@@ -531,6 +564,7 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           name: body.businessName,
           websiteUrl: body.website,
           publishedAddress: body.address,
+          gmbUrl,
           status: "active",
           createdBy,
         })
@@ -549,6 +583,12 @@ router.post("/free-trial", requireFreeTrialToken, async (req, res) => {
           cardLast4: billing?.cardLast4 ?? null,
           subscriptionStartDate: billing?.subscriptionStartDate ?? null,
           nextBillingDate: billing?.nextBillingDate ?? null,
+          trialStartDate: isDirect
+            ? null
+            : new Date().toISOString().slice(0, 10),
+          paidConversionDate: isDirect
+            ? new Date().toISOString().slice(0, 10)
+            : null,
           createdBy,
         })
         .returning({ id: clientAeoPlansTable.id });
