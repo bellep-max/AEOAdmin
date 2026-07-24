@@ -144,6 +144,18 @@ const SENDER_ORG = process.env.SALES_SENDER_ORG ?? "SEO Local";
 // The free-trial proof is a Signal-AEO-branded email, separate from the SEO
 // Local sales proofs — its own org name drives the header + signature.
 const SENDER_ORG_SIGNAL = process.env.SIGNAL_SENDER_ORG ?? "Signal AEO";
+/* Owner-sent proofs go out as Mary (Signal AEO) instead of Chuck (SEO Local).
+   Owner sends also skip GHL-first delivery: a GHL send uses the sub-account's
+   sender, so only the direct SendGrid path can truly carry Mary's From. */
+const OWNER_FROM_EMAIL = process.env.OWNER_FROM_EMAIL ?? "mary@signalaeo.com";
+const OWNER_FROM_NAME =
+  process.env.OWNER_FROM_NAME ?? `Mary — ${SENDER_ORG_SIGNAL}`;
+const OWNER_SENDER_NAME = process.env.OWNER_SENDER_NAME ?? "Mary";
+
+function isOwnerSender(req: Request): boolean {
+  const s = req.session as unknown as Record<string, unknown>;
+  return s.userRole === "owner";
+}
 // From address for GHL-delivered sales emails. Unset → GHL uses the sub-account's
 // default LC Email sender (e.g. mail@seolocal.us). Set GHL_EMAIL_FROM (address, or
 // "Name <address>") to control the From without a redeploy — the address must be an
@@ -168,6 +180,9 @@ interface SalesEmailArgs {
   /* Which copy template drives the hero headline + default intro/offer/CTA.
      Defaults to the original "first proof" email. */
   template?: SalesTemplateKey;
+  /* Signature override — owner sends sign as Mary / Signal AEO. */
+  senderName?: string;
+  senderOrg?: string;
 }
 
 function defaultIntro(a: SalesEmailArgs): string {
@@ -356,7 +371,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
 
       <!-- Signature -->
       <div style="padding:14px 30px 26px 30px">
-        <p style="margin:0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${SENDER_NAME}<br/><span style="color:#64748b">${SENDER_ORG}</span></p>
+        <p style="margin:0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${a.senderName ?? SENDER_NAME}<br/><span style="color:#64748b">${a.senderOrg ?? SENDER_ORG}</span></p>
       </div>
     </div>
 
@@ -379,6 +394,8 @@ interface SalesEmailCopy {
   ctaLabel?: string;
   ctaUrl?: string;
   template?: SalesTemplateKey;
+  senderName?: string;
+  senderOrg?: string;
 }
 
 interface SalesEmailScope {
@@ -550,12 +567,17 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     const platform = req.query.platform ? String(req.query.platform) : null;
     const qs = (k: string) => (req.query[k] ? String(req.query[k]) : undefined);
     const template = resolveTemplate(qs("template"));
+    const ownerSender = isOwnerSender(req);
     const copy: SalesEmailCopy = {
       introMessage: qs("introMessage"),
       offerText: qs("offerText"),
       ctaLabel: qs("ctaLabel"),
       ctaUrl: qs("ctaUrl"),
       template: template.key,
+      // Preview must match the send: owner sends sign as Mary / Signal AEO.
+      ...(ownerSender
+        ? { senderName: OWNER_SENDER_NAME, senderOrg: SENDER_ORG_SIGNAL }
+        : {}),
     };
 
     const scope = parseScope(req.query as Record<string, unknown>);
@@ -774,11 +796,16 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       return res.status(403).json({ error: "Client outside your plan scope" });
 
     configureSendGrid();
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
+    const ownerSender = isOwnerSender(req);
+    const fromEmail = ownerSender
+      ? OWNER_FROM_EMAIL
+      : process.env.SENDGRID_FROM_EMAIL;
     // Sales emails carry their own SEO Local sender name (the ranking-report
-    // emails keep SENDGRID_FROM_NAME). Override via SALES_FROM_NAME.
-    const fromName =
-      process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`;
+    // emails keep SENDGRID_FROM_NAME). Override via SALES_FROM_NAME. Owner
+    // sends go out as Mary (Signal AEO) instead.
+    const fromName = ownerSender
+      ? OWNER_FROM_NAME
+      : (process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`);
     if (!fromEmail) {
       return res.status(503).json({
         error: "Sender email not configured",
@@ -814,6 +841,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
         ctaLabel: body.ctaLabel,
         ctaUrl: body.ctaUrl,
         template: template.key,
+        ...(ownerSender
+          ? { senderName: OWNER_SENDER_NAME, senderOrg: SENDER_ORG_SIGNAL }
+          : {}),
       },
       scope,
       firstName,
@@ -901,6 +931,9 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     if (
       ghlEnabled &&
       sendMode === "ghl_first" &&
+      // Owner sends must carry Mary's From — only direct SendGrid can do that
+      // (a GHL send uses the sub-account's sender). The GHL note still logs.
+      !ownerSender &&
       contactId &&
       recipientsIncludeClient
     ) {
@@ -1248,9 +1281,15 @@ router.post("/email-sends/:id/reply", requireSalesEmail, async (req, res) => {
       return res.status(403).json({ error: "Client outside your plan scope" });
 
     configureSendGrid();
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
-    const fromName =
-      process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`;
+    const ownerSender = isOwnerSender(req);
+    const fromEmail = ownerSender
+      ? OWNER_FROM_EMAIL
+      : process.env.SENDGRID_FROM_EMAIL;
+    const fromName = ownerSender
+      ? OWNER_FROM_NAME
+      : (process.env.SALES_FROM_NAME ?? `${SENDER_NAME} — ${SENDER_ORG}`);
+    const signName = ownerSender ? OWNER_SENDER_NAME : SENDER_NAME;
+    const signOrg = ownerSender ? SENDER_ORG_SIGNAL : SENDER_ORG;
     if (!fromEmail)
       return res.status(503).json({ error: "Sender email not configured" });
 
@@ -1280,7 +1319,7 @@ router.post("/email-sends/:id/reply", requireSalesEmail, async (req, res) => {
 <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:24px 28px">
     ${paragraphs}
-    <p style="margin:16px 0 0 0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${SENDER_NAME}<br/><span style="color:#64748b">${SENDER_ORG}</span></p>
+    <p style="margin:16px 0 0 0;color:#334155;font-size:14px;line-height:1.6">&mdash; ${signName}<br/><span style="color:#64748b">${signOrg}</span></p>
   </div>
 </body></html>`;
 
@@ -1321,6 +1360,9 @@ router.post("/email-sends/:id/reply", requireSalesEmail, async (req, res) => {
     if (
       ghlEnabled &&
       sendMode === "ghl_first" &&
+      // Owner sends must carry Mary's From — only direct SendGrid can do that
+      // (a GHL send uses the sub-account's sender). The GHL note still logs.
+      !ownerSender &&
       contactId &&
       recipientsIncludeClient
     ) {
@@ -1731,9 +1773,13 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
       return res.status(403).json({ error: "Client outside your plan scope" });
 
     configureSendGrid();
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL;
-    const fromName =
-      process.env.FREE_TRIAL_FROM_NAME ?? `The ${SENDER_ORG_SIGNAL} Team`;
+    const ownerSender = isOwnerSender(req);
+    const fromEmail = ownerSender
+      ? OWNER_FROM_EMAIL
+      : process.env.SENDGRID_FROM_EMAIL;
+    const fromName = ownerSender
+      ? OWNER_FROM_NAME
+      : (process.env.FREE_TRIAL_FROM_NAME ?? `The ${SENDER_ORG_SIGNAL} Team`);
     if (!fromEmail)
       return res.status(503).json({ error: "Sender email not configured" });
 
@@ -1823,6 +1869,9 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
     if (
       ghlEnabled &&
       sendMode === "ghl_first" &&
+      // Owner sends must carry Mary's From — only direct SendGrid can do that
+      // (a GHL send uses the sub-account's sender). The GHL note still logs.
+      !ownerSender &&
       contactId &&
       recipientsIncludeClient
     ) {
