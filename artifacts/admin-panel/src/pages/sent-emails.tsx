@@ -237,11 +237,18 @@ export default function SentEmails() {
   const qc = useQueryClient();
   const { data: planTypes = [] } = usePlanTypes();
 
+  // "sales:first_proof"-style values narrow to one sales template; the API
+  // only knows kind, so the template part filters client-side below.
+  const [apiKind, kindTemplate] = useMemo(() => {
+    const [k, tpl] = kind.split(":");
+    return [k, tpl ?? null] as const;
+  }, [kind]);
+
   const { data, isLoading } = useQuery<{ sends: SendRow[] }>({
-    queryKey: ["/api/sales/email-sends", kind, planType],
+    queryKey: ["/api/sales/email-sends", apiKind, planType],
     queryFn: async () => {
       const p = new URLSearchParams();
-      if (kind !== "all") p.set("kind", kind);
+      if (apiKind !== "all") p.set("kind", apiKind);
       if (planType !== "all") p.set("planType", planType);
       const res = await rawFetch(`/api/sales/email-sends?${p}`);
       if (!res.ok) throw new Error("Failed to load sent emails");
@@ -264,7 +271,7 @@ export default function SentEmails() {
   const refresh = useMutation({
     mutationFn: async () => {
       const p = new URLSearchParams();
-      if (kind !== "all") p.set("kind", kind);
+      if (apiKind !== "all") p.set("kind", apiKind);
       const res = await rawFetch(`/api/sales/email-sends/refresh-status?${p}`, {
         method: "POST",
       });
@@ -272,16 +279,21 @@ export default function SentEmails() {
       return res.json() as Promise<{ polled: number; updated: number }>;
     },
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["/api/sales/email-sends", kind] }),
+      qc.invalidateQueries({ queryKey: ["/api/sales/email-sends", apiKind] }),
   });
 
   useEffect(() => {
     refresh.mutate();
     // Re-poll when the kind filter changes; refresh identity is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  }, [apiKind]);
 
-  const sends = useMemo(() => data?.sends ?? [], [data]);
+  const sends = useMemo(() => {
+    const rows = data?.sends ?? [];
+    return kindTemplate
+      ? rows.filter((s) => s.meta?.template === kindTemplate)
+      : rows;
+  }, [data, kindTemplate]);
 
   // Search filter (subject / client / recipients / keyword) — independent of the
   // status filter so the tiles can show every status's count within the search.
@@ -426,7 +438,14 @@ export default function SentEmails() {
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             <SelectItem value="welcome">Welcome</SelectItem>
-            <SelectItem value="sales">Sales / proof</SelectItem>
+            <SelectItem value="sales">Sales / proof (all)</SelectItem>
+            <SelectItem value="sales:first_proof">· First Proof</SelectItem>
+            <SelectItem value="sales:free_trial_proof">
+              · Free-Trial Proof
+            </SelectItem>
+            <SelectItem value="sales:second_keyword">
+              · Founder&rsquo;s Discount
+            </SelectItem>
             <SelectItem value="report">Ranking reports</SelectItem>
           </SelectContent>
         </Select>

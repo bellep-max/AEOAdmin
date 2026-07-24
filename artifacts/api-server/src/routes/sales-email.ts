@@ -23,7 +23,7 @@ import {
   emailSendsTable,
   emailEventsTable,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { requireRoles } from "../middlewares/role-auth";
@@ -1114,7 +1114,18 @@ router.get("/email-sends", requireSalesEmail, async (req, res) => {
             ? eq(emailSendsTable.clientId, clientId)
             : undefined,
           kind ? eq(emailSendsTable.kind, kind) : undefined,
-          planType ? eq(clientAeoPlansTable.planType, planType) : undefined,
+          // Match the send's campaign plan type; sends with no campaign (e.g.
+          // welcome emails carry no keyword) fall back to "the client has a
+          // plan of this type" so they don't vanish under a plan filter.
+          planType
+            ? or(
+                eq(clientAeoPlansTable.planType, planType),
+                and(
+                  sql`${clientAeoPlansTable.id} IS NULL`,
+                  sql`EXISTS (SELECT 1 FROM client_aeo_plans cap WHERE cap.client_id = ${emailSendsTable.clientId} AND cap.plan_type = ${planType})`,
+                ),
+              )
+            : undefined,
           scopedIds !== null
             ? inArray(emailSendsTable.clientId, scopedIds)
             : undefined,
