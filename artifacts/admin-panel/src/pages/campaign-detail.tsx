@@ -29,9 +29,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft,
+  ChevronRight,
   ClipboardList,
   CreditCard,
   Key,
+  Mail,
   Plus,
   Pencil,
   Send,
@@ -40,7 +42,6 @@ import {
 } from "lucide-react";
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
 import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
-import { CampaignEmailsCard } from "@/components/CampaignEmailsCard";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
@@ -380,6 +381,20 @@ export default function CampaignDetail() {
     },
     enabled: !!clientId && !!campaignId && isAdmin,
     staleTime: 60_000,
+  });
+
+  // Count for the clickable Sent Emails summary — the list lives on its own
+  // page (…/campaigns/:campaignId/emails).
+  const { data: emailsData } = useQuery<{ sends: unknown[] }>({
+    queryKey: ["/api/sales/email-sends", "campaign", clientId, campaignId],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/sales/email-sends?clientId=${clientId}&aeoPlanId=${campaignId}`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!clientId && !!campaignId,
   });
 
   // Promo catalog for the attach picker — admin/owner only (endpoint 403s below).
@@ -1022,7 +1037,28 @@ export default function CampaignDetail() {
         </Card>
       )}
 
-      <CampaignEmailsCard clientId={clientId} aeoPlanId={campaignId} />
+      <Card
+        className="border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
+        onClick={() =>
+          navigate(
+            `/clients/${clientId}/businesses/${businessId}/campaigns/${campaignId}/emails`,
+          )
+        }
+      >
+        <CardContent className="py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Mail className="w-4 h-4 text-primary" />
+            Sent Emails · this campaign
+            {emailsData && (
+              <Badge variant="secondary">{emailsData.sends.length}</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            View list
+            <ChevronRight className="w-4 h-4" />
+          </div>
+        </CardContent>
+      </Card>
 
       <PerformanceSummaryCard
         clientId={clientId}

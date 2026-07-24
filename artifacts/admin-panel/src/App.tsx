@@ -39,6 +39,7 @@ import LockedKeywords from "@/pages/locked-keywords";
 import Archived from "@/pages/archived";
 import SummaryReport from "@/pages/summary-report";
 import PromoCodes from "@/pages/promo-codes";
+import CampaignEmails from "@/pages/campaign-emails";
 
 import type { ComponentType } from "react";
 
@@ -153,6 +154,10 @@ function ProtectedRoutes() {
         <Route
           path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/keywords/:keywordId"
           component={KeywordDetail}
+        />
+        <Route
+          path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/emails"
+          component={CampaignEmails}
         />
         <Route
           path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId"
