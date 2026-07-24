@@ -447,6 +447,31 @@ router.patch("/:id", requireScopedEditor, async (req, res) => {
     if (!(await assertScopedAccessToClient(req, res, kwOwner.clientId))) return;
     const body = req.body as Record<string, unknown>;
 
+    // Reassignment targets must ALSO be in scope — without this a scoped user
+    // could move a keyword (or attach a campaign/business) outside their slice.
+    if (body.clientId !== undefined) {
+      const targetClientId = Number(body.clientId);
+      if (body.clientId === null || !Number.isFinite(targetClientId))
+        return res.status(400).json({ error: "Invalid clientId" });
+      if (!(await assertScopedAccessToClient(req, res, targetClientId))) return;
+    }
+    if (body.aeoPlanId !== undefined && body.aeoPlanId !== null) {
+      const [plan] = await db
+        .select({ clientId: clientAeoPlansTable.clientId })
+        .from(clientAeoPlansTable)
+        .where(eq(clientAeoPlansTable.id, Number(body.aeoPlanId)));
+      if (!plan) return res.status(400).json({ error: "Invalid aeoPlanId" });
+      if (!(await assertScopedAccessToClient(req, res, plan.clientId))) return;
+    }
+    if (body.businessId !== undefined && body.businessId !== null) {
+      const [biz] = await db
+        .select({ clientId: businessesTable.clientId })
+        .from(businessesTable)
+        .where(eq(businessesTable.id, Number(body.businessId)));
+      if (!biz) return res.status(400).json({ error: "Invalid businessId" });
+      if (!(await assertScopedAccessToClient(req, res, biz.clientId))) return;
+    }
+
     const allowed: Record<string, unknown> = {};
     if (body.keywordText !== undefined)
       allowed.keywordText = String(body.keywordText).trim();
