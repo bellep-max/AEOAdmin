@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -111,10 +112,25 @@ export function NeedsAttentionCard() {
     },
   });
 
-  const flagged = (data?.businesses ?? []).filter(
-    (b) => b.status === "needs_attention",
-  );
+  // Every tile is a filter — click one to list its businesses below.
+  const [selected, setSelected] = useState<MomentumStatus>("needs_attention");
+  const [showAll, setShowAll] = useState(false);
+
+  const listed = (data?.businesses ?? []).filter((b) => b.status === selected);
   const total = ORDER.reduce((n, s) => n + (data?.counts?.[s] ?? 0), 0);
+
+  function pick(s: MomentumStatus) {
+    setSelected(s);
+    setShowAll(false);
+  }
+
+  function rowDetail(b: BusinessMomentum): string {
+    if (b.losingMomentum > 0)
+      return `${b.losingMomentum} of ${b.activeCampaigns} campaign${b.activeCampaigns === 1 ? "" : "s"} stalled`;
+    if (b.status === "ramping_up")
+      return `${b.activeCampaigns} campaign${b.activeCampaigns === 1 ? "" : "s"} — needs more checks`;
+    return `${b.activeCampaigns} campaign${b.activeCampaigns === 1 ? "" : "s"}`;
+  }
 
   return (
     <Card className="border-border/50 card-hover">
@@ -153,8 +169,18 @@ export function NeedsAttentionCard() {
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
               {ORDER.map((s) => {
                 const m = STATUS_META[s];
+                const isSelected = selected === s;
                 return (
-                  <div key={s} className={`rounded-lg border p-3 ${m.cls}`}>
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => pick(s)}
+                    className={`rounded-lg border p-3 text-left transition-shadow cursor-pointer ${m.cls} ${
+                      isSelected
+                        ? "ring-2 ring-current"
+                        : "hover:ring-1 hover:ring-current"
+                    }`}
+                  >
                     <p className="text-2xl font-bold tabular-nums leading-none">
                       {data?.counts?.[s] ?? 0}
                     </p>
@@ -165,14 +191,18 @@ export function NeedsAttentionCard() {
                     <p className="mt-1 text-[10px] leading-snug opacity-80">
                       {m.hint}
                     </p>
-                  </div>
+                  </button>
                 );
               })}
             </div>
 
-            {flagged.length > 0 && (
+            {listed.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-border/40">
-                {flagged.slice(0, MAX_LISTED).map((b) => (
+                <p className="border-b border-border/40 bg-muted/30 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                  {STATUS_META[selected].label} · {listed.length} business
+                  {listed.length === 1 ? "" : "es"}
+                </p>
+                {(showAll ? listed : listed.slice(0, MAX_LISTED)).map((b) => (
                   <Link
                     key={b.businessId}
                     href={`/clients/${b.clientId}/businesses/${b.businessId}`}
@@ -182,17 +212,27 @@ export function NeedsAttentionCard() {
                       {b.businessName ?? `Business ${b.businessId}`}
                     </span>
                     <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {b.losingMomentum} of {b.activeCampaigns} campaign
-                      {b.activeCampaigns === 1 ? "" : "s"} stalled
+                      {rowDetail(b)}
                     </span>
                   </Link>
                 ))}
-                {flagged.length > MAX_LISTED && (
-                  <p className="px-3 py-1.5 text-[11px] text-muted-foreground">
-                    +{flagged.length - MAX_LISTED} more
-                  </p>
+                {listed.length > MAX_LISTED && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll((v) => !v)}
+                    className="w-full px-3 py-1.5 text-left text-[11px] font-medium text-primary hover:bg-muted/40"
+                  >
+                    {showAll
+                      ? "Show fewer"
+                      : `Show all ${listed.length} businesses`}
+                  </button>
                 )}
               </div>
+            )}
+            {listed.length === 0 && (
+              <p className="rounded-lg border border-border/40 px-3 py-2 text-sm text-muted-foreground">
+                No businesses in “{STATUS_META[selected].label}” right now.
+              </p>
             )}
 
             <p className="text-[11px] leading-relaxed text-muted-foreground">

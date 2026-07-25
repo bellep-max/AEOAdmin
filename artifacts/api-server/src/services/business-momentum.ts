@@ -47,9 +47,20 @@ export interface BusinessMomentum {
   status: MomentumStatus;
 }
 
+export type CampaignMomentumStatus = "stalled" | "progressing" | "ramping_up";
+
+export interface CampaignMomentum {
+  campaignId: number;
+  businessId: number;
+  clientId: number;
+  status: CampaignMomentumStatus;
+}
+
 export interface MomentumSummary {
   counts: Record<MomentumStatus, number>;
   businesses: BusinessMomentum[];
+  /** Per-campaign verdicts, so campaign pages can show their own label. */
+  campaigns: CampaignMomentum[];
 }
 
 interface Row {
@@ -137,7 +148,7 @@ export async function computeBusinessMomentum(
 ): Promise<MomentumSummary> {
   // Scoped roles only see their slice; an empty slice means nothing to report.
   if (clientIds !== null && clientIds.length === 0)
-    return { counts: emptyCounts(), businesses: [] };
+    return { counts: emptyCounts(), businesses: [], campaigns: [] };
 
   const where = clientIds !== null ? ` AND k.client_id = ANY($1::int[])` : "";
   const text = SQL.replace("GROUP BY", `${where}\n  GROUP BY`);
@@ -195,7 +206,8 @@ export async function computeBusinessMomentum(
     }
   >();
 
-  for (const c of campaigns.values()) {
+  const campaignVerdicts: CampaignMomentum[] = [];
+  for (const [campaignId, c] of campaigns) {
     const dates = [...c.dates].sort((a, b) => b.localeCompare(a));
     let b = businesses.get(c.businessId);
     if (!b) {
@@ -211,15 +223,31 @@ export async function computeBusinessMomentum(
     }
     b.active += 1;
 
+    const record = (status: CampaignMomentumStatus) =>
+      campaignVerdicts.push({
+        campaignId,
+        businessId: c.businessId,
+        clientId: c.clientId,
+        status,
+      });
+
     // Not enough rounds yet — still ramping up, never a negative signal.
-    if (dates.length < MIN_AUDITS) continue;
+    if (dates.length < MIN_AUDITS) {
+      record("ramping_up");
+      continue;
+    }
 
     const latest = judgeAudit(c.byKeyword, dates[0], dates[1]);
     const previous = judgeAudit(c.byKeyword, dates[1], dates[2]);
-    if (!latest.judged || !previous.judged) continue;
+    if (!latest.judged || !previous.judged) {
+      record("ramping_up");
+      continue;
+    }
 
     b.judged += 1;
-    if (latest.negative && previous.negative) b.losing += 1;
+    const stalled = latest.negative && previous.negative;
+    if (stalled) b.losing += 1;
+    record(stalled ? "stalled" : "progressing");
   }
 
   const out: BusinessMomentum[] = [];
@@ -255,7 +283,7 @@ export async function computeBusinessMomentum(
 
   const counts = emptyCounts();
   for (const b of out) counts[b.status] += 1;
-  return { counts, businesses: out };
+  return { counts, businesses: out, campaigns: campaignVerdicts };
 }
 
 function emptyCounts(): Record<MomentumStatus, number> {

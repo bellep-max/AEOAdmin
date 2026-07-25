@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BusinessMomentumBadge } from "@/components/MomentumBadge";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft,
@@ -253,6 +254,7 @@ export default function BusinessDetail() {
             >
               {business.status}
             </Badge>
+            <BusinessMomentumBadge businessId={businessId} />
             {business.category && (
               <Badge
                 variant="outline"

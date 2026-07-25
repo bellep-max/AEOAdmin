@@ -41,6 +41,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { CampaignMomentumBadge } from "@/components/MomentumBadge";
 import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
@@ -621,6 +622,7 @@ export default function CampaignDetail() {
             >
               {meta.tier}
             </span>
+            <CampaignMomentumBadge campaignId={campaignId} />
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {campaign.searchAddress ?? ""}
@@ -959,6 +961,14 @@ export default function CampaignDetail() {
           {billing != null && !billing.hasStripeRef && (
             <p className="text-xs text-muted-foreground">
               No Stripe customer/subscription is linked to this campaign.
+            </p>
+          )}
+          {billing != null && billing.hasStripeRef && !billing.summary && (
+            <p className="text-xs text-muted-foreground">
+              Live billing unavailable: the stored Subscription ID (
+              {campaign.subscriptionId}) is not a Stripe reference — Stripe ids
+              start with cus_ or sub_. Fix the ID to see the subscription and
+              charge history here.
             </p>
           )}
         </CardContent>
