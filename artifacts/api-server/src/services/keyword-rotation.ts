@@ -250,6 +250,7 @@ export async function rotateWinners(
           status: "locked", // "Locked/Won" — still rankable, just won
           archiveReason: `locked (won): all ${ROTATION_PLATFORMS.length} platforms top-3 for ${SUSTAINED_RUNS} consecutive runs — strongest top-3 on ${triggerPlatform} (#${triggerPosition}) — auto-rotation`,
           replacementSuggestion: replacement,
+          lockedAt: sql`now()`,
         })
         .where(
           and(

@@ -50,6 +50,7 @@ import { RankTrendChart } from "@/components/RankTrendChart";
 import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
+import { CampaignLockedMonitoringCard } from "@/components/locked-keywords/CampaignLockedMonitoringCard";
 import { CampaignAuditRankingsCard } from "@/components/CampaignAuditRankingsCard";
 import { useAuth } from "@/lib/auth";
 
@@ -327,7 +328,17 @@ export default function CampaignDetail() {
   const campaignId = Number(params?.campaignId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { isAdmin, isEditor, isOwner } = useAuth();
+  const {
+    isAdmin,
+    isEditor,
+    isOwner,
+    isSales,
+    isAccountManager,
+    isChucksLocal,
+  } = useAuth();
+  // Locked-monitoring endpoint is admin-chain only (requireViewer) — scoped
+  // roles would just get a 403, so don't render the card for them.
+  const canSeeLockedMonitoring = !isSales && !isAccountManager && !isChucksLocal;
   const [, navigate] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
@@ -1150,6 +1161,10 @@ export default function CampaignDetail() {
           refetchKeywords();
         }}
       />
+
+      {canSeeLockedMonitoring && (
+        <CampaignLockedMonitoringCard aeoPlanId={campaignId} />
+      )}
 
       {(lockedKeywords?.length ?? 0) > 0 && (
         <KeywordsWithRankingsCard

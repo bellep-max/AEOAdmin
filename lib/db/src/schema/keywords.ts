@@ -36,6 +36,12 @@ export const keywordsTable = pgTable("keywords", {
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   archiveReason: text("archive_reason"),
   replacementSuggestion: text("replacement_suggestion"),
+  // Locked-keyword monitoring. lockedAt is stamped by rotateWinners() the
+  // moment a keyword locks (all 3 platforms sustained top-3) — null on rows
+  // locked before this column existed, since there's no reliable way to
+  // backfill their real lock date.
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  maintenanceLevel: varchar("maintenance_level", { length: 20 }).default("recommended"),
 });
 
 export const insertKeywordSchema = createInsertSchema(keywordsTable).omit({ id: true });
