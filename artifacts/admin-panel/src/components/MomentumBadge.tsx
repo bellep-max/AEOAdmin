@@ -5,7 +5,7 @@ import { rawFetch } from "@/lib/period-comparison";
    Needs-attention card shows, resolved per business or per campaign from
    GET /api/businesses/momentum (shared react-query cache with the card). */
 
-type MomentumStatus =
+export type MomentumStatus =
   | "needs_attention"
   | "review_recommended"
   | "on_track"
@@ -15,7 +15,11 @@ type CampaignMomentumStatus = "stalled" | "progressing" | "ramping_up";
 
 interface MomentumSummary {
   counts: Record<MomentumStatus, number>;
-  businesses: Array<{ businessId: number; status: MomentumStatus }>;
+  businesses: Array<{
+    businessId: number;
+    clientId: number;
+    status: MomentumStatus;
+  }>;
   campaigns: Array<{ campaignId: number; status: CampaignMomentumStatus }>;
 }
 
@@ -56,7 +60,18 @@ const CAMPAIGN_META: Record<
   },
 };
 
-function useMomentum() {
+/** Momentum-filter dropdown options, shared by the Clients/Businesses pages. */
+export const MOMENTUM_FILTER_OPTIONS: Array<{
+  value: MomentumStatus;
+  label: string;
+}> = [
+  { value: "needs_attention", label: "Needs attention" },
+  { value: "review_recommended", label: "Review recommended" },
+  { value: "on_track", label: "On track" },
+  { value: "ramping_up", label: "Ramping up" },
+];
+
+export function useMomentum() {
   return useQuery<MomentumSummary>({
     queryKey: ["/api/businesses/momentum"],
     queryFn: async () => {

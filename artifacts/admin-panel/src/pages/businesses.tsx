@@ -25,6 +25,10 @@ import {
   type ComboOption,
 } from "@/components/SearchableSelect";
 import { rawFetch } from "@/lib/period-comparison";
+import {
+  useMomentum,
+  MOMENTUM_FILTER_OPTIONS,
+} from "@/components/MomentumBadge";
 
 interface BusinessRow {
   id: number;
@@ -58,6 +62,13 @@ export default function Businesses() {
   const [clientFilter, setClientFilter] = useState<string | null>(null);
   const [businessFilter, setBusinessFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [momentumFilter, setMomentumFilter] = useState<string>("all");
+  const { data: momentum } = useMomentum();
+  const momentumByBusiness = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const b of momentum?.businesses ?? []) m.set(b.businessId, b.status);
+    return m;
+  }, [momentum]);
 
   const { data: businesses, isLoading } = useQuery<BusinessRow[]>({
     queryKey: ["/api/businesses"],
@@ -117,6 +128,11 @@ export default function Businesses() {
         if (clientFilter != null && String(b.clientId) !== clientFilter)
           return false;
         if (statusFilter !== "all" && b.status !== statusFilter) return false;
+        if (
+          momentumFilter !== "all" &&
+          momentumByBusiness.get(b.id) !== momentumFilter
+        )
+          return false;
         if (!q) return true;
         const hay = [
           b.name,
@@ -137,6 +153,8 @@ export default function Businesses() {
     businessFilter,
     clientFilter,
     statusFilter,
+    momentumFilter,
+    momentumByBusiness,
     clientName,
   ]);
 
@@ -204,6 +222,20 @@ export default function Businesses() {
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+        {/* Momentum — same buckets as the dashboard's Needs-attention card. */}
+        <Select value={momentumFilter} onValueChange={setMomentumFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="All momentum" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All momentum</SelectItem>
+            {MOMENTUM_FILTER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

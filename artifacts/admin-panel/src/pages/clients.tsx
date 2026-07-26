@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import {
+  useMomentum,
+  MOMENTUM_FILTER_OPTIONS,
+} from "@/components/MomentumBadge";
 import {
   useGetClients,
   useCreateClient,
@@ -131,6 +135,18 @@ export default function Clients() {
      "all" from the Status filter to surface them. */
   const [filterStatus, setFilterStatus] = useState("active");
   const [filterPlan, setFilterPlan] = useState("all");
+  const [filterMomentum, setFilterMomentum] = useState("all");
+  const { data: momentum } = useMomentum();
+  /* A client matches a momentum filter when ANY of its businesses carries
+     that status (momentum is computed per business). */
+  const momentumClientIds = useMemo(() => {
+    if (filterMomentum === "all") return null;
+    return new Set(
+      (momentum?.businesses ?? [])
+        .filter((b) => b.status === filterMomentum)
+        .map((b) => b.clientId),
+    );
+  }, [momentum, filterMomentum]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
   /* Forward the Status filter to the API so flipping between Active /
@@ -444,6 +460,8 @@ export default function Clients() {
       const planMatch =
         filterPlan === "all" ||
         ((c as any).planTypes ?? []).includes(filterPlan);
+      const momentumMatch =
+        momentumClientIds === null || momentumClientIds.has(c.id);
       // Archived rows live on /archived; hide them here so an
       // optimistic stamp from doDeleteClient takes effect immediately even
       // before refetch returns the filtered list from the BE.
@@ -455,6 +473,7 @@ export default function Clients() {
         typeMatch &&
         statusMatch &&
         planMatch &&
+        momentumMatch &&
         archivedMatch
       );
     })
@@ -841,13 +860,36 @@ export default function Clients() {
             ))}
           </SelectContent>
         </Select>
+        {/* Momentum (growth-cycle) status — same buckets as the dashboard's
+            Needs-attention card; matches clients with ANY business in the
+            selected bucket. */}
+        <Select
+          value={filterMomentum}
+          onValueChange={(v) => {
+            setFilterMomentum(v);
+            setPage(0);
+          }}
+        >
+          <SelectTrigger className="h-10 w-48 bg-white text-sm text-black">
+            <SelectValue placeholder="Momentum" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Momentum</SelectItem>
+            {MOMENTUM_FILTER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {/* Clear filters */}
         {(selectedClientId ||
           search ||
           filterLocation ||
           filterAccountType !== "all" ||
           filterStatus !== "all" ||
-          filterPlan !== "all") && (
+          filterPlan !== "all" ||
+          filterMomentum !== "all") && (
           <Button
             variant="ghost"
             size="sm"
@@ -859,6 +901,7 @@ export default function Clients() {
               setFilterAccountType("all");
               setFilterStatus("all");
               setFilterPlan("all");
+              setFilterMomentum("all");
               setPage(0);
             }}
           >
