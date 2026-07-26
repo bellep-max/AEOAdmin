@@ -255,6 +255,14 @@ function validateFreeTrial(
   const r = raw as Record<string, unknown>;
   const isStr = (v: unknown): v is string =>
     typeof v === "string" && v.trim().length > 0;
+  const toFiniteNumber = (v: unknown): number | null => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  };
   if (!isStr(r.businessName))
     return { ok: false, error: "businessName is required" };
   if (!isStr(r.email)) return { ok: false, error: "email is required" };
@@ -286,11 +294,10 @@ function validateFreeTrial(
       return { ok: false, error: `${opt} must be a string if provided` };
     }
   }
-  for (const opt of ["lat", "lng"]) {
-    if (r[opt] != null && typeof r[opt] !== "number") {
-      return { ok: false, error: `${opt} must be a number if provided` };
-    }
-  }
+  // lat/lng are optional geo metadata — the website funnel sometimes sends
+  // them as strings. Coerce what's coercible and drop the rest to null; a bad
+  // coordinate must never 400 a card-on-file signup (stranded Mae's Childcare
+  // on 2026-07-26 until this was relaxed).
   if (r.stripeCustomerId != null) {
     if (typeof r.stripeCustomerId !== "string") {
       return { ok: false, error: "stripeCustomerId must be a string" };
@@ -338,8 +345,8 @@ function validateFreeTrial(
       state: isStr(r.state) ? r.state.trim() : null,
       gmbUrl: isStr(r.gmbUrl) ? r.gmbUrl.trim() : null,
       placeId: isStr(r.placeId) ? r.placeId.trim() : null,
-      lat: typeof r.lat === "number" && Number.isFinite(r.lat) ? r.lat : null,
-      lng: typeof r.lng === "number" && Number.isFinite(r.lng) ? r.lng : null,
+      lat: toFiniteNumber(r.lat),
+      lng: toFiniteNumber(r.lng),
       website: isStr(r.website) ? r.website.trim() : null,
       service: isStr(r.service) ? r.service.trim() : null,
       brand: isStr(r.brand) ? r.brand.trim() : null,
