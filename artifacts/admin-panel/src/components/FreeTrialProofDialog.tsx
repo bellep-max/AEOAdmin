@@ -279,15 +279,29 @@ export function FreeTrialProofDialog({
         deliveredVia: string | null;
         recipientsActual: string[];
         safeModeActive?: boolean;
+        conversion?: {
+          attempted: boolean;
+          converted: boolean;
+          subscriptionId: string | null;
+          amount: number | null;
+          reason: string | null;
+        };
       };
     },
     onSuccess: (data) => {
+      const sent = data.safeModeActive
+        ? `Safe mode: sent to ${data.recipientsActual.join(", ")} instead of the client.`
+        : `Sent via ${data.deliveredVia ?? "email"} to ${data.recipientsActual.join(", ")}.`;
+      const conv = data.conversion;
+      const convMsg = !conv
+        ? ""
+        : conv.converted
+          ? ` Moved to paid plan${conv.amount != null ? ` — $${conv.amount}/mo subscription started` : ""}.`
+          : ` NOT converted to paid: ${conv.reason ?? "unknown reason"}.`;
       setResult({
         ok: true,
         safeModeActive: data.safeModeActive,
-        message: data.safeModeActive
-          ? `Safe mode: sent to ${data.recipientsActual.join(", ")} instead of the client.`
-          : `Sent via ${data.deliveredVia ?? "email"} to ${data.recipientsActual.join(", ")}.`,
+        message: sent + convMsg,
       });
       toast({ title: "Free-trial proof sent" });
     },
@@ -584,7 +598,9 @@ export function FreeTrialProofDialog({
                 <div className="space-y-2 text-sm">
                   <p>
                     This emails the client that they are moving to the paid
-                    plan. It cannot be unsent.
+                    plan, <strong>starts their paid subscription</strong> (their
+                    card on file gets charged), and flips the campaign off the
+                    free trial. It cannot be unsent.
                   </p>
                   <p>
                     <span className="font-semibold text-foreground">To:</span>{" "}

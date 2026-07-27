@@ -26,6 +26,7 @@ import {
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
+import { startPaidSubscription } from "../services/stripe-billing";
 import { requireRoles } from "../middlewares/role-auth";
 import { getScopedClientIds } from "../lib/scoped-access";
 import { refreshGhlSendStatuses } from "../services/email-status-ghl";
@@ -1835,6 +1836,130 @@ interface SendFreeTrialProofBody {
   aeoPlanId?: number | null;
 }
 
+/** What the send endpoint reports back about the automatic trial→paid step. */
+interface TrialConversionOutcome {
+  attempted: boolean;
+  converted: boolean;
+  planId: number | null;
+  subscriptionId: string | null;
+  /** Monthly amount in whole currency units (e.g. 397). */
+  amount: number | null;
+  /** Why nothing was converted (skipped or failed). */
+  reason: string | null;
+}
+
+/** After a REAL (non-safe-mode) proof send: start the Stripe subscription on
+ *  the campaign's stored customer and flip the campaign to the paid plan.
+ *  Fail-soft — the email is already out; any failure is reported, never thrown.
+ *  Refuses to guess a price: the customer's own metadata names what they
+ *  agreed to, or the operator converts manually. Idempotent: an already
+ *  converted campaign (paid_conversion_date set / sub_ stored) is left alone. */
+async function convertFreeTrialAfterProof(
+  keywordId: number,
+  log: Request["log"],
+): Promise<TrialConversionOutcome> {
+  const skip = (
+    planId: number | null,
+    reason: string,
+  ): TrialConversionOutcome => ({
+    attempted: false,
+    converted: false,
+    planId,
+    subscriptionId: null,
+    amount: null,
+    reason,
+  });
+  try {
+    const [kw] = await db
+      .select({ aeoPlanId: keywordsTable.aeoPlanId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId))
+      .limit(1);
+    if (!kw?.aeoPlanId)
+      return skip(null, "featured keyword has no campaign to convert");
+    const [plan] = await db
+      .select({
+        id: clientAeoPlansTable.id,
+        planType: clientAeoPlansTable.planType,
+        subscriptionId: clientAeoPlansTable.subscriptionId,
+        paidConversionDate: clientAeoPlansTable.paidConversionDate,
+      })
+      .from(clientAeoPlansTable)
+      .where(eq(clientAeoPlansTable.id, kw.aeoPlanId))
+      .limit(1);
+    if (!plan) return skip(kw.aeoPlanId, "campaign not found");
+    if (plan.planType !== "Free Trial Plans")
+      return skip(plan.id, `campaign is already "${plan.planType}"`);
+    if (plan.paidConversionDate)
+      return skip(plan.id, "campaign already marked converted");
+
+    const stripeId = plan.subscriptionId?.trim() ?? "";
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+
+    // A sub_ already stored means billing is live — just stamp the plan flip.
+    if (stripeId.startsWith("sub_")) {
+      await db
+        .update(clientAeoPlansTable)
+        .set({
+          planType: "Signal AEO Plan",
+          trialEndDate: today,
+          paidConversionDate: today,
+          updatedAt: now,
+        })
+        .where(eq(clientAeoPlansTable.id, plan.id));
+      return {
+        attempted: true,
+        converted: true,
+        planId: plan.id,
+        subscriptionId: stripeId,
+        amount: null,
+        reason: "subscription already existed — plan flipped to paid",
+      };
+    }
+    if (!stripeId.startsWith("cus_"))
+      return skip(
+        plan.id,
+        "campaign has no Stripe customer on file — convert manually",
+      );
+
+    const sub = await startPaidSubscription(stripeId, { log });
+    if (!sub.ok || !sub.subscriptionId)
+      return {
+        attempted: true,
+        converted: false,
+        planId: plan.id,
+        subscriptionId: null,
+        amount: null,
+        reason: sub.reason ?? "subscription creation failed",
+      };
+
+    await db
+      .update(clientAeoPlansTable)
+      .set({
+        planType: "Signal AEO Plan",
+        subscriptionId: sub.subscriptionId,
+        subscriptionStartDate: sub.startDate ?? today,
+        nextBillingDate: sub.nextBillingDate,
+        trialEndDate: today,
+        paidConversionDate: today,
+        updatedAt: now,
+      })
+      .where(eq(clientAeoPlansTable.id, plan.id));
+    return {
+      attempted: true,
+      converted: true,
+      planId: plan.id,
+      subscriptionId: sub.subscriptionId,
+      amount: sub.amount,
+      reason: null,
+    };
+  } catch (err) {
+    log.error({ err, keywordId }, "trial→paid conversion failed");
+    return skip(null, "conversion errored — see server logs");
+  }
+}
+
 /* POST /api/sales/send-free-trial-proof */
 router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
   const body = req.body as Partial<SendFreeTrialProofBody>;
@@ -2082,6 +2207,19 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
         .status(502)
         .json({ error: `Send failed: ${sendError}`, sendId: logged?.id });
 
+    // Auto trial→paid: only on a REAL send (safe-mode test sends must never
+    // start billing a customer).
+    const conversion: TrialConversionOutcome = safeOverride
+      ? {
+          attempted: false,
+          converted: false,
+          planId: null,
+          subscriptionId: null,
+          amount: null,
+          reason: "safe mode — no conversion on test sends",
+        }
+      : await convertFreeTrialAfterProof(body.keywordId, req.log);
+
     return res.json({
       ok: true,
       sendId: logged?.id,
@@ -2094,6 +2232,7 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
       platform: pick.platform,
       rank: pick.rank,
       ghlStatus,
+      conversion,
     });
   } catch (err) {
     req.log.error({ err }, "Error sending free-trial proof");

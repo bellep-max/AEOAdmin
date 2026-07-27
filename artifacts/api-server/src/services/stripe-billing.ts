@@ -470,3 +470,141 @@ export async function fetchStripeBillingDetails(
     return emptyDetails(stripeId);
   }
 }
+
+/* ── Trial → paid conversion: create the REAL subscription ──────────────────
+   The trial signup stored only a customer (card on file). The price the lead
+   agreed to lives in the customer's metadata (`price_lookup_key`, set by the
+   website's price experiment — e.g. aeo_welcome_397_monthly). We refuse to
+   guess: no agreed price on the customer → no subscription, caller surfaces
+   the reason and the operator converts manually. Idempotent per customer via
+   Stripe's Idempotency-Key. */
+
+export interface TrialSubscriptionResult {
+  ok: boolean;
+  /** sub_… on success. */
+  subscriptionId: string | null;
+  priceLookupKey: string | null;
+  /** Monthly amount in whole currency units (e.g. 397). */
+  amount: number | null;
+  startDate: string | null;
+  nextBillingDate: string | null;
+  /** Why the subscription was NOT created (when !ok). */
+  reason: string | null;
+}
+
+function subFailure(reason: string): TrialSubscriptionResult {
+  return {
+    ok: false,
+    subscriptionId: null,
+    priceLookupKey: null,
+    amount: null,
+    startDate: null,
+    nextBillingDate: null,
+    reason,
+  };
+}
+
+async function stripePost<T>(
+  path: string,
+  apiKey: string,
+  form: Record<string, string>,
+  idempotencyKey: string,
+  doFetch: FetchFn,
+): Promise<
+  { ok: true; data: T } | { ok: false; status: number; body: string }
+> {
+  const resp = await doFetch(`${STRIPE_API}/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Idempotency-Key": idempotencyKey,
+    },
+    body: new URLSearchParams(form).toString(),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    return { ok: false, status: resp.status, body: body.slice(0, 300) };
+  }
+  return { ok: true, data: (await resp.json()) as T };
+}
+
+interface StripeCustomerWithMeta extends StripeCustomer {
+  metadata?: Record<string, string> | null;
+}
+interface StripePriceRow {
+  id: string;
+  unit_amount?: number | null;
+  lookup_key?: string | null;
+}
+
+export async function startPaidSubscription(
+  customerId: string,
+  opts: Options = {},
+): Promise<TrialSubscriptionResult> {
+  const apiKey = opts.apiKey ?? process.env.STRIPE_SECRET_KEY;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const log = opts.log;
+  if (!apiKey) return subFailure("STRIPE_SECRET_KEY not configured");
+  if (!customerId.startsWith("cus_"))
+    return subFailure(`expected a Stripe customer id, got "${customerId}"`);
+
+  try {
+    const cust = await stripeGet<StripeCustomerWithMeta>(
+      `customers/${encodeURIComponent(customerId)}`,
+      apiKey,
+      doFetch,
+    );
+    if (!cust.ok)
+      return subFailure(`Stripe customer lookup failed (${cust.status})`);
+    const meta = cust.data.metadata ?? {};
+    const lookupKey =
+      meta.price_lookup_key?.trim() ||
+      (meta.price_arm?.trim()
+        ? `aeo_welcome_${meta.price_arm.trim()}_monthly`
+        : "");
+    if (!lookupKey)
+      return subFailure(
+        "customer has no agreed price (metadata.price_lookup_key missing) — start the subscription manually in Stripe",
+      );
+
+    const prices = await stripeGet<{ data?: StripePriceRow[] }>(
+      `prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&limit=1`,
+      apiKey,
+      doFetch,
+    );
+    const price = prices.ok ? prices.data.data?.[0] : undefined;
+    if (!price)
+      return subFailure(`no active Stripe price with lookup key "${lookupKey}"`);
+
+    const sub = await stripePost<StripeSubscriptionFull>(
+      "subscriptions",
+      apiKey,
+      { customer: customerId, "items[0][price]": price.id },
+      `trial-convert-${customerId}`,
+      doFetch,
+    );
+    if (!sub.ok) {
+      log?.error(
+        { customerId, status: sub.status, body: sub.body },
+        "Stripe subscription create failed",
+      );
+      return subFailure(`Stripe refused the subscription (${sub.status})`);
+    }
+    const full = sub.data as StripeSubscriptionFull & {
+      start_date?: number | null;
+    };
+    return {
+      ok: true,
+      subscriptionId: full.id,
+      priceLookupKey: lookupKey,
+      amount: price.unit_amount != null ? price.unit_amount / 100 : null,
+      startDate: toDate(full.start_date),
+      nextBillingDate: toDate(full.current_period_end),
+      reason: null,
+    };
+  } catch (err: unknown) {
+    log?.error({ err, customerId }, "startPaidSubscription threw");
+    return subFailure("Stripe request threw — see server logs");
+  }
+}
