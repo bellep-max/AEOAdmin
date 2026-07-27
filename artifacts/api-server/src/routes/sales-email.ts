@@ -1576,6 +1576,57 @@ interface FreeTrialProofArgs {
   cityState: string | null;
   imageUrl: string;
   firstName?: string | null;
+  /** Operator-edited replacements for the templated copy. Plain text (blank
+   *  line = new paragraph); null/empty falls back to the built-in template. */
+  introText?: string | null;
+  bodyText?: string | null;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Operator plain text → styled paragraphs: blank line splits paragraphs,
+ *  single newline becomes a <br/>. */
+function renderOperatorParas(
+  text: string,
+  p: (html: string) => string,
+): string {
+  return text
+    .split(/\n{2,}/)
+    .map((para) => para.trim())
+    .filter(Boolean)
+    .map((para) => p(escapeHtml(para).replace(/\n/g, "<br/>")))
+    .join("\n      ");
+}
+
+/** Plain-text defaults mirrored from the HTML template — prefill for the
+ *  dialog's editable message fields. */
+function defaultFreeTrialIntro(
+  a: Pick<
+    FreeTrialProofArgs,
+    "business" | "keyword" | "platform" | "rank" | "cityState"
+  >,
+): string {
+  const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
+  const where = a.cityState?.trim()
+    ? `When people in ${a.cityState.trim()} search for this service using AI, your business is now appearing as one of the recommended answers.`
+    : `When people search for this service using AI, your business is now appearing as one of the recommended answers.`;
+  return `Amazing news — ${a.business} is now ranking in the Top ${a.rank} for “${a.keyword}” on ${pLabel}! 🎉\n\n${where}`;
+}
+
+function defaultFreeTrialBody(a: Pick<FreeTrialProofArgs, "business">): string {
+  return [
+    `This is exactly what we’ve been working toward during your Signal AEO free trial. Your business is no longer just listed online — it’s being recommended directly inside AI-generated answers.`,
+    `And this is only the beginning. We’ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`,
+    `As promised, now that we’ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`,
+    `Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`,
+    `Welcome to the future of search!`,
+  ].join("\n\n");
 }
 
 function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
@@ -1586,6 +1637,19 @@ function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
     : `When people search for this service using AI, your business is now appearing as one of the recommended answers.`;
   const p = (html: string) =>
     `<p style="margin:0 0 16px 0;color:#334155;font-size:15px;line-height:1.7">${html}</p>`;
+  // Templated copy keeps its rich markup (bold, entities); operator-edited text
+  // is escaped plain text split into the same styled paragraphs.
+  const introHtml = a.introText?.trim()
+    ? renderOperatorParas(a.introText, p)
+    : `${p(`Amazing news &mdash; <strong style="color:#0f172a">${a.business} is now ranking in the Top ${a.rank} for &ldquo;${a.keyword}&rdquo; on ${pLabel}</strong>! &#127881;`)}
+      ${p(where)}`;
+  const bodyHtml = a.bodyText?.trim()
+    ? renderOperatorParas(a.bodyText, p)
+    : `${p(`This is exactly what we&rsquo;ve been working toward during your Signal AEO free trial. Your business is no longer just listed online &mdash; it&rsquo;s being recommended directly inside AI-generated answers.`)}
+      ${p(`And this is only the beginning. We&rsquo;ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`)}
+      ${p(`As promised, now that we&rsquo;ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`)}
+      ${p(`Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
+      ${p(`Welcome to the future of search!`)}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1599,8 +1663,7 @@ function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
 
     <div style="padding:28px 30px 4px 30px">
       ${p(hi)}
-      ${p(`Amazing news &mdash; <strong style="color:#0f172a">${a.business} is now ranking in the Top ${a.rank} for &ldquo;${a.keyword}&rdquo; on ${pLabel}</strong>! &#127881;`)}
-      ${p(where)}
+      ${introHtml}
       <p style="margin:0 0 12px 0;color:#0f172a;font-size:15px;font-weight:700">Here&rsquo;s your proof:</p>
     </div>
 
@@ -1615,11 +1678,7 @@ function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
     </div>
 
     <div style="padding:18px 30px 8px 30px">
-      ${p(`This is exactly what we&rsquo;ve been working toward during your Signal AEO free trial. Your business is no longer just listed online &mdash; it&rsquo;s being recommended directly inside AI-generated answers.`)}
-      ${p(`And this is only the beginning. We&rsquo;ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`)}
-      ${p(`As promised, now that we&rsquo;ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`)}
-      ${p(`Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
-      ${p(`Welcome to the future of search!`)}
+      ${bodyHtml}
       <p style="margin:8px 0 0 0;color:#334155;font-size:15px;line-height:1.6">Best,<br/>The Signal AEO Team</p>
     </div>
 
@@ -1718,14 +1777,27 @@ router.get("/free-trial-proof-preview", requireSalesEmail, async (req, res) => {
       "current",
       { strict: pick.strict, ...scope },
     );
-    const html = buildFreeTrialProofHtml({
+    const introText =
+      typeof req.query.introText === "string" && req.query.introText.trim()
+        ? req.query.introText
+        : null;
+    const bodyText =
+      typeof req.query.bodyText === "string" && req.query.bodyText.trim()
+        ? req.query.bodyText
+        : null;
+    const templateArgs = {
       business: pick.business,
       keyword: pick.keyword,
       platform: pick.platform,
       rank: pick.rank,
       cityState,
+    };
+    const html = buildFreeTrialProofHtml({
+      ...templateArgs,
       imageUrl,
       firstName,
+      introText,
+      bodyText,
     });
     return res.json({
       html,
@@ -1736,6 +1808,8 @@ router.get("/free-trial-proof-preview", requireSalesEmail, async (req, res) => {
       cityState,
       firstName,
       defaultSubject: freeTrialProofSubject(pick.business, pick.rank),
+      defaultIntro: defaultFreeTrialIntro(templateArgs),
+      defaultBody: defaultFreeTrialBody(templateArgs),
     });
   } catch (err) {
     req.log.error({ err }, "free-trial proof preview failed");
@@ -1750,6 +1824,8 @@ interface SendFreeTrialProofBody {
   recipients: string[];
   subject?: string;
   cityState?: string | null;
+  introText?: string | null;
+  bodyText?: string | null;
   businessId?: number | null;
   aeoPlanId?: number | null;
 }
@@ -1818,6 +1894,14 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
       cityState,
       imageUrl,
       firstName,
+      introText:
+        typeof body.introText === "string" && body.introText.trim()
+          ? body.introText
+          : null,
+      bodyText:
+        typeof body.bodyText === "string" && body.bodyText.trim()
+          ? body.bodyText
+          : null,
     });
 
     const intendedRecipients = body.recipients

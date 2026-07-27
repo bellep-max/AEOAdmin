@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { rawFetch } from "@/lib/period-comparison";
@@ -42,6 +43,8 @@ interface PreviewResponse {
   rank: number;
   cityState: string | null;
   defaultSubject: string;
+  defaultIntro: string;
+  defaultBody: string;
 }
 
 interface RecipientsResponse {
@@ -82,6 +85,22 @@ export function FreeTrialProofDialog({
   const [newRecipient, setNewRecipient] = useState("");
   const [cityState, setCityState] = useState("");
   const [subject, setSubject] = useState("");
+  const [introText, setIntroText] = useState("");
+  const [bodyText, setBodyText] = useState("");
+  /* Last server defaults — lets us tell "operator edited" apart from "still on
+     the template", so re-picking a screenshot refreshes untouched text. */
+  const introDefault = useRef("");
+  const bodyDefault = useRef("");
+  /* Debounced copies so preview doesn't refetch per keystroke. */
+  const [debouncedIntro, setDebouncedIntro] = useState("");
+  const [debouncedBody, setDebouncedBody] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedIntro(introText);
+      setDebouncedBody(bodyText);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [introText, bodyText]);
   const [selected, setSelected] = useState<{
     keywordId: number;
     platform: string;
@@ -149,6 +168,10 @@ export function FreeTrialProofDialog({
     setSelected(null);
     setCityState("");
     setSubject("");
+    setIntroText("");
+    setBodyText("");
+    introDefault.current = "";
+    bodyDefault.current = "";
     setResult(null);
   }, [clientId, businessId, aeoPlanId]);
 
@@ -162,8 +185,22 @@ export function FreeTrialProofDialog({
     if (businessId != null) p.set("businessId", String(businessId));
     if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
     if (cityState.trim()) p.set("cityState", cityState.trim());
+    // Only send edited text — an untouched template renders server-side with
+    // its richer markup (bold headline etc.).
+    if (debouncedIntro.trim() && debouncedIntro !== introDefault.current)
+      p.set("introText", debouncedIntro);
+    if (debouncedBody.trim() && debouncedBody !== bodyDefault.current)
+      p.set("bodyText", debouncedBody);
     return p.toString();
-  }, [clientId, businessId, aeoPlanId, selected, cityState]);
+  }, [
+    clientId,
+    businessId,
+    aeoPlanId,
+    selected,
+    cityState,
+    debouncedIntro,
+    debouncedBody,
+  ]);
 
   const { data: preview, isLoading: previewLoading } =
     useQuery<PreviewResponse>({
@@ -181,11 +218,22 @@ export function FreeTrialProofDialog({
       },
     });
 
-  /* Seed City/State + subject once the preview resolves them. */
+  /* Seed City/State + subject once the preview resolves them. Message fields
+     re-seed whenever they're still on the previous template (blank or exactly
+     the old default) so switching screenshots refreshes rank/keyword copy —
+     operator edits always survive. */
   useEffect(() => {
     if (!preview) return;
     setCityState((cur) => (cur.trim() ? cur : (preview.cityState ?? "")));
     setSubject((cur) => (cur.trim() ? cur : preview.defaultSubject));
+    setIntroText((cur) =>
+      !cur.trim() || cur === introDefault.current ? preview.defaultIntro : cur,
+    );
+    setBodyText((cur) =>
+      !cur.trim() || cur === bodyDefault.current ? preview.defaultBody : cur,
+    );
+    introDefault.current = preview.defaultIntro;
+    bodyDefault.current = preview.defaultBody;
   }, [preview]);
 
   const sendMutation = useMutation({
@@ -202,6 +250,14 @@ export function FreeTrialProofDialog({
           recipients,
           subject: subject.trim() || undefined,
           cityState: cityState.trim() || undefined,
+          introText:
+            introText.trim() && introText !== introDefault.current
+              ? introText
+              : undefined,
+          bodyText:
+            bodyText.trim() && bodyText !== bodyDefault.current
+              ? bodyText
+              : undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -358,6 +414,35 @@ export function FreeTrialProofDialog({
               <p className="text-[11px] text-muted-foreground">
                 Used in “When people in {"{City, State}"} search…”. Leave blank
                 to drop the location.
+              </p>
+            </div>
+
+            {/* Message above the screenshot */}
+            <div className="space-y-2">
+              <Label>Message (above screenshot)</Label>
+              <Textarea
+                rows={4}
+                placeholder="Loads once a screenshot is picked…"
+                value={introText}
+                onChange={(e) => setIntroText(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Blank line = new paragraph. The greeting and “Here’s your
+                proof:” line stay fixed.
+              </p>
+            </div>
+
+            {/* Message below the screenshot */}
+            <div className="space-y-2">
+              <Label>Message (below screenshot)</Label>
+              <Textarea
+                rows={6}
+                placeholder="Loads once a screenshot is picked…"
+                value={bodyText}
+                onChange={(e) => setBodyText(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Ends with the fixed “Best, The Signal AEO Team” signature.
               </p>
             </div>
 
