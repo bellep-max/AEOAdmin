@@ -1561,8 +1561,9 @@ ${body.instruction?.trim() ? `User instruction: ${body.instruction.trim()}\n\n` 
 
 /* ─────────────────────────────────────────────────────────────────────────
    FREE-TRIAL PROOF — a DIFFERENT email from the sales proofs above:
-   ONE operator-picked screenshot (no before/after comparison), no CTA button,
-   a "reply to this email" close, signed by The Signal AEO Team. Sent to a
+   ONE operator-picked screenshot (no before/after comparison), a fixed
+   "Schedule a Call" Calendly button, a "reply to this email" close, signed
+   by The Signal AEO Team. Sent to a
    free-trial client once they have a Top-3 ranking, to graduate them onto the
    paid plan. Owner-only in the UI. Uses its own builder + delivery so it stays
    independent of the sales-proof templates.
@@ -1619,15 +1620,15 @@ function defaultFreeTrialIntro(
   return `Amazing news — ${a.business} is now ranking in the Top ${a.rank} for “${a.keyword}” on ${pLabel}! 🎉\n\n${where}`;
 }
 
-function defaultFreeTrialBody(a: Pick<FreeTrialProofArgs, "business">): string {
+function defaultFreeTrialBody(): string {
   return [
-    `This is exactly what we’ve been working toward during your Signal AEO free trial. Your business is no longer just listed online — it’s being recommended directly inside AI-generated answers.`,
-    `And this is only the beginning. We’ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`,
-    `As promised, now that we’ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`,
-    `Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`,
-    `Welcome to the future of search!`,
+    `This is exactly what we’ve been working toward during your Signal AEO trial. Your business is no longer just listed online — it’s being recommended directly inside AI-generated answers. And this is only the beginning.`,
+    `We’ll continue working to strengthen your rankings in valuable searches across ChatGPT, Gemini, and Perplexity. With our tech, we constantly evaluate and update your prompts to establish and maintain your brand strength.`,
+    `As promised, now that we’ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan. If you want more visibility into your brand’s performance, we are happy to schedule a call to show you your performance dashboard. Please pick a time using the button below.`,
   ].join("\n\n");
 }
+
+const FREE_TRIAL_CALENDLY_URL = "https://calendly.com/contact-signalaeo/15-min";
 
 function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
   const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
@@ -1645,11 +1646,9 @@ function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
       ${p(where)}`;
   const bodyHtml = a.bodyText?.trim()
     ? renderOperatorParas(a.bodyText, p)
-    : `${p(`This is exactly what we&rsquo;ve been working toward during your Signal AEO free trial. Your business is no longer just listed online &mdash; it&rsquo;s being recommended directly inside AI-generated answers.`)}
-      ${p(`And this is only the beginning. We&rsquo;ll continue working on your campaign to strengthen this ranking and help ${a.business} appear for more valuable searches across ChatGPT, Gemini, and Perplexity.`)}
-      ${p(`As promised, now that we&rsquo;ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan.`)}
-      ${p(`Have questions or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
-      ${p(`Welcome to the future of search!`)}`;
+    : `${p(`This is exactly what we&rsquo;ve been working toward during your Signal AEO trial. Your business is no longer just listed online &mdash; it&rsquo;s being recommended directly inside AI-generated answers. And this is only the beginning.`)}
+      ${p(`We&rsquo;ll continue working to strengthen your rankings in valuable searches across ChatGPT, Gemini, and Perplexity. With our tech, we constantly evaluate and update your prompts to establish and maintain your brand strength.`)}
+      ${p(`As promised, now that we&rsquo;ve provided proof of a Top 3 ranking, your account will move from the free trial to the paid Signal AEO plan. If you want more visibility into your brand&rsquo;s performance, we are happy to schedule a call to show you your performance dashboard. Please pick a time using the button below.`)}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1679,6 +1678,12 @@ function buildFreeTrialProofHtml(a: FreeTrialProofArgs): string {
 
     <div style="padding:18px 30px 8px 30px">
       ${bodyHtml}
+      <div style="text-align:center;padding:6px 0 22px 0">
+        <a href="${FREE_TRIAL_CALENDLY_URL}" style="display:inline-block;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">Schedule a Call &nbsp;&rarr;</a>
+      </div>
+      ${p(`Going forward, look for our regular progress updates in your inbox!`)}
+      ${p(`If you have questions, simply reply to this email. Our team will be happy to assist you.`)}
+      ${p(`Welcome to the future of search!`)}
       <p style="margin:8px 0 0 0;color:#334155;font-size:15px;line-height:1.6">Best,<br/>The Signal AEO Team</p>
     </div>
 
@@ -1809,7 +1814,7 @@ router.get("/free-trial-proof-preview", requireSalesEmail, async (req, res) => {
       firstName,
       defaultSubject: freeTrialProofSubject(pick.business, pick.rank),
       defaultIntro: defaultFreeTrialIntro(templateArgs),
-      defaultBody: defaultFreeTrialBody(templateArgs),
+      defaultBody: defaultFreeTrialBody(),
     });
   } catch (err) {
     req.log.error({ err }, "free-trial proof preview failed");

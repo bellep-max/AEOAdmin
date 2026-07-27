@@ -18,9 +18,9 @@ import { rawFetch } from "@/lib/period-comparison";
 import { X, Send, CheckCircle2, Trophy, ImageOff } from "lucide-react";
 
 /* The free-trial proof email is deliberately different from the sales proofs:
-   ONE operator-picked screenshot (no before/after), no CTA, "reply to us"
-   close. This dialog is opened by the owner-only "Send free-trial proof" button
-   on a free-trial client's page. */
+   ONE operator-picked screenshot (no before/after), a fixed "Schedule a Call"
+   Calendly button, "reply to us" close. This dialog is opened by the owner-only
+   "Send free-trial proof" button on a free-trial client's page. */
 
 interface CampaignShot {
   keywordId: number;
@@ -442,7 +442,8 @@ export function FreeTrialProofDialog({
                 onChange={(e) => setBodyText(e.target.value)}
               />
               <p className="text-[11px] text-muted-foreground">
-                Ends with the fixed “Best, The Signal AEO Team” signature.
+                Followed by the fixed “Schedule a Call” button, closing lines
+                and the team signature.
               </p>
             </div>
 
