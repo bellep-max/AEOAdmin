@@ -55,6 +55,7 @@ import {
   MailCheck,
   Building2,
   MessageSquare,
+  CreditCard,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -186,6 +187,7 @@ const navGroups: NavGroup[] = [
       },
       { name: "Metrics", href: "/metrics", icon: BarChart3 },
       { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },
+      { name: "Billing", href: "/billing", icon: CreditCard, ownerOnly: true },
     ],
   },
   {

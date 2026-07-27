@@ -39,6 +39,7 @@ import LockedKeywords from "@/pages/locked-keywords";
 import Archived from "@/pages/archived";
 import SummaryReport from "@/pages/summary-report";
 import PromoCodes from "@/pages/promo-codes";
+import Billing from "@/pages/billing";
 import CampaignEmails from "@/pages/campaign-emails";
 
 import type { ComponentType } from "react";
@@ -182,6 +183,9 @@ function ProtectedRoutes() {
         </Route>
         <Route path="/promo-codes">
           <AdminTierGate component={PromoCodes} />
+        </Route>
+        <Route path="/billing">
+          <OwnerGate component={Billing} />
         </Route>
         <Route path="/sessions/daily">
           <AdminTierGate component={SessionsDaily} />

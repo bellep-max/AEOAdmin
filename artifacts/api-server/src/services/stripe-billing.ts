@@ -680,3 +680,56 @@ export async function startPaidSubscription(
     return subFailure("Stripe request threw — see server logs");
   }
 }
+
+/* ── Account-wide recent charges (Billing overview page) ─────────────────── */
+
+export interface RecentChargeRow {
+  /** YYYY-MM-DD (UTC). */
+  date: string | null;
+  /** Whole currency units (e.g. 497). */
+  amount: number;
+  currency: string;
+  status: string;
+  name: string | null;
+  email: string | null;
+  failureMessage: string | null;
+}
+
+interface StripeChargeWithBilling extends StripeCharge {
+  billing_details?: { name?: string | null; email?: string | null } | null;
+  receipt_email?: string | null;
+  failure_message?: string | null;
+}
+
+/** Newest charges across the whole Stripe account — includes payers that are
+ *  not linked to any admin campaign (legacy SEO clients, funnel tests). */
+export async function fetchRecentCharges(
+  limit = 100,
+  opts: Options = {},
+): Promise<RecentChargeRow[]> {
+  const apiKey = opts.apiKey ?? process.env.STRIPE_SECRET_KEY;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const log = opts.log;
+  if (!apiKey) {
+    log?.warn({}, "STRIPE_SECRET_KEY not set — no charge list");
+    return [];
+  }
+  const r = await stripeGet<{ data?: StripeChargeWithBilling[] }>(
+    `charges?limit=${Math.min(Math.max(limit, 1), 100)}`,
+    apiKey,
+    doFetch,
+  );
+  if (!r.ok) {
+    log?.error({ status: r.status, body: r.body }, "Stripe charge list failed");
+    return [];
+  }
+  return (r.data.data ?? []).map((ch) => ({
+    date: toDate(ch.created),
+    amount: ch.amount / 100,
+    currency: ch.currency,
+    status: ch.status,
+    name: ch.billing_details?.name ?? null,
+    email: ch.billing_details?.email ?? ch.receipt_email ?? null,
+    failureMessage: ch.failure_message ?? null,
+  }));
+}
