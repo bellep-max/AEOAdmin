@@ -8,6 +8,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,6 +120,9 @@ export function FreeTrialProofDialog({
     message: string;
     safeModeActive?: boolean;
   } | null>(null);
+  /* Send is irreversible — a real client gets "you're moving to the paid
+     plan" — so the button opens this confirm step instead of firing directly. */
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data: defaults } = useQuery<RecipientsResponse>({
     enabled: open && clientId != null,
@@ -554,7 +567,7 @@ export function FreeTrialProofDialog({
             Close
           </Button>
           <Button
-            onClick={() => sendMutation.mutate()}
+            onClick={() => setConfirmOpen(true)}
             disabled={!canSend}
             className="gap-1.5"
           >
@@ -562,6 +575,46 @@ export function FreeTrialProofDialog({
             {sendMutation.isPending ? "Sending…" : "Send proof"}
           </Button>
         </DialogFooter>
+
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send this proof email?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    This emails the client that they are moving to the paid
+                    plan. It cannot be unsent.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-foreground">To:</span>{" "}
+                    {recipients.join(", ")}
+                  </p>
+                  {preview && (
+                    <p>
+                      <span className="font-semibold text-foreground">
+                        Proof:
+                      </span>{" "}
+                      “{preview.keyword}” · Top #{preview.rank} on{" "}
+                      {platformLabel(preview.platform)}
+                    </p>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmOpen(false);
+                  sendMutation.mutate();
+                }}
+              >
+                Yes, send it
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
