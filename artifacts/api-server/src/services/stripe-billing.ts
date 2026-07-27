@@ -504,6 +504,38 @@ function subFailure(reason: string): TrialSubscriptionResult {
   };
 }
 
+/** current_period_end lives on the item in newer Stripe API versions; fall
+ *  back to the legacy top-level field. */
+function subPeriodEnd(
+  s: StripeSubscriptionFull & {
+    items?: {
+      data?: Array<{ current_period_end?: number | null } & object>;
+    } | null;
+  },
+): string | null {
+  const itemEnd = s.items?.data?.[0]?.current_period_end;
+  return toDate(itemEnd ?? s.current_period_end);
+}
+
+/** Human decline reason out of a Stripe error body — "card declined —
+ *  Your card has insufficient funds." beats "(402)". */
+function stripeDeclineReason(body: string, status: number): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { message?: string; code?: string; decline_code?: string };
+    };
+    const e = parsed.error;
+    if (e?.message) {
+      const prefix =
+        e.code === "card_declined" || e.decline_code ? "card declined — " : "";
+      return `${prefix}${e.message}`;
+    }
+  } catch {
+    /* not JSON — fall through */
+  }
+  return `Stripe refused the subscription (${status})`;
+}
+
 async function stripePost<T>(
   path: string,
   apiKey: string,
@@ -568,6 +600,31 @@ export async function startPaidSubscription(
         "customer has no agreed price (metadata.price_lookup_key missing) — start the subscription manually in Stripe",
       );
 
+    // Someone may have converted them outside the admin — an existing live
+    // subscription counts as success, never create a second one.
+    const existing = await stripeGet<{
+      data?: Array<StripeSubscriptionFull & { start_date?: number | null }>;
+    }>(
+      `subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=10`,
+      apiKey,
+      doFetch,
+    );
+    const live = existing.ok
+      ? existing.data.data?.find((s) =>
+          ["active", "trialing", "past_due"].includes(s.status),
+        )
+      : undefined;
+    if (live)
+      return {
+        ok: true,
+        subscriptionId: live.id,
+        priceLookupKey: lookupKey,
+        amount: null,
+        startDate: toDate(live.start_date),
+        nextBillingDate: subPeriodEnd(live),
+        reason: null,
+      };
+
     const prices = await stripeGet<{ data?: StripePriceRow[] }>(
       `prices?lookup_keys[]=${encodeURIComponent(lookupKey)}&active=true&limit=1`,
       apiKey,
@@ -575,13 +632,24 @@ export async function startPaidSubscription(
     );
     const price = prices.ok ? prices.data.data?.[0] : undefined;
     if (!price)
-      return subFailure(`no active Stripe price with lookup key "${lookupKey}"`);
+      return subFailure(
+        `no active Stripe price with lookup key "${lookupKey}"`,
+      );
 
+    // error_if_incomplete: the card is charged NOW or the subscription is NOT
+    // created — a decline (e.g. insufficient funds) must never leave a
+    // half-open subscription or upgrade the plan. Unique idempotency key per
+    // attempt so a declined try can be retried later (Stripe replays the
+    // original error for a reused key).
     const sub = await stripePost<StripeSubscriptionFull>(
       "subscriptions",
       apiKey,
-      { customer: customerId, "items[0][price]": price.id },
-      `trial-convert-${customerId}`,
+      {
+        customer: customerId,
+        "items[0][price]": price.id,
+        payment_behavior: "error_if_incomplete",
+      },
+      `trial-convert-${customerId}-${Date.now()}`,
       doFetch,
     );
     if (!sub.ok) {
@@ -589,18 +657,22 @@ export async function startPaidSubscription(
         { customerId, status: sub.status, body: sub.body },
         "Stripe subscription create failed",
       );
-      return subFailure(`Stripe refused the subscription (${sub.status})`);
+      return subFailure(stripeDeclineReason(sub.body, sub.status));
     }
     const full = sub.data as StripeSubscriptionFull & {
       start_date?: number | null;
     };
+    if (full.status !== "active")
+      return subFailure(
+        `card was not charged (subscription status "${full.status}")`,
+      );
     return {
       ok: true,
       subscriptionId: full.id,
       priceLookupKey: lookupKey,
       amount: price.unit_amount != null ? price.unit_amount / 100 : null,
       startDate: toDate(full.start_date),
-      nextBillingDate: toDate(full.current_period_end),
+      nextBillingDate: subPeriodEnd(full),
       reason: null,
     };
   } catch (err: unknown) {
