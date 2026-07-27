@@ -225,8 +225,13 @@ export interface ImprovementData {
  *   before = ANY earlier-dated screenshot with a WORSE rank than the after —
  *            pick the worst such rank for the biggest visible improvement.
  * Returns null when no earlier-dated worse-ranked screenshot exists (no genuine
- * improvement to show). Dates are 'YYYY-MM-DD' text, so string compare = time. */
-function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
+ * improvement to show) — unless allowSelfPair: a day-one #1 (free-trial proof,
+ * current-only email) has no "before" at all, so first = current with improved
+ * 0 instead of vanishing. Dates are 'YYYY-MM-DD' text, so string compare = time. */
+function firstAndCurrent(
+  rows: RankRow[],
+  allowSelfPair = false,
+): PlatformRanks | null {
   const dated = rows.filter((r) => r.date);
   if (dated.length === 0) return null;
   const current = dated.reduce((a, b) => {
@@ -250,7 +255,16 @@ function firstAndCurrent(rows: RankRow[]): PlatformRanks | null {
       // it is NOT required to be a validated in-list entry (rankVisible).
       !(r.observedRank != null && r.observedRank < r.rankingPosition),
   );
-  if (earlier.length === 0) return null;
+  if (earlier.length === 0) {
+    if (!allowSelfPair) return null;
+    const point = {
+      rank: current.rankingPosition,
+      date: current.date,
+      s3Uri: current.screenshotUrl,
+      rankVisible: current.rankVisible,
+    };
+    return { first: point, current: point };
+  }
   const first = earlier.reduce((a, b) =>
     b.rankingPosition > a.rankingPosition ? b : a,
   );
@@ -432,7 +446,12 @@ export async function resolveImprovement(
     const platforms: Record<string, PlatformRanks> = {};
     let maxImproved = -Infinity;
     for (const p of wantPlatforms) {
-      const fc = firstAndCurrent(rows.filter((r) => r.platform === p));
+      const fc = firstAndCurrent(
+        rows.filter((r) => r.platform === p),
+        // includeUnimproved callers (free-trial proof, campaign gallery) want a
+        // current-only shot even when no earlier worse-ranked "before" exists.
+        opts.includeUnimproved === true,
+      );
       if (!fc) continue;
       // A headline top-3 finish must be an OCR-VALIDATED in-list entry. A NULL
       // (never-checked) or false rank-visible top-3 is often a narrative-hedge
@@ -580,6 +599,9 @@ router.get("/screenshot", async (req, res) => {
       lc(req.query.which as string) === "first" ? "first" : "current";
     const r = await resolveImprovement(req.query as Record<string, string>, {
       strict: req.query.strict === "1",
+      // The free-trial proof email embeds a current-only (self-pair) shot; this
+      // streaming link must resolve it or the emailed <img> breaks.
+      includeUnimproved: true,
     });
     if (!r.ok) return res.status(r.status).send(r.reason);
     // keyword already filtered by resolveImprovement when ?keyword= given; the
