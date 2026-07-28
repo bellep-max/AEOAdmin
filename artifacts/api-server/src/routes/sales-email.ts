@@ -23,7 +23,7 @@ import {
   emailSendsTable,
   emailEventsTable,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
 import { startPaidSubscription } from "../services/stripe-billing";
@@ -1848,6 +1848,31 @@ interface TrialConversionOutcome {
   reason: string | null;
 }
 
+/** The client record carries its own trial labels (the plan badge + the amber
+ *  account-type chip). Flip them with the campaign or the admin keeps showing
+ *  "Free Trial" after conversion. Targeted per field so custom values on
+ *  already-converted clients are never clobbered. */
+async function clearClientTrialLabels(clientId: number): Promise<void> {
+  await db
+    .update(clientsTable)
+    .set({ planName: "Signal AEO Plan" })
+    .where(
+      and(
+        eq(clientsTable.id, clientId),
+        ilike(clientsTable.planName, "%free trial%"),
+      ),
+    );
+  await db
+    .update(clientsTable)
+    .set({ accountType: "Retail" })
+    .where(
+      and(
+        eq(clientsTable.id, clientId),
+        eq(clientsTable.accountType, "Free Trial"),
+      ),
+    );
+}
+
 /** After a REAL (non-safe-mode) proof send: start the Stripe subscription on
  *  the campaign's stored customer and flip the campaign to the paid plan.
  *  Fail-soft — the email is already out; any failure is reported, never thrown.
@@ -1880,6 +1905,7 @@ async function convertFreeTrialAfterProof(
     const [plan] = await db
       .select({
         id: clientAeoPlansTable.id,
+        clientId: clientAeoPlansTable.clientId,
         planType: clientAeoPlansTable.planType,
         subscriptionId: clientAeoPlansTable.subscriptionId,
         paidConversionDate: clientAeoPlansTable.paidConversionDate,
@@ -1908,6 +1934,7 @@ async function convertFreeTrialAfterProof(
           updatedAt: now,
         })
         .where(eq(clientAeoPlansTable.id, plan.id));
+      await clearClientTrialLabels(plan.clientId);
       return {
         attempted: true,
         converted: true,
@@ -1946,6 +1973,7 @@ async function convertFreeTrialAfterProof(
         updatedAt: now,
       })
       .where(eq(clientAeoPlansTable.id, plan.id));
+    await clearClientTrialLabels(plan.clientId);
     return {
       attempted: true,
       converted: true,
