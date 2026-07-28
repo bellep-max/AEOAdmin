@@ -973,15 +973,30 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       return map;
     };
 
-    // For lifetime, previous = first-ever, current = latest-ever per (keyword × platform)
+    /* "When we started" = ONE baseline date per KEYWORD — its earliest audit
+       date across all platforms — so the three platforms' start ranks are
+       comparable and the UI can show a single start date. Per platform we pick
+       the row ON that date; a platform not audited that day (retries,
+       backfills) falls back to its own earliest row so its data still shows. */
     const firstEver = () => {
+      const keywordStart = new Map<number, string>();
+      for (const r of reports) {
+        if (!r.platform || !r.date) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const min = keywordStart.get(r.keywordId);
+        if (!min || r.date < min) keywordStart.set(r.keywordId, r.date);
+      }
       const map = new Map<PairKey, (typeof reports)[number]>();
+      const fallback = new Map<PairKey, (typeof reports)[number]>();
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
         const key = `${r.keywordId}|${r.platform}`;
-        if (!map.has(key)) map.set(key, r); // reports are asc, first wins
+        if (!fallback.has(key)) fallback.set(key, r); // asc, first wins
+        if (r.date && r.date === keywordStart.get(r.keywordId) && !map.has(key))
+          map.set(key, r);
       }
+      for (const [key, r] of fallback) if (!map.has(key)) map.set(key, r);
       return map;
     };
 

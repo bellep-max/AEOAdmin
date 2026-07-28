@@ -553,6 +553,15 @@ export function KeywordsWithRankingsCard({
                 // (e.g. Gemini) missing from a keyword that otherwise has data.
                 const sorted = sortPlatformsWithUnavailable(platforms);
                 const hasData = platforms.length > 0;
+                // Unified baseline: the keyword's earliest audit date (the BE
+                // aligns every platform's "when we started" rank to it).
+                const startDate = platforms.reduce<string | null>(
+                  (min, p) =>
+                    p.firstDate && (!min || p.firstDate < min)
+                      ? p.firstDate
+                      : min,
+                  null,
+                );
                 // Freshness at a glance: the most recent Current-rank audit date
                 // across this keyword's platforms, shown on the collapsed row so
                 // the date is visible without expanding.
@@ -656,7 +665,14 @@ export function KeywordsWithRankingsCard({
                       <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
                         <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
                           <div className="col-span-2">AI assistant</div>
-                          <div className="col-span-2">When we started</div>
+                          <div
+                            className="col-span-2"
+                            title="Baseline audit date — same for all platforms"
+                          >
+                            {startDate
+                              ? `Started ${format(new Date(startDate), "MMM d, yyyy")}`
+                              : "When we started"}
+                          </div>
                           <div className="col-span-2">Two weeks ago</div>
                           <div className="col-span-2">Now</div>
                           <div className="col-span-2">Movement</div>
@@ -748,7 +764,10 @@ export function KeywordsWithRankingsCard({
                             <div className="grid grid-cols-12 gap-2 text-[10px] text-muted-foreground mt-0.5">
                               <div className="col-span-2" />
                               <div className="col-span-2">
-                                {p.firstDate
+                                {/* one shared start date lives in the header;
+                                    only surface a per-row date when this
+                                    platform's earliest audit differs */}
+                                {p.firstDate && p.firstDate !== startDate
                                   ? format(new Date(p.firstDate), "MMM d")
                                   : ""}
                               </div>
