@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { TrendingUp } from "lucide-react";
 import { rawFetch, fmtShortET } from "@/lib/period-comparison";
 import { ordinal, placeText } from "@/lib/plain-language";
+import { HiddenDatesControl } from "@/components/report-hides-controls";
 
 /** AI platforms drawn as separate lines, in a fixed order with hex colors that
  *  match the platform chips used elsewhere (emerald / blue / purple). */
@@ -68,7 +69,12 @@ function useScopedReports(scope: ScopeIds) {
     queryKey: ["rank-trend", clientId, businessId, aeoPlanId],
     enabled,
     queryFn: async (): Promise<Report[]> => {
-      const params = new URLSearchParams({ status: "success", limit: "5000" });
+      const params = new URLSearchParams({
+        status: "success",
+        limit: "5000",
+        // server drops admin-hidden keywords + hidden audit dates
+        applyHides: "1",
+      });
       if (clientId != null) params.set("clientId", String(clientId));
       if (businessId != null) params.set("businessId", String(businessId));
       if (aeoPlanId != null) params.set("aeoPlanId", String(aeoPlanId));
@@ -153,6 +159,10 @@ export function RankTrendChart({
           >
             {SCOPE_BADGE[scope]}
           </Badge>
+          <HiddenDatesControl
+            scope={{ clientId, businessId, aeoPlanId }}
+            visibleDates={chartData.map((p) => p.key)}
+          />
         </CardTitle>
         <p className="text-xs text-muted-foreground">
           Higher is better —{" "}

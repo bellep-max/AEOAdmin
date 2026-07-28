@@ -30,12 +30,14 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { chatCompletion } from "../services/llm-client";
+import { fetchStripeBillingSummary } from "../services/stripe-billing";
 import {
   getGlossaryPayload,
   availableReportDates,
   GLOSSARY_VERSION,
 } from "../lib/summary-content";
 import { generateSummaryNarrative } from "../lib/summary-narrative";
+import { hiddenDatesForScope, HIDDEN_KEYWORDS_SQL } from "../lib/report-hides";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -1986,6 +1988,23 @@ router.get("/ranking-reports", requirePortalAuth, async (req, res) => {
         conditions.push(eq(rankingReportsTable.keywordId, kid));
     }
 
+    /* Admin-hidden keywords/dates never reach the client portal. */
+    conditions.push(
+      sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
+    );
+    const hiddenDates = await hiddenDatesForScope({
+      clientId,
+      businessId: businessId ? Number.parseInt(businessId, 10) : null,
+      aeoPlanId: aeoPlanId ? Number.parseInt(aeoPlanId, 10) : null,
+    });
+    if (hiddenDates.length > 0)
+      conditions.push(
+        sql`(${rankingReportsTable.date} IS NULL OR ${rankingReportsTable.date} != ALL(ARRAY[${sql.join(
+          hiddenDates.map((d) => sql`${d}`),
+          sql`, `,
+        )}]::text[]))`,
+      );
+
     const reports = await db
       .select({
         id: rankingReportsTable.id,
@@ -2093,7 +2112,7 @@ router.get(
         : null;
 
       const conds: string[] = ["date IS NOT NULL"];
-      const params: (number | null)[] = [];
+      const params: (number | string[] | null)[] = [];
       params.push(clientId);
       conds.push(`client_id = $${params.length}`);
       if (businessId !== null && !Number.isNaN(businessId)) {
@@ -2105,6 +2124,17 @@ router.get(
         conds.push(
           `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
         );
+      }
+      /* Admin-hidden keywords/dates never reach the client's report. */
+      conds.push(HIDDEN_KEYWORDS_SQL);
+      const hiddenDates = await hiddenDatesForScope({
+        clientId,
+        businessId: Number.isNaN(businessId as number) ? null : businessId,
+        aeoPlanId: Number.isNaN(aeoPlanId as number) ? null : aeoPlanId,
+      });
+      if (hiddenDates.length > 0) {
+        params.push(hiddenDates);
+        conds.push(`date != ALL($${params.length}::text[])`);
       }
       const where = conds.join(" AND ");
 
@@ -2414,6 +2444,35 @@ router.get("/aeo-plans/:planId", requirePortalAuth, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/* GET /portal/aeo-plans/:planId/billing
+   Read-only Stripe billing summary for the customer's own campaign — same
+   payload as the admin endpoint (client-aeo-plans.ts), but ownership comes
+   from the session-linked client instead of requireAdmin. It's the
+   customer's own subscription and charge history, so exposing it here is
+   safe; anything mutating stays admin-only. */
+router.get(
+  "/aeo-plans/:planId/billing",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+      const plan = await loadOwnedAeoPlan(res, clientId, req.params.planId);
+      if (!plan) return;
+      if (!plan.subscriptionId) {
+        return res.json({ hasStripeRef: false, summary: null });
+      }
+      const summary = await fetchStripeBillingSummary(plan.subscriptionId, {
+        log: req.log,
+      });
+      return res.json({ hasStripeRef: true, summary });
+    } catch (err) {
+      req.log.error({ err }, "Portal aeo-plan billing error");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 router.post("/aeo-plans", requirePortalAuth, async (req, res) => {
   try {
@@ -2977,7 +3036,11 @@ export async function scanClientKeywords(
     asOfDate?: string;
   },
 ): Promise<EnrichedKeyword[]> {
-  const conditions = [eq(keywordsTable.clientId, clientId)];
+  const conditions = [
+    eq(keywordsTable.clientId, clientId),
+    // Admin-hidden keywords are excluded from summary reports everywhere.
+    eq(keywordsTable.hiddenFromReports, false),
+  ];
   if (opts.aeoPlanId != null)
     conditions.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
   if (opts.businessId != null)
@@ -3010,7 +3073,7 @@ export async function scanClientKeywords(
   if (kws.length === 0) return [];
 
   const ids = kws.map((k) => k.id);
-  const reports = await db
+  const allReports = await db
     .select({
       keywordId: rankingReportsTable.keywordId,
       platform: rankingReportsTable.platform,
@@ -3026,6 +3089,20 @@ export async function scanClientKeywords(
       ),
     )
     .orderBy(asc(rankingReportsTable.createdAt)); // oldest first
+
+  // Admin-hidden dates for this scope drop out of the scan (JS-side: dateless
+  // rows must survive, they fall back to createdAt).
+  const hiddenDateSet = new Set(
+    await hiddenDatesForScope({
+      clientId,
+      businessId: opts.businessId ?? null,
+      aeoPlanId: opts.aeoPlanId ?? null,
+    }),
+  );
+  const reports =
+    hiddenDateSet.size === 0
+      ? allReports
+      : allReports.filter((r) => !r.date || !hiddenDateSet.has(r.date));
 
   const byKeyword = new Map<number, typeof reports>();
   for (const r of reports) {

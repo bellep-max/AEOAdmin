@@ -19,6 +19,7 @@ import {
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
+import { hiddenDatePairs, HIDDEN_KEYWORDS_SQL } from "../lib/report-hides";
 import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
 import {
@@ -149,6 +150,27 @@ router.get("/", requireApiToken, async (req, res) => {
 
     if (q.isActive === "true" || q.isActive === "false")
       conditions.push(eq(keywordsTable.isActive, q.isActive === "true"));
+
+    /* applyHides=1 (the detail-page charts): exclude admin-hidden keywords and
+       admin-hidden audit dates for this view. Opt-in so the operator list
+       views, exports and the public API keep returning raw data. */
+    if (q.applyHides === "1") {
+      conditions.push(
+        sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
+      );
+      const hiddenPairs = await hiddenDatePairs({
+        clientId: q.clientId ? parseInt(q.clientId) : null,
+        businessId: q.businessId ? parseInt(q.businessId) : null,
+        aeoPlanId: q.aeoPlanId ? parseInt(q.aeoPlanId) : null,
+      });
+      if (hiddenPairs.length > 0)
+        conditions.push(
+          sql`(${rankingReportsTable.date} IS NULL OR (${rankingReportsTable.clientId}::text || '|' || ${rankingReportsTable.date}) != ALL(ARRAY[${sql.join(
+            hiddenPairs.map((p) => sql`${p}`),
+            sql`, `,
+          )}]::text[]))`,
+        );
+    }
 
     // Scoped-role sessions (e.g. chuckslocal) see only their plan slice. Bearer
     // token + owner/admin sessions return null here → unfiltered (full access).
@@ -875,10 +897,17 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
     const planMap = new Map(plans.map((p) => [p.id, p]));
 
+    // Admin-hidden audit dates for this view — rows on these dates never
+    // reach the movers/decliners comparison.
+    const hiddenPairSet = new Set(
+      await hiddenDatePairs({ clientId, businessId, aeoPlanId }),
+    );
+
     // filter by cascade if provided, applied to the keyword, not the report
     const keywordAllowed = (kid: number): boolean => {
       const kw = keywordMap.get(kid);
       if (!kw) return false;
+      if (kw.hiddenFromReports) return false;
       if (clientId != null && kw.clientId !== clientId) return false;
       if (businessId != null && kw.businessId !== businessId) return false;
       if (aeoPlanId != null && kw.aeoPlanId !== aeoPlanId) return false;
@@ -897,6 +926,7 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
         if (!r.date) continue;
+        if (hiddenPairSet.has(`${r.clientId}|${r.date}`)) continue;
         // Window membership by the ranking's real `date` (noon UTC), not
         // created_at (import time) — keeps back-filled rows in the right window.
         const t = new Date(`${r.date}T12:00:00Z`).getTime();
@@ -1259,7 +1289,7 @@ router.get(
       /* Filter sub-clause and params shared by every CTE. The text-based
          date column requires explicit ::date casts for arithmetic. */
       const conds: string[] = ["date IS NOT NULL"];
-      const params: (number | number[] | string | null)[] = [];
+      const params: (number | number[] | string | string[] | null)[] = [];
       if (clientId !== null) {
         params.push(clientId);
         conds.push(`client_id = $${params.length}`);
@@ -1287,6 +1317,22 @@ router.get(
       if (eligibleIds) {
         params.push(eligibleIds);
         conds.push(`client_id = ANY($${params.length}::int[])`);
+      }
+      /* Admin-hidden data never reaches the report. Keyword fragment is safe
+         under the rr.-prefix rewrite (subquery uses no rewritable names);
+         hidden dates are precomputed to "clientId|date" keys for the same
+         reason. */
+      conds.push(HIDDEN_KEYWORDS_SQL);
+      const hiddenPairs = await hiddenDatePairs({
+        clientId,
+        businessId,
+        aeoPlanId,
+      });
+      if (hiddenPairs.length > 0) {
+        params.push(hiddenPairs);
+        conds.push(
+          `(client_id::text || '|' || date) != ALL($${params.length}::text[])`,
+        );
       }
       const where = conds.join(" AND ");
 

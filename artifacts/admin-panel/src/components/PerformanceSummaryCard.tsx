@@ -1,4 +1,8 @@
 import { useMemo } from "react";
+import {
+  HideKeywordButton,
+  HiddenKeywordsControl,
+} from "@/components/report-hides-controls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -118,6 +122,7 @@ export function PerformanceSummaryCard({
           <span className="text-muted-foreground font-normal">
             · since start
           </span>
+          <HiddenKeywordsControl scope={{ clientId, businessId, aeoPlanId }} />
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -218,6 +223,10 @@ export function PerformanceSummaryCard({
                           )}
                           {movementText(k.improvement as number)}
                         </Badge>
+                        <HideKeywordButton
+                          keywordId={k.keywordId as number}
+                          keywordText={String(k.keywordText)}
+                        />
                       </div>
                     );
                   })}

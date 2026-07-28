@@ -27,3 +27,4 @@ export * from "./email_events";
 export * from "./keyword_verdicts";
 export * from "./promo_codes";
 export * from "./keyword_lock_events";
+export * from "./hidden_report_dates";

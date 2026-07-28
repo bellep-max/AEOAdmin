@@ -1,4 +1,13 @@
-import { pgTable, serial, integer, text, boolean, timestamp, date, varchar } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  serial,
+  integer,
+  text,
+  boolean,
+  timestamp,
+  date,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -7,13 +16,19 @@ import { clientAeoPlansTable } from "./client_aeo_plans";
 
 export const keywordsTable = pgTable("keywords", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
-  businessId: integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
-  aeoPlanId: integer("aeo_plan_id").references(() => clientAeoPlansTable.id, { onDelete: "set null" }),
+  clientId: integer("client_id")
+    .notNull()
+    .references(() => clientsTable.id, { onDelete: "cascade" }),
+  businessId: integer("business_id").references(() => businessesTable.id, {
+    onDelete: "cascade",
+  }),
+  aeoPlanId: integer("aeo_plan_id").references(() => clientAeoPlansTable.id, {
+    onDelete: "set null",
+  }),
   keywordText: varchar("keyword_text", { length: 512 }).notNull(),
   keywordType: integer("keyword_type").default(3),
-  isActive:   boolean("is_active").notNull().default(true),
-  isPrimary:  integer("is_primary").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  isPrimary: integer("is_primary").notNull().default(0),
   verificationStatus: varchar("verification_status", { length: 50 }),
   status: varchar("status", { length: 50 }).default("new"),
   notes: text("notes"),
@@ -24,7 +39,7 @@ export const keywordsTable = pgTable("keywords", {
   initialSearchCountLife: integer("initial_search_count_life"),
   followupSearchCountLife: integer("followup_search_count_life"),
   backlinkClickCount30Days: integer("backlink_click_count_30_days"),
-  backlinkClickCountLife:   integer("backlink_click_count_life"),
+  backlinkClickCountLife: integer("backlink_click_count_life"),
   initialRankReportCount: integer("initial_rank_report_count"),
   currentRankReportCount: integer("current_rank_report_count"),
   linkTypeLabel: varchar("link_type_label", { length: 100 }),
@@ -41,9 +56,16 @@ export const keywordsTable = pgTable("keywords", {
   // locked before this column existed, since there's no reliable way to
   // backfill their real lock date.
   lockedAt: timestamp("locked_at", { withTimezone: true }),
-  maintenanceLevel: varchar("maintenance_level", { length: 20 }).default("recommended"),
+  maintenanceLevel: varchar("maintenance_level", { length: 20 }).default(
+    "recommended",
+  ),
+  // Admin-hidden from graphs/reports (all levels + portal). Unlike archiving,
+  // tracking continues — only the visuals exclude it.
+  hiddenFromReports: boolean("hidden_from_reports").notNull().default(false),
 });
 
-export const insertKeywordSchema = createInsertSchema(keywordsTable).omit({ id: true });
+export const insertKeywordSchema = createInsertSchema(keywordsTable).omit({
+  id: true,
+});
 export type InsertKeyword = z.infer<typeof insertKeywordSchema>;
 export type Keyword = typeof keywordsTable.$inferSelect;
