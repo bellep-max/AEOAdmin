@@ -42,11 +42,7 @@ import {
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import {
-  placeShort,
-  movementWord,
-  movementText,
-} from "@/lib/plain-language";
+import { placeShort, movementWord, movementText } from "@/lib/plain-language";
 import {
   StatusBadge,
   ChangeCell,
@@ -54,6 +50,10 @@ import {
 } from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
+import {
+  KeywordHideMenu,
+  HiddenKeywordsControl,
+} from "@/components/report-hides-controls";
 
 /** Best (lowest) current rank across all platforms for this keyword. Returns
  *  Infinity when the keyword has no ranking data yet, so unranked keywords
@@ -137,7 +137,9 @@ function PlatformChip({
       : (PLATFORM_COLORS[row.platform] ??
         "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
   const move =
-    row.change == null || row.change === 0 ? "" : ` (${movementWord(row.change)})`;
+    row.change == null || row.change === 0
+      ? ""
+      : ` (${movementWord(row.change)})`;
   const clickable =
     !unavailable && onClick != null && row.currentReportId != null;
   const interactive = clickable
@@ -466,6 +468,9 @@ export function KeywordsWithRankingsCard({
                 </span>
               </>
             )}
+            <HiddenKeywordsControl
+              scope={{ clientId, businessId, aeoPlanId }}
+            />
           </CardTitle>
           {showBody && (
             <div className="flex items-center gap-2 flex-wrap">
@@ -612,6 +617,11 @@ export function KeywordsWithRankingsCard({
                           />
                         ))}
                       </div>
+                      <KeywordHideMenu
+                        scope={{ clientId, businessId, aeoPlanId }}
+                        keywordId={keywordId}
+                        keywordText={keywordText}
+                      />
                       {onEditKeyword && (
                         <Button
                           variant="ghost"

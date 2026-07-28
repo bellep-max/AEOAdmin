@@ -19,7 +19,11 @@ import {
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
-import { hiddenDatePairs, HIDDEN_KEYWORDS_SQL } from "../lib/report-hides";
+import {
+  hiddenDatePairs,
+  hiddenKeywordPlatformPairs,
+  HIDDEN_KEYWORDS_SQL,
+} from "../lib/report-hides";
 import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
 import {
@@ -158,15 +162,24 @@ router.get("/", requireApiToken, async (req, res) => {
       conditions.push(
         sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
       );
-      const hiddenPairs = await hiddenDatePairs({
+      const hideScope = {
         clientId: q.clientId ? parseInt(q.clientId) : null,
         businessId: q.businessId ? parseInt(q.businessId) : null,
         aeoPlanId: q.aeoPlanId ? parseInt(q.aeoPlanId) : null,
-      });
+      };
+      const hiddenPairs = await hiddenDatePairs(hideScope);
       if (hiddenPairs.length > 0)
         conditions.push(
           sql`(${rankingReportsTable.date} IS NULL OR (${rankingReportsTable.clientId}::text || '|' || ${rankingReportsTable.date}) != ALL(ARRAY[${sql.join(
             hiddenPairs.map((p) => sql`${p}`),
+            sql`, `,
+          )}]::text[]))`,
+        );
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs(hideScope);
+      if (hiddenKwPlatforms.length > 0)
+        conditions.push(
+          sql`(${rankingReportsTable.platform} IS NULL OR (${rankingReportsTable.keywordId}::text || '|' || lower(${rankingReportsTable.platform})) != ALL(ARRAY[${sql.join(
+            hiddenKwPlatforms.map((p) => sql`${p}`),
             sql`, `,
           )}]::text[]))`,
         );
@@ -897,10 +910,13 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
     const planMap = new Map(plans.map((p) => [p.id, p]));
 
-    // Admin-hidden audit dates for this view — rows on these dates never
-    // reach the movers/decliners comparison.
+    // Admin-hidden audit dates + (keyword, platform) pairs for this view —
+    // rows matching either never reach the movers/decliners comparison.
     const hiddenPairSet = new Set(
       await hiddenDatePairs({ clientId, businessId, aeoPlanId }),
+    );
+    const hiddenKwPlatformSet = new Set(
+      await hiddenKeywordPlatformPairs({ clientId, businessId, aeoPlanId }),
     );
 
     // filter by cascade if provided, applied to the keyword, not the report
@@ -927,6 +943,10 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         if (!keywordAllowed(r.keywordId)) continue;
         if (!r.date) continue;
         if (hiddenPairSet.has(`${r.clientId}|${r.date}`)) continue;
+        if (
+          hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)
+        )
+          continue;
         // Window membership by the ranking's real `date` (noon UTC), not
         // created_at (import time) — keeps back-filled rows in the right window.
         const t = new Date(`${r.date}T12:00:00Z`).getTime();
@@ -1332,6 +1352,17 @@ router.get(
         params.push(hiddenPairs);
         conds.push(
           `(client_id::text || '|' || date) != ALL($${params.length}::text[])`,
+        );
+      }
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs({
+        clientId,
+        businessId,
+        aeoPlanId,
+      });
+      if (hiddenKwPlatforms.length > 0) {
+        params.push(hiddenKwPlatforms);
+        conds.push(
+          `(platform IS NULL OR (keyword_id::text || '|' || lower(platform)) != ALL($${params.length}::text[]))`,
         );
       }
       const where = conds.join(" AND ");

@@ -34,10 +34,24 @@ interface HiddenKeywordRow {
   keywordText: string;
 }
 
+interface HiddenKeywordPlatformRow {
+  id: number;
+  keywordId: number;
+  platform: string;
+  keywordText: string;
+}
+
 interface HidesResponse {
   dates: HiddenDateRow[];
   hiddenKeywords: HiddenKeywordRow[];
+  hiddenKeywordPlatforms: HiddenKeywordPlatformRow[];
 }
+
+const PLATFORM_LABELS: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
 
 function scopeParams(scope: HideScope): string {
   const p = new URLSearchParams();
@@ -210,6 +224,169 @@ export function HiddenDatesControl({
   );
 }
 
+/** Per-keyword-row menu: hide/unhide the whole keyword OR a single platform's
+ *  data inside it. Works on any keyword — not just decliners. */
+export function KeywordHideMenu({
+  scope,
+  keywordId,
+  keywordText,
+}: {
+  scope: HideScope;
+  keywordId: number;
+  keywordText: string;
+}) {
+  const isAdmin = useIsAdminTier();
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useHides(scope, isAdmin);
+  const [busy, setBusy] = useState(false);
+  if (!isAdmin) return null;
+
+  const kwHidden = (data?.hiddenKeywords ?? []).some((k) => k.id === keywordId);
+  const hiddenPlatforms = new Set(
+    (data?.hiddenKeywordPlatforms ?? [])
+      .filter((p) => p.keywordId === keywordId)
+      .map((p) => p.platform),
+  );
+
+  const setKeywordHidden = async (hidden: boolean) => {
+    setBusy(true);
+    try {
+      const res = await rawFetch(`/api/report-hides/keywords/${keywordId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden }),
+      });
+      if (!res.ok) throw new Error("failed");
+      toast({
+        title: hidden
+          ? `Hid “${keywordText}” from graphs & reports`
+          : `Unhid “${keywordText}”`,
+      });
+      queryClient.invalidateQueries();
+    } catch {
+      toast({ title: "Could not update keyword", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setPlatformHidden = async (platform: string, hidden: boolean) => {
+    setBusy(true);
+    try {
+      const res = await rawFetch("/api/report-hides/keyword-platforms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keywordId, platform, hidden }),
+      });
+      if (!res.ok) throw new Error("failed");
+      toast({
+        title: `${hidden ? "Hid" : "Unhid"} ${PLATFORM_LABELS[platform]} for “${keywordText}”`,
+      });
+      queryClient.invalidateQueries();
+    } catch {
+      toast({ title: "Could not update platform", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`h-8 w-8 p-0 shrink-0 ${
+            kwHidden || hiddenPlatforms.size > 0
+              ? "text-amber-500 hover:text-amber-600"
+              : "text-muted-foreground hover:text-primary"
+          }`}
+          title="Hide from graphs & reports"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {kwHidden || hiddenPlatforms.size > 0 ? (
+            <Eye className="w-4 h-4" />
+          ) : (
+            <EyeOff className="w-4 h-4" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-64 p-3 space-y-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-xs font-semibold truncate">“{keywordText}”</p>
+        <p className="text-[11px] text-muted-foreground">
+          Hides from every graph and report, including the client portal. Data
+          keeps tracking; unhide any time.
+        </p>
+        <Button
+          variant={kwHidden ? "secondary" : "outline"}
+          size="sm"
+          disabled={busy}
+          className="w-full h-7 text-xs justify-start"
+          onClick={() => setKeywordHidden(!kwHidden)}
+        >
+          {kwHidden ? (
+            <>
+              <Undo2 className="w-3 h-3 mr-1.5" /> Unhide entire keyword
+            </>
+          ) : (
+            <>
+              <EyeOff className="w-3 h-3 mr-1.5" /> Hide entire keyword
+            </>
+          )}
+        </Button>
+        <div className="border-t pt-2 space-y-1">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+            Per platform
+          </p>
+          {Object.entries(PLATFORM_LABELS).map(([key, label]) => {
+            const isHidden = hiddenPlatforms.has(key);
+            return (
+              <div
+                key={key}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className={isHidden ? "text-muted-foreground" : ""}>
+                  {label}
+                  {isHidden ? " · hidden" : ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || kwHidden}
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setPlatformHidden(key, !isHidden)}
+                >
+                  {isHidden ? (
+                    <>
+                      <Undo2 className="w-3 h-3 mr-1" /> Unhide
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-3 h-3 mr-1" /> Hide
+                    </>
+                  )}
+                </Button>
+              </div>
+            );
+          })}
+          {kwHidden && (
+            <p className="text-[10px] text-muted-foreground">
+              Whole keyword is hidden — per-platform toggles apply after
+              unhiding it.
+            </p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Small per-row button: hide one keyword from all graphs/reports. */
 export function HideKeywordButton({
   keywordId,
@@ -267,7 +444,8 @@ export function HiddenKeywordsControl({ scope }: { scope: HideScope }) {
 
   if (!isAdmin) return null;
   const hidden = data?.hiddenKeywords ?? [];
-  if (hidden.length === 0) return null;
+  const hiddenPlatforms = data?.hiddenKeywordPlatforms ?? [];
+  if (hidden.length === 0 && hiddenPlatforms.length === 0) return null;
 
   const unhide = async (k: HiddenKeywordRow) => {
     setBusy(true);
@@ -287,6 +465,30 @@ export function HiddenKeywordsControl({ scope }: { scope: HideScope }) {
     }
   };
 
+  const unhidePlatform = async (p: HiddenKeywordPlatformRow) => {
+    setBusy(true);
+    try {
+      const res = await rawFetch("/api/report-hides/keyword-platforms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keywordId: p.keywordId,
+          platform: p.platform,
+          hidden: false,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      toast({
+        title: `Unhid ${PLATFORM_LABELS[p.platform] ?? p.platform} for “${p.keywordText}”`,
+      });
+      queryClient.invalidateQueries();
+    } catch {
+      toast({ title: "Could not unhide platform", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -296,30 +498,61 @@ export function HiddenKeywordsControl({ scope }: { scope: HideScope }) {
           className="h-6 px-2 text-[11px] text-muted-foreground ml-auto"
         >
           <Eye className="w-3.5 h-3.5 mr-1" />
-          {hidden.length} hidden
+          {hidden.length + hiddenPlatforms.length} hidden
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-3">
-        <p className="text-xs font-semibold mb-2">Hidden keywords</p>
-        <div className="max-h-48 overflow-auto space-y-1">
-          {hidden.map((k) => (
-            <div
-              key={k.id}
-              className="flex items-center justify-between gap-2 text-xs"
-            >
-              <span className="truncate">“{k.keywordText}”</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                className="h-6 px-2 text-[11px] shrink-0"
-                onClick={() => unhide(k)}
-              >
-                <Undo2 className="w-3 h-3 mr-1" /> Unhide
-              </Button>
+      <PopoverContent align="end" className="w-72 p-3 space-y-2">
+        {hidden.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold mb-1">Hidden keywords</p>
+            <div className="max-h-40 overflow-auto space-y-1">
+              {hidden.map((k) => (
+                <div
+                  key={k.id}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="truncate">“{k.keywordText}”</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    className="h-6 px-2 text-[11px] shrink-0"
+                    onClick={() => unhide(k)}
+                  >
+                    <Undo2 className="w-3 h-3 mr-1" /> Unhide
+                  </Button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
+        {hiddenPlatforms.length > 0 && (
+          <div className={hidden.length > 0 ? "border-t pt-2" : ""}>
+            <p className="text-xs font-semibold mb-1">Hidden platforms</p>
+            <div className="max-h-40 overflow-auto space-y-1">
+              {hiddenPlatforms.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="truncate">
+                    “{p.keywordText}” ·{" "}
+                    {PLATFORM_LABELS[p.platform] ?? p.platform}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    className="h-6 px-2 text-[11px] shrink-0"
+                    onClick={() => unhidePlatform(p)}
+                  >
+                    <Undo2 className="w-3 h-3 mr-1" /> Unhide
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -37,7 +37,11 @@ import {
   GLOSSARY_VERSION,
 } from "../lib/summary-content";
 import { generateSummaryNarrative } from "../lib/summary-narrative";
-import { hiddenDatesForScope, HIDDEN_KEYWORDS_SQL } from "../lib/report-hides";
+import {
+  hiddenDatesForScope,
+  hiddenKeywordPlatformPairs,
+  HIDDEN_KEYWORDS_SQL,
+} from "../lib/report-hides";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -1992,15 +1996,24 @@ router.get("/ranking-reports", requirePortalAuth, async (req, res) => {
     conditions.push(
       sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
     );
-    const hiddenDates = await hiddenDatesForScope({
+    const portalHideScope = {
       clientId,
       businessId: businessId ? Number.parseInt(businessId, 10) : null,
       aeoPlanId: aeoPlanId ? Number.parseInt(aeoPlanId, 10) : null,
-    });
+    };
+    const hiddenDates = await hiddenDatesForScope(portalHideScope);
     if (hiddenDates.length > 0)
       conditions.push(
         sql`(${rankingReportsTable.date} IS NULL OR ${rankingReportsTable.date} != ALL(ARRAY[${sql.join(
           hiddenDates.map((d) => sql`${d}`),
+          sql`, `,
+        )}]::text[]))`,
+      );
+    const hiddenKwPlatforms = await hiddenKeywordPlatformPairs(portalHideScope);
+    if (hiddenKwPlatforms.length > 0)
+      conditions.push(
+        sql`(${rankingReportsTable.platform} IS NULL OR (${rankingReportsTable.keywordId}::text || '|' || lower(${rankingReportsTable.platform})) != ALL(ARRAY[${sql.join(
+          hiddenKwPlatforms.map((p) => sql`${p}`),
           sql`, `,
         )}]::text[]))`,
       );
@@ -2135,6 +2148,17 @@ router.get(
       if (hiddenDates.length > 0) {
         params.push(hiddenDates);
         conds.push(`date != ALL($${params.length}::text[])`);
+      }
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs({
+        clientId,
+        businessId: Number.isNaN(businessId as number) ? null : businessId,
+        aeoPlanId: Number.isNaN(aeoPlanId as number) ? null : aeoPlanId,
+      });
+      if (hiddenKwPlatforms.length > 0) {
+        params.push(hiddenKwPlatforms);
+        conds.push(
+          `(platform IS NULL OR (keyword_id::text || '|' || lower(platform)) != ALL($${params.length}::text[]))`,
+        );
       }
       const where = conds.join(" AND ");
 
@@ -3092,17 +3116,21 @@ export async function scanClientKeywords(
 
   // Admin-hidden dates for this scope drop out of the scan (JS-side: dateless
   // rows must survive, they fall back to createdAt).
-  const hiddenDateSet = new Set(
-    await hiddenDatesForScope({
-      clientId,
-      businessId: opts.businessId ?? null,
-      aeoPlanId: opts.aeoPlanId ?? null,
-    }),
+  const scanHideScope = {
+    clientId,
+    businessId: opts.businessId ?? null,
+    aeoPlanId: opts.aeoPlanId ?? null,
+  };
+  const hiddenDateSet = new Set(await hiddenDatesForScope(scanHideScope));
+  const hiddenKwPlatformSet = new Set(
+    await hiddenKeywordPlatformPairs(scanHideScope),
   );
-  const reports =
-    hiddenDateSet.size === 0
-      ? allReports
-      : allReports.filter((r) => !r.date || !hiddenDateSet.has(r.date));
+  const reports = allReports.filter(
+    (r) =>
+      (!r.date || !hiddenDateSet.has(r.date)) &&
+      (!r.platform ||
+        !hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)),
+  );
 
   const byKeyword = new Map<number, typeof reports>();
   for (const r of reports) {

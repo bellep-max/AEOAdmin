@@ -3,7 +3,11 @@
  * only — tracking, imports and raw data stay untouched. */
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { hiddenReportDatesTable, keywordsTable } from "@workspace/db";
+import {
+  hiddenReportDatesTable,
+  hiddenKeywordPlatformsTable,
+  keywordsTable,
+} from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/role-auth";
 import { hiddenDateRowsForScope } from "../lib/report-hides";
@@ -57,9 +61,76 @@ router.get("/", requireAdmin, async (req, res) => {
         ),
       );
 
-    return res.json({ dates, hiddenKeywords });
+    const hiddenKeywordPlatforms = await db
+      .select({
+        id: hiddenKeywordPlatformsTable.id,
+        keywordId: hiddenKeywordPlatformsTable.keywordId,
+        platform: hiddenKeywordPlatformsTable.platform,
+        keywordText: keywordsTable.keywordText,
+      })
+      .from(hiddenKeywordPlatformsTable)
+      .innerJoin(
+        keywordsTable,
+        eq(hiddenKeywordPlatformsTable.keywordId, keywordsTable.id),
+      )
+      .where(
+        and(
+          clientId != null ? eq(keywordsTable.clientId, clientId) : undefined,
+          businessId != null
+            ? eq(keywordsTable.businessId, businessId)
+            : undefined,
+          aeoPlanId != null
+            ? eq(keywordsTable.aeoPlanId, aeoPlanId)
+            : undefined,
+        ),
+      );
+
+    return res.json({ dates, hiddenKeywords, hiddenKeywordPlatforms });
   } catch (err) {
     req.log.error({ err }, "Error listing report hides");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/report-hides/keyword-platforms
+   { keywordId, platform, hidden: boolean } — hide/unhide ONE platform's data
+   for a keyword; the other platforms stay visible. */
+router.post("/keyword-platforms", requireAdmin, async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const keywordId = intOrNull(body.keywordId);
+    const platform =
+      typeof body.platform === "string"
+        ? body.platform.trim().toLowerCase()
+        : "";
+    const hidden = Boolean(body.hidden);
+    if (
+      keywordId == null ||
+      !["chatgpt", "gemini", "perplexity"].includes(platform)
+    )
+      return res
+        .status(400)
+        .json({ error: "keywordId and a valid platform required" });
+
+    if (hidden) {
+      const [row] = await db
+        .insert(hiddenKeywordPlatformsTable)
+        .values({ keywordId, platform })
+        .onConflictDoNothing()
+        .returning();
+      return res.status(201).json(row ?? { alreadyHidden: true });
+    }
+    await db
+      .delete(hiddenKeywordPlatformsTable)
+      .where(
+        and(
+          eq(hiddenKeywordPlatformsTable.keywordId, keywordId),
+          eq(hiddenKeywordPlatformsTable.platform, platform),
+        ),
+      );
+    return res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Error toggling keyword-platform hide");
     return res.status(500).json({ error: "Internal server error" });
   }
 });

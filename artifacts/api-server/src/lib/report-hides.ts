@@ -6,10 +6,12 @@
 import { db } from "@workspace/db";
 import {
   hiddenReportDatesTable,
+  hiddenKeywordPlatformsTable,
+  keywordsTable,
   clientAeoPlansTable,
   businessesTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export interface HideScope {
   clientId?: number | null;
@@ -105,3 +107,35 @@ export async function hiddenDatesForScope(scope: HideScope): Promise<string[]> {
  *  rewritable bare column). */
 export const HIDDEN_KEYWORDS_SQL =
   "keyword_id NOT IN (SELECT id FROM keywords WHERE hidden_from_reports = true)";
+
+/** "keywordId|platform" pairs hidden for this view (platform lowercase).
+ *  Scoped through the keywords table when any id is given; global otherwise. */
+export async function hiddenKeywordPlatformPairs(
+  scope: HideScope,
+): Promise<string[]> {
+  const s = await resolveScope(scope);
+  const rows = await db
+    .select({
+      keywordId: hiddenKeywordPlatformsTable.keywordId,
+      platform: hiddenKeywordPlatformsTable.platform,
+    })
+    .from(hiddenKeywordPlatformsTable)
+    .innerJoin(
+      keywordsTable,
+      eq(hiddenKeywordPlatformsTable.keywordId, keywordsTable.id),
+    )
+    .where(
+      and(
+        s.clientId != null
+          ? eq(keywordsTable.clientId, s.clientId)
+          : undefined,
+        scope.businessId != null
+          ? eq(keywordsTable.businessId, scope.businessId)
+          : undefined,
+        scope.aeoPlanId != null
+          ? eq(keywordsTable.aeoPlanId, scope.aeoPlanId)
+          : undefined,
+      ),
+    );
+  return rows.map((r) => `${r.keywordId}|${r.platform.toLowerCase()}`);
+}
