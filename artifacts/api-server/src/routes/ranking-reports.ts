@@ -873,50 +873,61 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         }
       : windowsFor(period as Exclude<PeriodKey, "lifetime">, new Date());
 
-    const [clients, keywords, businesses, plans, reports] = await Promise.all([
-      db.select().from(clientsTable),
-      db.select().from(keywordsTable),
-      db.select().from(businessesTable),
-      db.select().from(clientAeoPlansTable),
-      db
-        .select({
-          id: rankingReportsTable.id,
-          clientId: rankingReportsTable.clientId,
-          businessId: rankingReportsTable.businessId,
-          keywordId: rankingReportsTable.keywordId,
-          rankingPosition: rankingReportsTable.rankingPosition,
-          platform: rankingReportsTable.platform,
-          createdAt: rankingReportsTable.createdAt,
-          date: rankingReportsTable.date,
-          keywordVariant: rankingReportsTable.keywordVariant,
-          screenshotRankVisible: rankingReportsTable.screenshotRankVisible,
-        })
-        .from(rankingReportsTable)
-        .where(
-          eligibleIds
-            ? inArray(rankingReportsTable.clientId, eligibleIds)
-            : undefined,
-        )
-        // Order by the ranking's actual `date` (id as tiebreak), NOT created_at.
-        // created_at reflects IMPORT time, which diverges from real date for
-        // back-filled batches imported out of chronological order — that made
-        // "current"/"previous" flip (e.g. May 29 shown as current over Jun 12).
-        // Date ordering makes latest-by-date = current regardless of import order.
-        .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id)),
-    ]);
+    const [clients, keywords, businesses, plans, reportsRaw] =
+      await Promise.all([
+        db.select().from(clientsTable),
+        db.select().from(keywordsTable),
+        db.select().from(businessesTable),
+        db.select().from(clientAeoPlansTable),
+        db
+          .select({
+            id: rankingReportsTable.id,
+            clientId: rankingReportsTable.clientId,
+            businessId: rankingReportsTable.businessId,
+            keywordId: rankingReportsTable.keywordId,
+            rankingPosition: rankingReportsTable.rankingPosition,
+            platform: rankingReportsTable.platform,
+            createdAt: rankingReportsTable.createdAt,
+            date: rankingReportsTable.date,
+            keywordVariant: rankingReportsTable.keywordVariant,
+            screenshotRankVisible: rankingReportsTable.screenshotRankVisible,
+          })
+          .from(rankingReportsTable)
+          .where(
+            eligibleIds
+              ? inArray(rankingReportsTable.clientId, eligibleIds)
+              : undefined,
+          )
+          // Order by the ranking's actual `date` (id as tiebreak), NOT created_at.
+          // created_at reflects IMPORT time, which diverges from real date for
+          // back-filled batches imported out of chronological order — that made
+          // "current"/"previous" flip (e.g. May 29 shown as current over Jun 12).
+          // Date ordering makes latest-by-date = current regardless of import order.
+          .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id)),
+      ]);
 
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
     const planMap = new Map(plans.map((p) => [p.id, p]));
 
-    // Admin-hidden audit dates + (keyword, platform) pairs for this view —
-    // rows matching either never reach the movers/decliners comparison.
+    // Admin-hidden audit dates + (keyword, platform) pairs for this view.
+    // Filter ONCE here so every picker path (window, date-override, lifetime,
+    // second-latest) sees the same cleaned rows; hidden keywords are dropped
+    // separately by keywordAllowed().
     const hiddenPairSet = new Set(
       await hiddenDatePairs({ clientId, businessId, aeoPlanId }),
     );
     const hiddenKwPlatformSet = new Set(
       await hiddenKeywordPlatformPairs({ clientId, businessId, aeoPlanId }),
+    );
+    const reports = reportsRaw.filter(
+      (r) =>
+        !(r.date && hiddenPairSet.has(`${r.clientId}|${r.date}`)) &&
+        !(
+          r.platform &&
+          hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)
+        ),
     );
 
     // filter by cascade if provided, applied to the keyword, not the report
@@ -942,11 +953,6 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
         if (!r.date) continue;
-        if (hiddenPairSet.has(`${r.clientId}|${r.date}`)) continue;
-        if (
-          hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)
-        )
-          continue;
         // Window membership by the ranking's real `date` (noon UTC), not
         // created_at (import time) — keeps back-filled rows in the right window.
         const t = new Date(`${r.date}T12:00:00Z`).getTime();
