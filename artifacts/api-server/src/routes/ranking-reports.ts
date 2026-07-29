@@ -752,6 +752,25 @@ router.get("/per-keyword-platform", requireSalesAllowed, async (req, res) => {
    For lifetime, "previous" = first ever, "current" = latest ever. */
 type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
 
+/* July-1 campaign rebase (display-only). Keywords whose real audit history
+   starts before this date present a fresh 14-day cadence anchored at July 1:
+   "Started" reads Jul 1, the latest audit reads the newest cadence slot
+   on/before today (ET), and the prior audit reads the slot before that.
+   Underlying report rows keep their real dates — remove the relabel block in
+   the handler below to revert. */
+const REBASE_ANCHOR = "2026-07-01";
+function rebaseSlots(todayYmd: string): { current: string; previous: string } {
+  const ms = (ymd: string) => Date.parse(`${ymd}T12:00:00Z`);
+  const day = 86_400_000;
+  const k = Math.max(
+    1,
+    Math.floor((ms(todayYmd) - ms(REBASE_ANCHOR)) / day / 14),
+  );
+  const slot = (n: number) =>
+    new Date(ms(REBASE_ANCHOR) + n * 14 * day).toISOString().slice(0, 10);
+  return { current: slot(k), previous: slot(k - 1) };
+}
+
 /* America/New_York midnight for the calendar date that contains `d`.
    Returns a UTC Date aligned to that ET midnight. EDT = UTC-4 (Mar–Nov),
    EST = UTC-5 (Nov–Mar). Uses Intl to get the correct offset for the date. */
@@ -1148,6 +1167,35 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       };
     });
 
+    /* July-1 rebase relabel. Skipped when the caller pins explicit dates —
+       date-override callers expect the requested dates echoed back. */
+    const hasDateOverride = !!(
+      firstDateOverride ||
+      prevDateOverride ||
+      currentDateOverride
+    );
+    const rebasedKeywordIds = new Set<number>();
+    if (!hasDateOverride) {
+      for (const r of reports) {
+        if (!r.date || r.date >= REBASE_ANCHOR) continue;
+        if (keywordAllowed(r.keywordId)) rebasedKeywordIds.add(r.keywordId);
+      }
+    }
+    const todayEt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+    }).format(new Date());
+    const slots = rebaseSlots(todayEt);
+    const outRows = rows.map((row) =>
+      rebasedKeywordIds.has(row.keywordId)
+        ? {
+            ...row,
+            firstDate: row.firstDate ? REBASE_ANCHOR : row.firstDate,
+            previousDate: row.previousDate ? slots.previous : row.previousDate,
+            currentDate: row.currentDate ? slots.current : row.currentDate,
+          }
+        : row,
+    );
+
     res.json({
       period,
       window: isLifetime
@@ -1158,7 +1206,7 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
             previousStart: prevStart,
             previousEnd: prevEnd,
           },
-      rows,
+      rows: outRows,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching period comparison");
