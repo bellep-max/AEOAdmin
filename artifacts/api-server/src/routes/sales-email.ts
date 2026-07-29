@@ -228,7 +228,31 @@ The free trial ends soon. When it does, this becomes a paid service. The Founder
 Schedule a call to claim it before this window closes.`;
 }
 
-export type SalesTemplateKey = "first_proof" | "second_keyword";
+/* Third email in the sequence: keyword 3 proof + urgency close on the
+   Founder's 20% discount. Same layout — copy, subject, and CTA change. The
+   "Real device. Real query." line lives in the layout's screenshot caption,
+   so the offer copy picks up right after it. */
+function thirdKeywordIntro(a: SalesEmailArgs): string {
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
+
+Your latest keyword result just came in for ${a.business}.
+
+When someone asks ChatGPT, Gemini, and Perplexity "${a.keyword}", your business is showing up in the results.`;
+}
+
+function thirdKeywordOffer(_a: SalesEmailArgs): string {
+  return `We are wrapping up our free trial and moving to full pricing. Clients who sign up before the trial ends lock in the Founder's Discount — 20% off your AI Search Campaign, every month, for as long as you stay active.
+
+This technology is making your business visible on ChatGPT, Gemini, and Perplexity when people search for what you do. You have seen it work. The only question is whether you lock in your rate before this offer closes.
+
+Once the trial ends, the 20% off goes with it.`;
+}
+
+export type SalesTemplateKey =
+  | "first_proof"
+  | "second_keyword"
+  | "third_keyword";
 
 interface SalesTemplate {
   key: SalesTemplateKey;
@@ -236,6 +260,10 @@ interface SalesTemplate {
   heroHeadline: string;
   defaultSubject: string;
   defaultCtaLabel: string;
+  /* Template-specific CTA link; falls back to DEFAULT_CTA_URL. */
+  defaultCtaUrl?: string;
+  /* Hidden inbox preview line injected at the top of the body. */
+  previewText?: string;
   buildIntro: (a: SalesEmailArgs) => string;
   buildOffer: (a: SalesEmailArgs) => string;
   /* When true, the "auto" keyword pick skips keywords already emailed to this
@@ -262,6 +290,18 @@ const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
     defaultCtaLabel: "Claim Your Founder's Discount",
     buildIntro: secondKeywordIntro,
     buildOffer: secondKeywordOffer,
+    preferUnsent: true,
+  },
+  third_keyword: {
+    key: "third_keyword",
+    label: "Close — keyword 3 + Founder's Discount urgency",
+    heroHeadline: "Sign up today to lock in your Founder's Discount.",
+    defaultSubject: "Sign Up Today to lock in your Founder's discount.",
+    defaultCtaLabel: "Claim Your Founder's Discount",
+    defaultCtaUrl: "https://calendly.com/chuck-seolocal-us/top-3-ai-search",
+    previewText: "Your latest keyword is in. And this offer does not last.",
+    buildIntro: thirdKeywordIntro,
+    buildOffer: thirdKeywordOffer,
     preferUnsent: true,
   },
 };
@@ -309,7 +349,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
   const intro = paragraphs(a.introMessage?.trim() || tpl.buildIntro(a));
   const offer = paragraphs(a.offerText?.trim() || tpl.buildOffer(a));
   const ctaLabel = a.ctaLabel?.trim() || tpl.defaultCtaLabel;
-  const ctaUrl = a.ctaUrl?.trim() || DEFAULT_CTA_URL;
+  const ctaUrl = a.ctaUrl?.trim() || tpl.defaultCtaUrl || DEFAULT_CTA_URL;
 
   const shot = (
     label: string,
@@ -329,6 +369,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
 <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  ${tpl.previewText ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all">${tpl.previewText}</div>` : ""}
   <div style="max-width:660px;margin:0 auto;padding:0 0 20px 0">
 
     <!-- Hero (extra bottom padding: the scorecard overlaps onto it) -->
@@ -2416,7 +2457,12 @@ router.get("/declined-payment-preview", requireSalesEmail, async (req, res) => {
     if (!(await isClientInSalesScope(req, clientId)))
       return res.status(403).json({ error: "Client outside your plan scope" });
     const scope = parseScope(req.query as Record<string, unknown>);
-    const pick = await resolveFreeTrialPick(clientId, keywordId, platform, scope);
+    const pick = await resolveFreeTrialPick(
+      clientId,
+      keywordId,
+      platform,
+      scope,
+    );
     if (!pick.ok) return res.status(409).json({ error: pick.reason });
     const firstName = await firstNameOfClient(clientId);
     const html = buildDeclinedPaymentHtml({

@@ -120,13 +120,17 @@ interface CampaignScreenshotsResponse {
   shots: CampaignShot[];
 }
 
-type SalesTemplateKey = "first_proof" | "second_keyword";
+type SalesTemplateKey = "first_proof" | "second_keyword" | "third_keyword";
 
 const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
   { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
   {
     key: "second_keyword",
     label: "Update — another keyword + Founder’s Discount",
+  },
+  {
+    key: "third_keyword",
+    label: "Close — keyword 3 + Founder’s Discount urgency",
   },
 ];
 
