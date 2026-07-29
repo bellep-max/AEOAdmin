@@ -785,3 +785,43 @@ export async function createBillingPortalSession(
     return null;
   }
 }
+
+/** Find a client's Stripe customer by email — fallback for campaigns created
+ *  before we stored stripe ids. Prefers (newest-first) a customer with a card
+ *  on file, since that's the one the funnel actually charges. */
+export async function findStripeCustomerIdByEmail(
+  email: string,
+  opts: Options = {},
+): Promise<string | null> {
+  const apiKey = opts.apiKey ?? process.env.STRIPE_SECRET_KEY;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const log = opts.log;
+  if (!apiKey || !email.trim()) return null;
+  try {
+    const q = `email:'${email.trim().replace(/'/g, "\\'")}'`;
+    const r = await stripeGet<{
+      data?: Array<{ id: string; created?: number | null }>;
+    }>(`customers/search?query=${encodeURIComponent(q)}&limit=10`, apiKey, doFetch);
+    if (!r.ok) {
+      log?.warn({ email, status: r.status }, "Stripe customer search failed");
+      return null;
+    }
+    const candidates = [...(r.data.data ?? [])].sort(
+      (a, b) => (b.created ?? 0) - (a.created ?? 0),
+    );
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0].id;
+    for (const cand of candidates) {
+      const pm = await stripeGet<{ data?: unknown[] }>(
+        `customers/${encodeURIComponent(cand.id)}/payment_methods?type=card&limit=1`,
+        apiKey,
+        doFetch,
+      );
+      if (pm.ok && (pm.data.data?.length ?? 0) > 0) return cand.id;
+    }
+    return candidates[0].id;
+  } catch (err) {
+    log?.error({ err, email }, "findStripeCustomerIdByEmail threw");
+    return null;
+  }
+}

@@ -29,6 +29,7 @@ import { chatCompletion } from "../services/llm-client";
 import {
   startPaidSubscription,
   createBillingPortalSession,
+  findStripeCustomerIdByEmail,
 } from "../services/stripe-billing";
 import { createHmac } from "node:crypto";
 import { requireRoles } from "../middlewares/role-auth";
@@ -2326,9 +2327,25 @@ router.get("/payment-portal", async (req, res) => {
       .from(clientAeoPlansTable)
       .where(eq(clientAeoPlansTable.clientId, clientId))
       .orderBy(desc(clientAeoPlansTable.id));
-    const stripeId = plans
+    let stripeId = plans
       .map((p) => p.subscriptionId?.trim() ?? "")
       .find((s) => s.startsWith("cus_") || s.startsWith("sub_"));
+    if (!stripeId) {
+      // Older signups predate stripe-id capture — fall back to matching the
+      // client's email against Stripe customers (stored id always wins).
+      const [clientRow] = await db
+        .select({
+          accountEmail: clientsTable.accountEmail,
+          contactEmail: clientsTable.contactEmail,
+        })
+        .from(clientsTable)
+        .where(eq(clientsTable.id, clientId))
+        .limit(1);
+      const email = clientRow?.accountEmail || clientRow?.contactEmail || "";
+      stripeId =
+        (await findStripeCustomerIdByEmail(email, { log: req.log })) ??
+        undefined;
+    }
     if (!stripeId) return fail();
     const url = await createBillingPortalSession(stripeId, { log: req.log });
     if (!url) return fail();
