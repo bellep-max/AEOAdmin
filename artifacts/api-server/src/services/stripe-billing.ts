@@ -733,3 +733,55 @@ export async function fetchRecentCharges(
     failureMessage: ch.failure_message ?? null,
   }));
 }
+
+/* ── Customer billing portal (declined-payment email button) ─────────────── */
+
+/** Mint a fresh billing-portal session for a customer and return its URL.
+ *  Accepts `cus_` directly or `sub_` (resolved to its customer first).
+ *  Session URLs are short-lived by design — mint at CLICK time, never embed
+ *  one in an email. */
+export async function createBillingPortalSession(
+  stripeId: string,
+  opts: Options = {},
+): Promise<string | null> {
+  const apiKey = opts.apiKey ?? process.env.STRIPE_SECRET_KEY;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const log = opts.log;
+  if (!apiKey) return null;
+  try {
+    let customerId = stripeId;
+    if (stripeId.startsWith("sub_")) {
+      const sub = await stripeGet<{ customer?: string | { id: string } }>(
+        `subscriptions/${encodeURIComponent(stripeId)}`,
+        apiKey,
+        doFetch,
+      );
+      if (!sub.ok) return null;
+      customerId =
+        typeof sub.data.customer === "string"
+          ? sub.data.customer
+          : (sub.data.customer?.id ?? "");
+    }
+    if (!customerId.startsWith("cus_")) return null;
+    const resp = await doFetch(`${STRIPE_API}/billing_portal/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ customer: customerId }).toString(),
+    });
+    if (!resp.ok) {
+      log?.error(
+        { stripeId, status: resp.status },
+        "Stripe portal session create failed",
+      );
+      return null;
+    }
+    const data = (await resp.json()) as { url?: string };
+    return data.url ?? null;
+  } catch (err) {
+    log?.error({ err, stripeId }, "createBillingPortalSession threw");
+    return null;
+  }
+}

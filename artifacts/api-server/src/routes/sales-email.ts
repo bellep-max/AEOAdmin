@@ -26,7 +26,11 @@ import {
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
-import { startPaidSubscription } from "../services/stripe-billing";
+import {
+  startPaidSubscription,
+  createBillingPortalSession,
+} from "../services/stripe-billing";
+import { createHmac } from "node:crypto";
 import { requireRoles } from "../middlewares/role-auth";
 import { getScopedClientIds } from "../lib/scoped-access";
 import { refreshGhlSendStatuses } from "../services/email-status-ghl";
@@ -2275,9 +2279,65 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
    billing portal. Owner-only in the UI, same delivery as the proof email.
    ───────────────────────────────────────────────────────────────────────── */
 
-const PAYMENT_UPDATE_URL =
-  process.env.DECLINED_PAYMENT_LINK ??
-  "https://billing.stripe.com/p/session/live_YWNjdF8xUkpLWkJKM285VVFXMmJuLF9VeUZ1QTR3amhkMFpBNXc3RlprS2hvVDN1dDNWWVBR0100MBEQGeiT";
+/* The email button must open the CLIENT'S OWN Stripe billing portal, and
+   portal-session URLs are short-lived — so the button points at our redirect
+   endpoint, which mints a fresh session for that client's stored Stripe
+   customer at CLICK time. Sig-gated so client ids can't be enumerated.
+   DECLINED_PAYMENT_LINK overrides everything when set (single fixed link). */
+const PAYMENT_PORTAL_BASE =
+  process.env.SALES_PUBLIC_BASE ??
+  "https://jjm59vpn3y.us-east-1.awsapprunner.com";
+
+function paymentPortalSig(clientId: number): string {
+  const secret =
+    process.env.READ_API_TOKEN ?? process.env.SESSION_SECRET ?? "dev";
+  return createHmac("sha256", secret)
+    .update(`payportal:${clientId}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function buildPaymentUpdateUrl(clientId: number): string {
+  if (process.env.DECLINED_PAYMENT_LINK)
+    return process.env.DECLINED_PAYMENT_LINK;
+  const u = new URL(`${PAYMENT_PORTAL_BASE}/api/sales/payment-portal`);
+  u.searchParams.set("cid", String(clientId));
+  u.searchParams.set("sig", paymentPortalSig(clientId));
+  return u.toString();
+}
+
+/* GET /api/sales/payment-portal?cid=&sig= — public (sig-gated) click-through:
+   mint a fresh billing-portal session for the client's Stripe customer and
+   redirect. Fails soft to a plain message telling them to reply instead. */
+router.get("/payment-portal", async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.cid ?? ""), 10);
+  const sig = String(req.query.sig ?? "");
+  const fail = () =>
+    res
+      .status(200)
+      .send(
+        "We could not open your billing page just now. Please reply to our email and our team will help you update your payment method.",
+      );
+  if (!Number.isFinite(clientId) || sig !== paymentPortalSig(clientId))
+    return res.status(404).send("Not found");
+  try {
+    const plans = await db
+      .select({ subscriptionId: clientAeoPlansTable.subscriptionId })
+      .from(clientAeoPlansTable)
+      .where(eq(clientAeoPlansTable.clientId, clientId))
+      .orderBy(desc(clientAeoPlansTable.id));
+    const stripeId = plans
+      .map((p) => p.subscriptionId?.trim() ?? "")
+      .find((s) => s.startsWith("cus_") || s.startsWith("sub_"));
+    if (!stripeId) return fail();
+    const url = await createBillingPortalSession(stripeId, { log: req.log });
+    if (!url) return fail();
+    return res.redirect(302, url);
+  } catch (err) {
+    req.log.error({ err, clientId }, "payment-portal redirect failed");
+    return fail();
+  }
+});
 
 function declinedPaymentSubject(business: string): string {
   return `Action needed — update your payment method to keep ${business}'s campaign active`;
@@ -2289,6 +2349,7 @@ function buildDeclinedPaymentHtml(a: {
   platform: string;
   rank: number;
   firstName?: string | null;
+  paymentUrl: string;
 }): string {
   const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
   const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
@@ -2312,7 +2373,7 @@ function buildDeclinedPaymentHtml(a: {
       ${p(`No worries&mdash;this can happen occasionally, and your ranking achievement is still great news!`)}
       ${p(`To keep your campaign active and allow our team to continue strengthening your visibility across ChatGPT, Gemini, and Perplexity, please update your payment method or make sure sufficient funds are available.`)}
       <div style="text-align:center;padding:6px 0 22px 0">
-        <a href="${PAYMENT_UPDATE_URL}" style="display:inline-block;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">Update Payment Method &nbsp;&rarr;</a>
+        <a href="${a.paymentUrl}" style="display:inline-block;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">Update Payment Method &nbsp;&rarr;</a>
       </div>
       ${p(`Once your payment information has been updated, we&rsquo;ll attempt to process the payment again and continue working on your campaign.`)}
       ${p(`Need help, have questions, or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
@@ -2347,6 +2408,7 @@ router.get("/declined-payment-preview", requireSalesEmail, async (req, res) => {
       platform: pick.platform,
       rank: pick.rank,
       firstName,
+      paymentUrl: buildPaymentUpdateUrl(clientId),
     });
     return res.json({
       html,
@@ -2408,6 +2470,7 @@ router.post("/send-declined-payment", requireSalesEmail, async (req, res) => {
       platform: pick.platform,
       rank: pick.rank,
       firstName,
+      paymentUrl: buildPaymentUpdateUrl(body.clientId),
     });
 
     const intendedRecipients = body.recipients
