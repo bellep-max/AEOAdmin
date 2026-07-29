@@ -435,7 +435,8 @@ export default function ClientDetail() {
         </Card>
       </div>
 
-      {/* ═══ PERFORMANCE SUMMARY ═══ */}
+      {/* ═══ PERFORMANCE SUMMARY (commented out) ═══ */}
+      {/*
       <PerformanceSummaryCard
         clientId={clientId}
         businessId={null}
@@ -446,6 +447,7 @@ export default function ClientDetail() {
       <RankTrendChart scope="client" clientId={clientId} />
 
       <BiWeeklyGraphsCard scope="client" clientId={clientId} />
+      */}
 
       <div className="flex justify-end">
         <Link href={`/clients/${clientId}/summary-report`}>

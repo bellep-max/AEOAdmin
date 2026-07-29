@@ -473,6 +473,8 @@ export default function BusinessDetail() {
         </CardContent>
       </Card>
 
+      {/* ═══ PERFORMANCE SUMMARY + GRAPHS (commented out) ═══ */}
+      {/*
       <PerformanceSummaryCard
         clientId={clientId}
         businessId={businessId}
@@ -498,6 +500,7 @@ export default function BusinessDetail() {
         aeoPlanId={null}
         title={`Overall ranking · Business — ${business?.name ?? "Business"}`}
       />
+      */}
 
       <CampaignFormDialog
         open={campaignDialogOpen}
