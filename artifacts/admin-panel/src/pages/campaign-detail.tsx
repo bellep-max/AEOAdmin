@@ -43,6 +43,7 @@ import {
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
 import { CampaignMomentumBadge } from "@/components/MomentumBadge";
 import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
+import { DeclinedPaymentDialog } from "@/components/DeclinedPaymentDialog";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
 import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
@@ -338,11 +339,13 @@ export default function CampaignDetail() {
   } = useAuth();
   // Locked-monitoring endpoint is admin-chain only (requireViewer) — scoped
   // roles would just get a 403, so don't render the card for them.
-  const canSeeLockedMonitoring = !isSales && !isAccountManager && !isChucksLocal;
+  const canSeeLockedMonitoring =
+    !isSales && !isAccountManager && !isChucksLocal;
   const [, navigate] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
   const [ftpOpen, setFtpOpen] = useState(false);
+  const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
   const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
   const [kwDialogOpen, setKwDialogOpen] = useState(false);
   const [savingKw, setSavingKw] = useState(false);
@@ -648,14 +651,24 @@ export default function CampaignDetail() {
             <Send className="w-3.5 h-3.5" /> Send proof
           </Button>
           {isOwner && campaign.planType === "Free Trial Plans" && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1"
-              onClick={() => setFtpOpen(true)}
-            >
-              <Send className="w-3.5 h-3.5" /> Send free-trial proof
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1"
+                onClick={() => setFtpOpen(true)}
+              >
+                <Send className="w-3.5 h-3.5" /> Send free-trial proof
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-amber-600 border-amber-500/40 hover:text-amber-700"
+                onClick={() => setDeclinedPaymentOpen(true)}
+              >
+                <Send className="w-3.5 h-3.5" /> Declined payment
+              </Button>
+            </>
           )}
           {isEditor && (
             <Button
@@ -692,6 +705,13 @@ export default function CampaignDetail() {
       <FreeTrialProofDialog
         open={ftpOpen}
         onClose={() => setFtpOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
+      <DeclinedPaymentDialog
+        open={declinedPaymentOpen}
+        onClose={() => setDeclinedPaymentOpen(false)}
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={campaignId}

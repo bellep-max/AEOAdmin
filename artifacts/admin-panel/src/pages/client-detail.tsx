@@ -70,6 +70,7 @@ import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
+import { DeclinedPaymentDialog } from "@/components/DeclinedPaymentDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -129,6 +130,7 @@ export default function ClientDetail() {
   const [editBizOpen, setEditBizOpen] = useState(false);
   const [editAccOpen, setEditAccOpen] = useState(false);
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -303,14 +305,25 @@ export default function ClientDetail() {
           </div>
         </div>
         {isFreeTrial && isOwner && (
-          <Button
-            size="sm"
-            className="gap-1.5 flex-shrink-0"
-            onClick={() => setSalesEmailOpen(true)}
-          >
-            <Send className="w-4 h-4" />
-            Send free-trial proof
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setSalesEmailOpen(true)}
+            >
+              <Send className="w-4 h-4" />
+              Send free-trial proof
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-amber-600 border-amber-500/40 hover:text-amber-700"
+              onClick={() => setDeclinedPaymentOpen(true)}
+            >
+              <Send className="w-4 h-4" />
+              Declined payment
+            </Button>
+          </div>
         )}
       </div>
 
@@ -674,6 +687,11 @@ export default function ClientDetail() {
       <FreeTrialProofDialog
         open={salesEmailOpen}
         onClose={() => setSalesEmailOpen(false)}
+        clientId={clientId}
+      />
+      <DeclinedPaymentDialog
+        open={declinedPaymentOpen}
+        onClose={() => setDeclinedPaymentOpen(false)}
         clientId={clientId}
       />
     </div>

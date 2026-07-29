@@ -2268,4 +2268,333 @@ router.post("/send-free-trial-proof", requireSalesEmail, async (req, res) => {
   }
 });
 
+/* ─────────────────────────────────────────────────────────────────────────
+   DECLINED-PAYMENT EMAIL — follow-up to a free-trial proof whose paid
+   conversion charge was declined (insufficient funds). Text-only (no
+   screenshot embed), one fixed "Update Payment Method" button to the Stripe
+   billing portal. Owner-only in the UI, same delivery as the proof email.
+   ───────────────────────────────────────────────────────────────────────── */
+
+const PAYMENT_UPDATE_URL =
+  process.env.DECLINED_PAYMENT_LINK ??
+  "https://billing.stripe.com/p/session/live_YWNjdF8xUkpLWkJKM285VVFXMmJuLF9VeUZ1QTR3amhkMFpBNXc3RlprS2hvVDN1dDNWWVBR0100MBEQGeiT";
+
+function declinedPaymentSubject(business: string): string {
+  return `Action needed — update your payment method to keep ${business}'s campaign active`;
+}
+
+function buildDeclinedPaymentHtml(a: {
+  business: string;
+  keyword: string;
+  platform: string;
+  rank: number;
+  firstName?: string | null;
+}): string {
+  const pLabel = PLATFORM_LABELS[a.platform] ?? a.platform;
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  const p = (html: string) =>
+    `<p style="margin:0 0 16px 0;color:#334155;font-size:15px;line-height:1.7">${html}</p>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:0 0 24px 0">
+
+    <div style="background:${NAVY};padding:16px 28px;text-align:center">
+      <span style="color:#fff;font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase">${SENDER_ORG_SIGNAL}</span>
+    </div>
+
+    <div style="padding:28px 30px 8px 30px">
+      ${p(hi)}
+      ${p(`We recently shared the exciting news that <strong style="color:#0f172a">${a.business} is now ranking in the Top ${a.rank} for &ldquo;${a.keyword}&rdquo; on ${pLabel}</strong>. &#127881;`)}
+      ${p(`When we attempted to transition your account from the free trial to the paid Signal AEO plan, the payment could not be completed because the card had insufficient funds.`)}
+      ${p(`No worries&mdash;this can happen occasionally, and your ranking achievement is still great news!`)}
+      ${p(`To keep your campaign active and allow our team to continue strengthening your visibility across ChatGPT, Gemini, and Perplexity, please update your payment method or make sure sufficient funds are available.`)}
+      <div style="text-align:center;padding:6px 0 22px 0">
+        <a href="${PAYMENT_UPDATE_URL}" style="display:inline-block;background:linear-gradient(135deg,#fbbf24,${AMBER});background-color:${AMBER};color:${NAVY};font-size:14px;font-weight:800;padding:14px 38px;border-radius:12px;text-decoration:none;box-shadow:0 6px 18px rgba(245,158,11,0.35)">Update Payment Method &nbsp;&rarr;</a>
+      </div>
+      ${p(`Once your payment information has been updated, we&rsquo;ll attempt to process the payment again and continue working on your campaign.`)}
+      ${p(`Need help, have questions, or prefer not to continue with your subscription? Simply reply to this email, and our team will be happy to assist you.`)}
+      ${p(`We&rsquo;re excited about the progress ${a.business} has already made and look forward to helping you achieve even more AI search visibility!`)}
+      <p style="margin:8px 0 0 0;color:#334155;font-size:15px;line-height:1.6">Best,<br/>The Signal AEO Team</p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+/* GET /api/sales/declined-payment-preview?clientId=&keywordId=&platform= */
+router.get("/declined-payment-preview", requireSalesEmail, async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  const keywordId = Number.parseInt(String(req.query.keywordId ?? ""), 10);
+  const platform = String(req.query.platform ?? "").toLowerCase();
+  if (!Number.isFinite(clientId) || !Number.isFinite(keywordId) || !platform)
+    return res
+      .status(400)
+      .json({ error: "clientId, keywordId, platform required" });
+  try {
+    if (!(await isClientInSalesScope(req, clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+    const scope = parseScope(req.query as Record<string, unknown>);
+    const pick = await resolveFreeTrialPick(clientId, keywordId, platform, scope);
+    if (!pick.ok) return res.status(409).json({ error: pick.reason });
+    const firstName = await firstNameOfClient(clientId);
+    const html = buildDeclinedPaymentHtml({
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      firstName,
+    });
+    return res.json({
+      html,
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      firstName,
+      defaultSubject: declinedPaymentSubject(pick.business),
+    });
+  } catch (err) {
+    req.log.error({ err }, "declined-payment preview failed");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/sales/send-declined-payment */
+router.post("/send-declined-payment", requireSalesEmail, async (req, res) => {
+  const body = req.body as Partial<SendFreeTrialProofBody>;
+  if (
+    !body.clientId ||
+    !body.keywordId ||
+    !body.platform ||
+    !Array.isArray(body.recipients) ||
+    body.recipients.length === 0
+  ) {
+    return res.status(400).json({
+      error: "clientId, keywordId, platform and recipients[] required",
+    });
+  }
+  try {
+    if (!(await isClientInSalesScope(req, body.clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+
+    configureSendGrid();
+    const ownerSender = isOwnerSender(req);
+    const fromEmail = ownerSender
+      ? OWNER_FROM_EMAIL
+      : process.env.SENDGRID_FROM_EMAIL;
+    const fromName = ownerSender
+      ? OWNER_FROM_NAME
+      : (process.env.FREE_TRIAL_FROM_NAME ?? `The ${SENDER_ORG_SIGNAL} Team`);
+    if (!fromEmail)
+      return res.status(503).json({ error: "Sender email not configured" });
+
+    const scope = parseScope(body as Record<string, unknown>);
+    const pick = await resolveFreeTrialPick(
+      body.clientId,
+      body.keywordId,
+      body.platform,
+      scope,
+    );
+    if (!pick.ok) return res.status(409).json({ error: pick.reason });
+
+    const firstName = await firstNameOfClient(body.clientId);
+    const html = buildDeclinedPaymentHtml({
+      business: pick.business,
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      firstName,
+    });
+
+    const intendedRecipients = body.recipients
+      .map((s) => String(s).trim())
+      .filter((s) => EMAIL_RE.test(s));
+    if (intendedRecipients.length === 0)
+      return res.status(400).json({ error: "no valid recipient addresses" });
+    const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
+    const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
+    const subject =
+      body.subject?.trim() || declinedPaymentSubject(pick.business);
+
+    const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
+    const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
+    let contactId: string | null = null;
+    let contactPrimaryEmail: string | null = null;
+    if (ghlEnabled) {
+      try {
+        const [clientRow] = await db
+          .select({
+            accountEmail: clientsTable.accountEmail,
+            contactEmail: clientsTable.contactEmail,
+          })
+          .from(clientsTable)
+          .where(eq(clientsTable.id, body.clientId))
+          .limit(1);
+        contactPrimaryEmail =
+          clientRow?.accountEmail || clientRow?.contactEmail || null;
+        contactId = contactPrimaryEmail
+          ? await ghlFindContactIdByEmail(contactPrimaryEmail)
+          : null;
+      } catch (e) {
+        req.log.warn({ err: e }, "GHL contact lookup failed");
+      }
+    }
+
+    let deliveredVia: "ghl" | "sendgrid" | null = null;
+    let messageId: string | undefined;
+    let sendError: string | null = null;
+    let ghlStatus: string | null = null;
+    let storedSubject = subject;
+    const primaryEmail = (contactPrimaryEmail ?? "").toLowerCase();
+    const recipientsIncludeClient =
+      primaryEmail.length > 0 &&
+      intendedRecipients.some((e) => e.toLowerCase() === primaryEmail);
+
+    if (
+      ghlEnabled &&
+      sendMode === "ghl_first" &&
+      !ownerSender &&
+      contactId &&
+      recipientsIncludeClient
+    ) {
+      try {
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primaryEmail,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
+        deliveredVia = "ghl";
+        messageId = r.messageId;
+        ghlStatus = "sent_via_ghl";
+      } catch (e) {
+        ghlStatus = `ghl_send_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+        req.log.warn({ err: e }, "GHL send failed — falling back to SendGrid");
+      }
+    }
+
+    if (deliveredVia == null) {
+      const msg = {
+        to: actualRecipients,
+        from: { email: fromEmail, name: fromName },
+        subject: safeOverride
+          ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
+          : subject,
+        html,
+        trackingSettings: {
+          clickTracking: { enable: false, enableText: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false },
+        },
+        mailSettings: { bypassListManagement: { enable: false } },
+      };
+      storedSubject = msg.subject;
+      try {
+        const sgResp = await sgMail.send(msg);
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as
+          | string
+          | undefined;
+        deliveredVia = "sendgrid";
+      } catch (e: unknown) {
+        sendError = e instanceof Error ? e.message : String(e);
+      }
+      if (!sendError) {
+        if (!ghlEnabled)
+          ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
+        else if (!contactId) ghlStatus = ghlStatus ?? "no_contact";
+        else if (!recipientsIncludeClient)
+          ghlStatus = "skipped_note (client not a recipient)";
+        else {
+          try {
+            const sentAtEt = new Date().toLocaleString("en-US", {
+              timeZone: "America/New_York",
+              dateStyle: "medium",
+              timeStyle: "short",
+            });
+            await ghlCreateNote(
+              contactId,
+              [
+                "💳 Declined-Payment Email — SENT",
+                `When: ${sentAtEt} ET`,
+                `To: ${intendedRecipients.join(", ")}`,
+                `From: ${fromName} <${fromEmail}>`,
+                `Subject: ${subject}`,
+                `Business: ${pick.business}`,
+                "Asked the client to update their payment method (Stripe billing portal link).",
+                "Sent from the AEO admin panel via SendGrid.",
+              ].join("\n"),
+            );
+            ghlStatus = ghlStatus ? `${ghlStatus} + noted` : "noted";
+          } catch (e) {
+            ghlStatus = `note_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+            req.log.warn({ err: e }, "GHL note failed");
+          }
+        }
+      }
+    }
+
+    const [logged] = await db
+      .insert(emailSendsTable)
+      .values({
+        clientId: body.clientId,
+        businessId: scope.businessId,
+        aeoPlanId: scope.aeoPlanId,
+        recipients: actualRecipients,
+        intendedRecipients: safeOverride ? intendedRecipients : null,
+        fromEmail,
+        subject: storedSubject,
+        status: sendError ? "failed" : "sent",
+        sendgridMessageId:
+          deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        deliveredVia: deliveredVia ?? null,
+        ghlMessageId: deliveredVia === "ghl" ? (messageId ?? null) : null,
+        latestStatus: sendError ? "failed" : "sent",
+        error: sendError,
+        kind: "sales",
+        html,
+        meta: {
+          keyword: pick.keyword,
+          keywordId: body.keywordId,
+          platform: pick.platform,
+          afterRank: pick.rank,
+          business: pick.business,
+          template: "declined_payment",
+          deliveredVia,
+          messageId: messageId ?? null,
+        },
+        ghlStatus,
+      })
+      .returning({ id: emailSendsTable.id });
+
+    if (sendError)
+      return res
+        .status(502)
+        .json({ error: `Send failed: ${sendError}`, sendId: logged?.id });
+
+    return res.json({
+      ok: true,
+      sendId: logged?.id,
+      messageId: messageId ?? null,
+      deliveredVia,
+      recipientsActual: actualRecipients,
+      recipientsIntended: intendedRecipients,
+      safeModeActive: Boolean(safeOverride),
+      keyword: pick.keyword,
+      platform: pick.platform,
+      rank: pick.rank,
+      ghlStatus,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error sending declined-payment email");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
