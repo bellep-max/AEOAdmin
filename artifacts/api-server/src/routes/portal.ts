@@ -37,6 +37,7 @@ import {
   GLOSSARY_VERSION,
 } from "../lib/summary-content";
 import { generateSummaryNarrative } from "../lib/summary-narrative";
+import { buildKeywordDateMaps } from "../lib/july1-rebase";
 import {
   hiddenDatesForScope,
   hiddenKeywordPlatformPairs,
@@ -3125,12 +3126,26 @@ export async function scanClientKeywords(
   const hiddenKwPlatformSet = new Set(
     await hiddenKeywordPlatformPairs(scanHideScope),
   );
-  const reports = allReports.filter(
+  const visibleReports = allReports.filter(
     (r) =>
       (!r.date || !hiddenDateSet.has(r.date)) &&
       (!r.platform ||
         !hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)),
   );
+
+  /* July-1 baseline (display only — see lib/july1-rebase.ts). Remapping here,
+     before any series is built, means every date this scan produces (rank
+     series, latest/prior dates, won-at, stalling-since) and everything derived
+     from it — the portal and the Summary Report — presents the same cadence as
+     the admin keyword table. Rows are never modified in the database. */
+  const displayMaps = buildKeywordDateMaps(visibleReports);
+  const reports = visibleReports.flatMap((r) => {
+    if (!r.date) return [r];
+    const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+    if (displayDate === undefined) return [r];
+    if (displayDate === null) return []; // audit older than the first slot
+    return [{ ...r, date: displayDate }];
+  });
 
   const byKeyword = new Map<number, typeof reports>();
   for (const r of reports) {

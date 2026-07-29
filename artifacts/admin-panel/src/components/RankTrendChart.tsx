@@ -29,6 +29,9 @@ interface Report {
   platform: string | null;
   rankingPosition: number | null;
   date: string | null;
+  /** True audit day, present when the server remapped `date` onto the July-1
+   *  display cadence. Admin actions (hiding a day) must use this, not `date`. */
+  realDate?: string | null;
   createdAt: string | null;
 }
 
@@ -146,6 +149,22 @@ export function RankTrendChart({
     aeoPlanId,
   });
   const chartData = useMemo(() => buildChartData(reports ?? []), [reports]);
+  /* Plotted day → the real audit day(s) behind it. One display slot can cover
+     several real dates (each keyword has its own history), so hiding a plotted
+     point means hiding every real date folded into it. */
+  const realDatesByPoint = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of reports ?? []) {
+      const shown = (r.date ?? r.createdAt)?.slice(0, 10);
+      if (!shown) continue;
+      const real = (r.realDate ?? r.date ?? r.createdAt)?.slice(0, 10);
+      if (!real) continue;
+      const set = map.get(shown) ?? [];
+      if (!set.includes(real)) set.push(real);
+      map.set(shown, set);
+    }
+    return map;
+  }, [reports]);
 
   return (
     <Card className="border-border/50">
@@ -162,6 +181,7 @@ export function RankTrendChart({
           <HiddenDatesControl
             scope={{ clientId, businessId, aeoPlanId }}
             visibleDates={chartData.map((p) => p.key)}
+            realDatesFor={(d) => realDatesByPoint.get(d) ?? [d]}
           />
         </CardTitle>
         <p className="text-xs text-muted-foreground">

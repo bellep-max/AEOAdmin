@@ -90,10 +90,15 @@ function levelLabel(r: HiddenDateRow): string {
 export function HiddenDatesControl({
   scope,
   visibleDates,
+  realDatesFor,
 }: {
   scope: HideScope;
   /** YYYY-MM-DD keys currently plotted, ascending. */
   visibleDates: string[];
+  /** Real audit dates behind a plotted key. Charts remapped onto the July-1
+   *  display cadence plot slots, not real days, and hides must be written
+   *  against the real days or they match nothing. Defaults to identity. */
+  realDatesFor?: (plottedDate: string) => string[];
 }) {
   const isAdmin = useIsAdminTier();
   const [open, setOpen] = useState(false);
@@ -109,12 +114,15 @@ export function HiddenDatesControl({
   const hideDate = async (date: string) => {
     setBusy(true);
     try {
-      const res = await rawFetch("/api/report-hides/dates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...scope, date }),
-      });
-      if (!res.ok) throw new Error("Hide failed");
+      const targets = realDatesFor ? realDatesFor(date) : [date];
+      for (const target of targets) {
+        const res = await rawFetch("/api/report-hides/dates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...scope, date: target }),
+        });
+        if (!res.ok) throw new Error("Hide failed");
+      }
       toast({ title: `Hid ${fmtShortET(date)} from graphs & reports` });
       refresh();
     } catch {

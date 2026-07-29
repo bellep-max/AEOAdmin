@@ -24,6 +24,12 @@ import {
   hiddenKeywordPlatformPairs,
   HIDDEN_KEYWORDS_SQL,
 } from "../lib/report-hides";
+import {
+  REBASE_ANCHOR,
+  cadenceSlots,
+  isPreAnchor,
+  buildKeywordDateMaps,
+} from "../lib/july1-rebase";
 import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
 import {
@@ -277,14 +283,48 @@ router.get("/", requireApiToken, async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     const total = totalRows[0]?.n ?? 0;
 
-    res.json({
-      meta: { total, limit, offset, returned: reports.length },
-      data: reports.map((r) => ({
+    /* July-1 baseline for the detail-page charts (same applyHides=1 opt-in as
+       the hide filters, so exports and the token-gated public API keep real
+       dates). The map is built from the keyword's FULL date history, not just
+       this page, so paging can't shift a keyword's cadence. */
+    const displayMaps =
+      q.applyHides === "1"
+        ? buildKeywordDateMaps(
+            await db
+              .select({
+                keywordId: rankingReportsTable.keywordId,
+                date: rankingReportsTable.date,
+              })
+              .from(rankingReportsTable)
+              .leftJoin(
+                keywordsTable,
+                eq(rankingReportsTable.keywordId, keywordsTable.id),
+              )
+              .where(conditions.length > 0 ? and(...conditions) : undefined),
+          )
+        : null;
+
+    const data = reports.flatMap((r) => {
+      const shaped = {
         ...r,
         clientName: r.clientName ?? r.joinedClientName ?? null,
         bizName: r.bizName ?? r.joinedBusinessName ?? null,
         keyword: r.keyword ?? r.joinedKeywordText ?? null,
-      })),
+      };
+      if (!displayMaps || r.keywordId == null || !r.date) return [shaped];
+      const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+      if (displayDate === undefined) return [shaped];
+      /* null = audit older than the earliest cadence slot: hidden from this
+         view only. The row itself is untouched in the database. */
+      if (displayDate === null) return [];
+      /* realDate keeps the true audit day reachable so admin tooling (e.g. the
+         Hide-dates control) can still act on the actual rows. */
+      return [{ ...shaped, date: displayDate, realDate: r.date }];
+    });
+
+    res.json({
+      meta: { total, limit, offset, returned: data.length },
+      data,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
@@ -752,23 +792,15 @@ router.get("/per-keyword-platform", requireSalesAllowed, async (req, res) => {
    For lifetime, "previous" = first ever, "current" = latest ever. */
 type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
 
-/* July-1 campaign rebase (display-only). Keywords whose real audit history
-   starts before this date present a fresh 14-day cadence anchored at July 1:
-   "Started" reads Jul 1, the latest audit reads the newest cadence slot
-   on/before today (ET), and the prior audit reads the slot before that.
-   Underlying report rows keep their real dates — remove the relabel block in
-   the handler below to revert. */
-const REBASE_ANCHOR = "2026-07-01";
-function rebaseSlots(todayYmd: string): { current: string; previous: string } {
-  const ms = (ymd: string) => Date.parse(`${ymd}T12:00:00Z`);
-  const day = 86_400_000;
-  const k = Math.max(
-    1,
-    Math.floor((ms(todayYmd) - ms(REBASE_ANCHOR)) / day / 14),
-  );
-  const slot = (n: number) =>
-    new Date(ms(REBASE_ANCHOR) + n * 14 * day).toISOString().slice(0, 10);
-  return { current: slot(k), previous: slot(k - 1) };
+/* July-1 campaign baseline (display-only) — see lib/july1-rebase.ts. The
+   expanded keyword table shows three columns, so it uses the anchor plus the
+   two newest cadence slots. */
+function periodComparisonSlots(): { current: string; previous: string } {
+  const slots = cadenceSlots();
+  return {
+    current: slots[slots.length - 1],
+    previous: slots[slots.length - 2] ?? REBASE_ANCHOR,
+  };
 }
 
 /* America/New_York midnight for the calendar date that contains `d`.
@@ -1177,14 +1209,11 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
     const rebasedKeywordIds = new Set<number>();
     if (!hasDateOverride) {
       for (const r of reports) {
-        if (!r.date || r.date >= REBASE_ANCHOR) continue;
+        if (!isPreAnchor(r.date)) continue;
         if (keywordAllowed(r.keywordId)) rebasedKeywordIds.add(r.keywordId);
       }
     }
-    const todayEt = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/New_York",
-    }).format(new Date());
-    const slots = rebaseSlots(todayEt);
+    const slots = periodComparisonSlots();
     const outRows = rows.map((row) =>
       rebasedKeywordIds.has(row.keywordId)
         ? {
