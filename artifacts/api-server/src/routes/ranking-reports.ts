@@ -13,6 +13,7 @@ import { requireApiToken } from "../middlewares/api-token";
 import { requireSalesAllowed, requireRoles } from "../middlewares/role-auth";
 import {
   getScopedClientIds,
+  getArchivedEntityIds,
   assertScopedAccessToClient,
   isScopedRole,
 } from "../lib/scoped-access";
@@ -680,11 +681,24 @@ router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
           positionChange: change,
         };
       });
+      // Drop archived (soft-deleted) clients/businesses from every platform stat.
+      const comparisonsActive = comparisons.filter(
+        (c) =>
+          clientMap.get(c.clientId)?.status !== "inactive" &&
+          (c.businessId == null ||
+            businessMap.get(c.businessId)?.status !== "inactive"),
+      );
 
-      const withData = comparisons.filter((c) => c.currentPosition != null);
-      const improving = comparisons.filter((c) => (c.positionChange ?? 0) > 0);
-      const declining = comparisons.filter((c) => (c.positionChange ?? 0) < 0);
-      const steady = comparisons.filter((c) => c.positionChange === 0);
+      const withData = comparisonsActive.filter(
+        (c) => c.currentPosition != null,
+      );
+      const improving = comparisonsActive.filter(
+        (c) => (c.positionChange ?? 0) > 0,
+      );
+      const declining = comparisonsActive.filter(
+        (c) => (c.positionChange ?? 0) < 0,
+      );
+      const steady = comparisonsActive.filter((c) => c.positionChange === 0);
       const avgPos =
         withData.length > 0
           ? Math.round(
@@ -700,7 +714,7 @@ router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
 
       return {
         platform,
-        totalKeywords: comparisons.length,
+        totalKeywords: comparisonsActive.length,
         withData: withData.length,
         improving: improving.length,
         steady: steady.length,
@@ -714,7 +728,7 @@ router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
               change: bestKw.positionChange,
             }
           : null,
-        keywords: comparisons,
+        keywords: comparisonsActive,
       };
     });
 
@@ -986,6 +1000,14 @@ router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
       const kw = keywordMap.get(kid);
       if (!kw) return false;
       if (kw.hiddenFromReports) return false;
+      // Archived (soft-deleted, status='inactive') client or business must never
+      // appear in rankings — these views don't otherwise filter archive status.
+      if (clientMap.get(kw.clientId)?.status === "inactive") return false;
+      if (
+        kw.businessId != null &&
+        businessMap.get(kw.businessId)?.status === "inactive"
+      )
+        return false;
       if (clientId != null && kw.clientId !== clientId) return false;
       if (businessId != null && kw.businessId !== businessId) return false;
       if (aeoPlanId != null && kw.aeoPlanId !== aeoPlanId) return false;
@@ -1299,6 +1321,13 @@ router.get("/initial-vs-current", requireSalesAllowed, async (req, res) => {
       const client = clientMap.get(report.clientId);
       const keyword = keywordMap.get(report.keywordId);
       if (!client || !keyword) continue;
+      // Skip archived (soft-deleted) client or business.
+      if (client.status === "inactive") continue;
+      if (
+        keyword.businessId != null &&
+        businessMap.get(keyword.businessId)?.status === "inactive"
+      )
+        continue;
       if (!grouped[key]) {
         const business =
           keyword.businessId != null
@@ -1435,6 +1464,20 @@ router.get(
       if (eligibleIds) {
         params.push(eligibleIds);
         conds.push(`client_id = ANY($${params.length}::int[])`);
+      }
+      /* Archived (soft-deleted, status='inactive') clients/businesses never reach
+         the report. Bare column names + int[] params — same shape as the
+         eligibleIds clause above, safe under the rr.-prefix CTE rewrite. */
+      const archived = await getArchivedEntityIds();
+      if (archived.clientIds.length > 0) {
+        params.push(archived.clientIds);
+        conds.push(`client_id <> ALL($${params.length}::int[])`);
+      }
+      if (archived.businessIds.length > 0) {
+        params.push(archived.businessIds);
+        conds.push(
+          `(business_id IS NULL OR business_id <> ALL($${params.length}::int[]))`,
+        );
       }
       /* Admin-hidden data never reaches the report. Keyword fragment is safe
          under the rr.-prefix rewrite (subquery uses no rewritable names);

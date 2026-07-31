@@ -11,9 +11,13 @@
  * This module supersedes the older sales-only helpers in sales-scope.ts (dead).
  */
 import type { Request, Response } from "express";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable, clientsTable } from "@workspace/db/schema";
+import {
+  businessesTable,
+  clientAeoPlansTable,
+  clientsTable,
+} from "@workspace/db/schema";
 
 /**
  * ONLY the owner sees every plan. Every other logged-in role — sales,
@@ -81,6 +85,34 @@ export async function getScopedClientIds(
       ...nameRows.map((r) => r.id),
     ]),
   ];
+}
+
+/**
+ * Soft-deleted (archived) clients and businesses — status = 'inactive', set by
+ * the DELETE routes. These must never surface in rankings/report views, which
+ * build their own keyword→client/business joins and otherwise ignore archive
+ * status (the clients-list endpoint's active-only default does not cover them).
+ * Returns id arrays so raw-SQL callers can bind them as params and map-based
+ * callers can drop any keyword whose client OR business is archived.
+ */
+export async function getArchivedEntityIds(): Promise<{
+  clientIds: number[];
+  businessIds: number[];
+}> {
+  const [clients, businesses] = await Promise.all([
+    db
+      .select({ id: clientsTable.id })
+      .from(clientsTable)
+      .where(eq(clientsTable.status, "inactive")),
+    db
+      .select({ id: businessesTable.id })
+      .from(businessesTable)
+      .where(eq(businessesTable.status, "inactive")),
+  ]);
+  return {
+    clientIds: clients.map((c) => c.id),
+    businessIds: businesses.map((b) => b.id),
+  };
 }
 
 /**

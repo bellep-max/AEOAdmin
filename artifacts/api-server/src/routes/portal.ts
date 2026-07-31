@@ -43,6 +43,7 @@ import {
   hiddenKeywordPlatformPairs,
   HIDDEN_KEYWORDS_SQL,
 } from "../lib/report-hides";
+import { getArchivedEntityIds } from "../lib/scoped-access";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -2126,12 +2127,25 @@ router.get(
         : null;
 
       const conds: string[] = ["date IS NOT NULL"];
-      const params: (number | string[] | null)[] = [];
+      const params: (number | number[] | string[] | null)[] = [];
       params.push(clientId);
       conds.push(`client_id = $${params.length}`);
       if (businessId !== null && !Number.isNaN(businessId)) {
         params.push(businessId);
         conds.push(`business_id = $${params.length}`);
+      }
+      /* Archived (soft-deleted, status='inactive') client/business never reach
+         the portal report — mirrors the admin bi-weekly-report guard. */
+      const archived = await getArchivedEntityIds();
+      if (archived.clientIds.length > 0) {
+        params.push(archived.clientIds);
+        conds.push(`client_id <> ALL($${params.length}::int[])`);
+      }
+      if (archived.businessIds.length > 0) {
+        params.push(archived.businessIds);
+        conds.push(
+          `(business_id IS NULL OR business_id <> ALL($${params.length}::int[]))`,
+        );
       }
       if (aeoPlanId !== null && !Number.isNaN(aeoPlanId)) {
         params.push(aeoPlanId);
