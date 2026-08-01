@@ -37,7 +37,7 @@ import {
   GLOSSARY_VERSION,
 } from "../lib/summary-content";
 import { generateSummaryNarrative } from "../lib/summary-narrative";
-import { buildKeywordDateMaps } from "../lib/july1-rebase";
+import { buildKeywordDateMaps, REBASE_ANCHOR } from "../lib/july1-rebase";
 import {
   hiddenDatesForScope,
   hiddenKeywordPlatformPairs,
@@ -2079,13 +2079,27 @@ router.get("/ranking-reports", requirePortalAuth, async (req, res) => {
       .where(and(...conditions))
       .orderBy(desc(rankingReportsTable.createdAt));
 
+    /* July-1 baseline (display only — see lib/july1-rebase.ts). Same remap the
+       admin list applies with applyHides=1: audit dates render on the Jul-1
+       cadence and audits older than the earliest slot never reach the client.
+       The query is unpaged, so each keyword's full (visible) history is present
+       and the cadence map is complete. */
+    const displayMaps = buildKeywordDateMaps(reports);
+
     res.json(
-      reports.map((r) => ({
-        ...r,
-        clientName: r.clientName ?? r.joinedClientName ?? null,
-        bizName: r.bizName ?? r.joinedBusinessName ?? null,
-        keyword: r.keyword ?? r.joinedKeywordText ?? null,
-      })),
+      reports.flatMap((r) => {
+        const shaped = {
+          ...r,
+          clientName: r.clientName ?? r.joinedClientName ?? null,
+          bizName: r.bizName ?? r.joinedBusinessName ?? null,
+          keyword: r.keyword ?? r.joinedKeywordText ?? null,
+        };
+        if (r.keywordId == null || !r.date) return [shaped];
+        const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+        if (displayDate === undefined) return [shaped];
+        if (displayDate === null) return []; // audit older than the first slot
+        return [{ ...shaped, date: displayDate }];
+      }),
     );
   } catch (err) {
     req.log.error({ err }, "Portal ranking-reports list error");
@@ -2192,10 +2206,16 @@ router.get(
         });
       }
       const currentBatchDate = batchesRes.rows[0].date;
-      const allBatches = batchesRes.rows.map((r) => ({
-        date: r.date,
-        combos: Number(r.combos),
-      }));
+      /* Clients never see pre-July-1 audit dates (display-only baseline —
+         see lib/july1-rebase.ts). Batch rows before the anchor are dropped
+         from the response; the aggregate counts below still cover the full
+         history, matching the admin master report. */
+      const allBatches = batchesRes.rows
+        .filter((r) => r.date >= REBASE_ANCHOR)
+        .map((r) => ({
+          date: r.date,
+          combos: Number(r.combos),
+        }));
       const nextDue = new Date(currentBatchDate);
       nextDue.setUTCDate(nextDue.getUTCDate() + 14);
       const nextDueDate = nextDue.toISOString().slice(0, 10);
@@ -2286,7 +2306,10 @@ router.get(
       );
       const sBr = sB.rows[0];
       const sectionB = {
-        earliestDate: sBr.earliest_date,
+        earliestDate:
+          sBr.earliest_date && sBr.earliest_date < REBASE_ANCHOR
+            ? REBASE_ANCHOR
+            : sBr.earliest_date,
         latestOldDate: sBr.latest_old_date,
         totalOldCombos: Number(sBr.total_old),
         onSchedule: Number(sBr.on_schedule),

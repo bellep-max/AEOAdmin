@@ -1,4 +1,5 @@
 import { pool } from "@workspace/db";
+import { buildKeywordDateMaps, isPreAnchor } from "./july1-rebase";
 
 export const GLOSSARY_VERSION = "2026-07-09";
 
@@ -122,9 +123,34 @@ export async function availableReportDates(
     params.push(opts.aeoPlanId);
     where.push(`k.aeo_plan_id = $${params.length}`);
   }
-  const q = `SELECT rr.date AS date, count(*)::int AS count FROM ranking_reports rr ${join} WHERE ${where.join(
+  const q = `SELECT rr.keyword_id AS keyword_id, rr.date AS date FROM ranking_reports rr ${join} WHERE ${where.join(
     " AND ",
-  )} GROUP BY rr.date ORDER BY rr.date DESC`;
+  )}`;
   const { rows } = await pool.query(q, params);
-  return rows.map((r) => ({ date: String(r.date), count: Number(r.count) }));
+
+  /* July-1 baseline (display only — see july1-rebase.ts). The calendar must
+     offer the same dates the rebased report series actually contain — a real
+     pre-July date would filter every keyword's remapped series out and render
+     an empty Summary Report. */
+  const typed = rows.map((r) => ({
+    keywordId: r.keyword_id == null ? null : Number(r.keyword_id),
+    date: r.date == null ? null : String(r.date),
+  }));
+  const displayMaps = buildKeywordDateMaps(typed);
+  const counts = new Map<string, number>();
+  for (const r of typed) {
+    if (!r.date) continue;
+    if (r.keywordId == null) {
+      // Keyword-less rows have no cadence to remap — keep only post-anchor days.
+      if (!isPreAnchor(r.date))
+        counts.set(r.date, (counts.get(r.date) ?? 0) + 1);
+      continue;
+    }
+    const display = displayMaps.get(r.keywordId)?.get(r.date);
+    if (display == null) continue; // audit older than the first cadence slot
+    counts.set(display, (counts.get(display) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, count]) => ({ date, count }));
 }
