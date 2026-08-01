@@ -20,6 +20,14 @@ const PRICING = {
 
 export type DeepSeekModel = keyof typeof PRICING;
 
+// DeepSeek retired the V3 aliases; the API now only accepts the V4 names.
+// Keep the internal hints (used for PRICING + report records) and translate to
+// the wire model at call time: chat (V3, fast/cheap) → v4-flash, reasoner (R1) → v4-pro.
+const API_MODEL: Record<DeepSeekModel, string> = {
+  "deepseek-chat":     "deepseek-v4-flash",
+  "deepseek-reasoner": "deepseek-v4-pro",
+};
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -46,7 +54,7 @@ export async function chatCompletion(opts: ChatCompletionOptions): Promise<ChatC
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
 
   const body: Record<string, unknown> = {
-    model: opts.model,
+    model: API_MODEL[opts.model],
     messages: opts.messages,
   };
   if (opts.temperature != null) body.temperature = opts.temperature;
