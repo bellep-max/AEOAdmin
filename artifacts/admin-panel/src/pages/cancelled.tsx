@@ -213,9 +213,11 @@ export default function Cancelled() {
                         </Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1 min-w-0 text-xs text-muted-foreground">
+                    {/* Wraps instead of squeezing — in a narrow column three
+                        truncating children shrink each other to one letter. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 min-w-0 text-xs text-muted-foreground">
                       {r.businessName && (
-                        <span className="truncate min-w-0">
+                        <span className="truncate max-w-full">
                           {r.businessName}
                         </span>
                       )}
@@ -228,7 +230,7 @@ export default function Cancelled() {
                         </Badge>
                       )}
                       {r.cancelReason && (
-                        <span className="italic truncate min-w-0">
+                        <span className="italic truncate max-w-full">
                           {r.cancelReason}
                         </span>
                       )}
