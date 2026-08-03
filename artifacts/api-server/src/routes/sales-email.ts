@@ -35,6 +35,7 @@ import { createHmac } from "node:crypto";
 import { requireRoles } from "../middlewares/role-auth";
 import { getScopedClientIds } from "../lib/scoped-access";
 import { refreshGhlSendStatuses } from "../services/email-status-ghl";
+import { welcomeHtml, welcomeSubject } from "../services/free-trial-email";
 import {
   resolveImprovement,
   presign,
@@ -2719,6 +2720,272 @@ router.post("/send-declined-payment", requireSalesEmail, async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Error sending declined-payment email");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── Manual welcome email ──────────────────────────────────────────────────
+   The signup flow sends a welcome automatically (services/free-trial-email).
+   This is the operator-triggered re-send for the cases automation can't cover:
+   a signup that arrived before the automation existed, a send that failed, a
+   corrected email address, or a client onboarded by hand. Body and subject
+   come from the SAME builder as the automated mail, so the two can't drift. */
+
+/** Everything the welcome template needs, read off the client record. */
+async function welcomeContextFor(clientId: number): Promise<{
+  businessName: string;
+  city: string | null;
+  isDirect: boolean;
+  recipient: string | null;
+  firstName: string | null;
+} | null> {
+  const [client] = await db
+    .select({
+      businessName: clientsTable.businessName,
+      city: clientsTable.city,
+      accountEmail: clientsTable.accountEmail,
+      contactEmail: clientsTable.contactEmail,
+    })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId))
+    .limit(1);
+  if (!client) return null;
+  /* "Direct" = a paid plan at signup; a Free Trial Plans row means the trial
+     copy (which carries the convert-on-proof promise) is the right one. */
+  const plans = await db
+    .select({ planType: clientAeoPlansTable.planType })
+    .from(clientAeoPlansTable)
+    .where(eq(clientAeoPlansTable.clientId, clientId));
+  const isDirect = !plans.some((p) => p.planType === "Free Trial Plans");
+  return {
+    businessName: client.businessName,
+    city: client.city,
+    isDirect,
+    recipient: client.accountEmail || client.contactEmail || null,
+    firstName: await firstNameOfClient(clientId),
+  };
+}
+
+/* GET /api/sales/welcome-preview?clientId= */
+router.get("/welcome-preview", requireSalesEmail, async (req, res) => {
+  const clientId = Number.parseInt(String(req.query.clientId ?? ""), 10);
+  if (!Number.isFinite(clientId))
+    return res.status(400).json({ error: "clientId required" });
+  try {
+    if (!(await isClientInSalesScope(req, clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+    const ctx = await welcomeContextFor(clientId);
+    if (!ctx) return res.status(404).json({ error: "Client not found" });
+
+    /* Surface any welcome already on record so the operator doesn't send a
+       duplicate without knowing one went out. */
+    const priorSends = await db
+      .select({ id: emailSendsTable.id, sentAt: emailSendsTable.sentAt })
+      .from(emailSendsTable)
+      .where(
+        and(
+          eq(emailSendsTable.clientId, clientId),
+          eq(emailSendsTable.kind, "welcome"),
+        ),
+      )
+      .orderBy(desc(emailSendsTable.sentAt))
+      .limit(1);
+
+    return res.json({
+      html: welcomeHtml(
+        ctx.businessName,
+        ctx.firstName,
+        ctx.isDirect,
+        ctx.city,
+      ),
+      defaultSubject: welcomeSubject(ctx.isDirect),
+      business: ctx.businessName,
+      firstName: ctx.firstName,
+      city: ctx.city,
+      isDirect: ctx.isDirect,
+      defaultRecipient: ctx.recipient,
+      alreadySentAt: priorSends[0]?.sentAt ?? null,
+    });
+  } catch (err) {
+    req.log.error({ err }, "welcome preview failed");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /api/sales/send-welcome  { clientId, recipients[], subject? } */
+router.post("/send-welcome", requireSalesEmail, async (req, res) => {
+  const body = req.body as {
+    clientId?: number;
+    recipients?: unknown;
+    subject?: string;
+  };
+  if (
+    !body.clientId ||
+    !Array.isArray(body.recipients) ||
+    body.recipients.length === 0
+  ) {
+    return res
+      .status(400)
+      .json({ error: "clientId and recipients[] required" });
+  }
+  try {
+    if (!(await isClientInSalesScope(req, body.clientId)))
+      return res.status(403).json({ error: "Client outside your plan scope" });
+    const ctx = await welcomeContextFor(body.clientId);
+    if (!ctx) return res.status(404).json({ error: "Client not found" });
+
+    configureSendGrid();
+    const ownerSender = isOwnerSender(req);
+    const fromEmail = ownerSender
+      ? OWNER_FROM_EMAIL
+      : process.env.SENDGRID_FROM_EMAIL;
+    const fromName = ownerSender
+      ? OWNER_FROM_NAME
+      : (process.env.FREE_TRIAL_FROM_NAME ?? `The ${SENDER_ORG_SIGNAL} Team`);
+    if (!fromEmail)
+      return res.status(503).json({ error: "Sender email not configured" });
+
+    const html = welcomeHtml(
+      ctx.businessName,
+      ctx.firstName,
+      ctx.isDirect,
+      ctx.city,
+    );
+    const intendedRecipients = body.recipients
+      .map((s) => String(s).trim())
+      .filter((s) => EMAIL_RE.test(s));
+    if (intendedRecipients.length === 0)
+      return res.status(400).json({ error: "no valid recipient addresses" });
+    const safeOverride = process.env.SAFE_RECIPIENT_OVERRIDE;
+    const actualRecipients = safeOverride ? [safeOverride] : intendedRecipients;
+    const subject = body.subject?.trim() || welcomeSubject(ctx.isDirect);
+
+    /* Same delivery ladder as the other manual sends: GHL first when the
+       client is a recipient, SendGrid otherwise or on GHL failure. */
+    const sendMode = process.env.GHL_SEND_MODE ?? "sendgrid_only";
+    const ghlEnabled = Boolean(process.env.GHL_PIT_TOKEN) && !safeOverride;
+    let contactId: string | null = null;
+    const contactPrimaryEmail = ctx.recipient;
+    if (ghlEnabled && contactPrimaryEmail) {
+      try {
+        contactId = await ghlFindContactIdByEmail(contactPrimaryEmail);
+      } catch (e) {
+        req.log.warn({ err: e }, "GHL contact lookup failed");
+      }
+    }
+
+    let deliveredVia: "ghl" | "sendgrid" | null = null;
+    let messageId: string | undefined;
+    let sendError: string | null = null;
+    let ghlStatus: string | null = null;
+    let storedSubject = subject;
+    const primaryEmail = (contactPrimaryEmail ?? "").toLowerCase();
+    const recipientsIncludeClient =
+      primaryEmail.length > 0 &&
+      intendedRecipients.some((e) => e.toLowerCase() === primaryEmail);
+
+    if (
+      ghlEnabled &&
+      sendMode === "ghl_first" &&
+      !ownerSender &&
+      contactId &&
+      recipientsIncludeClient
+    ) {
+      try {
+        const ccList = intendedRecipients.filter(
+          (e) => e.toLowerCase() !== primaryEmail,
+        );
+        const r = await ghlSendEmail(contactId, {
+          html,
+          subject,
+          ...(GHL_EMAIL_FROM ? { emailFrom: GHL_EMAIL_FROM } : {}),
+          ...(ccList.length ? { emailCc: ccList } : {}),
+        });
+        deliveredVia = "ghl";
+        messageId = r.messageId;
+        ghlStatus = "sent_via_ghl";
+      } catch (e) {
+        ghlStatus = `ghl_send_failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`;
+        req.log.warn({ err: e }, "GHL send failed — falling back to SendGrid");
+      }
+    }
+
+    if (deliveredVia == null) {
+      const msg = {
+        to: actualRecipients,
+        from: { email: fromEmail, name: fromName },
+        subject: safeOverride
+          ? `[TEST → would have gone to: ${intendedRecipients.join(", ")}] ${subject}`
+          : subject,
+        html,
+        trackingSettings: {
+          clickTracking: { enable: false, enableText: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false },
+        },
+        mailSettings: { bypassListManagement: { enable: false } },
+      };
+      storedSubject = msg.subject;
+      try {
+        const sgResp = await sgMail.send(msg);
+        messageId = sgResp?.[0]?.headers?.["x-message-id"] as
+          | string
+          | undefined;
+        deliveredVia = "sendgrid";
+      } catch (e: unknown) {
+        sendError = e instanceof Error ? e.message : String(e);
+      }
+      if (!sendError && !ghlEnabled)
+        ghlStatus = safeOverride ? "skipped (safe mode)" : "disabled";
+    }
+
+    const [logged] = await db
+      .insert(emailSendsTable)
+      .values({
+        clientId: body.clientId,
+        recipients: actualRecipients,
+        intendedRecipients: safeOverride ? intendedRecipients : null,
+        fromEmail,
+        subject: storedSubject,
+        status: sendError ? "failed" : "sent",
+        sendgridMessageId:
+          deliveredVia === "sendgrid" ? (messageId ?? null) : null,
+        deliveredVia: deliveredVia ?? null,
+        ghlMessageId: deliveredVia === "ghl" ? (messageId ?? null) : null,
+        latestStatus: sendError ? "failed" : "sent",
+        error: sendError,
+        /* kind "welcome" keeps it typed Welcome on the Sent Emails page,
+           exactly like the automated one; meta marks it operator-sent. */
+        kind: "welcome",
+        html,
+        meta: {
+          business: ctx.businessName,
+          isDirect: ctx.isDirect,
+          template: "welcome_manual",
+          deliveredVia,
+          messageId: messageId ?? null,
+        },
+        ghlStatus,
+      })
+      .returning({ id: emailSendsTable.id });
+
+    if (sendError)
+      return res
+        .status(502)
+        .json({ error: `Send failed: ${sendError}`, sendId: logged?.id });
+
+    return res.json({
+      ok: true,
+      sendId: logged?.id,
+      messageId: messageId ?? null,
+      deliveredVia,
+      recipientsActual: actualRecipients,
+      recipientsIntended: intendedRecipients,
+      safeModeActive: Boolean(safeOverride),
+      ghlStatus,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error sending welcome email");
     return res.status(500).json({ error: "Internal server error" });
   }
 });

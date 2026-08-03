@@ -60,6 +60,12 @@ interface SendOptions {
 const WELCOME_SUBJECT_TRIAL =
   "Welcome to Signal AEO — your free trial is live 🎉";
 const WELCOME_SUBJECT_DIRECT = "Welcome to Signal AEO 🎉";
+
+/** Subject for a welcome send. Exported so the manual re-send in the admin
+ *  panel defaults to exactly what the automated signup email uses. */
+export function welcomeSubject(isDirect: boolean): string {
+  return isDirect ? WELCOME_SUBJECT_DIRECT : WELCOME_SUBJECT_TRIAL;
+}
 const DEFAULT_OWNER_EMAILS = [
   "admin@signalaeo.com",
   "erven.i@appstango.com",
@@ -89,7 +95,9 @@ function escapeHtml(value: string): string {
 const CALENDLY_URL =
   "https://calendly.com/contact-signalaeo/fix-my-ai-ranking-15-min";
 
-function welcomeHtml(
+/** Welcome body. Exported so the admin panel's manual send renders the exact
+ *  same copy as the automated signup email — one template, no drift. */
+export function welcomeHtml(
   businessName: string,
   firstName: string | null,
   isDirect: boolean,

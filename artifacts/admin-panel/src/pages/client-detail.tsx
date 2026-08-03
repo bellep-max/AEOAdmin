@@ -71,6 +71,7 @@ import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
 import { DeclinedPaymentDialog } from "@/components/DeclinedPaymentDialog";
+import { SendWelcomeDialog } from "@/components/SendWelcomeDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -131,6 +132,7 @@ export default function ClientDetail() {
   const [editAccOpen, setEditAccOpen] = useState(false);
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
   const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -304,25 +306,39 @@ export default function ClientDetail() {
             )}
           </div>
         </div>
-        {isFreeTrial && isOwner && (
+        {isOwner && (
           <div className="flex items-center gap-2 flex-shrink-0">
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setSalesEmailOpen(true)}
-            >
-              <Send className="w-4 h-4" />
-              Send free-trial proof
-            </Button>
+            {/* Welcome applies to direct signups too, so it isn't trial-gated. */}
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 text-amber-600 border-amber-500/40 hover:text-amber-700"
-              onClick={() => setDeclinedPaymentOpen(true)}
+              className="gap-1.5"
+              onClick={() => setWelcomeOpen(true)}
             >
               <Send className="w-4 h-4" />
-              Declined payment
+              Send welcome
             </Button>
+            {isFreeTrial && (
+              <>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSalesEmailOpen(true)}
+                >
+                  <Send className="w-4 h-4" />
+                  Send free-trial proof
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-amber-600 border-amber-500/40 hover:text-amber-700"
+                  onClick={() => setDeclinedPaymentOpen(true)}
+                >
+                  <Send className="w-4 h-4" />
+                  Declined payment
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -694,6 +710,11 @@ export default function ClientDetail() {
       <DeclinedPaymentDialog
         open={declinedPaymentOpen}
         onClose={() => setDeclinedPaymentOpen(false)}
+        clientId={clientId}
+      />
+      <SendWelcomeDialog
+        open={welcomeOpen}
+        onClose={() => setWelcomeOpen(false)}
         clientId={clientId}
       />
     </div>
