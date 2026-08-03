@@ -666,10 +666,14 @@ export default function CampaignDetail() {
             <h1 className="text-2xl font-bold text-foreground">
               {campaign.name ?? `${campaign.planType} Campaign`}
             </h1>
+            {/* Paid vs trial, stated on the campaign itself — the plan name
+                alone doesn't say which one the client is billed for. */}
             <span
               className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass}`}
             >
-              {campaign.planType}
+              {campaign.planType === "Free Trial Plans"
+                ? campaign.planType
+                : `${campaign.planType} Paid`}
             </span>
             <span
               className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass}`}

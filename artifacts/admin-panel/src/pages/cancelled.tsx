@@ -111,7 +111,7 @@ export default function Cancelled() {
   });
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -175,10 +175,10 @@ export default function Cancelled() {
           <CardContent className="p-0">
             <div className="flex items-center gap-4 px-6 py-2 border-b bg-muted/40 text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
               <div className="flex-1">Campaign</div>
-              <div className="w-44 flex-shrink-0">Client</div>
-              <div className="w-32 flex-shrink-0">Location</div>
-              <div className="w-32 flex-shrink-0">Cancelled</div>
-              <div className="w-24 flex-shrink-0">Keywords</div>
+              <div className="w-40 flex-shrink-0">Client</div>
+              <div className="w-28 flex-shrink-0">Location</div>
+              <div className="w-28 flex-shrink-0">Cancelled</div>
+              <div className="w-20 flex-shrink-0">Keywords</div>
               <div className="w-24 flex-shrink-0 text-right">Actions</div>
             </div>
 
@@ -235,7 +235,7 @@ export default function Cancelled() {
                     </div>
                   </div>
 
-                  <div className="w-44 flex-shrink-0 min-w-0 overflow-hidden">
+                  <div className="w-40 flex-shrink-0 min-w-0 overflow-hidden">
                     <Link
                       href={`/clients/${r.clientId}`}
                       className="text-sm truncate hover:text-primary block"
@@ -247,7 +247,7 @@ export default function Cancelled() {
                     </span>
                   </div>
 
-                  <div className="w-32 flex-shrink-0">
+                  <div className="w-28 flex-shrink-0">
                     {r.city || r.state ? (
                       <div className="flex items-center gap-1 text-xs">
                         <MapPin className="w-3 h-3 text-muted-foreground" />
@@ -260,7 +260,7 @@ export default function Cancelled() {
                     )}
                   </div>
 
-                  <div className="w-32 flex-shrink-0">
+                  <div className="w-28 flex-shrink-0">
                     {r.canceledAt ? (
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Calendar className="w-3 h-3" />
@@ -274,7 +274,7 @@ export default function Cancelled() {
                     )}
                   </div>
 
-                  <div className="w-24 flex-shrink-0 text-xs text-muted-foreground">
+                  <div className="w-20 flex-shrink-0 text-xs text-muted-foreground">
                     {r.keywordCount} keyword{r.keywordCount !== 1 ? "s" : ""}
                   </div>
 
