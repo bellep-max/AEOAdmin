@@ -245,6 +245,12 @@ export default function ClientDetail() {
   // Every non-trial plan the client actually pays for, tagged separately from
   // the plan_name text so a trial + paid client reads correctly.
   const paidPlanTypes = planTypes.filter((pt) => pt !== "Free Trial Plans");
+  // plan_name is free text that usually repeats the plan type — hide it when a
+  // "… Paid" tag already says the same thing, so the Paid suffix reads clearly.
+  const planNameDuplicatesPaidTag = paidPlanTypes.some(
+    (pt) =>
+      pt.toLowerCase().trim() === (client.planName ?? "").toLowerCase().trim(),
+  );
   const initials = client.businessName
     ? client.businessName
         .split(" ")
@@ -290,7 +296,7 @@ export default function ClientDetail() {
             >
               {client.status}
             </Badge>
-            {client.planName && (
+            {client.planName && !planNameDuplicatesPaidTag && (
               <Badge
                 variant="outline"
                 className="bg-primary/10 text-primary border-primary/20"
