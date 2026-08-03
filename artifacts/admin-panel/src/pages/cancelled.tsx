@@ -188,48 +188,54 @@ export default function Cancelled() {
                   key={r.rowKey}
                   className="flex items-start gap-4 px-6 py-4 hover:bg-muted/20 transition-colors"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <div className="flex items-center gap-2 min-w-0">
                       <Building2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                       {r.kind === "campaign" ? (
                         <Link
                           href={`/clients/${r.clientId}/businesses/${r.businessId}/campaigns/${r.campaignId}`}
-                          className="font-medium text-sm truncate hover:text-primary"
+                          className="font-medium text-sm truncate min-w-0 hover:text-primary"
                         >
                           {r.campaignName}
                         </Link>
                       ) : (
-                        <span className="font-medium text-sm truncate italic text-muted-foreground">
+                        <span className="font-medium text-sm truncate min-w-0 italic text-muted-foreground">
                           Whole client archived
                         </span>
                       )}
-                      {r.clientArchived && (
+                      {/* Redundant on a client row — that row IS the client. */}
+                      {r.kind === "campaign" && r.clientArchived && (
                         <Badge
                           variant="outline"
-                          className="text-[10px] border-rose-400 text-rose-700"
+                          className="text-[10px] flex-shrink-0 whitespace-nowrap border-rose-400 text-rose-700"
                         >
                           Client cancelled
                         </Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2 mt-1 min-w-0 text-xs text-muted-foreground">
                       {r.businessName && (
-                        <span className="truncate">{r.businessName}</span>
+                        <span className="truncate min-w-0">
+                          {r.businessName}
+                        </span>
                       )}
                       {r.planType && (
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] flex-shrink-0 whitespace-nowrap"
+                        >
                           {r.planType}
                         </Badge>
                       )}
                       {r.cancelReason && (
-                        <span className="italic truncate">
+                        <span className="italic truncate min-w-0">
                           {r.cancelReason}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="w-44 flex-shrink-0 min-w-0">
+                  <div className="w-44 flex-shrink-0 min-w-0 overflow-hidden">
                     <Link
                       href={`/clients/${r.clientId}`}
                       className="text-sm truncate hover:text-primary block"
