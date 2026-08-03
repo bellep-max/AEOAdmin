@@ -462,7 +462,7 @@ export default function Clients() {
         ((c as any).planTypes ?? []).includes(filterPlan);
       const momentumMatch =
         momentumClientIds === null || momentumClientIds.has(c.id);
-      // Archived rows live on /archived; hide them here so an
+      // Archived rows live on /cancelled; hide them here so an
       // optimistic stamp from doDeleteClient takes effect immediately even
       // before refetch returns the filtered list from the BE.
       const archivedMatch = !(c as any).archivedAt;

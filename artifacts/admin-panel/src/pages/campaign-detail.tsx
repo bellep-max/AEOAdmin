@@ -38,7 +38,8 @@ import {
   Pencil,
   Send,
   Tag,
-  Trash2,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
 import { SalesEmailDialog } from "@/components/SalesEmailDialog";
 import { CampaignMomentumBadge } from "@/components/MomentumBadge";
@@ -346,7 +347,8 @@ export default function CampaignDetail() {
   const [salesEmailOpen, setSalesEmailOpen] = useState(false);
   const [ftpOpen, setFtpOpen] = useState(false);
   const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
-  const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
+  const [confirmCancelCampaign, setConfirmCancelCampaign] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [kwDialogOpen, setKwDialogOpen] = useState(false);
   const [savingKw, setSavingKw] = useState(false);
   const [editingKw, setEditingKw] = useState<KwRecord | null>(null);
@@ -532,22 +534,60 @@ export default function CampaignDetail() {
     }
   }
 
-  async function deleteCampaign() {
+  async function cancelCampaign() {
     try {
       const res = await rawFetch(
-        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
-        { method: "DELETE" },
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: cancelReason.trim() || undefined }),
+        },
       );
       if (!res.ok) throw new Error();
-      toast({ title: "Campaign deleted" });
+      const body = (await res.json()) as { clientArchived?: boolean };
+      toast({
+        title: "Campaign cancelled",
+        description: body.clientArchived
+          ? "Last active campaign — the whole client was cancelled too."
+          : "Keywords stopped. History is kept; restore it from Cancelled.",
+      });
       queryClient.invalidateQueries({
         queryKey: ["/api/clients", clientId, "aeo-plans"],
       });
-      navigate(`/clients/${clientId}/businesses/${businessId}`);
+      queryClient.invalidateQueries({ queryKey: ["cancellations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      navigate(
+        body.clientArchived
+          ? "/cancelled"
+          : `/clients/${clientId}/businesses/${businessId}`,
+      );
     } catch {
-      toast({ title: "Failed to delete campaign", variant: "destructive" });
+      toast({ title: "Failed to cancel campaign", variant: "destructive" });
     } finally {
-      setConfirmDeleteCampaign(false);
+      setConfirmCancelCampaign(false);
+      setCancelReason("");
+    }
+  }
+
+  async function restoreCampaign() {
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/restore`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error();
+      toast({
+        title: "Campaign restored",
+        description: "Keywords are running again.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["cancellations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    } catch {
+      toast({ title: "Failed to restore campaign", variant: "destructive" });
     }
   }
 
@@ -680,16 +720,26 @@ export default function CampaignDetail() {
               <Pencil className="w-3.5 h-3.5" /> Edit
             </Button>
           )}
-          {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => setConfirmDeleteCampaign(true)}
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </Button>
-          )}
+          {isAdmin &&
+            (campaign.campaignStatus === "canceled" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10"
+                onClick={restoreCampaign}
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restore
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setConfirmCancelCampaign(true)}
+              >
+                <Ban className="w-3.5 h-3.5" /> Cancel
+              </Button>
+            ))}
         </div>
       </div>
 
@@ -732,24 +782,37 @@ export default function CampaignDetail() {
       />
 
       <AlertDialog
-        open={confirmDeleteCampaign}
-        onOpenChange={setConfirmDeleteCampaign}
+        open={confirmCancelCampaign}
+        onOpenChange={setConfirmCancelCampaign}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this campaign?</AlertDialogTitle>
+            <AlertDialogTitle>Cancel this campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the campaign and all linked keywords.
-              This cannot be undone.
+              Ranking work stops on this campaign's keywords and it moves to the
+              Cancelled page. Nothing is deleted — sessions, audits, and ranking
+              history stay, and you can restore it later. If this is the
+              client's last active campaign, the whole client is cancelled too.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="cancel-reason" className="text-xs">
+              Reason (optional)
+            </Label>
+            <Input
+              id="cancel-reason"
+              placeholder="e.g. client churned, moved to another plan…"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={deleteCampaign}
+              onClick={cancelCampaign}
             >
-              Yes, delete
+              Yes, cancel campaign
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

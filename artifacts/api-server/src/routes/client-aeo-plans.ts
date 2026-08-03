@@ -1,7 +1,13 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clientAeoPlansTable, promoCodesTable } from "@workspace/db/schema";
-import { and, eq, asc, sql } from "drizzle-orm";
+import {
+  clientAeoPlansTable,
+  clientsTable,
+  keywordLinksTable,
+  keywordsTable,
+  promoCodesTable,
+} from "@workspace/db/schema";
+import { and, eq, asc, inArray, ne, sql } from "drizzle-orm";
 import {
   requireSalesAllowed,
   requireEditor,
@@ -429,9 +435,160 @@ router.patch("/:planId", requireScopedEditor, async (req, res) => {
   }
 });
 
+/* Stop (or resume) ranking work for every keyword attached to one campaign.
+   Mirrors the client-level cascade in routes/clients.ts. */
+async function setPlanKeywordsActive(planId: number, active: boolean) {
+  await db
+    .update(keywordsTable)
+    .set({ isActive: active })
+    .where(eq(keywordsTable.aeoPlanId, planId));
+
+  const planKwIds = await db
+    .select({ id: keywordsTable.id })
+    .from(keywordsTable)
+    .where(eq(keywordsTable.aeoPlanId, planId));
+  if (planKwIds.length > 0) {
+    await db
+      .update(keywordLinksTable)
+      .set({ linkActive: active })
+      .where(
+        inArray(
+          keywordLinksTable.keywordId,
+          planKwIds.map((k) => k.id),
+        ),
+      );
+  }
+}
+
+/**
+ * POST /api/clients/:clientId/aeo-plans/:planId/cancel
+ * Cancel a campaign instead of deleting it: flips campaign_status to
+ * 'canceled', stamps canceled_at + cancel_reason, and stops ranking work on
+ * its keywords. When it was the client's last non-canceled campaign the whole
+ * client is archived too, so a fully-cancelled account leaves the active list.
+ * All history (sessions, audits, ranking reports) is preserved.
+ */
+router.post("/:planId/cancel", requireScopedAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.planId);
+    if (isNaN(planId)) return res.status(400).json({ error: "Invalid planId" });
+    const clientId = parseInt(req.params.clientId);
+    if (isNaN(clientId))
+      return res.status(400).json({ error: "Invalid clientId" });
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+
+    const reason =
+      (req.body as { reason?: string } | undefined)?.reason?.trim() || null;
+
+    const [canceled] = await db
+      .update(clientAeoPlansTable)
+      .set({
+        campaignStatus: "canceled",
+        canceledAt: new Date().toISOString().slice(0, 10),
+        cancelReason: sql`COALESCE(${reason}, ${clientAeoPlansTable.cancelReason})`,
+        updatedAt: new Date(),
+      })
+      // planId is a global PK — constrain to the asserted clientId so a scoped
+      // role can't cancel a campaign on a client outside its slice.
+      .where(
+        and(
+          eq(clientAeoPlansTable.id, planId),
+          eq(clientAeoPlansTable.clientId, clientId),
+        ),
+      )
+      .returning();
+    if (!canceled) return res.status(404).json({ error: "Plan not found" });
+
+    await setPlanKeywordsActive(planId, false);
+
+    const remaining = await db
+      .select({ id: clientAeoPlansTable.id })
+      .from(clientAeoPlansTable)
+      .where(
+        and(
+          eq(clientAeoPlansTable.clientId, clientId),
+          ne(clientAeoPlansTable.campaignStatus, "canceled"),
+        ),
+      );
+
+    let clientArchived = false;
+    if (remaining.length === 0) {
+      await db
+        .update(clientsTable)
+        .set({
+          archivedAt: sql`COALESCE(${clientsTable.archivedAt}, now())`,
+          archiveReason: sql`COALESCE(${clientsTable.archiveReason}, ${
+            reason ?? "All campaigns canceled"
+          })`,
+        })
+        .where(eq(clientsTable.id, clientId));
+      // Catch keywords with no aeo_plan_id, which the per-plan cascade misses.
+      await db
+        .update(keywordsTable)
+        .set({ isActive: false })
+        .where(eq(keywordsTable.clientId, clientId));
+      clientArchived = true;
+    }
+
+    res.json({ success: true, plan: canceled, clientArchived });
+  } catch (err) {
+    req.log.error({ err }, "Error canceling client AEO plan");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/clients/:clientId/aeo-plans/:planId/restore
+ * Inverse of cancel: campaign_status back to 'active', cancellation stamps
+ * cleared, keywords re-activated. If the client was archived by the cancel
+ * cascade it is un-archived too — otherwise the restored campaign would sit
+ * on a client that stays invisible everywhere.
+ */
+router.post("/:planId/restore", requireScopedAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.planId);
+    if (isNaN(planId)) return res.status(400).json({ error: "Invalid planId" });
+    const clientId = parseInt(req.params.clientId);
+    if (isNaN(clientId))
+      return res.status(400).json({ error: "Invalid clientId" });
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+
+    const [restored] = await db
+      .update(clientAeoPlansTable)
+      .set({
+        campaignStatus: "active",
+        canceledAt: null,
+        cancelReason: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(clientAeoPlansTable.id, planId),
+          eq(clientAeoPlansTable.clientId, clientId),
+        ),
+      )
+      .returning();
+    if (!restored) return res.status(404).json({ error: "Plan not found" });
+
+    await setPlanKeywordsActive(planId, true);
+
+    const [client] = await db
+      .update(clientsTable)
+      .set({ archivedAt: null, archiveReason: null, status: "active" })
+      .where(eq(clientsTable.id, clientId))
+      .returning({ id: clientsTable.id });
+
+    res.json({ success: true, plan: restored, clientRestored: !!client });
+  } catch (err) {
+    req.log.error({ err }, "Error restoring client AEO plan");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /**
  * DELETE /api/clients/:clientId/aeo-plans/:planId
- * Delete a specific AEO plan.
+ * Hard-delete a plan. No longer reachable from the admin UI — the campaign
+ * page cancels instead (POST /:planId/cancel). Kept for scripted purges.
  */
 router.delete("/:planId", requireScopedAdmin, async (req, res) => {
   try {

@@ -240,9 +240,11 @@ export default function ClientDetail() {
     );
 
   const c = client as unknown as Record<string, unknown>;
-  const isFreeTrial = ((c.planTypes as string[] | undefined) ?? []).includes(
-    "Free Trial Plans",
-  );
+  const planTypes = (c.planTypes as string[] | undefined) ?? [];
+  const isFreeTrial = planTypes.includes("Free Trial Plans");
+  // Every non-trial plan the client actually pays for, tagged separately from
+  // the plan_name text so a trial + paid client reads correctly.
+  const paidPlanTypes = planTypes.filter((pt) => pt !== "Free Trial Plans");
   const initials = client.businessName
     ? client.businessName
         .split(" ")
@@ -304,6 +306,15 @@ export default function ClientDetail() {
                 {c.accountType as string}
               </Badge>
             )}
+            {paidPlanTypes.map((pt) => (
+              <Badge
+                key={pt}
+                variant="outline"
+                className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
+              >
+                {pt} Paid
+              </Badge>
+            ))}
           </div>
         </div>
         {isOwner && (

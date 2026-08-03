@@ -36,7 +36,7 @@ import Chatbot from "@/pages/chatbot";
 import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
-import Archived from "@/pages/archived";
+import Cancelled from "@/pages/cancelled";
 import SummaryReport from "@/pages/summary-report";
 import PromoCodes from "@/pages/promo-codes";
 import Billing from "@/pages/billing";
@@ -89,7 +89,7 @@ function AdminTierGate({
 
 /** Routes chuckslocal is explicitly allowed on (scoped to his plan slice by
  *  the BE), plus the admin chain. Sales and account-manager still get
- *  redirected away. Used for /archived — chuckslocal can view/archive/
+ *  redirected away. Used for /cancelled — chuckslocal can view/cancel/
  *  restore his own clients but has no other admin-tier access. */
 function AdminTierOrChucksLocalGate({
   component: Component,
@@ -141,8 +141,12 @@ function ProtectedRoutes() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/cancelled">
+          <AdminTierOrChucksLocalGate component={Cancelled} />
+        </Route>
+        {/* Old bookmarks and links still land somewhere useful. */}
         <Route path="/archived">
-          <AdminTierOrChucksLocalGate component={Archived} />
+          <Redirect to="/cancelled" />
         </Route>
         <Route path="/clients" component={Clients} />
         <Route path="/businesses" component={Businesses} />
