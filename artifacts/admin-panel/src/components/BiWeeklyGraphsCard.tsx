@@ -31,6 +31,13 @@ const FAINT = "#cbd5e1";
 const MID = "#3b82f6";
 const FAR = "#f59e0b";
 
+/** One colour per assistant, reused wherever platforms are charted. */
+const PLATFORM_COLORS: Record<string, string> = {
+  chatgpt: "#10b981",
+  gemini: "#3b82f6",
+  perplexity: "#8b5cf6",
+};
+
 interface Bucket {
   count: number;
   pct: number;
@@ -74,6 +81,13 @@ interface BiWeeklyReportShape {
       no_change: number;
       not_ranked: number;
     }>;
+    /** Top-3 count per check per AI platform, from the July-1 baseline on. */
+    top3ByPlatform?: Array<{
+      date: string;
+      platform: string;
+      in_top3: number;
+      total: number;
+    }>;
   };
 }
 
@@ -108,7 +122,15 @@ function Panel({
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -163,9 +185,7 @@ export function BiWeeklyGraphsCard({
     enabled: qs.length > 0,
     queryKey: ["/api/ranking-reports/bi-weekly-report", "graphs", qs],
     queryFn: async () => {
-      const res = await rawFetch(
-        `/api/ranking-reports/bi-weekly-report?${qs}`,
-      );
+      const res = await rawFetch(`/api/ranking-reports/bi-weekly-report?${qs}`);
       if (!res.ok) throw new Error(`bi-weekly-report ${res.status}`);
       return res.json();
     },
@@ -211,10 +231,25 @@ export function BiWeeklyGraphsCard({
     "Not ranking yet": p.not_ranked,
   }));
 
-  const topTrendRows = batches.map((b) => ({
-    date: fmtShortET(b.date),
-    inTop3: b.in_top3,
-  }));
+  /* One line per AI platform instead of a single blended line — a client wants
+     to see which assistant is pulling ahead. Rows arrive as (date, platform);
+     pivot them into one row per check date with a column per platform. */
+  const top3ByPlatform = data?.details?.top3ByPlatform ?? [];
+  const trendPlatforms = [
+    ...new Set(top3ByPlatform.map((r) => r.platform)),
+  ].sort();
+  const byDate = new Map<string, Record<string, string | number>>();
+  for (const r of top3ByPlatform) {
+    const row = byDate.get(r.date) ?? {
+      date: fmtShortET(r.date),
+      _raw: r.date,
+    };
+    row[platformLabel(r.platform)] = r.in_top3;
+    byDate.set(r.date, row);
+  }
+  const topTrendRows = [...byDate.values()].sort((a, b) =>
+    String(a._raw).localeCompare(String(b._raw)),
+  );
 
   const hasMoved = movedRows.some((r) => r.value > 0);
   const hasPlace = placeRows.some((r) => r.value > 0);
@@ -398,31 +433,43 @@ export function BiWeeklyGraphsCard({
             {hasTopTrend && (
               <Panel
                 title="Phrases reaching the top 3 over time"
-                caption="Each point is one round of checks. Higher is better — it means more of your phrases are showing up in the top 3 answers."
+                caption="Each point is one round of checks, split by AI assistant, from July 1 onwards. Higher is better — it means more of your phrases are showing up in the top 3 answers."
                 height={200}
               >
                 <LineChart
                   data={topTrendRows}
                   margin={{ top: 8, right: 16, bottom: 4, left: 0 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    className="stroke-muted"
+                  />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
-                    formatter={(v: number) => [
+                    formatter={(v: number, name: string) => [
                       `${v} phrase${v === 1 ? "" : "s"} in the top 3`,
-                      "",
+                      name,
                     ]}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="inTop3"
-                    name="In the top 3"
-                    stroke={GOOD}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
+                  <Legend
+                    verticalAlign="bottom"
+                    height={24}
+                    wrapperStyle={{ fontSize: 11 }}
                   />
+                  {trendPlatforms.map((p) => (
+                    <Line
+                      key={p}
+                      type="monotone"
+                      dataKey={platformLabel(p)}
+                      name={platformLabel(p)}
+                      stroke={PLATFORM_COLORS[p] ?? NEUTRAL}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      connectNulls
+                    />
+                  ))}
                 </LineChart>
               </Panel>
             )}

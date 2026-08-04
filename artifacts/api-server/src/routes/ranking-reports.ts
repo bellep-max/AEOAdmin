@@ -1998,6 +1998,33 @@ router.get(
         paramsWithBatch,
       );
 
+      /* Top-3 count per check, split by AI platform. Starts at the July-1
+         baseline (REBASE_ANCHOR) like every other campaign view — older rounds
+         belong to the pre-rebase history and would contradict the reports next
+         to this chart. */
+      const top3ByPlatformRows = await pool.query<{
+        date: string;
+        platform: string;
+        in_top3: number;
+        total: number;
+      }>(
+        `SELECT
+           rr.date::text AS date,
+           lower(rr.platform) AS platform,
+           COUNT(*) FILTER (WHERE rr.ranking_position IS NOT NULL AND rr.ranking_position <= 3)::int AS in_top3,
+           COUNT(*)::int AS total
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date >= '${REBASE_ANCHOR}'
+         GROUP BY rr.date, lower(rr.platform)
+         ORDER BY rr.date ASC, lower(rr.platform) ASC`,
+        params,
+      );
+
       /* Client Health Matrix — one row per client, columns are the batch dates.
        Each cell carries success/error counts so the FE can color-code. */
       const clientMatrixRows = await pool.query(
@@ -2072,6 +2099,7 @@ router.get(
           platformOld: platformOld.rows,
           platformNew: platformNew.rows,
           platformTrend: platformTrend.rows,
+          top3ByPlatform: top3ByPlatformRows.rows,
         },
       });
     } catch (err) {
