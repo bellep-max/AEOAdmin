@@ -116,6 +116,23 @@ export function AddBusinessDialog({
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
+  /* A blocked submit used to show only an inline message, which sits below the
+     fold in this scrolling form — the Save button just looked dead. Say it out
+     loud and jump to the offending field. */
+  const onInvalid = (errors: Record<string, { message?: string }>) => {
+    const [firstKey, firstError] = Object.entries(errors)[0] ?? [];
+    toast({
+      title: "Can't save yet",
+      description: firstError?.message ?? "Please fix the highlighted fields.",
+      variant: "destructive",
+    });
+    if (firstKey) {
+      document
+        .querySelector(`[name="${firstKey}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
     setServerError(null);
@@ -185,7 +202,7 @@ export function AddBusinessDialog({
         </DialogHeader>
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
             className="space-y-4 mt-4 max-h-[70vh] overflow-y-auto pr-2"
           >
             <FormField

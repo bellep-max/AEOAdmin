@@ -914,8 +914,13 @@ function EditBizDialog({
       }
     }
 
+    // URL checks apply only to values the user actually touched. Legacy rows
+    // hold free text here ("yes"/"no" from the signup form); re-validating an
+    // untouched field would block an unrelated edit with no way forward.
+    const edited = (key: string) => vals[key] !== initValues[key];
+
     // GMB Link URL validation
-    if (vals.gmbUrl && vals.gmbUrl.trim()) {
+    if (edited("gmbUrl") && vals.gmbUrl && vals.gmbUrl.trim()) {
       try {
         new URL(vals.gmbUrl);
         if (vals.gmbUrl.length > 500) {
@@ -928,7 +933,11 @@ function EditBizDialog({
     }
 
     // Website Published on GMB validation
-    if (vals.websitePublishedOnGmb && vals.websitePublishedOnGmb.trim()) {
+    if (
+      edited("websitePublishedOnGmb") &&
+      vals.websitePublishedOnGmb &&
+      vals.websitePublishedOnGmb.trim()
+    ) {
       try {
         new URL(vals.websitePublishedOnGmb);
         if (vals.websitePublishedOnGmb.length > 200) {
@@ -941,7 +950,11 @@ function EditBizDialog({
     }
 
     // Website Linked on GMB validation
-    if (vals.websiteLinkedOnGmb && vals.websiteLinkedOnGmb.trim()) {
+    if (
+      edited("websiteLinkedOnGmb") &&
+      vals.websiteLinkedOnGmb &&
+      vals.websiteLinkedOnGmb.trim()
+    ) {
       try {
         new URL(vals.websiteLinkedOnGmb);
         if (vals.websiteLinkedOnGmb.length > 200) {
@@ -1452,7 +1465,13 @@ function EditAccDialog({
                       <SelectValue placeholder="Select…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {f.dropdown.map((o) => (
+                      {/* Keep a stored value that predates this option list
+                          (105 clients are "Free Trial") — without it the field
+                          renders blank and reads as if the data were lost. */}
+                      {(vals[f.key] && !f.dropdown.includes(vals[f.key])
+                        ? [vals[f.key], ...f.dropdown]
+                        : f.dropdown
+                      ).map((o) => (
                         <SelectItem key={o} value={o}>
                           {o}
                         </SelectItem>
