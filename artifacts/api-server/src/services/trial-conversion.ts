@@ -130,13 +130,21 @@ export async function reconcileTrialConversions(
     account_email: string | null;
     subscription_id: string | null;
   }>(
+    /* Dead work stays dead: a cancelled campaign, an archived client, or an
+       entity switched to 'inactive' is out of the funnel and must never be
+       resurrected onto a paid plan by this sweep — not even if an old charge
+       still sits on the Stripe customer. */
     `SELECT p.id AS plan_id, p.client_id, cl.business_name, cl.account_email,
             p.subscription_id
        FROM client_aeo_plans p
        JOIN clients cl ON cl.id = p.client_id
+       LEFT JOIN businesses b ON b.id = p.business_id
       WHERE p.plan_type = 'Free Trial Plans'
         AND p.paid_conversion_date IS NULL
         AND p.campaign_status <> 'canceled'
+        AND cl.archived_at IS NULL
+        AND COALESCE(cl.status, 'active') <> 'inactive'
+        AND COALESCE(b.status::text, 'active') <> 'inactive'
       ORDER BY p.id DESC
       LIMIT $1`,
     [limit],
