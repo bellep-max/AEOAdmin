@@ -12,7 +12,27 @@ import {
   fetchRecentCharges,
 } from "../services/stripe-billing";
 
+import { reconcileTrialConversions } from "../services/trial-conversion";
+
 const router = Router();
+
+/* POST /api/billing/reconcile-trials — run the trial→paid sweep on demand.
+   The server also runs it on a timer (see index.ts); this is for when an
+   operator has just taken a payment and doesn't want to wait for the tick.
+   `?dryRun=1` reports what would change without writing. */
+router.post("/reconcile-trials", requireOwner, async (req, res) => {
+  try {
+    const dryRun = req.query.dryRun === "1" || req.query.dryRun === "true";
+    const out = await reconcileTrialConversions({
+      apply: !dryRun,
+      log: req.log,
+    });
+    res.json({ dryRun, ...out });
+  } catch (err) {
+    req.log.error({ err }, "Error reconciling trial conversions");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.get("/overview", requireOwner, async (req, res) => {
   try {
