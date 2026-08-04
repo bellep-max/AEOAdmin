@@ -90,15 +90,24 @@ const SQL = `
       WHERE rr.ranking_position IS NOT NULL AND rr.ranking_position >= 1
     )                                      AS best_rank
   FROM ranking_reports rr
-  JOIN keywords k          ON k.id = rr.keyword_id
-  LEFT JOIN businesses b   ON b.id = k.business_id
-  LEFT JOIN clients c      ON c.id = k.client_id
+  JOIN keywords k               ON k.id = rr.keyword_id
+  LEFT JOIN businesses b        ON b.id = k.business_id
+  LEFT JOIN clients c           ON c.id = k.client_id
+  LEFT JOIN client_aeo_plans p  ON p.id = k.aeo_plan_id
   WHERE k.is_active = true
     AND COALESCE(k.status, 'new') <> 'locked'
     AND k.aeo_plan_id IS NOT NULL
     AND k.business_id IS NOT NULL
     AND rr.status = 'success'
     AND rr.date IS NOT NULL
+    -- Archived / cancelled work is out of the growth cycle, so it can never
+    -- flag a business. Cancelling and archiving both deactivate keywords, but
+    -- don't lean on that alone — one re-activated keyword would resurrect a
+    -- dead client in the Needs-attention count.
+    AND c.archived_at IS NULL
+    AND COALESCE(c.status, 'active') <> 'inactive'
+    AND COALESCE(b.status, 'active') <> 'inactive'
+    AND COALESCE(p.campaign_status, 'active') <> 'canceled'
   GROUP BY k.aeo_plan_id, k.business_id, b.name, k.client_id, c.business_name,
            rr.keyword_id, rr.date
 `;
