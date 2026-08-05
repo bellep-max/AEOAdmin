@@ -31,6 +31,11 @@ import {
 } from "drizzle-orm";
 import { chatCompletion } from "../services/llm-client";
 import { fetchStripeBillingSummary } from "../services/stripe-billing";
+import { createCheckoutSubscription } from "../services/stripe-checkout";
+import {
+  isKnownPlanType,
+  resolveStripeAccount,
+} from "../lib/stripe-accounts";
 import {
   getGlossaryPayload,
   availableReportDates,
@@ -2525,8 +2530,12 @@ router.get(
       if (!plan.subscriptionId) {
         return res.json({ hasStripeRef: false, summary: null });
       }
+      /* Each plan type bills through its own Stripe account — resolve the
+         right key or the lookup silently misses (see lib/stripe-accounts). */
+      const account = resolveStripeAccount(plan.planType ?? null);
       const summary = await fetchStripeBillingSummary(plan.subscriptionId, {
         log: req.log,
+        ...(account.secretKey ? { apiKey: account.secretKey } : {}),
       });
       return res.json({ hasStripeRef: true, summary });
     } catch (err) {
@@ -2535,6 +2544,75 @@ router.get(
     }
   },
 );
+
+/* POST /portal/checkout/subscription — start a self-serve campaign checkout.
+   Creates an incomplete Stripe subscription on the plan type's OWN Stripe
+   account (Signal AEO Plan and AEO SEO Local Plan bill through different
+   accounts) and returns the client secret + publishable key the frontend
+   needs to render Stripe's PaymentElement. The campaign row is only created
+   after the frontend confirms payment. */
+router.post("/checkout/subscription", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const planType = typeof body.planType === "string" ? body.planType : "";
+    const campaignName =
+      typeof body.campaignName === "string" ? body.campaignName.trim() : "";
+    if (!isKnownPlanType(planType)) {
+      return res.status(400).json({ error: "Unknown plan type" });
+    }
+    if (!campaignName) {
+      return res.status(400).json({ error: "campaignName is required" });
+    }
+
+    const account = resolveStripeAccount(planType);
+    if (!account.secretKey || !account.publishableKey) {
+      req.log.warn(
+        { planType, account: account.account },
+        "Portal checkout: Stripe keys not configured for plan type",
+      );
+      return res
+        .status(503)
+        .json({ error: "Online payment is not available right now." });
+    }
+
+    const userId = portalState(req).portalUserId;
+    const [user] = await db
+      .select({ email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId!));
+    const [client] = await db
+      .select({ businessName: clientsTable.businessName })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, clientId));
+
+    const result = await createCheckoutSubscription({
+      apiKey: account.secretKey,
+      planType,
+      campaignName,
+      amountCents: account.monthlyPriceCents,
+      customerEmail: user?.email ?? null,
+      customerName: client?.businessName ?? null,
+      clientId,
+      log: req.log,
+    });
+    if (!result.ok) {
+      return res.status(502).json({ error: result.reason });
+    }
+    res.json({
+      subscriptionId: result.subscriptionId,
+      clientSecret: result.clientSecret,
+      publishableKey: account.publishableKey,
+      amountCents: result.amountCents,
+      currency: result.currency,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Portal checkout subscription error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.post("/aeo-plans", requirePortalAuth, async (req, res) => {
   try {
