@@ -87,10 +87,12 @@ function scopeIdOf(report: SummaryReport, clientId: number): number {
 /** Stable hash of the inputs that would change the prose. `v` is bumped when the
  *  cached payload shape changes so old rows (pre-Overview) miss and regenerate.
  *  v4: narratives cached before the truncation fix hold a raw JSON blob in
- *  `overall` — bump so every one of them misses and is rewritten. */
+ *  `overall` — bump so every one of them misses and is rewritten.
+ *  v5: same failure on the Overview call (maxTokens 1100 truncated 8 blocks),
+ *  which cached a raw JSON blob as a single "Summary" block. */
 function contentHash(report: SummaryReport): string {
   const shape = {
-    v: 4,
+    v: 5,
     metrics: report.metrics,
     platforms: report.platforms,
     movers: report.movers,
@@ -209,6 +211,26 @@ function stripFences(raw: string): string {
     .trim();
 }
 
+/** Pull whole {heading, body} pairs out of a JSON blob that never finished —
+ *  a truncated response still holds several complete blocks, and rendering
+ *  those beats showing the client a wall of braces. A trailing half-written
+ *  pair has no closing quote, so the pattern simply doesn't match it. */
+function salvageOverview(raw: string): OverviewBlock[] {
+  const pair =
+    /"heading"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"body"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  const out: OverviewBlock[] = [];
+  for (const m of raw.matchAll(pair)) {
+    try {
+      const heading = (JSON.parse(`"${m[1]}"`) as string).trim();
+      const body = (JSON.parse(`"${m[2]}"`) as string).trim();
+      if (heading || body) out.push({ heading, body });
+    } catch {
+      // Unescaping failed — drop this block rather than render it mangled.
+    }
+  }
+  return out;
+}
+
 function parseOverview(raw: string): OverviewBlock[] {
   const cleaned = stripFences(raw);
   try {
@@ -224,10 +246,13 @@ function parseOverview(raw: string): OverviewBlock[] {
         if (heading || body) out.push({ heading, body });
       }
     }
-    return out.length ? out : [{ heading: "Summary", body: cleaned }];
+    if (out.length) return out;
   } catch {
-    return [{ heading: "Summary", body: cleaned }];
+    // Fall through to the salvage pass below.
   }
+  /* This is a client-facing page: an unparseable answer must degrade to fewer
+     sections, never to raw JSON on screen. */
+  return salvageOverview(cleaned);
 }
 
 interface CachedNarrative {
@@ -375,7 +400,10 @@ export async function generateSummaryNarrative(
     chatCompletion({
       model: "deepseek-chat",
       temperature: 0.5,
-      maxTokens: 1100,
+      // Eight blocks of several sentences each, JSON-escaped, do not fit in
+      // 1100 — the object came back cut mid-sentence and unparseable, so the
+      // page rendered the raw JSON. Same lesson as the sections call above.
+      maxTokens: 4000,
       messages: [
         { role: "system", content: OVERVIEW_SYSTEM_PROMPT },
         {
