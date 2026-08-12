@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import { rawFetch } from "@/lib/period-comparison";
 import {
   X,
@@ -120,9 +121,17 @@ interface CampaignScreenshotsResponse {
   shots: CampaignShot[];
 }
 
-type SalesTemplateKey = "first_proof" | "second_keyword" | "third_keyword";
+type SalesTemplateKey =
+  | "first_proof"
+  | "second_keyword"
+  | "third_keyword"
+  | "weekly_report";
 
-const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
+const TEMPLATE_OPTIONS: {
+  key: SalesTemplateKey;
+  label: string;
+  ownerOnly?: boolean;
+}[] = [
   { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
   {
     key: "second_keyword",
@@ -131,6 +140,11 @@ const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
   {
     key: "third_keyword",
     label: "Close — keyword 3 + Founder’s Discount urgency",
+  },
+  {
+    key: "weekly_report",
+    label: "Weekly campaign report — active client",
+    ownerOnly: true,
   },
 ];
 
@@ -230,6 +244,7 @@ export function SalesEmailDialog({
   aeoPlanId,
 }: SalesEmailDialogProps) {
   const { toast } = useToast();
+  const { isOwner } = useAuth();
   const [recipients, setRecipients] = useState<string[]>([]);
   const [newRecipient, setNewRecipient] = useState("");
   const [subject, setSubject] = useState("");
@@ -238,6 +253,11 @@ export function SalesEmailDialog({
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
   const [template, setTemplate] = useState<SalesTemplateKey>("first_proof");
+  /* The weekly report is the post-conversion email — owner account only. */
+  const templateOptions = TEMPLATE_OPTIONS.filter(
+    (t) => isOwner || !t.ownerOnly,
+  );
+  const isWeeklyReport = template === "weekly_report";
   const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
@@ -634,7 +654,7 @@ export function SalesEmailDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TEMPLATE_OPTIONS.map((t) => (
+                  {templateOptions.map((t) => (
                     <SelectItem key={t.key} value={t.key}>
                       {t.label}
                     </SelectItem>
@@ -642,15 +662,20 @@ export function SalesEmailDialog({
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                The update email features a different keyword and the Founder’s
-                Discount offer. Switching reloads the subject and copy.
+                {isWeeklyReport
+                  ? "The weekly report covers every tracked keyword and all three platforms — for clients already converted to a paid plan. No sales offer, no button."
+                  : "The update email features a different keyword and the Founder’s Discount offer. Switching reloads the subject and copy."}
               </p>
             </div>
 
             {/* Proof picker — one flat list of every keyword × platform
                 screenshot, tagged by quality and top-3 visibility */}
             <div className="space-y-2">
-              <Label>Screenshot to feature</Label>
+              <Label>
+                {isWeeklyReport
+                  ? "Keyword to show screenshots for (one per platform)"
+                  : "Screenshot to feature"}
+              </Label>
               <Select
                 value={
                   selectedKeywordId != null && selectedPlatform != null
@@ -927,7 +952,9 @@ export function SalesEmailDialog({
             {/* Intro message */}
             <div className="space-y-2">
               <Label htmlFor="sales-intro">
-                Intro copy — editable (shown above the proof)
+                {isWeeklyReport
+                  ? "Weekly summary — editable (top of the report)"
+                  : "Intro copy — editable (shown above the proof)"}
               </Label>
               <Textarea
                 id="sales-intro"
@@ -942,7 +969,9 @@ export function SalesEmailDialog({
             {/* Offer copy */}
             <div className="space-y-2">
               <Label htmlFor="sales-offer">
-                Offer copy — editable (shown above the button)
+                {isWeeklyReport
+                  ? "Progress this week — editable"
+                  : "Offer copy — editable (shown above the button)"}
               </Label>
               <Textarea
                 id="sales-offer"
@@ -954,8 +983,10 @@ export function SalesEmailDialog({
               />
             </div>
 
-            {/* CTA */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* CTA — the weekly report has no button */}
+            <div
+              className={`grid grid-cols-2 gap-2${isWeeklyReport ? " hidden" : ""}`}
+            >
               <div className="space-y-2">
                 <Label htmlFor="sales-cta-label">Button label</Label>
                 <Input

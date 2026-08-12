@@ -37,6 +37,11 @@ import { getScopedClientIds } from "../lib/scoped-access";
 import { refreshGhlSendStatuses } from "../services/email-status-ghl";
 import { welcomeHtml, welcomeSubject } from "../services/free-trial-email";
 import {
+  buildWeeklyReportHtml,
+  type WeeklyReportRow,
+  type WeeklyReportShot,
+} from "../lib/weekly-report-email";
+import {
   resolveImprovement,
   presign,
   buildScreenshotUrlByClient,
@@ -250,10 +255,27 @@ This technology is making your business visible on ChatGPT, Gemini, and Perplexi
 Once the trial ends, the 20% off goes with it.`;
 }
 
+/* Weekly report for a converted (paying) client — reports the whole campaign
+   instead of selling one keyword, so it gets its own layout. */
+function weeklyReportSummary(a: SalesEmailArgs): string {
+  return `Here's your weekly ${SENDER_ORG_SIGNAL} campaign update.
+
+This week, we continued working to strengthen ${a.business}'s visibility across AI-powered search platforms, including ChatGPT, Gemini, and Perplexity. We monitored your campaign, evaluated how AI platforms respond to searches related to your business, and tracked your visibility over time.
+
+Below is a summary of your campaign's progress.`;
+}
+
+function weeklyReportProgress(_a: SalesEmailArgs): string {
+  return `During this reporting period, we continued strengthening your business's presence in AI-generated search results. We monitored your campaign, reviewed recommendation performance, and tracked changes in visibility across supported AI platforms.
+
+Our goal is to help your business become a more trusted and consistently recommended answer when potential customers search for services like yours.`;
+}
+
 export type SalesTemplateKey =
   | "first_proof"
   | "second_keyword"
-  | "third_keyword";
+  | "third_keyword"
+  | "weekly_report";
 
 interface SalesTemplate {
   key: SalesTemplateKey;
@@ -261,6 +283,9 @@ interface SalesTemplate {
   heroHeadline: string;
   defaultSubject: string;
   defaultCtaLabel: string;
+  /* Owner-only templates never appear for sales / account-manager /
+     chuckslocal, and a request for one from those roles is refused. */
+  ownerOnly?: boolean;
   /* Template-specific CTA link; falls back to DEFAULT_CTA_URL. */
   defaultCtaUrl?: string;
   /* Hidden inbox preview line injected at the top of the body. */
@@ -305,6 +330,17 @@ const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
     buildOffer: thirdKeywordOffer,
     preferUnsent: true,
   },
+  weekly_report: {
+    key: "weekly_report",
+    label: "Weekly campaign report — active client",
+    heroHeadline: "Your weekly campaign report.",
+    defaultSubject: `Your weekly ${SENDER_ORG_SIGNAL} campaign report`,
+    defaultCtaLabel: DEFAULT_CTA_LABEL,
+    ownerOnly: true,
+    buildIntro: weeklyReportSummary,
+    buildOffer: weeklyReportProgress,
+    preferUnsent: false,
+  },
 };
 
 function resolveTemplate(key: string | null | undefined): SalesTemplate {
@@ -312,6 +348,17 @@ function resolveTemplate(key: string | null | undefined): SalesTemplate {
     (key && SALES_TEMPLATES[key as SalesTemplateKey]) ||
     SALES_TEMPLATES.first_proof
   );
+}
+
+/** Owner-only templates degrade to the default for everyone else, so a stale
+ *  or hand-typed `template=` never leaks the copy to a scoped role. */
+function resolveTemplateForRequest(
+  key: string | null | undefined,
+  req: Request,
+): SalesTemplate {
+  const tpl = resolveTemplate(key);
+  if (tpl.ownerOnly && !isOwnerSender(req)) return SALES_TEMPLATES.first_proof;
+  return tpl;
 }
 
 export function buildSalesEmailHtml(a: SalesEmailArgs): string {
@@ -481,8 +528,128 @@ async function firstNameOfClient(clientId: number): Promise<string | null> {
   return token && token.length > 1 ? token : null;
 }
 
+/** Plan wording for the weekly report header. The campaign's own plan type when
+ *  the send is scoped to one, else the client's plan label. */
+async function planLabelFor(
+  clientId: number,
+  scope: SalesEmailScope,
+): Promise<string> {
+  if (scope.aeoPlanId) {
+    const [plan] = await db
+      .select({ planType: clientAeoPlansTable.planType })
+      .from(clientAeoPlansTable)
+      .where(eq(clientAeoPlansTable.id, scope.aeoPlanId))
+      .limit(1);
+    if (plan?.planType?.trim()) return plan.planType.trim();
+  }
+  const [client] = await db
+    .select({ planName: clientsTable.planName })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId))
+    .limit(1);
+  return client?.planName?.trim() || "AI Search Campaign";
+}
+
 /** Shared preview/send assembly — one path, so preview === sent. The caller
  *  resolves the improvement data once (it's a heavy query) and passes it in. */
+/** Best platform for a keyword in the weekly table: biggest improvement, ties
+ *  broken toward the better current rank. */
+function bestPlatformOf(entry: KeywordEntry): string | null {
+  const available = PLATFORM_ORDER.filter((p) => entry.platforms[p]);
+  if (available.length === 0) return null;
+  return available.reduce((a, b) => {
+    const imp = (p: string) =>
+      entry.platforms[p].first.rank - entry.platforms[p].current.rank;
+    if (imp(b) !== imp(a)) return imp(b) > imp(a) ? b : a;
+    return entry.platforms[b].current.rank < entry.platforms[a].current.rank
+      ? b
+      : a;
+  });
+}
+
+/** The weekly report covers the whole campaign, so it reads every keyword out
+ *  of the same improvement data the proof emails select one row from. The
+ *  featured keyword still drives the per-platform screenshots. */
+function buildWeeklyReport(
+  clientId: number,
+  data: ImprovementData,
+  strictMode: boolean,
+  selection: Selection,
+  scope: SalesEmailScope,
+  firstName: string | null,
+  planLabel: string,
+  copy: SalesEmailCopy,
+  business: string,
+): string {
+  const rows: WeeklyReportRow[] = [];
+  let periodStart: string | null = null;
+  let periodEnd: string | null = null;
+  for (const entry of data.keywords) {
+    const p = bestPlatformOf(entry);
+    if (!p) continue;
+    const ranks = entry.platforms[p];
+    rows.push({
+      keyword: entry.keyword ?? `Keyword ${entry.keywordId}`,
+      platform: p,
+      beforeRank: ranks.first.rank,
+      afterRank: ranks.current.rank,
+    });
+    // Dates are 'YYYY-MM-DD' text, so string compare is chronological.
+    if (ranks.first.date && (!periodStart || ranks.first.date < periodStart))
+      periodStart = ranks.first.date;
+    if (ranks.current.date && (!periodEnd || ranks.current.date > periodEnd))
+      periodEnd = ranks.current.date;
+  }
+
+  const shots: WeeklyReportShot[] = PLATFORM_ORDER.filter(
+    (p) => selection.entry.platforms[p],
+  ).map((p) => ({
+    platform: p,
+    rank: selection.entry.platforms[p].current.rank,
+    url: buildScreenshotUrlByClient(
+      clientId,
+      selection.entry.keyword ?? "",
+      p,
+      "current",
+      {
+        strict: strictMode,
+        businessId: scope.businessId,
+        aeoPlanId: scope.aeoPlanId,
+      },
+    ),
+  }));
+
+  const args: SalesEmailArgs = {
+    business,
+    keyword: selection.entry.keyword ?? "",
+    platform: selection.platform,
+    beforeRank: selection.ranks.first.rank,
+    afterRank: selection.ranks.current.rank,
+    beforeDate: selection.ranks.first.date,
+    afterDate: selection.ranks.current.date,
+    beforeImageUrl: "",
+    afterImageUrl: "",
+    firstName,
+  };
+  const tpl = SALES_TEMPLATES.weekly_report;
+  return buildWeeklyReportHtml({
+    business,
+    planLabel,
+    periodStart,
+    periodEnd,
+    firstName,
+    summary: copy.introMessage?.trim() || tpl.buildIntro(args),
+    progress: copy.offerText?.trim() || tpl.buildOffer(args),
+    rows,
+    totalKeywords: rows.length,
+    shots,
+    senderName: copy.senderName ?? SENDER_NAME,
+    senderOrg: copy.senderOrg ?? SENDER_ORG,
+    platformLabels: PLATFORM_LABELS,
+    platformColor,
+  });
+}
+
 function prepareSalesEmail(
   clientId: number,
   data: ImprovementData,
@@ -493,6 +660,7 @@ function prepareSalesEmail(
   scope: SalesEmailScope,
   firstName: string | null,
   avoidKeywordIds: Set<number>,
+  planLabel: string,
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
   // The update template auto-picks a keyword the client hasn't been emailed yet.
   const preferUnsent = resolveTemplate(copy.template).preferUnsent;
@@ -514,6 +682,28 @@ function prepareSalesEmail(
   // the SELECTED keyword's business, not the client's dominant one — they can
   // differ for multi-business clients
   const business = selection.entry.business || data.business;
+  if (copy.template === "weekly_report") {
+    return {
+      ok: true,
+      prep: {
+        html: buildWeeklyReport(
+          clientId,
+          data,
+          strictMode,
+          selection,
+          scope,
+          firstName,
+          planLabel,
+          copy,
+          business,
+        ),
+        business,
+        clientName: data.client.name,
+        selection,
+        strictMode,
+      },
+    };
+  }
   const html = buildSalesEmailHtml({
     business,
     keyword: kwText,
@@ -614,7 +804,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       : null;
     const platform = req.query.platform ? String(req.query.platform) : null;
     const qs = (k: string) => (req.query[k] ? String(req.query[k]) : undefined);
-    const template = resolveTemplate(qs("template"));
+    const template = resolveTemplateForRequest(qs("template"), req);
     const ownerSender = isOwnerSender(req);
     const copy: SalesEmailCopy = {
       introMessage: qs("introMessage"),
@@ -652,7 +842,10 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         strictMode,
       });
 
-    const firstName = await firstNameOfClient(clientId);
+    const [firstName, planLabel] = await Promise.all([
+      firstNameOfClient(clientId),
+      planLabelFor(clientId, scope),
+    ]);
     const prepared = prepareSalesEmail(
       clientId,
       r.data,
@@ -663,6 +856,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       scope,
       firstName,
       sentKeywordIds,
+      planLabel,
     );
     if (!prepared.ok)
       return res.json({
@@ -874,9 +1068,16 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const template = resolveTemplate(body.template);
+    if (template.ownerOnly && !ownerSender)
+      return res
+        .status(403)
+        .json({ error: "That template is restricted to the owner account." });
     const lastSent = await getLastSentInfo(body.clientId);
     const sentKeywordIds = new Set(lastSent.perKeyword.keys());
-    const firstName = await firstNameOfClient(body.clientId);
+    const [firstName, planLabel] = await Promise.all([
+      firstNameOfClient(body.clientId),
+      planLabelFor(body.clientId, scope),
+    ]);
     const prepared = prepareSalesEmail(
       body.clientId,
       r.data,
@@ -896,6 +1097,7 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       scope,
       firstName,
       sentKeywordIds,
+      planLabel,
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;

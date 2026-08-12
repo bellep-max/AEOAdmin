@@ -113,6 +113,7 @@ function emailTypeLabel(row: SendRow): string {
     if (t === "first_proof") return "First Proof";
     if (t === "free_trial_proof") return "Free-Trial Proof";
     if (t === "second_keyword") return "Founder's Discount";
+    if (t === "weekly_report") return "Weekly Report";
     if (t === "reply") return "Reply";
     return "Sales";
   }
@@ -447,6 +448,7 @@ export default function SentEmails() {
             <SelectItem value="sales:second_keyword">
               · Founder&rsquo;s Discount
             </SelectItem>
+            <SelectItem value="sales:weekly_report">· Weekly Report</SelectItem>
             <SelectItem value="report">Ranking reports</SelectItem>
           </SelectContent>
         </Select>
