@@ -50,6 +50,22 @@ export interface ChatCompletionOptions {
 }
 
 export async function chatCompletion(opts: ChatCompletionOptions): Promise<ChatCompletionResult> {
+  try {
+    return await deepSeekCompletion(opts);
+  } catch (err) {
+    // DeepSeek runs out of balance (402) roughly daily, which starves the daily
+    // build. When a local Ollama fallback is configured, retry there so builds
+    // never stall. Only engaged when OLLAMA_FALLBACK_MODEL is set (absent in any
+    // environment without a reachable Ollama, so prod behaviour is unchanged).
+    const fallbackModel = process.env.OLLAMA_FALLBACK_MODEL;
+    if (!fallbackModel) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: message, fallbackModel }, "DeepSeek failed — falling back to Ollama");
+    return ollamaCompletion(opts, fallbackModel);
+  }
+}
+
+async function deepSeekCompletion(opts: ChatCompletionOptions): Promise<ChatCompletionResult> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
 
@@ -89,4 +105,34 @@ export async function chatCompletion(opts: ChatCompletionOptions): Promise<ChatC
     (completionTokens / 1_000_000) * price.output;
 
   return { content, model: opts.model, promptTokens, completionTokens, totalTokens, costUsd };
+}
+
+async function ollamaCompletion(
+  opts: ChatCompletionOptions,
+  fallbackModel: string,
+): Promise<ChatCompletionResult> {
+  const base = process.env.OLLAMA_URL ?? "http://localhost:11434";
+  const body: Record<string, unknown> = {
+    model: fallbackModel,
+    messages: opts.messages,
+    stream: false,
+  };
+  if (opts.temperature != null) body.options = { temperature: opts.temperature };
+
+  const res = await fetch(`${base}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    logger.error({ status: res.status, body: text.slice(0, 500) }, "Ollama fallback call failed");
+    throw new Error(`Ollama API error ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as { message?: { content?: string } };
+  const content = data.message?.content?.trim() ?? "";
+  if (!content) throw new Error("Ollama returned empty content");
+
+  // Local inference — no per-token cost, and DeepSeek pricing does not apply.
+  return { content, model: opts.model, promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 };
 }

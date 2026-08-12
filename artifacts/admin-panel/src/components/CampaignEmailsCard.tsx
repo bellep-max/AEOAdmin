@@ -50,6 +50,9 @@ function typeLabel(row: SendRow): string {
     if (t === "first_proof") return "First Proof";
     if (t === "free_trial_proof") return "Free-Trial Proof";
     if (t === "second_keyword") return "Founder's Discount";
+    if (t === "trial_ending") return "Trial Ending (4A)";
+    if (t === "trial_extended") return "Trial Extended (4B)";
+    if (t === "weekly_report") return "Weekly Report";
     if (t === "reply") return "Reply";
     return "Sales";
   }
@@ -206,7 +209,10 @@ export function CampaignEmailsCard({
         )}
       </CardContent>
 
-      <Dialog open={replyTo != null} onOpenChange={(o) => !o && setReplyTo(null)}>
+      <Dialog
+        open={replyTo != null}
+        onOpenChange={(o) => !o && setReplyTo(null)}
+      >
         <DialogContent className="sm:max-w-[560px]">
           <DialogHeader>
             <DialogTitle>Reply to email</DialogTitle>

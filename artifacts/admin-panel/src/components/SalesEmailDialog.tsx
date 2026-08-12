@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import { rawFetch } from "@/lib/period-comparison";
 import {
   X,
@@ -89,6 +90,17 @@ interface SalesPreviewResponse {
     afterRank: number;
     improved: number;
   } | null;
+  /* The second proof the server resolved (2-keyword templates); absent when
+     there is only one keyword to show. */
+  selectedSecond?: {
+    keywordId: number;
+    keyword: string | null;
+    platform: string;
+    beforeRank: number;
+    afterRank: number;
+    improved: number;
+  };
+  proofCount?: number;
   template?: SalesTemplateKey;
   defaultSubject?: string;
   defaultCtaLabel?: string;
@@ -97,6 +109,10 @@ interface SalesPreviewResponse {
   keywords: KeywordOption[];
   /* ISO timestamp of the most recent sales email sent to this client; null = none. */
   lastCommunicationAt?: string | null;
+  /* What this client has already been sent, keyed by template ("welcome",
+     "first_proof", "free_trial_proof", …). Drives the Sent flags and the
+     starting template. */
+  templateSends?: Record<string, { lastSentAt: string; count: number }>;
   strictMode: boolean;
 }
 
@@ -120,9 +136,22 @@ interface CampaignScreenshotsResponse {
   shots: CampaignShot[];
 }
 
-type SalesTemplateKey = "first_proof" | "second_keyword" | "third_keyword";
+type SalesTemplateKey =
+  | "first_proof"
+  | "second_keyword"
+  | "third_keyword"
+  | "trial_ending"
+  | "trial_extended"
+  | "weekly_report";
 
-const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
+const TEMPLATE_OPTIONS: {
+  key: SalesTemplateKey;
+  label: string;
+  ownerOnly?: boolean;
+  adminOnly?: boolean;
+  /* Templates showing two keyword proofs get the second picker. */
+  proofs?: number;
+}[] = [
   { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
   {
     key: "second_keyword",
@@ -131,6 +160,23 @@ const TEMPLATE_OPTIONS: { key: SalesTemplateKey; label: string }[] = [
   {
     key: "third_keyword",
     label: "Close — keyword 3 + Founder’s Discount urgency",
+  },
+  {
+    key: "trial_ending",
+    label: "4A — last week of the free trial (2 keywords)",
+    adminOnly: true,
+    proofs: 2,
+  },
+  {
+    key: "trial_extended",
+    label: "4B — free trial extended 60 days (2 keywords)",
+    adminOnly: true,
+    proofs: 2,
+  },
+  {
+    key: "weekly_report",
+    label: "Weekly campaign report — active client",
+    ownerOnly: true,
   },
 ];
 
@@ -214,6 +260,21 @@ function buildFlatOptions(keywords: KeywordOption[]): FlatOption[] {
   });
 }
 
+/* Every email step that can already have gone out, in send order — including
+   the ones this dialog does not send (welcome, free-trial proof), so the
+   operator sees the whole sequence at a glance. */
+const SEQUENCE_LABELS: Record<string, string> = {
+  welcome: "Welcome",
+  first_proof: "First proof",
+  free_trial_proof: "Free-trial proof",
+  second_keyword: "Founder's Discount",
+  third_keyword: "Close",
+  trial_ending: "4A trial ending",
+  trial_extended: "4B trial extended",
+  weekly_report: "Weekly report",
+  declined_payment: "Declined payment",
+};
+
 function QualityMark({ quality }: { quality: ScreenshotQuality }) {
   if (quality === "bad")
     return <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />;
@@ -230,6 +291,9 @@ export function SalesEmailDialog({
   aeoPlanId,
 }: SalesEmailDialogProps) {
   const { toast } = useToast();
+  const { user, isOwner } = useAuth();
+  /* Unscoped admin — NOT the UI's isAdmin, which also covers chuckslocal. */
+  const isAdminTier = isOwner || user?.role === "admin";
   const [recipients, setRecipients] = useState<string[]>([]);
   const [newRecipient, setNewRecipient] = useState("");
   const [subject, setSubject] = useState("");
@@ -238,13 +302,32 @@ export function SalesEmailDialog({
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
   const [template, setTemplate] = useState<SalesTemplateKey>("first_proof");
+  /* The weekly report is owner-only; the two free-trial closers are admin-tier
+     (the BE refuses either for anyone else). */
+  const templateOptions = TEMPLATE_OPTIONS.filter(
+    (t) => (isOwner || !t.ownerOnly) && (isAdminTier || !t.adminOnly),
+  );
+  const isWeeklyReport = template === "weekly_report";
+  const showsTwoProofs =
+    (TEMPLATE_OPTIONS.find((t) => t.key === template)?.proofs ?? 1) >= 2;
   const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
     null,
   );
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  /* Second proof on the 2-keyword templates; null = server auto-picks the next
+     strongest keyword. */
+  const [selectedKeywordId2, setSelectedKeywordId2] = useState<number | null>(
+    null,
+  );
+  const [selectedPlatform2, setSelectedPlatform2] = useState<string | null>(
+    null,
+  );
   const seededRef = useRef(false);
+  /* The starting template is chosen once per scope, from what has already gone
+     out — after that the operator's pick stands. */
+  const templateAutoPickedRef = useRef(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [result, setResult] = useState<{
     ok: boolean;
@@ -288,10 +371,13 @@ export function SalesEmailDialog({
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     setIntroMessage("");
     setOfferText("");
     setTemplate("first_proof");
     seededRef.current = false;
+    templateAutoPickedRef.current = false;
   }, [clientId, businessId, aeoPlanId]);
 
   /* Switching templates loads that template's copy — clear the editable boxes
@@ -300,6 +386,8 @@ export function SalesEmailDialog({
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     setIntroMessage("");
     setOfferText("");
     setSubject("");
@@ -316,6 +404,9 @@ export function SalesEmailDialog({
     if (selectedKeywordId != null)
       p.set("keywordId", String(selectedKeywordId));
     if (selectedPlatform != null) p.set("platform", selectedPlatform);
+    if (selectedKeywordId2 != null)
+      p.set("keywordId2", String(selectedKeywordId2));
+    if (selectedPlatform2 != null) p.set("platform2", selectedPlatform2);
     if (introMessage.trim()) p.set("introMessage", introMessage.trim());
     if (offerText.trim()) p.set("offerText", offerText.trim());
     if (ctaLabel.trim()) p.set("ctaLabel", ctaLabel.trim());
@@ -328,6 +419,8 @@ export function SalesEmailDialog({
     template,
     selectedKeywordId,
     selectedPlatform,
+    selectedKeywordId2,
+    selectedPlatform2,
     introMessage,
     offerText,
     ctaLabel,
@@ -385,6 +478,29 @@ export function SalesEmailDialog({
       setCtaLabel(preview.defaultCtaLabel);
     seededRef.current = true;
   }, [preview, introMessage, offerText, subject, ctaLabel]);
+
+  const templateSends = preview?.templateSends;
+  const sentInfo = (key: SalesTemplateKey) => templateSends?.[key];
+  /* Sequence steps already delivered, newest last — includes the emails this
+     dialog does not send (welcome, free-trial proof). */
+  const alreadySent = Object.entries(templateSends ?? {})
+    .filter(([key]) => key in SEQUENCE_LABELS)
+    .sort((a, b) => a[1].lastSentAt.localeCompare(b[1].lastSentAt))
+    .map(
+      ([key, info]) =>
+        `${SEQUENCE_LABELS[key]} (${format(new Date(info.lastSentAt), "MMM d")})`,
+    );
+
+  /* Start on the first step of the sequence this client has NOT been sent, so
+     a client who already has the first proof opens on the next email instead
+     of the one they've seen. Runs once per scope — never overrides a pick. */
+  useEffect(() => {
+    if (!templateSends || templateAutoPickedRef.current) return;
+    templateAutoPickedRef.current = true;
+    const firstUnsent = templateOptions.find((t) => !templateSends[t.key]);
+    if (firstUnsent && firstUnsent.key !== template)
+      setTemplate(firstUnsent.key);
+  }, [templateSends, templateOptions, template]);
 
   const activeKeyword = useMemo<KeywordOption | null>(() => {
     if (!preview?.keywords?.length) return null;
@@ -451,6 +567,8 @@ export function SalesEmailDialog({
           aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selectedKeywordId ?? undefined,
           platform: selectedPlatform ?? undefined,
+          keywordId2: selectedKeywordId2 ?? undefined,
+          platform2: selectedPlatform2 ?? undefined,
           template,
           recipients,
           subject: subject.trim() || undefined,
@@ -511,6 +629,8 @@ export function SalesEmailDialog({
     setTemplate("first_proof");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     seededRef.current = false;
     onClose();
   }
@@ -634,23 +754,61 @@ export function SalesEmailDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TEMPLATE_OPTIONS.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
+                  {templateOptions.map((t) => {
+                    const sent = sentInfo(t.key);
+                    return (
+                      <SelectItem key={t.key} value={t.key}>
+                        <span className="flex w-full min-w-0 items-center gap-2">
+                          <span className="truncate">{t.label}</span>
+                          {sent && (
+                            <span
+                              className="ml-auto shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                              title={`Last sent ${format(new Date(sent.lastSentAt), "MMM d, yyyy")}${sent.count > 1 ? ` · ${sent.count} sends` : ""}`}
+                            >
+                              Sent {format(new Date(sent.lastSentAt), "MMM d")}
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                The update email features a different keyword and the Founder’s
-                Discount offer. Switching reloads the subject and copy.
+                {isWeeklyReport
+                  ? "The weekly report covers every tracked keyword and all three platforms — for clients already converted to a paid plan. No sales offer, no button."
+                  : showsTwoProofs
+                    ? "Free-trial closer — shows two keyword before/after pairs. Switching reloads the subject and copy."
+                    : "The update email features a different keyword and the Founder’s Discount offer. Switching reloads the subject and copy."}
               </p>
+              {alreadySent.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Already sent to this client:{" "}
+                  <span className="font-medium text-foreground">
+                    {alreadySent.join(" · ")}
+                  </span>
+                </p>
+              )}
+              {sentInfo(template) && (
+                <p className="text-[11px] text-amber-700">
+                  This template was already sent{" "}
+                  {format(
+                    new Date(sentInfo(template)!.lastSentAt),
+                    "MMM d, yyyy",
+                  )}
+                  . Sending again will be a duplicate.
+                </p>
+              )}
             </div>
 
             {/* Proof picker — one flat list of every keyword × platform
                 screenshot, tagged by quality and top-3 visibility */}
             <div className="space-y-2">
-              <Label>Screenshot to feature</Label>
+              <Label>
+                {isWeeklyReport
+                  ? "Keyword to show screenshots for (one per platform)"
+                  : "Screenshot to feature"}
+              </Label>
               <Select
                 value={
                   selectedKeywordId != null && selectedPlatform != null
@@ -720,6 +878,78 @@ export function SalesEmailDialog({
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Second proof — only the templates that show two keywords */}
+              {showsTwoProofs && (
+                <div className="space-y-2 pt-1">
+                  <Label>Second keyword to show</Label>
+                  <Select
+                    value={
+                      selectedKeywordId2 != null && selectedPlatform2 != null
+                        ? `${selectedKeywordId2}:${selectedPlatform2}`
+                        : "auto"
+                    }
+                    onValueChange={(v) => {
+                      if (v === "auto") {
+                        setSelectedKeywordId2(null);
+                        setSelectedPlatform2(null);
+                        return;
+                      }
+                      const [kid, plat] = v.split(":");
+                      setSelectedKeywordId2(Number(kid));
+                      setSelectedPlatform2(plat);
+                    }}
+                    disabled={!preview?.keywords?.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Next strongest (default)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">
+                        Next strongest (default)
+                      </SelectItem>
+                      {buildFlatOptions(preview?.keywords ?? [])
+                        .filter(
+                          (o) =>
+                            o.keywordId !==
+                            (selectedKeywordId ?? preview?.selected?.keywordId),
+                        )
+                        .map((o) => (
+                          <SelectItem
+                            key={`2:${o.keywordId}:${o.platform}`}
+                            value={`${o.keywordId}:${o.platform}`}
+                          >
+                            <span className="flex w-full min-w-0 items-center gap-2">
+                              <span className="shrink-0">
+                                <QualityMark quality={o.quality} />
+                              </span>
+                              <span className="truncate font-medium">
+                                {o.keyword ?? `Keyword ${o.keywordId}`}
+                              </span>
+                              <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {platformLabel(o.platform)} · #{o.beforeRank}→#
+                                {o.afterRank}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {preview?.selectedSecond ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Showing “{preview.selectedSecond.keyword}” on{" "}
+                      {platformLabel(preview.selectedSecond.platform)} · #
+                      {preview.selectedSecond.beforeRank}→#
+                      {preview.selectedSecond.afterRank}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700">
+                      No second keyword available — the email will show one
+                      proof.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Visual picker — the selected campaign's actual screenshots.
                   Match each against the target address, click to feature. */}
@@ -927,7 +1157,9 @@ export function SalesEmailDialog({
             {/* Intro message */}
             <div className="space-y-2">
               <Label htmlFor="sales-intro">
-                Intro copy — editable (shown above the proof)
+                {isWeeklyReport
+                  ? "Weekly summary — editable (top of the report)"
+                  : "Intro copy — editable (shown above the proof)"}
               </Label>
               <Textarea
                 id="sales-intro"
@@ -942,7 +1174,9 @@ export function SalesEmailDialog({
             {/* Offer copy */}
             <div className="space-y-2">
               <Label htmlFor="sales-offer">
-                Offer copy — editable (shown above the button)
+                {isWeeklyReport
+                  ? "Progress this week — editable"
+                  : "Offer copy — editable (shown above the button)"}
               </Label>
               <Textarea
                 id="sales-offer"
@@ -954,8 +1188,10 @@ export function SalesEmailDialog({
               />
             </div>
 
-            {/* CTA */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* CTA — the weekly report has no button */}
+            <div
+              className={`grid grid-cols-2 gap-2${isWeeklyReport ? " hidden" : ""}`}
+            >
               <div className="space-y-2">
                 <Label htmlFor="sales-cta-label">Button label</Label>
                 <Input
