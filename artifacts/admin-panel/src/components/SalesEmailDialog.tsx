@@ -90,6 +90,17 @@ interface SalesPreviewResponse {
     afterRank: number;
     improved: number;
   } | null;
+  /* The second proof the server resolved (2-keyword templates); absent when
+     there is only one keyword to show. */
+  selectedSecond?: {
+    keywordId: number;
+    keyword: string | null;
+    platform: string;
+    beforeRank: number;
+    afterRank: number;
+    improved: number;
+  };
+  proofCount?: number;
   template?: SalesTemplateKey;
   defaultSubject?: string;
   defaultCtaLabel?: string;
@@ -125,12 +136,17 @@ type SalesTemplateKey =
   | "first_proof"
   | "second_keyword"
   | "third_keyword"
+  | "trial_ending"
+  | "trial_extended"
   | "weekly_report";
 
 const TEMPLATE_OPTIONS: {
   key: SalesTemplateKey;
   label: string;
   ownerOnly?: boolean;
+  adminOnly?: boolean;
+  /* Templates showing two keyword proofs get the second picker. */
+  proofs?: number;
 }[] = [
   { key: "first_proof", label: "First proof — “Your first AI ranking is in”" },
   {
@@ -140,6 +156,18 @@ const TEMPLATE_OPTIONS: {
   {
     key: "third_keyword",
     label: "Close — keyword 3 + Founder’s Discount urgency",
+  },
+  {
+    key: "trial_ending",
+    label: "4A — last week of the free trial (2 keywords)",
+    adminOnly: true,
+    proofs: 2,
+  },
+  {
+    key: "trial_extended",
+    label: "4B — free trial extended 60 days (2 keywords)",
+    adminOnly: true,
+    proofs: 2,
   },
   {
     key: "weekly_report",
@@ -244,7 +272,9 @@ export function SalesEmailDialog({
   aeoPlanId,
 }: SalesEmailDialogProps) {
   const { toast } = useToast();
-  const { isOwner } = useAuth();
+  const { user, isOwner } = useAuth();
+  /* Unscoped admin — NOT the UI's isAdmin, which also covers chuckslocal. */
+  const isAdminTier = isOwner || user?.role === "admin";
   const [recipients, setRecipients] = useState<string[]>([]);
   const [newRecipient, setNewRecipient] = useState("");
   const [subject, setSubject] = useState("");
@@ -253,17 +283,28 @@ export function SalesEmailDialog({
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
   const [template, setTemplate] = useState<SalesTemplateKey>("first_proof");
-  /* The weekly report is the post-conversion email — owner account only. */
+  /* The weekly report is owner-only; the two free-trial closers are admin-tier
+     (the BE refuses either for anyone else). */
   const templateOptions = TEMPLATE_OPTIONS.filter(
-    (t) => isOwner || !t.ownerOnly,
+    (t) => (isOwner || !t.ownerOnly) && (isAdminTier || !t.adminOnly),
   );
   const isWeeklyReport = template === "weekly_report";
+  const showsTwoProofs =
+    (TEMPLATE_OPTIONS.find((t) => t.key === template)?.proofs ?? 1) >= 2;
   const [aiInstruction, setAiInstruction] = useState("");
   /* null = "strongest improvement" default (server picks) */
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | null>(
     null,
   );
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  /* Second proof on the 2-keyword templates; null = server auto-picks the next
+     strongest keyword. */
+  const [selectedKeywordId2, setSelectedKeywordId2] = useState<number | null>(
+    null,
+  );
+  const [selectedPlatform2, setSelectedPlatform2] = useState<string | null>(
+    null,
+  );
   const seededRef = useRef(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [result, setResult] = useState<{
@@ -308,6 +349,8 @@ export function SalesEmailDialog({
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     setIntroMessage("");
     setOfferText("");
     setTemplate("first_proof");
@@ -320,6 +363,8 @@ export function SalesEmailDialog({
   useEffect(() => {
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     setIntroMessage("");
     setOfferText("");
     setSubject("");
@@ -336,6 +381,9 @@ export function SalesEmailDialog({
     if (selectedKeywordId != null)
       p.set("keywordId", String(selectedKeywordId));
     if (selectedPlatform != null) p.set("platform", selectedPlatform);
+    if (selectedKeywordId2 != null)
+      p.set("keywordId2", String(selectedKeywordId2));
+    if (selectedPlatform2 != null) p.set("platform2", selectedPlatform2);
     if (introMessage.trim()) p.set("introMessage", introMessage.trim());
     if (offerText.trim()) p.set("offerText", offerText.trim());
     if (ctaLabel.trim()) p.set("ctaLabel", ctaLabel.trim());
@@ -348,6 +396,8 @@ export function SalesEmailDialog({
     template,
     selectedKeywordId,
     selectedPlatform,
+    selectedKeywordId2,
+    selectedPlatform2,
     introMessage,
     offerText,
     ctaLabel,
@@ -471,6 +521,8 @@ export function SalesEmailDialog({
           aeoPlanId: aeoPlanId ?? undefined,
           keywordId: selectedKeywordId ?? undefined,
           platform: selectedPlatform ?? undefined,
+          keywordId2: selectedKeywordId2 ?? undefined,
+          platform2: selectedPlatform2 ?? undefined,
           template,
           recipients,
           subject: subject.trim() || undefined,
@@ -531,6 +583,8 @@ export function SalesEmailDialog({
     setTemplate("first_proof");
     setSelectedKeywordId(null);
     setSelectedPlatform(null);
+    setSelectedKeywordId2(null);
+    setSelectedPlatform2(null);
     seededRef.current = false;
     onClose();
   }
@@ -664,7 +718,9 @@ export function SalesEmailDialog({
               <p className="text-[11px] text-muted-foreground">
                 {isWeeklyReport
                   ? "The weekly report covers every tracked keyword and all three platforms — for clients already converted to a paid plan. No sales offer, no button."
-                  : "The update email features a different keyword and the Founder’s Discount offer. Switching reloads the subject and copy."}
+                  : showsTwoProofs
+                    ? "Free-trial closer — shows two keyword before/after pairs. Switching reloads the subject and copy."
+                    : "The update email features a different keyword and the Founder’s Discount offer. Switching reloads the subject and copy."}
               </p>
             </div>
 
@@ -745,6 +801,78 @@ export function SalesEmailDialog({
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Second proof — only the templates that show two keywords */}
+              {showsTwoProofs && (
+                <div className="space-y-2 pt-1">
+                  <Label>Second keyword to show</Label>
+                  <Select
+                    value={
+                      selectedKeywordId2 != null && selectedPlatform2 != null
+                        ? `${selectedKeywordId2}:${selectedPlatform2}`
+                        : "auto"
+                    }
+                    onValueChange={(v) => {
+                      if (v === "auto") {
+                        setSelectedKeywordId2(null);
+                        setSelectedPlatform2(null);
+                        return;
+                      }
+                      const [kid, plat] = v.split(":");
+                      setSelectedKeywordId2(Number(kid));
+                      setSelectedPlatform2(plat);
+                    }}
+                    disabled={!preview?.keywords?.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Next strongest (default)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">
+                        Next strongest (default)
+                      </SelectItem>
+                      {buildFlatOptions(preview?.keywords ?? [])
+                        .filter(
+                          (o) =>
+                            o.keywordId !==
+                            (selectedKeywordId ?? preview?.selected?.keywordId),
+                        )
+                        .map((o) => (
+                          <SelectItem
+                            key={`2:${o.keywordId}:${o.platform}`}
+                            value={`${o.keywordId}:${o.platform}`}
+                          >
+                            <span className="flex w-full min-w-0 items-center gap-2">
+                              <span className="shrink-0">
+                                <QualityMark quality={o.quality} />
+                              </span>
+                              <span className="truncate font-medium">
+                                {o.keyword ?? `Keyword ${o.keywordId}`}
+                              </span>
+                              <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {platformLabel(o.platform)} · #{o.beforeRank}→#
+                                {o.afterRank}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {preview?.selectedSecond ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Showing “{preview.selectedSecond.keyword}” on{" "}
+                      {platformLabel(preview.selectedSecond.platform)} · #
+                      {preview.selectedSecond.beforeRank}→#
+                      {preview.selectedSecond.afterRank}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700">
+                      No second keyword available — the email will show one
+                      proof.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Visual picker — the selected campaign's actual screenshots.
                   Match each against the target address, click to feature. */}

@@ -174,6 +174,17 @@ function isOwnerSender(req: Request): boolean {
 // authorized sender on the GHL sub-account's verified sending domain.
 const GHL_EMAIL_FROM = process.env.GHL_EMAIL_FROM?.trim() || undefined;
 
+/* A second (or third) keyword proof rendered under the featured one. The
+   free-trial close/extend emails show two before/after pairs. */
+interface ExtraProof {
+  keyword: string;
+  platform: string;
+  beforeRank: number;
+  afterRank: number;
+  beforeImageUrl: string;
+  afterImageUrl: string;
+}
+
 interface SalesEmailArgs {
   business: string;
   keyword: string;
@@ -195,6 +206,8 @@ interface SalesEmailArgs {
   /* Signature override — owner sends sign as Mary / Signal AEO. */
   senderName?: string;
   senderOrg?: string;
+  /* Additional keyword proofs shown below the featured one. */
+  extraProofs?: ExtraProof[];
 }
 
 function defaultIntro(a: SalesEmailArgs): string {
@@ -255,6 +268,50 @@ This technology is making your business visible on ChatGPT, Gemini, and Perplexi
 Once the trial ends, the 20% off goes with it.`;
 }
 
+/* The two free-trial closers (4A ends the trial, 4B extends it 60 days) share
+   the same middle paragraph — being first to market is the pitch in both. */
+const FIRST_TO_MARKET = `Right now, being first to market in AI search is the single biggest opportunity for local businesses. ChatGPT, Gemini, and Perplexity are where your customers are going first before they ever touch Google. The businesses showing up in those results today are building a position that gets harder for competitors to challenge every single week.
+
+Your business is already there. Here is the proof.`;
+
+/* 4A — last week of the free trial: hold the results, take the discount. */
+function trialEndingIntro(a: SalesEmailArgs): string {
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
+
+As a reminder, this is the last week of your free trial for your AI Search Campaign for ${a.business}.
+
+${FIRST_TO_MARKET}`;
+}
+
+function trialEndingOffer(_a: SalesEmailArgs): string {
+  return `We are excited to continue delivering these results for you.
+
+As an existing customer, you still have access to the Founder's Discount — 20% off your monthly plan, locked in for life at that rate. This offer is reserved for clients in the free trial and it closes at the end of this week.
+
+Schedule a call to finalize your plan and maintain these results.`;
+}
+
+/* 4B — beta is done, the trial runs another 60 days. No discount urgency. */
+function trialExtendedIntro(a: SalesEmailArgs): string {
+  const hi = a.firstName?.trim() ? `Hi ${a.firstName.trim()},` : "Hi there,";
+  return `${hi}
+
+We have officially completed our beta testing for our AI Search Campaign, and the results across our client base have been tremendous.
+
+As we move forward, we are extending your free trial for ${a.business} for the next 60 days.
+
+${FIRST_TO_MARKET}`;
+}
+
+function trialExtendedOffer(a: SalesEmailArgs): string {
+  return `Over the next 60 days, we will continue working to improve your search results in your local area and send you updated screenshots as results come in.
+
+We are excited to keep building on what we have already started for ${a.business}.
+
+If you want to talk through where things stand or learn more about continuing long-term, we are here.`;
+}
+
 /* Weekly report for a converted (paying) client — reports the whole campaign
    instead of selling one keyword, so it gets its own layout. */
 function weeklyReportSummary(a: SalesEmailArgs): string {
@@ -275,6 +332,8 @@ export type SalesTemplateKey =
   | "first_proof"
   | "second_keyword"
   | "third_keyword"
+  | "trial_ending"
+  | "trial_extended"
   | "weekly_report";
 
 interface SalesTemplate {
@@ -286,6 +345,11 @@ interface SalesTemplate {
   /* Owner-only templates never appear for sales / account-manager /
      chuckslocal, and a request for one from those roles is refused. */
   ownerOnly?: boolean;
+  /* Admin-only: admin + owner see it; sales / account-manager / chuckslocal
+     do not. */
+  adminOnly?: boolean;
+  /* How many keyword before/after pairs the email shows (default 1). */
+  proofCount?: number;
   /* Template-specific CTA link; falls back to DEFAULT_CTA_URL. */
   defaultCtaUrl?: string;
   /* Hidden inbox preview line injected at the top of the body. */
@@ -330,6 +394,33 @@ const SALES_TEMPLATES: Record<SalesTemplateKey, SalesTemplate> = {
     buildOffer: thirdKeywordOffer,
     preferUnsent: true,
   },
+  trial_ending: {
+    key: "trial_ending",
+    label: "4A — last week of the free trial (2 keywords)",
+    heroHeadline: "Last week of your free trial.",
+    defaultSubject: "Last week of your free trial for AI Search.",
+    defaultCtaLabel: "Schedule Your Call",
+    previewText: "Here is where your business stands right now.",
+    adminOnly: true,
+    proofCount: 2,
+    buildIntro: trialEndingIntro,
+    buildOffer: trialEndingOffer,
+    preferUnsent: false,
+  },
+  trial_extended: {
+    key: "trial_extended",
+    label: "4B — free trial extended 60 days (2 keywords)",
+    heroHeadline: "We are extending your free trial 60 days.",
+    defaultSubject: "We are extending your free trial for 60 more days.",
+    defaultCtaLabel: "Schedule a Call with Our Team",
+    previewText:
+      "Our beta is complete. The results are strong. Here is what happens next.",
+    adminOnly: true,
+    proofCount: 2,
+    buildIntro: trialExtendedIntro,
+    buildOffer: trialExtendedOffer,
+    preferUnsent: false,
+  },
   weekly_report: {
     key: "weekly_report",
     label: "Weekly campaign report — active client",
@@ -350,14 +441,29 @@ function resolveTemplate(key: string | null | undefined): SalesTemplate {
   );
 }
 
-/** Owner-only templates degrade to the default for everyone else, so a stale
+/** True when the session holds an unscoped admin (admin or owner). */
+function isAdminSender(req: Request): boolean {
+  const s = req.session as unknown as Record<string, unknown>;
+  return s.userRole === "admin" || s.userRole === "owner";
+}
+
+/** Restricted templates are refused for the roles they are not meant for. */
+function templateDenialReason(tpl: SalesTemplate, req: Request): string | null {
+  if (tpl.ownerOnly && !isOwnerSender(req))
+    return "That template is restricted to the owner account.";
+  if (tpl.adminOnly && !isAdminSender(req))
+    return "That template is restricted to admin accounts.";
+  return null;
+}
+
+/** Restricted templates degrade to the default for everyone else, so a stale
  *  or hand-typed `template=` never leaks the copy to a scoped role. */
 function resolveTemplateForRequest(
   key: string | null | undefined,
   req: Request,
 ): SalesTemplate {
   const tpl = resolveTemplate(key);
-  if (tpl.ownerOnly && !isOwnerSender(req)) return SALES_TEMPLATES.first_proof;
+  if (templateDenialReason(tpl, req)) return SALES_TEMPLATES.first_proof;
   return tpl;
 }
 
@@ -413,6 +519,29 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
       <img src="${url}" alt="${label} screenshot" width="100%" style="width:100%;height:auto;display:block" />
     </div>`;
 
+  /* Each additional keyword gets the same before/after pair under its own
+     kicker, so a two-keyword email reads as two pieces of proof rather than one
+     jumbled grid. */
+  const extraProofBlocks = (a.extraProofs ?? [])
+    .map((p) => {
+      const label = PLATFORM_LABELS[p.platform] ?? p.platform;
+      return `
+      <div style="padding:18px 20px 0 20px">
+        ${kicker(`Also: &ldquo;${p.keyword}&rdquo;`, platformColor(p.platform))}
+        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-top:14px">
+          <tr>
+            <td style="width:47%;vertical-align:top">${shot("Before", p.beforeRank, p.beforeImageUrl, false)}</td>
+            <td style="width:6%;text-align:center;vertical-align:middle">
+              <div style="display:inline-block;width:30px;height:30px;line-height:30px;border-radius:15px;background:${NAVY};color:${AMBER};font-size:15px;font-weight:800">&rarr;</div>
+            </td>
+            <td style="width:47%;vertical-align:top">${shot("After", p.afterRank, p.afterImageUrl, true)}</td>
+          </tr>
+        </table>
+        <p style="margin:12px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${label}.</p>
+      </div>`;
+    })
+    .join("");
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
@@ -455,6 +584,7 @@ export function buildSalesEmailHtml(a: SalesEmailArgs): string {
         </table>
         <p style="margin:12px 0 0 0;color:#94a3b8;font-size:11px;font-style:italic;text-align:center">Real device. Real query. Your business, named by ${pLabel}.</p>
       </div>
+      ${extraProofBlocks}
 
       <!-- Closing copy + CTA -->
       <div style="padding:20px 30px 6px 30px">
@@ -480,6 +610,9 @@ interface PreparedEmail {
   business: string;
   clientName: string;
   selection: Selection;
+  /* Additional keyword proofs rendered under the featured one (2-keyword
+     templates); empty for the single-proof emails. */
+  extraSelections?: Selection[];
   strictMode: boolean;
 }
 
@@ -505,6 +638,19 @@ function scopeQuery(clientId: number, scope: SalesEmailScope) {
     clientId: String(clientId),
     ...(scope.businessId ? { businessId: String(scope.businessId) } : {}),
     ...(scope.aeoPlanId ? { aeoPlanId: String(scope.aeoPlanId) } : {}),
+  };
+}
+
+/** Operator's pick for the SECOND proof on a two-keyword template. Both null =
+ *  auto-pick the next strongest keyword. */
+function secondPickFrom(src: Record<string, unknown>): {
+  keywordId: number | null;
+  platform: string | null;
+} {
+  const raw = Number.parseInt(String(src.keywordId2 ?? ""), 10);
+  return {
+    keywordId: Number.isFinite(raw) && raw > 0 ? raw : null,
+    platform: src.platform2 ? String(src.platform2) : null,
   };
 }
 
@@ -550,8 +696,6 @@ async function planLabelFor(
   return client?.planName?.trim() || "AI Search Campaign";
 }
 
-/** Shared preview/send assembly — one path, so preview === sent. The caller
- *  resolves the improvement data once (it's a heavy query) and passes it in. */
 /** Best platform for a keyword in the weekly table: biggest improvement, ties
  *  broken toward the better current rank. */
 function bestPlatformOf(entry: KeywordEntry): string | null {
@@ -650,6 +794,8 @@ function buildWeeklyReport(
   });
 }
 
+/** Shared preview/send assembly — one path, so preview === sent. The caller
+ *  resolves the improvement data once (it's a heavy query) and passes it in. */
 function prepareSalesEmail(
   clientId: number,
   data: ImprovementData,
@@ -661,6 +807,10 @@ function prepareSalesEmail(
   firstName: string | null,
   avoidKeywordIds: Set<number>,
   planLabel: string,
+  secondPick: { keywordId: number | null; platform: string | null } = {
+    keywordId: null,
+    platform: null,
+  },
 ): { ok: true; prep: PreparedEmail } | { ok: false; reason: string } {
   // The update template auto-picks a keyword the client hasn't been emailed yet.
   const preferUnsent = resolveTemplate(copy.template).preferUnsent;
@@ -704,6 +854,38 @@ function prepareSalesEmail(
       },
     };
   }
+  /* Templates that show two keywords (the free-trial closers) auto-pick the
+     next strongest keyword unless the operator chose one. A pick that lands
+     back on the featured keyword means there is only one to show. */
+  const extraSelections: Selection[] = [];
+  if ((resolveTemplate(copy.template).proofCount ?? 1) >= 2) {
+    const second = pickSelection(
+      data,
+      secondPick.keywordId,
+      secondPick.platform,
+      { avoidKeywordIds: new Set([selection.entry.keywordId]) },
+    );
+    if (second && second.entry.keywordId !== selection.entry.keywordId)
+      extraSelections.push(second);
+  }
+  const extraProofs: ExtraProof[] = extraSelections.map((s) => {
+    const kw = s.entry.keyword ?? "";
+    const url = (which: "first" | "current") =>
+      buildScreenshotUrlByClient(clientId, kw, s.platform, which, {
+        strict: strictMode,
+        businessId: scope.businessId,
+        aeoPlanId: scope.aeoPlanId,
+      });
+    return {
+      keyword: kw,
+      platform: s.platform,
+      beforeRank: s.ranks.first.rank,
+      afterRank: s.ranks.current.rank,
+      beforeImageUrl: url("first"),
+      afterImageUrl: url("current"),
+    };
+  });
+
   const html = buildSalesEmailHtml({
     business,
     keyword: kwText,
@@ -715,6 +897,7 @@ function prepareSalesEmail(
     beforeImageUrl: imgUrl("first"),
     afterImageUrl: imgUrl("current"),
     firstName,
+    extraProofs,
     ...copy,
   });
   return {
@@ -724,6 +907,7 @@ function prepareSalesEmail(
       business,
       clientName: data.client.name,
       selection,
+      extraSelections,
       strictMode,
     },
   };
@@ -857,6 +1041,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       firstName,
       sentKeywordIds,
       planLabel,
+      secondPickFrom(req.query as Record<string, unknown>),
     );
     if (!prepared.ok)
       return res.json({
@@ -897,6 +1082,15 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         afterRank: sel.ranks.current.rank,
         improved: sel.improved,
       },
+      selectedSecond: (prepared.prep.extraSelections ?? []).map((s) => ({
+        keywordId: s.entry.keywordId,
+        keyword: s.entry.keyword,
+        platform: s.platform,
+        beforeRank: s.ranks.first.rank,
+        afterRank: s.ranks.current.rank,
+        improved: s.improved,
+      }))[0],
+      proofCount: template.proofCount ?? 1,
       template: template.key,
       defaultSubject: template.defaultSubject,
       defaultCtaLabel: template.defaultCtaLabel,
@@ -1012,6 +1206,9 @@ interface SendSalesEmailBody {
   aeoPlanId?: number | null;
   keywordId?: number | null;
   platform?: string | null;
+  /* Second proof on a two-keyword template; null = auto-pick. */
+  keywordId2?: number | null;
+  platform2?: string | null;
   recipients: string[];
   subject?: string;
   introMessage?: string;
@@ -1068,10 +1265,8 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
     });
     if (!r.ok) return res.status(409).json({ error: r.reason });
     const template = resolveTemplate(body.template);
-    if (template.ownerOnly && !ownerSender)
-      return res
-        .status(403)
-        .json({ error: "That template is restricted to the owner account." });
+    const denial = templateDenialReason(template, req);
+    if (denial) return res.status(403).json({ error: denial });
     const lastSent = await getLastSentInfo(body.clientId);
     const sentKeywordIds = new Set(lastSent.perKeyword.keys());
     const [firstName, planLabel] = await Promise.all([
@@ -1098,17 +1293,20 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
       firstName,
       sentKeywordIds,
       planLabel,
+      secondPickFrom(body as Record<string, unknown>),
     );
     if (!prepared.ok) return res.status(409).json({ error: prepared.reason });
     const { html, business, selection } = prepared.prep;
+    const extraSelections = prepared.prep.extraSelections ?? [];
 
-    /* A broken <img> in a sales email is worse than no email — verify both
-       S3 objects exist before sending (the GHL sync does the same). */
-    const [beforeOk, afterOk] = await Promise.all([
-      s3Exists(selection.ranks.first.s3Uri),
-      s3Exists(selection.ranks.current.s3Uri),
+    /* A broken <img> in a sales email is worse than no email — verify every
+       S3 object exists before sending (the GHL sync does the same). */
+    const proofUris = [selection, ...extraSelections].flatMap((s) => [
+      s.ranks.first.s3Uri,
+      s.ranks.current.s3Uri,
     ]);
-    if (!beforeOk || !afterOk)
+    const proofsPresent = await Promise.all(proofUris.map((u) => s3Exists(u)));
+    if (proofsPresent.some((ok) => !ok))
       return res.status(409).json({
         error: "A screenshot for this keyword is missing from storage.",
       });
@@ -1303,6 +1501,13 @@ router.post("/send-email", requireSalesEmail, async (req, res) => {
           afterDate: selection.ranks.current.date,
           business,
           template: template.key,
+          extraKeywords: extraSelections.map((s) => ({
+            keyword: s.entry.keyword,
+            keywordId: s.entry.keywordId,
+            platform: s.platform,
+            beforeRank: s.ranks.first.rank,
+            afterRank: s.ranks.current.rank,
+          })),
           deliveredVia,
           messageId: messageId ?? null,
         },
