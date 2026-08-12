@@ -109,6 +109,10 @@ interface SalesPreviewResponse {
   keywords: KeywordOption[];
   /* ISO timestamp of the most recent sales email sent to this client; null = none. */
   lastCommunicationAt?: string | null;
+  /* What this client has already been sent, keyed by template ("welcome",
+     "first_proof", "free_trial_proof", …). Drives the Sent flags and the
+     starting template. */
+  templateSends?: Record<string, { lastSentAt: string; count: number }>;
   strictMode: boolean;
 }
 
@@ -256,6 +260,21 @@ function buildFlatOptions(keywords: KeywordOption[]): FlatOption[] {
   });
 }
 
+/* Every email step that can already have gone out, in send order — including
+   the ones this dialog does not send (welcome, free-trial proof), so the
+   operator sees the whole sequence at a glance. */
+const SEQUENCE_LABELS: Record<string, string> = {
+  welcome: "Welcome",
+  first_proof: "First proof",
+  free_trial_proof: "Free-trial proof",
+  second_keyword: "Founder's Discount",
+  third_keyword: "Close",
+  trial_ending: "4A trial ending",
+  trial_extended: "4B trial extended",
+  weekly_report: "Weekly report",
+  declined_payment: "Declined payment",
+};
+
 function QualityMark({ quality }: { quality: ScreenshotQuality }) {
   if (quality === "bad")
     return <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />;
@@ -306,6 +325,9 @@ export function SalesEmailDialog({
     null,
   );
   const seededRef = useRef(false);
+  /* The starting template is chosen once per scope, from what has already gone
+     out — after that the operator's pick stands. */
+  const templateAutoPickedRef = useRef(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [result, setResult] = useState<{
     ok: boolean;
@@ -355,6 +377,7 @@ export function SalesEmailDialog({
     setOfferText("");
     setTemplate("first_proof");
     seededRef.current = false;
+    templateAutoPickedRef.current = false;
   }, [clientId, businessId, aeoPlanId]);
 
   /* Switching templates loads that template's copy — clear the editable boxes
@@ -455,6 +478,29 @@ export function SalesEmailDialog({
       setCtaLabel(preview.defaultCtaLabel);
     seededRef.current = true;
   }, [preview, introMessage, offerText, subject, ctaLabel]);
+
+  const templateSends = preview?.templateSends;
+  const sentInfo = (key: SalesTemplateKey) => templateSends?.[key];
+  /* Sequence steps already delivered, newest last — includes the emails this
+     dialog does not send (welcome, free-trial proof). */
+  const alreadySent = Object.entries(templateSends ?? {})
+    .filter(([key]) => key in SEQUENCE_LABELS)
+    .sort((a, b) => a[1].lastSentAt.localeCompare(b[1].lastSentAt))
+    .map(
+      ([key, info]) =>
+        `${SEQUENCE_LABELS[key]} (${format(new Date(info.lastSentAt), "MMM d")})`,
+    );
+
+  /* Start on the first step of the sequence this client has NOT been sent, so
+     a client who already has the first proof opens on the next email instead
+     of the one they've seen. Runs once per scope — never overrides a pick. */
+  useEffect(() => {
+    if (!templateSends || templateAutoPickedRef.current) return;
+    templateAutoPickedRef.current = true;
+    const firstUnsent = templateOptions.find((t) => !templateSends[t.key]);
+    if (firstUnsent && firstUnsent.key !== template)
+      setTemplate(firstUnsent.key);
+  }, [templateSends, templateOptions, template]);
 
   const activeKeyword = useMemo<KeywordOption | null>(() => {
     if (!preview?.keywords?.length) return null;
@@ -708,11 +754,24 @@ export function SalesEmailDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {templateOptions.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
+                  {templateOptions.map((t) => {
+                    const sent = sentInfo(t.key);
+                    return (
+                      <SelectItem key={t.key} value={t.key}>
+                        <span className="flex w-full min-w-0 items-center gap-2">
+                          <span className="truncate">{t.label}</span>
+                          {sent && (
+                            <span
+                              className="ml-auto shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                              title={`Last sent ${format(new Date(sent.lastSentAt), "MMM d, yyyy")}${sent.count > 1 ? ` · ${sent.count} sends` : ""}`}
+                            >
+                              Sent {format(new Date(sent.lastSentAt), "MMM d")}
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
@@ -722,6 +781,24 @@ export function SalesEmailDialog({
                     ? "Free-trial closer — shows two keyword before/after pairs. Switching reloads the subject and copy."
                     : "The update email features a different keyword and the Founder’s Discount offer. Switching reloads the subject and copy."}
               </p>
+              {alreadySent.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Already sent to this client:{" "}
+                  <span className="font-medium text-foreground">
+                    {alreadySent.join(" · ")}
+                  </span>
+                </p>
+              )}
+              {sentInfo(template) && (
+                <p className="text-[11px] text-amber-700">
+                  This template was already sent{" "}
+                  {format(
+                    new Date(sentInfo(template)!.lastSentAt),
+                    "MMM d, yyyy",
+                  )}
+                  . Sending again will be a duplicate.
+                </p>
+              )}
             </div>
 
             {/* Proof picker — one flat list of every keyword × platform

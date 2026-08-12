@@ -948,6 +948,50 @@ async function getLastSentInfo(clientId: number): Promise<{
   return { perKeyword, accountLast };
 }
 
+/** What has already gone out to this client, per template — so the picker can
+ *  flag a sequence step as sent and start the operator on an unsent one.
+ *  Client-level on purpose: the sequence (welcome → first proof → closers) is
+ *  addressed to the person, not to one campaign.
+ *
+ *  Keys are template keys; sends with no template fall back to their `kind`.
+ *  Two foldings keep the history honest: the manual welcome counts as
+ *  "welcome", and a bare "sales" row counts as "first_proof" — those predate
+ *  the template field, when the first proof was the only sales email. */
+async function getTemplateSendInfo(
+  clientId: number,
+): Promise<Record<string, { lastSentAt: string; count: number }>> {
+  const result = await db.execute(sql`
+    SELECT COALESCE(meta->>'template', kind) AS tpl,
+           MAX(sent_at) AS last_sent,
+           COUNT(*)::int AS n
+    FROM email_sends
+    WHERE client_id = ${clientId}
+      AND status = 'sent'
+    GROUP BY 1
+  `);
+  const out: Record<string, { lastSentAt: string; count: number }> = {};
+  for (const row of result.rows as Array<{
+    tpl: string | null;
+    last_sent: Date | null;
+    n: number;
+  }>) {
+    if (!row.tpl || !row.last_sent) continue;
+    const key =
+      row.tpl === "welcome_manual"
+        ? "welcome"
+        : row.tpl === "sales"
+          ? "first_proof"
+          : row.tpl;
+    const iso = new Date(row.last_sent).toISOString();
+    const prev = out[key];
+    out[key] = {
+      lastSentAt: prev && prev.lastSentAt > iso ? prev.lastSentAt : iso,
+      count: (prev?.count ?? 0) + row.n,
+    };
+  }
+  return out;
+}
+
 /* Keyword/platform options for the FE picker, strongest improvement first. */
 function keywordOptions(
   data: ImprovementData,
@@ -1003,7 +1047,10 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
     };
 
     const scope = parseScope(req.query as Record<string, unknown>);
-    const lastSent = await getLastSentInfo(clientId);
+    const [lastSent, templateSends] = await Promise.all([
+      getLastSentInfo(clientId),
+      getTemplateSendInfo(clientId),
+    ]);
     const sentKeywordIds = new Set(lastSent.perKeyword.keys());
     const strictMode = process.env.GHL_SYNC_STRICT === "1";
     const r = await resolveImprovement(scopeQuery(clientId, scope), {
@@ -1023,6 +1070,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         selected: null,
         keywords: [],
         lastCommunicationAt: lastSent.accountLast,
+        templateSends,
         strictMode,
       });
 
@@ -1051,6 +1099,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
         selected: null,
         keywords: keywordOptions(r.data, lastSent.perKeyword),
         lastCommunicationAt: lastSent.accountLast,
+        templateSends,
         strictMode,
       });
 
@@ -1098,6 +1147,7 @@ router.get("/email-preview", requireSalesEmail, async (req, res) => {
       defaultOffer: template.buildOffer(dArgs),
       keywords: keywordOptions(r.data, lastSent.perKeyword),
       lastCommunicationAt: lastSent.accountLast,
+      templateSends,
       strictMode,
     });
   } catch (err) {
