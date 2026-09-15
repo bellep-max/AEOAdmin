@@ -38,10 +38,7 @@ import salesEmailRouter from "./sales-email";
 import screenshotScanRouter from "./screenshot-scan";
 import webhooksRouter from "./webhooks";
 
-import executionsRouter from "./executions";
-
 const router: IRouter = Router();
-router.use("/executions", executionsRouter);
 
 router.use(healthRouter);
 router.use("/auth", authRouter);

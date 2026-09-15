@@ -23,8 +23,6 @@ export * from "./farm_metrics";
 export * from "./audit_logs";
 export * from "./device_rotations";
 export * from "./email_sends";
-
-export * from "./ranking_executions";
 export * from "./email_events";
 export * from "./keyword_verdicts";
 export * from "./promo_codes";
