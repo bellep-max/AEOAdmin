@@ -38,6 +38,7 @@ import {
   Sun,
   Moon,
   Box,
+  Tag,
   Key,
   Activity,
   ChevronRight,
@@ -49,8 +50,12 @@ import {
   Sparkles,
   BrainCircuit,
   RefreshCw,
-  Archive,
+  Ban,
   Lock,
+  MailCheck,
+  Building2,
+  MessageSquare,
+  CreditCard,
 } from "lucide-react";
 import { useGetNetworkHealth } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
@@ -63,6 +68,19 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
+  /**
+   * Hides the item from anyone whose role is below admin. Use for pages where
+   * the whole purpose of the page is destructive / config-level (archived
+   * restore, plan catalog management, prompts).
+   */
+  adminOnly?: boolean;
+  /** Visible to sales role (and the admin-panel chain by default). */
+  salesAllowed?: boolean;
+  /** Visible to account-manager role (and the admin-panel chain by default). */
+  accountManagerAllowed?: boolean;
+  /** Additionally visible to the chuckslocal role (on top of the
+   *  account-manager client-management set he already sees). */
+  chucksLocalAllowed?: boolean;
 }
 
 interface NavGroupItem extends NavItem {
@@ -78,22 +96,62 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ name: "Dashboard", href: "/", icon: LayoutDashboard }],
+    items: [
+      {
+        name: "Dashboard",
+        href: "/",
+        icon: LayoutDashboard,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
+    ],
   },
   {
     label: "Infrastructure",
     items: [
-      { name: "Clients", href: "/clients", icon: Users },
+      {
+        name: "Clients",
+        href: "/clients",
+        icon: Users,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
+      {
+        name: "Businesses",
+        href: "/businesses",
+        icon: Building2,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
+      {
+        name: "Cancelled",
+        href: "/cancelled",
+        icon: Ban,
+        adminOnly: true,
+        chucksLocalAllowed: true,
+      },
       {
         name: "Keywords",
         href: "/keywords",
         icon: Key,
+        accountManagerAllowed: true,
         children: [
-          { name: "Keywords by Business", href: "/keywords", icon: Key },
-          { name: "All Keywords", href: "/keywords/all", icon: List },
+          {
+            name: "Keywords by Business",
+            href: "/keywords",
+            icon: Key,
+            accountManagerAllowed: true,
+          },
+          {
+            name: "All Keywords",
+            href: "/keywords/all",
+            icon: List,
+            accountManagerAllowed: true,
+          },
         ],
       },
-      { name: "Plans", href: "/packages", icon: Box },
+      { name: "Plans", href: "/packages", icon: Box, adminOnly: true },
+      { name: "Promo Codes", href: "/promo-codes", icon: Tag, adminOnly: true },
     ],
   },
   {
@@ -117,36 +175,74 @@ const navGroups: NavGroup[] = [
         name: "Rankings",
         href: "/rankings",
         icon: Trophy,
-        children: [
-          { name: "Period Comparison", href: "/rankings", icon: BarChart3 },
-          { name: "Executions", href: "/rankings/executions", icon: Radio, ownerOnly: true },
-          {
-            name: "Bi-Weekly Report",
-            href: "/rankings/bi-weekly",
-            icon: Calendar,
-          },
-        ],
+        salesAllowed: true,
+        accountManagerAllowed: true,
+      },
+      { name: "Executions", href: "/rankings/executions", icon: Radio, ownerOnly: true },
+      {
+        name: "Sent Emails",
+        href: "/sent-emails",
+        icon: MailCheck,
+        salesAllowed: true,
+        chucksLocalAllowed: true,
       },
       { name: "Metrics", href: "/metrics", icon: BarChart3 },
       { name: "Reports", href: "/reports", icon: ScrollText, ownerOnly: true },
+      { name: "Billing", href: "/billing", icon: CreditCard, ownerOnly: true },
     ],
   },
   {
     label: "Admin",
     items: [
-      { name: "AEO Reporter", href: "/aeo-reporter", icon: BrainCircuit },
+      {
+        name: "AEO Reporter",
+        href: "/aeo-reporter",
+        icon: BrainCircuit,
+        salesAllowed: true,
+      },
+      {
+        name: "Chatbot",
+        href: "/chatbot",
+        icon: MessageSquare,
+        salesAllowed: true,
+        accountManagerAllowed: true,
+        chucksLocalAllowed: true,
+      },
+      {
+        name: "Sales AI",
+        href: "/sales-ai",
+        icon: Sparkles,
+        salesAllowed: true,
+        chucksLocalAllowed: true,
+      },
       {
         name: "Keyword Rotation",
         href: "/keyword-rotation",
         icon: RefreshCw,
         children: [
-          { name: "Overview",           href: "/keyword-rotation/overview", icon: LayoutDashboard },
-          { name: "Rotation Dashboard", href: "/keyword-rotation", icon: RefreshCw },
-          { name: "Locked Keywords",    href: "/keyword-rotation/locked", icon: Lock },
-          { name: "Archived Keywords",  href: "/keyword-rotation/archived", icon: Archive },
+          {
+            name: "Overview",
+            href: "/keyword-rotation/overview",
+            icon: LayoutDashboard,
+          },
+          {
+            name: "Rotation Dashboard",
+            href: "/keyword-rotation",
+            icon: RefreshCw,
+          },
+          {
+            name: "Locked Keywords",
+            href: "/keyword-rotation/locked",
+            icon: Lock,
+          },
         ],
       },
-      { name: "Prompts", href: "/admin/prompts", icon: FileText },
+      {
+        name: "Prompts",
+        href: "/admin/prompts",
+        icon: FileText,
+        adminOnly: true,
+      },
       {
         name: "Variants",
         href: "/admin/variants",
@@ -160,18 +256,50 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { data: health } = useGetNetworkHealth();
-  const { user, logout, isOwner } = useAuth();
+  const {
+    user,
+    logout,
+    isOwner,
+    isSales,
+    isAccountManager,
+    isChucksLocal,
+    isAdmin,
+  } = useAuth();
   const { theme, toggleTheme } = useTheme();
+
+  // Visibility rule, evaluated in order:
+  //   sales role           → only items flagged salesAllowed
+  //   account-manager role → only items flagged accountManagerAllowed
+  //   chuckslocal role     → same client-management surface as account-manager
+  //                          (Dashboard/Clients/Keywords/Rankings); he creates
+  //                          within his plan slice, so no admin-only catalog/ops
+  //                          pages and no owner-only beta surfaces.
+  //   ownerOnly            → owner only
+  //   adminOnly            → admin or owner only
+  //   default              → all signed-in admin-panel users (viewer/editor/admin/owner)
+  const isVisible = (item: {
+    ownerOnly?: boolean;
+    adminOnly?: boolean;
+    salesAllowed?: boolean;
+    accountManagerAllowed?: boolean;
+    chucksLocalAllowed?: boolean;
+  }) => {
+    if (isSales) return !!item.salesAllowed;
+    if (isAccountManager) return !!item.accountManagerAllowed;
+    if (isChucksLocal)
+      return !!item.accountManagerAllowed || !!item.chucksLocalAllowed;
+    if (item.ownerOnly && !isOwner) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    return true;
+  };
 
   const visibleGroups = navGroups
     .map((g) => ({
       ...g,
-      items: g.items
-        .filter((it) => isOwner || !it.ownerOnly)
-        .map((it) => ({
-          ...it,
-          children: it.children?.filter((c) => isOwner || !c.ownerOnly),
-        })),
+      items: g.items.filter(isVisible).map((it) => ({
+        ...it,
+        children: it.children?.filter(isVisible),
+      })),
     }))
     .filter((g) => (isOwner || !g.ownerOnly) && g.items.length > 0);
 

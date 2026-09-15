@@ -1,0 +1,141 @@
+/**
+ * Unified scoped-access helpers. Every non-owner admin role is limited to the
+ * local plans (see LOCAL_ADMIN_PLAN_TYPES):
+ *
+ *   - sales / account-manager / chuckslocal → see ONLY clients on a local plan
+ *
+ * Free-trial and every other (non-local) plan are OWNER-ONLY. Admin-panel chain
+ * roles (viewer/editor/admin/owner) and the executor token see everything —
+ * getScopedClientIds returns null for them, which callers treat as "no filter."
+ *
+ * This module supersedes the older sales-only helpers in sales-scope.ts (dead).
+ */
+import type { Request, Response } from "express";
+import { eq, inArray } from "drizzle-orm";
+import { db } from "@workspace/db";
+import {
+  businessesTable,
+  clientAeoPlansTable,
+  clientsTable,
+} from "@workspace/db/schema";
+
+/**
+ * ONLY the owner sees every plan. Every other logged-in role — sales,
+ * account-manager, chuckslocal, AND the admin-panel chain (viewer/editor/admin)
+ * — is confined to the local plans (LOCAL_ADMIN_PLAN_TYPES). Policy: free-trial
+ * and every non-local plan are OWNER-ONLY. Token-based runners have no session
+ * role and are treated as unscoped (they need full access to do their job).
+ */
+export function isScopedRole(req: Request): boolean {
+  const session = req.session as unknown as Record<string, unknown>;
+  const role = session.userRole as string | undefined;
+  return typeof role === "string" && role !== "owner";
+}
+
+/**
+ * The only plan every scoped role (sales / account-manager / chuckslocal) may
+ * see or assign: "AEO SEO Local Plan" and nothing else. Both visibility
+ * (getScopedClientIds) and plan-assignment validation (isPlanAllowedForScope)
+ * key off this list, so widening scope is a one-line change here.
+ */
+export const LOCAL_ADMIN_PLAN_TYPES = ["AEO SEO Local Plan"] as const;
+
+/**
+ * For a scoped writer, returns whether `planType` is one they're allowed to
+ * assign. Scoped roles may only attach "AEO SEO Local Plan"; unscoped roles
+ * may assign anything (returns true).
+ */
+export function isPlanAllowedForScope(
+  req: Request,
+  planType: string | null | undefined,
+): boolean {
+  if (!isScopedRole(req)) return true;
+  return (
+    planType != null &&
+    (LOCAL_ADMIN_PLAN_TYPES as readonly string[]).includes(planType)
+  );
+}
+
+/**
+ * Returns the list of client IDs the current session can see. Returns null
+ * for unscoped sessions (admin-panel chain). An empty array means the user
+ * is in a scoped role but there are zero matching clients — caller should
+ * respond with an empty shape rather than running an unscoped query.
+ */
+export async function getScopedClientIds(
+  req: Request,
+): Promise<number[] | null> {
+  // Owners + the unscoped admin chain see everything.
+  if (!isScopedRole(req)) return null;
+  // Every scoped role (sales / account-manager / chuckslocal) sees ONLY clients
+  // on a local plan. In scope = a formal client_aeo_plans row of one of the
+  // local plans, OR the client's text plan_name is one of them (covers a client
+  // just created with that plan before a formal plan row is attached).
+  const planRows = await db
+    .select({ clientId: clientAeoPlansTable.clientId })
+    .from(clientAeoPlansTable)
+    .where(inArray(clientAeoPlansTable.planType, [...LOCAL_ADMIN_PLAN_TYPES]));
+  const nameRows = await db
+    .select({ id: clientsTable.id })
+    .from(clientsTable)
+    .where(inArray(clientsTable.planName, [...LOCAL_ADMIN_PLAN_TYPES]));
+  return [
+    ...new Set([
+      ...planRows.map((r) => r.clientId),
+      ...nameRows.map((r) => r.id),
+    ]),
+  ];
+}
+
+/**
+ * Soft-deleted (archived) clients and businesses — status = 'inactive', set by
+ * the DELETE routes. These must never surface in rankings/report views, which
+ * build their own keyword→client/business joins and otherwise ignore archive
+ * status (the clients-list endpoint's active-only default does not cover them).
+ * Returns id arrays so raw-SQL callers can bind them as params and map-based
+ * callers can drop any keyword whose client OR business is archived.
+ */
+export async function getArchivedEntityIds(): Promise<{
+  clientIds: number[];
+  businessIds: number[];
+}> {
+  const [clients, businesses] = await Promise.all([
+    db
+      .select({ id: clientsTable.id })
+      .from(clientsTable)
+      .where(eq(clientsTable.status, "inactive")),
+    db
+      .select({ id: businessesTable.id })
+      .from(businessesTable)
+      .where(eq(businessesTable.status, "inactive")),
+  ]);
+  return {
+    clientIds: clients.map((c) => c.id),
+    businessIds: businesses.map((b) => b.id),
+  };
+}
+
+/**
+ * Inline gate helper for per-row endpoints. 404s the response when a scoped
+ * session requests an entity outside its eligible set. Unscoped sessions
+ * pass through unchanged. Always check the return value:
+ *
+ *   if (!(await assertScopedAccessToClient(req, res, biz.clientId))) return;
+ */
+export async function assertScopedAccessToClient(
+  req: Request,
+  res: Response,
+  clientId: number | null,
+): Promise<boolean> {
+  if (!isScopedRole(req)) return true;
+  if (clientId == null) {
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
+  const eligibleIds = await getScopedClientIds(req);
+  if (!eligibleIds || !eligibleIds.includes(clientId)) {
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
+  return true;
+}

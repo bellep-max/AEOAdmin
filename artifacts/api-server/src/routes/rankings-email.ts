@@ -6,11 +6,16 @@ import {
   clientAeoPlansTable,
   emailSendsTable,
 } from "@workspace/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import sgMail from "@sendgrid/mail";
 import { chatCompletion } from "../services/llm-client";
+import { requireOwner, requireSalesAllowed } from "../middlewares/role-auth";
+import {
+  assertScopedAccessToClient,
+  getScopedClientIds,
+} from "../lib/scoped-access";
 
 const router = Router();
 
@@ -543,7 +548,7 @@ function summarize(rows: SignedBiWeeklyRow[]): SummaryStats {
 /* GET /api/rankings/email-config
    Reports which sender bits are configured so the FE can show a clear
    "you can't send yet" banner instead of waiting for the send to fail. */
-router.get("/email-config", (_req, res) => {
+router.get("/email-config", requireSalesAllowed, (_req, res) => {
   const fromEmail = process.env.SENDGRID_FROM_EMAIL ?? "";
   const fromName = process.env.SENDGRID_FROM_NAME ?? "";
   const hasApiKey = Boolean(process.env.SENDGRID_API_KEY);
@@ -559,9 +564,10 @@ router.get("/email-config", (_req, res) => {
   });
 });
 
-router.get("/email-recipients/:clientId", async (req, res) => {
+router.get("/email-recipients/:clientId", requireSalesAllowed, async (req, res) => {
   const id = Number.parseInt(req.params.clientId, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "invalid id" });
+  if (!(await assertScopedAccessToClient(req, res, id))) return;
   try {
     const rows = await db
       .select({
@@ -599,9 +605,10 @@ function parseFilterQuery(req: {
 }
 
 /* GET /api/rankings/email-preview */
-router.get("/email-preview", async (req, res) => {
+router.get("/email-preview", requireSalesAllowed, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
+  if (!(await assertScopedAccessToClient(req, res, filter.clientId))) return;
   try {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
@@ -670,9 +677,10 @@ router.get("/email-preview", async (req, res) => {
 });
 
 /* GET /api/rankings/email-templates */
-router.get("/email-templates", async (req, res) => {
+router.get("/email-templates", requireSalesAllowed, async (req, res) => {
   const filter = parseFilterQuery(req);
   if (!filter) return res.status(400).json({ error: "clientId required" });
+  if (!(await assertScopedAccessToClient(req, res, filter.clientId))) return;
   try {
     const ctx = await loadFilterContext(filter);
     const raw = await getBiWeeklyRankings(filter);
@@ -765,7 +773,7 @@ Let me know if anything needs attention.`,
    Body: { clientId, businessId?, aeoPlanId?, instruction? }
    Calls DeepSeek with a compact summary of the bi-weekly data + (optional)
    instruction hint, returns a generated email body the user can edit. */
-router.post("/email-ai-suggest", async (req, res) => {
+router.post("/email-ai-suggest", requireOwner, async (req, res) => {
   const body = req.body as Partial<RankingFilter> & { instruction?: string };
   if (!body.clientId)
     return res.status(400).json({ error: "clientId required" });
@@ -884,7 +892,7 @@ interface SendReportBody {
 }
 
 /* POST /api/rankings/send-report */
-router.post("/send-report", async (req, res) => {
+router.post("/send-report", requireOwner, async (req, res) => {
   const body = req.body as Partial<SendReportBody>;
   if (
     !body.clientId ||
@@ -986,6 +994,9 @@ router.post("/send-report", async (req, res) => {
         status: sendError ? "failed" : "sent",
         sendgridMessageId: messageId ?? null,
         error: sendError,
+        kind: "report",
+        html,
+        meta: { mode },
       })
       .returning({ id: emailSendsTable.id });
 
@@ -1015,15 +1026,29 @@ router.post("/send-report", async (req, res) => {
 });
 
 /* GET /api/rankings/email-sends?clientId= */
-router.get("/email-sends", async (req, res) => {
+router.get("/email-sends", requireSalesAllowed, async (req, res) => {
   try {
     const clientId = req.query.clientId
       ? Number.parseInt(String(req.query.clientId), 10)
       : null;
+    // Scoped roles only ever see sends for clients in their slice: a specific
+    // clientId is asserted; an unfiltered list is confined to the eligible set.
+    if (clientId != null) {
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+    }
+    const eligibleIds = clientId == null ? await getScopedClientIds(req) : null;
+    if (eligibleIds !== null && eligibleIds.length === 0)
+      return res.json({ sends: [] });
     const rows = await db
       .select()
       .from(emailSendsTable)
-      .where(clientId ? eq(emailSendsTable.clientId, clientId) : sql`true`)
+      .where(
+        clientId
+          ? eq(emailSendsTable.clientId, clientId)
+          : eligibleIds !== null
+            ? inArray(emailSendsTable.clientId, eligibleIds)
+            : sql`true`,
+      )
       .orderBy(desc(emailSendsTable.sentAt))
       .limit(20);
     return res.json({ sends: rows });

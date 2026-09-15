@@ -14,6 +14,8 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { proxiesTable, devicesTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { requireSession } from "../middlewares/session-auth";
+import { isOwner } from "../middlewares/role-auth";
 
 const router = Router();
 
@@ -23,27 +25,39 @@ const router = Router();
  * dashboard can show deviceIdentifier and deviceModel alongside each proxy
  * without a second round-trip.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireSession, async (req, res) => {
   try {
     const proxies = await db
       .select({
-        id:           proxiesTable.id,
-        label:        proxiesTable.label,
-        proxyUrl:     proxiesTable.proxyUrl,
-        proxyType:    proxiesTable.proxyType,
-        host:         proxiesTable.host,
-        port:         proxiesTable.port,
-        username:     proxiesTable.username,
-        password:     proxiesTable.password,
-        deviceId:     proxiesTable.deviceId,
+        id: proxiesTable.id,
+        label: proxiesTable.label,
+        proxyUrl: proxiesTable.proxyUrl,
+        proxyType: proxiesTable.proxyType,
+        host: proxiesTable.host,
+        port: proxiesTable.port,
+        username: proxiesTable.username,
+        password: proxiesTable.password,
+        deviceId: proxiesTable.deviceId,
         sessionCount: sql<number>`0`,
-        lastUsed:     proxiesTable.lastUsed,
+        lastUsed: proxiesTable.lastUsed,
         // Device info joined from devicesTable (null when unassigned)
         deviceIdentifier: devicesTable.deviceIdentifier,
-        deviceModel:      devicesTable.model,
+        deviceModel: devicesTable.model,
       })
       .from(proxiesTable)
       .leftJoin(devicesTable, eq(proxiesTable.deviceId, devicesTable.id));
+
+    // Redact plaintext credentials for non-owners — the proxyUrl, username,
+    // and password fields are only safe to expose to owner sessions.
+    if (!isOwner(req)) {
+      const redacted = proxies.map((p) => ({
+        ...p,
+        proxyUrl: null,
+        username: null,
+        password: null,
+      }));
+      return res.json(redacted);
+    }
 
     res.json(proxies);
   } catch (err) {
@@ -63,22 +77,23 @@ router.post("/", async (req, res) => {
     const body = req.body;
 
     // Auto-build proxyUrl from individual credential fields when not provided
-    const proxyUrl = body.proxyUrl
-      ?? (body.host && body.port
-          ? `http://${body.username ?? ""}:${body.password ?? ""}@${body.host}:${body.port}`
-          : null);
+    const proxyUrl =
+      body.proxyUrl ??
+      (body.host && body.port
+        ? `http://${body.username ?? ""}:${body.password ?? ""}@${body.host}:${body.port}`
+        : null);
 
     const [proxy] = await db
       .insert(proxiesTable)
       .values({
-        label:     body.label     ?? null,
-        proxyUrl:  proxyUrl,
-        proxyType: body.proxyType ?? "mobile",    // "mobile" | "residential"
-        host:      body.host      ?? null,
-        port:      body.port      ? Number(body.port) : null,
-        username:  body.username  ?? null,
-        password:  body.password  ?? null,
-        deviceId:  body.deviceId  ? Number(body.deviceId) : null,
+        label: body.label ?? null,
+        proxyUrl: proxyUrl,
+        proxyType: body.proxyType ?? "mobile", // "mobile" | "residential"
+        host: body.host ?? null,
+        port: body.port ? Number(body.port) : null,
+        username: body.username ?? null,
+        password: body.password ?? null,
+        deviceId: body.deviceId ? Number(body.deviceId) : null,
       })
       .returning();
 
@@ -98,18 +113,20 @@ router.post("/", async (req, res) => {
  */
 router.patch("/:id", async (req, res) => {
   try {
-    const id   = parseInt(req.params.id);
+    const id = parseInt(req.params.id);
     const body = req.body;
 
     // Build the partial update object — only include keys that were sent
     const updates: Record<string, unknown> = {};
-    if (body.label     !== undefined) updates.label     = body.label;
+    if (body.label !== undefined) updates.label = body.label;
     if (body.proxyType !== undefined) updates.proxyType = body.proxyType;
-    if (body.host      !== undefined) updates.host      = body.host;
-    if (body.port      !== undefined) updates.port      = body.port ? Number(body.port) : null;
-    if (body.username  !== undefined) updates.username  = body.username;
-    if (body.password  !== undefined) updates.password  = body.password;
-    if (body.deviceId  !== undefined) updates.deviceId  = body.deviceId ? Number(body.deviceId) : null;
+    if (body.host !== undefined) updates.host = body.host;
+    if (body.port !== undefined)
+      updates.port = body.port ? Number(body.port) : null;
+    if (body.username !== undefined) updates.username = body.username;
+    if (body.password !== undefined) updates.password = body.password;
+    if (body.deviceId !== undefined)
+      updates.deviceId = body.deviceId ? Number(body.deviceId) : null;
 
     // Re-derive proxyUrl whenever any connection field changes — merge incoming
     // values with the current DB row to avoid partial overwrites
@@ -121,9 +138,9 @@ router.patch("/:id", async (req, res) => {
         .limit(1);
 
       if (current[0]) {
-        const h  = body.host     ?? current[0].host;
-        const p  = body.port     ?? current[0].port;
-        const u  = body.username ?? current[0].username;
+        const h = body.host ?? current[0].host;
+        const p = body.port ?? current[0].port;
+        const u = body.username ?? current[0].username;
         const pw = body.password ?? current[0].password;
         if (h && p) {
           updates.proxyUrl = `http://${u ?? ""}:${pw ?? ""}@${h}:${p}`;

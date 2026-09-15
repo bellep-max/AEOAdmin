@@ -11,6 +11,7 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
+import Businesses from "@/pages/businesses";
 import ClientDetail from "@/pages/client-detail";
 import BusinessDetail from "@/pages/business-detail";
 import CampaignDetail from "@/pages/campaign-detail";
@@ -20,7 +21,7 @@ import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
 import RankingExecutions from "@/pages/ranking-executions";
 import Rankings from "@/pages/rankings";
-import RankingsBiWeekly from "@/pages/rankings-bi-weekly";
+import SentEmails from "@/pages/sent-emails";
 import Metrics from "@/pages/metrics";
 import Profile from "@/pages/profile";
 import Packages from "@/pages/packages";
@@ -31,10 +32,16 @@ import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
 import AdminVariants from "@/pages/admin-variants";
 import AeoReporter from "@/pages/aeo-reporter";
+import SalesAI from "@/pages/sales-ai";
+import Chatbot from "@/pages/chatbot";
 import KeywordRotation from "@/pages/keyword-rotation";
 import RotationOverview from "@/pages/rotation-overview";
 import LockedKeywords from "@/pages/locked-keywords";
-import ArchivedKeywords from "@/pages/archived-keywords";
+import Cancelled from "@/pages/cancelled";
+import SummaryReport from "@/pages/summary-report";
+import PromoCodes from "@/pages/promo-codes";
+import Billing from "@/pages/billing";
+import CampaignEmails from "@/pages/campaign-emails";
 
 import type { ComponentType } from "react";
 
@@ -46,6 +53,67 @@ function OwnerGate({
   const { isOwner, isLoading } = useAuth();
   if (isLoading) return null;
   if (!isOwner) return <Redirect to="/" />;
+  return <Component />;
+}
+
+/** owner, sales, OR chuckslocal — mirrors BE
+ *  requireRoles("owner","sales","chuckslocal") on /api/llm/sales-ai/stream.
+ *  Used on /sales-ai. */
+function OwnerOrSalesGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { isOwner, isSales, isChucksLocal, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isOwner && !isSales && !isChucksLocal) return <Redirect to="/" />;
+  return <Component />;
+}
+
+/** Routes reserved for the admin-panel role chain (viewer/editor/admin/owner).
+ *  Scoped roles (sales, account-manager) get redirected to the dashboard —
+ *  they have their own scoped surface (Dashboard, Clients, Rankings, AEO
+ *  Reporter) and shouldn't reach admin tooling even if they type the URL or
+ *  follow a deep link from elsewhere. */
+function AdminTierGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isAccountManager, isChucksLocal, isLoading } =
+    useAuth();
+  if (isLoading) return null;
+  if (!user || isSales || isAccountManager || isChucksLocal)
+    return <Redirect to="/" />;
+  return <Component />;
+}
+
+/** Routes chuckslocal is explicitly allowed on (scoped to his plan slice by
+ *  the BE), plus the admin chain. Sales and account-manager still get
+ *  redirected away. Used for /cancelled — chuckslocal can view/cancel/
+ *  restore his own clients but has no other admin-tier access. */
+function AdminTierOrChucksLocalGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isAccountManager, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || isSales || isAccountManager) return <Redirect to="/" />;
+  return <Component />;
+}
+
+/** Routes account-manager is explicitly allowed on, plus the admin chain.
+ *  Sales still gets redirected away. Used for /keywords routes where account-
+ *  manager is in scope but sales is not. */
+function AccountManagerOrAdminGate({
+  component: Component,
+}: {
+  component: ComponentType<unknown>;
+}) {
+  const { user, isSales, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || isSales) return <Redirect to="/" />;
   return <Component />;
 }
 // import OrganizationDetails from "@/pages/organization-details";
@@ -74,7 +142,16 @@ function ProtectedRoutes() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/cancelled">
+          <AdminTierOrChucksLocalGate component={Cancelled} />
+        </Route>
+        {/* Old bookmarks and links still land somewhere useful. */}
+        <Route path="/archived">
+          <Redirect to="/cancelled" />
+        </Route>
         <Route path="/clients" component={Clients} />
+        <Route path="/businesses" component={Businesses} />
+        <Route path="/clients/:id/summary-report" component={SummaryReport} />
         <Route path="/clients/:id" component={ClientDetail} />
         <Route
           path="/clients/:clientId/businesses/:businessId"
@@ -85,19 +162,43 @@ function ProtectedRoutes() {
           component={KeywordDetail}
         />
         <Route
+          path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId/emails"
+          component={CampaignEmails}
+        />
+        <Route
           path="/clients/:clientId/businesses/:businessId/campaigns/:campaignId"
           component={CampaignDetail}
         />
-        <Route path="/plans" component={Plans} />
-        <Route path="/keywords" component={Keywords} />
-        <Route path="/keywords/all" component={KeywordsAll} />
+        <Route path="/plans">
+          <AdminTierGate component={Plans} />
+        </Route>
+        <Route path="/keywords">
+          <AccountManagerOrAdminGate component={Keywords} />
+        </Route>
+        <Route path="/keywords/all">
+          <AccountManagerOrAdminGate component={KeywordsAll} />
+        </Route>
         <Route path="/rankings/executions" component={RankingExecutions} />
-        <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
-        <Route path="/metrics" component={Metrics} />
-        <Route path="/packages" component={Packages} />
-        <Route path="/sessions/daily" component={SessionsDaily} />
-        <Route path="/sessions/audit" component={SessionsAudit} />
+        <Route path="/sent-emails" component={SentEmails} />
+        <Route path="/metrics">
+          <AdminTierGate component={Metrics} />
+        </Route>
+        <Route path="/packages">
+          <AdminTierGate component={Packages} />
+        </Route>
+        <Route path="/promo-codes">
+          <AdminTierGate component={PromoCodes} />
+        </Route>
+        <Route path="/billing">
+          <OwnerGate component={Billing} />
+        </Route>
+        <Route path="/sessions/daily">
+          <AdminTierGate component={SessionsDaily} />
+        </Route>
+        <Route path="/sessions/audit">
+          <AdminTierGate component={SessionsAudit} />
+        </Route>
         <Route path="/reports/:id">
           <OwnerGate component={ReportDetail} />
         </Route>
@@ -105,11 +206,22 @@ function ProtectedRoutes() {
           <OwnerGate component={Reports} />
         </Route>
         <Route path="/aeo-reporter" component={AeoReporter} />
-        <Route path="/keyword-rotation" component={KeywordRotation} />
-        <Route path="/keyword-rotation/overview" component={RotationOverview} />
-        <Route path="/keyword-rotation/locked" component={LockedKeywords} />
-        <Route path="/keyword-rotation/archived" component={ArchivedKeywords} />
-        <Route path="/admin/prompts" component={Prompts} />
+        <Route path="/chatbot" component={Chatbot} />
+        <Route path="/sales-ai">
+          <OwnerOrSalesGate component={SalesAI} />
+        </Route>
+        <Route path="/keyword-rotation">
+          <AdminTierGate component={KeywordRotation} />
+        </Route>
+        <Route path="/keyword-rotation/overview">
+          <AdminTierGate component={RotationOverview} />
+        </Route>
+        <Route path="/keyword-rotation/locked">
+          <AdminTierGate component={LockedKeywords} />
+        </Route>
+        <Route path="/admin/prompts">
+          <AdminTierGate component={Prompts} />
+        </Route>
         <Route path="/admin/variants">
           <OwnerGate component={AdminVariants} />
         </Route>

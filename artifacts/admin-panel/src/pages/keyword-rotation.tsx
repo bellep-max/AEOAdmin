@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/lib/auth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -140,6 +141,7 @@ function StatCard({ icon, label, value, sub, color }: { icon: React.ReactNode; l
 function VariantsPanel({ kwId, kwText, isTop3, clientId }: { kwId: number; kwText: string; isTop3: boolean; clientId: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { isOwner } = useAuth();
   const [open, setOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -187,10 +189,13 @@ function VariantsPanel({ kwId, kwText, isTop3, clientId }: { kwId: number; kwTex
               <span className="text-xs">{v.variantText}</span>
             </div>
           ))}
-          <Button size="sm" variant="outline" className="h-6 text-xs mt-1" onClick={() => generate.mutate()} disabled={generate.isPending}>
-            {generate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            {data?.total ? "Regenerate" : "Generate variants"}
-          </Button>
+          {/* Variant generation is super-admin (owner) only. */}
+          {isOwner && (
+            <Button size="sm" variant="outline" className="h-6 text-xs mt-1" onClick={() => generate.mutate()} disabled={generate.isPending}>
+              {generate.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+              {data?.total ? "Regenerate" : "Generate variants"}
+            </Button>
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -377,6 +382,22 @@ export default function KeywordRotation() {
     },
   });
 
+  // Real lock truth (server-computed, all 3 platforms sustained top-3 — see
+  // services/keyword-rotation.ts). Drives `locked` below instead of a
+  // client-side heuristic, so this page can't disagree with the Locked
+  // Keywords page about which keywords are actually locked.
+  const { data: lockedIdSet = new Set<number>() } = useQuery({
+    queryKey: ["kw-rotation-locked-set", clientId],
+    enabled: !!clientId,
+    queryFn: async () => {
+      const r = await rawFetch(`/api/keywords?clientId=${clientId}&status=locked`);
+      if (!r.ok) throw new Error("Failed");
+      const b = await r.json();
+      const list = (b.data ?? b) as Kw[];
+      return new Set(list.map((k) => k.id));
+    },
+  });
+
   const { data: rankingReports = [], isLoading: ranksLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["ranking-rotation", clientId, platform, dateFrom, dateTo],
     enabled: !!clientId && keywords.length > 0,
@@ -443,6 +464,7 @@ export default function KeywordRotation() {
       setRotateOpen(false);
       setRotatePreview(null);
       qc.invalidateQueries({ queryKey: ["kw-rotation", clientId] });
+      qc.invalidateQueries({ queryKey: ["kw-rotation-locked-set", clientId] });
       refetch();
     },
     onError: (e: Error) => toast({ title: "Rotation failed", description: e.message, variant: "destructive" }),
@@ -482,7 +504,8 @@ export default function KeywordRotation() {
       const firstRank   = runDates.length > 0 ? (dayMap.get(runDates[0]) ?? null) : null;
       const recent      = history.slice(-STALE_RUNS).filter((v): v is number => v !== null);
 
-      // Lock = current top-3 on ANY platform. Pick the strongest (smallest position; ties → first).
+      // Strongest current top-3 platform, shown as descriptive context on
+      // locked rows — NOT what determines `locked` (see lockedIdSet above).
       let triggerPlatform: Platform | null = null;
       let triggerPosition: number | null = null;
       for (const plt of ALL_PLATFORMS) {
@@ -491,7 +514,7 @@ export default function KeywordRotation() {
           triggerPlatform = plt; triggerPosition = pos;
         }
       }
-      const locked = triggerPlatform !== null;
+      const locked = lockedIdSet.has(kw.id);
 
       // At-risk/stale feature unchanged: only applies to non-locked keywords.
       const atRisk      = !locked && recent.length >= 2 && recent[recent.length - 1] >= recent[0];
@@ -499,7 +522,7 @@ export default function KeywordRotation() {
         : currentRank < firstRank ? "up" : currentRank > firstRank ? "down" : "flat";
       return { kw, top3Runs, stability: top3Runs / windowSize, currentRank, firstRank, history, runDates, windowSize, locked, atRisk, trend, triggerPlatform, triggerPosition };
     });
-  }, [keywords, rankingReports, allPlatformReports]);
+  }, [keywords, rankingReports, allPlatformReports, lockedIdSet]);
 
   const locked  = entries.filter((e) => e.locked);
   const atRisk  = entries.filter((e) => e.atRisk && !e.locked);
@@ -584,6 +607,7 @@ export default function KeywordRotation() {
         clients={clients}
         onLocked={() => {
           qc.invalidateQueries({ queryKey: ["kw-rotation"] });
+          qc.invalidateQueries({ queryKey: ["kw-rotation-locked-set"] });
           qc.invalidateQueries({ queryKey: ["ranking-rotation"] });
           qc.invalidateQueries({ queryKey: ["ranking-rotation-all"] });
         }}

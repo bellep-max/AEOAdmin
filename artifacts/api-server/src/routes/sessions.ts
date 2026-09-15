@@ -22,7 +22,16 @@ import {
   like,
 } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
-import { requireSession } from "../middlewares/session-auth";
+import {
+  requireAdmin,
+  requireViewer,
+  requireSalesAllowed,
+  requireScopedEditor,
+} from "../middlewares/role-auth";
+import {
+  getScopedClientIds,
+  assertScopedAccessToClient,
+} from "../lib/scoped-access";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -72,7 +81,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
    GET /api/sessions
    Daily session log listing with filters + pagination.
 ──────────────────────────────────────────────────────────── */
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const {
       clientId,
@@ -88,7 +97,16 @@ router.get("/", async (req, res) => {
       offset = "0",
     } = req.query as Record<string, string>;
 
+    // Scoped roles (chuckslocal, sales, account-manager) only see their own
+    // clients' sessions; admins/owners get null = no restriction.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json({ sessions: [], total: 0, offset: 0 });
+    }
+
     const conditions = [] as ReturnType<typeof eq>[];
+    if (eligibleIds)
+      conditions.push(inArray(sessionsTable.clientId, eligibleIds));
     if (clientId)
       conditions.push(eq(sessionsTable.clientId, parseInt(clientId)));
     if (businessId)
@@ -458,9 +476,21 @@ router.patch("/:id/timestamp", requireExecutorToken, async (req, res) => {
   }
 });
 
-router.patch("/:id/screenshot", async (req, res) => {
+router.patch("/:id/screenshot", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    // Resolve the session's owning client and confirm the caller may touch it
+    // — this endpoint previously had NO auth, so any caller could overwrite the
+    // screenshot on any session, including clients outside a scoped role's slice.
+    const [existing] = await db
+      .select({ clientId: sessionsTable.clientId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, id))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Session not found" });
+    if (!(await assertScopedAccessToClient(req, res, existing.clientId)))
+      return;
     const { screenshotUrl } = req.body;
     const [updated] = await db
       .update(sessionsTable)
@@ -483,7 +513,7 @@ router.patch("/:id/screenshot", async (req, res) => {
        screenshot_url has the same basename — if THAT one is in s3, sign that.
        Lets the sessions detail dialog see the screenshot we uploaded via the
        ranking_reports pipeline without needing a separate sync. */
-router.get("/:id/screenshot-url", async (req, res) => {
+router.get("/:id/screenshot-url", requireViewer, async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "invalid id" });
@@ -540,13 +570,23 @@ router.get("/:id/screenshot-url", async (req, res) => {
   }
 });
 
-router.patch("/:id/followup", async (req, res) => {
+router.patch("/:id/followup", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
     const { followupText } = req.body;
     if (typeof followupText !== "string") {
       return res.status(400).json({ error: "followupText must be a string" });
     }
+    // Previously unauthenticated — resolve owner + scope-check before writing.
+    const [existing] = await db
+      .select({ clientId: sessionsTable.clientId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, id))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: "Session not found" });
+    if (!(await assertScopedAccessToClient(req, res, existing.clientId)))
+      return;
     const [updated] = await db
       .update(sessionsTable)
       .set({
@@ -563,7 +603,7 @@ router.patch("/:id/followup", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -579,7 +619,7 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-router.get("/stress-test", async (req, res) => {
+router.get("/stress-test", requireViewer, async (req, res) => {
   try {
     const [deviceCount] = await db
       .select({ count: count() })
@@ -670,7 +710,7 @@ router.get("/stress-test", async (req, res) => {
 ──────────────────────────────────────────────────────────── */
 router.post(
   "/import",
-  requireSession,
+  requireAdmin,
   upload.single("file"),
   async (req, res) => {
     try {

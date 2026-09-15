@@ -17,25 +17,34 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { plansTable } from "@workspace/db/schema";
+import { requireSalesAllowed } from "../middlewares/role-auth";
+import { isScopedRole } from "../lib/scoped-access";
 
 const router = Router();
 
 /**
  * GET /api/plans
  * Returns all service plan rows with `cost` cast to a JavaScript number.
- * Used by the Plans page and anywhere plan pricing is displayed.
+ * Scoped roles see their slice: sales only Free Trial, account-manager
+ * everything except Free Trial.
  */
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const plans = await db.select().from(plansTable);
+    const visible = plans.filter((p) => {
+      const isFreeTrial = (p.planName || "").toLowerCase().includes("free");
+      // Non-owner (scoped) roles never see the free-trial plan; owners see all.
+      if (isScopedRole(req)) return !isFreeTrial;
+      return true;
+    });
 
     res.json(
-      plans.map((p) => ({
+      visible.map((p) => ({
         ...p,
         // Postgres numeric columns arrive as strings via node-postgres;
         // convert to number so frontend formatters (currency, charts) work
         cost: Number(p.cost),
-      }))
+      })),
     );
   } catch (err) {
     req.log.error({ err }, "Error fetching plans");

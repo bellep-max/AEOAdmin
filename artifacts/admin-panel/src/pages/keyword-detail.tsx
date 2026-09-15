@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Key, ChevronRight, ExternalLink, Pencil, Check, X, Sparkles, Trash2, Loader2 } from "lucide-react";
 import { rawFetch } from "@/lib/period-comparison";
+import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
@@ -94,6 +95,7 @@ export default function KeywordDetail({ params }: { params: { clientId: string; 
   const campaignId = parseInt(params.campaignId);
   const keywordId = parseInt(params.keywordId);
   const queryClient = useQueryClient();
+  const { isOwner } = useAuth();
   const [editing, setEditing] = useState<"status" | "notes" | "implementedBy" | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -447,10 +449,13 @@ export default function KeywordDetail({ params }: { params: { clientId: string; 
                 Auto-generated phrases that get randomly substituted into the search prompt during daily runs.
               </p>
             </div>
-            <Button size="sm" onClick={regenerateVariants} disabled={isRegenerating}>
-              {isRegenerating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-              {variants && variants.length > 0 ? "Regenerate" : "Generate"}
-            </Button>
+            {/* Variant generation is super-admin (owner) only. */}
+            {isOwner && (
+              <Button size="sm" onClick={regenerateVariants} disabled={isRegenerating}>
+                {isRegenerating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+                {variants && variants.length > 0 ? "Regenerate" : "Generate"}
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {variantError ? (

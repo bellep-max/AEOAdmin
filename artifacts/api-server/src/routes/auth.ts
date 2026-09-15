@@ -47,7 +47,14 @@ const CODE_WINDOW_MS = 15 * 60 * 1000;
 const NOT_A_CLIENT_MESSAGE =
   "This email isn't associated with an account. Contact your account manager for access.";
 
-/** Case-insensitive match of an email against any client email field. */
+/**
+ * Case-insensitive match of an email against any client email field.
+ *
+ * An email can appear on more than one client (e.g. it was reassigned from an
+ * old/paused client to a live one). Prefer the active client and break ties by
+ * lowest id so the result is deterministic — otherwise a portal login could
+ * resolve to a stale inactive client.
+ */
 async function findClientByEmail(email: string) {
   const e = email.trim().toLowerCase();
   if (!e) return null;
@@ -60,6 +67,10 @@ async function findClientByEmail(email: string) {
         sql`lower(${clientsTable.accountEmail}) = ${e}`,
         sql`lower(${clientsTable.billingEmail}) = ${e}`,
       ),
+    )
+    .orderBy(
+      sql`case when lower(${clientsTable.status}) = 'active' then 0 else 1 end`,
+      clientsTable.id,
     )
     .limit(1);
   return client ?? null;
@@ -75,7 +86,20 @@ async function findOrCreateCustomerUser(
     .select()
     .from(usersTable)
     .where(eq(usersTable.email, email));
-  if (existing) return existing;
+  if (existing) {
+    // An email can be reassigned to a different client (the admin changed which
+    // client owns this address). The user row must follow, otherwise the portal
+    // keeps scoping to the old client_id and shows the wrong client's data.
+    if (existing.role === "customer" && existing.clientId !== clientId) {
+      const [updated] = await db
+        .update(usersTable)
+        .set({ clientId })
+        .where(eq(usersTable.id, existing.id))
+        .returning();
+      return updated ?? existing;
+    }
+    return existing;
+  }
   // Passwordless accounts never use the password column, but the schema makes
   // it NOT NULL. Store a random unguessable value so password login can't work.
   const placeholder = `otp:${crypto.randomBytes(32).toString("hex")}`;
@@ -240,13 +264,11 @@ router.post("/change-password", async (req, res) => {
       return res.status(401).json({ error: "Not authenticated" });
 
     const { currentPassword, newPassword } = req.body as {
-      currentPassword: string;
+      currentPassword?: string;
       newPassword: string;
     };
-    if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "currentPassword and newPassword are required" });
+    if (!newPassword) {
+      return res.status(400).json({ error: "newPassword is required" });
     }
     if (newPassword.length < 8) {
       return res
@@ -260,8 +282,18 @@ router.post("/change-password", async (req, res) => {
       .where(eq(usersTable.id, Number(session.userId)));
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (user.passwordHash !== hashPassword(currentPassword)) {
-      return res.status(401).json({ error: "Current password is incorrect" });
+    // Passwordless accounts (email-code login) carry an "otp:" placeholder
+    // instead of a real password — let them SET one without a current password.
+    // Accounts that already have a real password must verify it to change it.
+    const isPasswordless =
+      !user.passwordHash || user.passwordHash.startsWith("otp:");
+    if (!isPasswordless) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: "Current password is required" });
+      }
+      if (user.passwordHash !== hashPassword(currentPassword)) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
     }
 
     await db

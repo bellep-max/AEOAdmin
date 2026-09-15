@@ -2,10 +2,15 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { devicesTable, sessionsTable } from "@workspace/db/schema";
 import { eq, and, count, sql } from "drizzle-orm";
+import {
+  requireViewer,
+  requireEditor,
+  requireAdmin,
+} from "../middlewares/role-auth";
 
 const router = Router();
 
-router.get("/farm-status", async (req, res) => {
+router.get("/farm-status", requireViewer, async (req, res) => {
   try {
     const devices = await db.select().from(devicesTable);
     const available = devices.filter((d) => d.status === "available").length;
@@ -21,7 +26,8 @@ router.get("/farm-status", async (req, res) => {
       .from(sessionsTable)
       .where(sql`${sessionsTable.timestamp} >= ${today}`);
 
-    const avgSessionsPerDevice = total > 0 ? Number(sessionsToday.count) / total : 0;
+    const avgSessionsPerDevice =
+      total > 0 ? Number(sessionsToday.count) / total : 0;
 
     res.json({
       total,
@@ -40,7 +46,7 @@ router.get("/farm-status", async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", requireViewer, async (req, res) => {
   try {
     const { status } = req.query as Record<string, string>;
     const devices = await db
@@ -54,7 +60,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   try {
     const body = req.body;
     const [device] = await db
@@ -72,7 +78,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const [device] = await db

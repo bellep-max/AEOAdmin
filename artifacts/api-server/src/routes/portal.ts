@@ -1,4 +1,9 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import { db, pool } from "@workspace/db";
 import {
   usersTable,
@@ -9,8 +14,41 @@ import {
   clientAeoPlansTable,
   businessesTable,
   sessionsTable,
+  keywordVariantsTable,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { chatCompletion } from "../services/llm-client";
+import { fetchStripeBillingSummary } from "../services/stripe-billing";
+import { createCheckoutSubscription } from "../services/stripe-checkout";
+import {
+  isKnownPlanType,
+  resolveStripeAccount,
+} from "../lib/stripe-accounts";
+import {
+  getGlossaryPayload,
+  availableReportDates,
+  GLOSSARY_VERSION,
+} from "../lib/summary-content";
+import { generateSummaryNarrative } from "../lib/summary-narrative";
+import { buildKeywordDateMaps, REBASE_ANCHOR } from "../lib/july1-rebase";
+import {
+  hiddenDatesForScope,
+  hiddenKeywordPlatformPairs,
+  HIDDEN_KEYWORDS_SQL,
+} from "../lib/report-hides";
+import { getArchivedEntityIds } from "../lib/scoped-access";
 
 /* ────────────────────────────────────────────────────────────
    Portal namespace — customer-scoped data routes.
@@ -30,7 +68,11 @@ function portalState(req: Request): PortalRequestState {
   return req as unknown as PortalRequestState;
 }
 
-function requirePortalAuth(req: Request, res: Response, next: NextFunction): void {
+function requirePortalAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   const session = req.session as unknown as Record<string, unknown> | undefined;
   const userId = session?.userId;
   if (typeof userId !== "number") {
@@ -46,7 +88,10 @@ function requirePortalAuth(req: Request, res: Response, next: NextFunction): voi
  * client linked; admins/owners are rejected here — they have /api/* directly
  * and shouldn't be calling portal routes.
  */
-async function requireLinkedClient(req: Request, res: Response): Promise<number | null> {
+async function requireLinkedClient(
+  req: Request,
+  res: Response,
+): Promise<number | null> {
   const state = portalState(req);
   const userId = state.portalUserId;
   if (typeof userId !== "number") {
@@ -123,7 +168,10 @@ router.get("/businesses/me", requirePortalAuth, async (req, res) => {
 
 // POST and PATCH share the same upsert semantics: register auto-creates a
 // `clients` row, so the onboarding wizard's POST is effectively an update.
-async function upsertBusinessHandler(req: Request, res: Response): Promise<void> {
+async function upsertBusinessHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
   try {
     const clientId = await requireLinkedClient(req, res);
     if (clientId == null) return;
@@ -140,7 +188,9 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
     const patch: Partial<typeof clientsTable.$inferInsert> = {};
     if (body.businessName !== undefined) {
       if (typeof body.businessName !== "string" || !body.businessName.trim()) {
-        res.status(400).json({ error: "businessName must be a non-empty string" });
+        res
+          .status(400)
+          .json({ error: "businessName must be a non-empty string" });
         return;
       }
       patch.businessName = body.businessName.trim();
@@ -152,7 +202,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
       }
       patch.accountUser = body.ownerName.trim();
     }
-    if (body.subscriberName !== undefined && typeof body.subscriberName !== "string") {
+    if (
+      body.subscriberName !== undefined &&
+      typeof body.subscriberName !== "string"
+    ) {
       res.status(400).json({ error: "subscriberName must be a string" });
       return;
     }
@@ -163,7 +216,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
       res.status(400).json({ error: "industry must be a string" });
       return;
     }
-    if (body.description !== undefined && typeof body.description !== "string") {
+    if (
+      body.description !== undefined &&
+      typeof body.description !== "string"
+    ) {
       res.status(400).json({ error: "description must be a string" });
       return;
     }
@@ -176,7 +232,10 @@ async function upsertBusinessHandler(req: Request, res: Response): Promise<void>
     }
 
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -205,7 +264,13 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const keywords = await db
       .select()
       .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, clientId));
+      .where(
+        and(
+          eq(keywordsTable.clientId, clientId),
+          eq(keywordsTable.isActive, true),
+          isNull(keywordsTable.archivedAt),
+        ),
+      );
 
     const activeKeywords = keywords.filter((k) => k.isActive).length;
     const totalKeywords = keywords.length;
@@ -213,7 +278,10 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const keywordIds = keywords.map((k) => k.id);
 
     // Build a "latest rank per keyword" map.
-    const latestByKeyword = new Map<number, { position: number | null; date: string | null }>();
+    const latestByKeyword = new Map<
+      number,
+      { position: number | null; date: string | null }
+    >();
     if (keywordIds.length > 0) {
       const reports = await db
         .select({
@@ -243,14 +311,16 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
     const ranked = keywords
       .map((k) => ({ kw: k, latest: latestByKeyword.get(k.id) ?? null }))
       .filter((row) => row.latest?.position != null) as Array<{
-        kw: typeof keywords[number];
-        latest: { position: number; date: string | null };
-      }>;
+      kw: (typeof keywords)[number];
+      latest: { position: number; date: string | null };
+    }>;
 
     const visibilityScore =
       activeKeywords > 0
         ? Math.round(
-            (ranked.filter((r) => r.latest.position <= 10).length / activeKeywords) * 1000,
+            (ranked.filter((r) => r.latest.position <= 10).length /
+              activeKeywords) *
+              1000,
           ) / 10
         : null;
 
@@ -301,7 +371,10 @@ router.get("/businesses/me/dashboard", requirePortalAuth, async (req, res) => {
 });
 
 async function getClientById(clientId: number) {
-  const [row] = await db.select().from(clientsTable).where(eq(clientsTable.id, clientId));
+  const [row] = await db
+    .select()
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId));
   return row;
 }
 
@@ -437,7 +510,13 @@ router.get("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
     const keywords = await db
       .select()
       .from(keywordsTable)
-      .where(eq(keywordsTable.clientId, clientId))
+      .where(
+        and(
+          eq(keywordsTable.clientId, clientId),
+          eq(keywordsTable.isActive, true),
+          isNull(keywordsTable.archivedAt),
+        ),
+      )
       .orderBy(desc(keywordsTable.createdAt));
 
     const keywordIds = keywords.map((k) => k.id);
@@ -469,7 +548,9 @@ router.get("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
     }
 
     res.json(
-      keywords.map((k) => toKeywordResponse(k, clientId, positionsByKeyword.get(k.id) ?? [])),
+      keywords.map((k) =>
+        toKeywordResponse(k, clientId, positionsByKeyword.get(k.id) ?? []),
+      ),
     );
   } catch (err) {
     req.log.error({ err }, "Portal keywords list error");
@@ -529,106 +610,126 @@ router.post("/businesses/me/keywords", requirePortalAuth, async (req, res) => {
   }
 });
 
-router.patch("/businesses/me/keywords/:id", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
+router.patch(
+  "/businesses/me/keywords/:id",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
 
-    const existing = await loadOwnedKeyword(res, clientId, req.params.id);
-    if (!existing) return;
+      const existing = await loadOwnedKeyword(res, clientId, req.params.id);
+      if (!existing) return;
 
-    const body = (req.body ?? {}) as {
-      keyword?: unknown;
-      notes?: unknown;
-      status?: unknown;
-    };
+      const body = (req.body ?? {}) as {
+        keyword?: unknown;
+        notes?: unknown;
+        status?: unknown;
+      };
 
-    const patch: Partial<typeof keywordsTable.$inferInsert> = {};
-    if (body.keyword !== undefined) {
-      if (typeof body.keyword !== "string" || !body.keyword.trim()) {
-        return res.status(400).json({ error: "keyword must be a non-empty string" });
+      const patch: Partial<typeof keywordsTable.$inferInsert> = {};
+      if (body.keyword !== undefined) {
+        if (typeof body.keyword !== "string" || !body.keyword.trim()) {
+          return res
+            .status(400)
+            .json({ error: "keyword must be a non-empty string" });
+        }
+        patch.keywordText = body.keyword.trim();
       }
-      patch.keywordText = body.keyword.trim();
-    }
-    if (body.notes !== undefined) {
-      if (typeof body.notes !== "string") {
-        return res.status(400).json({ error: "notes must be a string" });
+      if (body.notes !== undefined) {
+        if (typeof body.notes !== "string") {
+          return res.status(400).json({ error: "notes must be a string" });
+        }
+        patch.notes = body.notes;
       }
-      patch.notes = body.notes;
+      if (body.status !== undefined) {
+        const parsed = parseKeywordStatus(body.status);
+        if (typeof parsed === "object") return res.status(400).json(parsed);
+        patch.isActive = parsed;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await db
+          .update(keywordsTable)
+          .set(patch)
+          .where(eq(keywordsTable.id, existing.id));
+      }
+
+      const [updated] = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.id, existing.id));
+      if (!updated) {
+        return res.status(404).json({ error: "Keyword not found" });
+      }
+      const positions = await getRecentPositions(clientId, updated.id);
+      res.json(toKeywordResponse(updated, clientId, positions));
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword update error");
+      res.status(500).json({ error: "Internal server error" });
     }
-    if (body.status !== undefined) {
-      const parsed = parseKeywordStatus(body.status);
-      if (typeof parsed === "object") return res.status(400).json(parsed);
-      patch.isActive = parsed;
+  },
+);
+
+router.delete(
+  "/businesses/me/keywords/:id",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+
+      const existing = await loadOwnedKeyword(res, clientId, req.params.id);
+      if (!existing) return;
+
+      // Hard delete — `keyword_links` and `ranking_reports` cascade.
+      await db.delete(keywordsTable).where(eq(keywordsTable.id, existing.id));
+      res.status(204).send();
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword delete error");
+      res.status(500).json({ error: "Internal server error" });
     }
+  },
+);
 
-    if (Object.keys(patch).length > 0) {
-      await db.update(keywordsTable).set(patch).where(eq(keywordsTable.id, existing.id));
+router.get(
+  "/businesses/me/keywords/:id/links",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+
+      const rawId = req.params.id;
+      const keywordId = Number.parseInt(
+        typeof rawId === "string" ? rawId : "",
+        10,
+      );
+      if (Number.isNaN(keywordId)) {
+        return res.status(400).json({ error: "Invalid keyword id" });
+      }
+
+      const [keyword] = await db
+        .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
+        .from(keywordsTable)
+        .where(eq(keywordsTable.id, keywordId));
+      if (!keyword || keyword.clientId !== clientId) {
+        return res.status(404).json({ error: "Keyword not found" });
+      }
+
+      const links = await db
+        .select()
+        .from(keywordLinksTable)
+        .where(eq(keywordLinksTable.keywordId, keywordId))
+        .orderBy(keywordLinksTable.createdAt);
+
+      res.json(links.map((l) => toKeywordLinkResponse(l, clientId)));
+    } catch (err) {
+      req.log.error({ err }, "Portal keyword links error");
+      res.status(500).json({ error: "Internal server error" });
     }
-
-    const [updated] = await db
-      .select()
-      .from(keywordsTable)
-      .where(eq(keywordsTable.id, existing.id));
-    if (!updated) {
-      return res.status(404).json({ error: "Keyword not found" });
-    }
-    const positions = await getRecentPositions(clientId, updated.id);
-    res.json(toKeywordResponse(updated, clientId, positions));
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword update error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.delete("/businesses/me/keywords/:id", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
-
-    const existing = await loadOwnedKeyword(res, clientId, req.params.id);
-    if (!existing) return;
-
-    // Hard delete — `keyword_links` and `ranking_reports` cascade.
-    await db.delete(keywordsTable).where(eq(keywordsTable.id, existing.id));
-    res.status(204).send();
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword delete error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/businesses/me/keywords/:id/links", requirePortalAuth, async (req, res) => {
-  try {
-    const clientId = await requireLinkedClient(req, res);
-    if (clientId == null) return;
-
-    const rawId = req.params.id;
-    const keywordId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
-    if (Number.isNaN(keywordId)) {
-      return res.status(400).json({ error: "Invalid keyword id" });
-    }
-
-    const [keyword] = await db
-      .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
-      .from(keywordsTable)
-      .where(eq(keywordsTable.id, keywordId));
-    if (!keyword || keyword.clientId !== clientId) {
-      return res.status(404).json({ error: "Keyword not found" });
-    }
-
-    const links = await db
-      .select()
-      .from(keywordLinksTable)
-      .where(eq(keywordLinksTable.keywordId, keywordId))
-      .orderBy(keywordLinksTable.createdAt);
-
-    res.json(links.map((l) => toKeywordLinkResponse(l, clientId)));
-  } catch (err) {
-    req.log.error({ err }, "Portal keyword links error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+  },
+);
 
 router.post(
   "/businesses/me/keywords/:id/links",
@@ -650,7 +751,10 @@ router.post(
       if (typeof body.url !== "string" || !body.url.trim()) {
         return res.status(400).json({ error: "url is required" });
       }
-      if (body.description !== undefined && typeof body.description !== "string") {
+      if (
+        body.description !== undefined &&
+        typeof body.description !== "string"
+      ) {
         return res.status(400).json({ error: "description must be a string" });
       }
       if (body.linkType !== undefined && typeof body.linkType !== "string") {
@@ -726,7 +830,9 @@ router.delete(
       const owned = await loadOwnedLink(res, clientId, req.params.linkId);
       if (!owned) return;
 
-      await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, owned.link.id));
+      await db
+        .delete(keywordLinksTable)
+        .where(eq(keywordLinksTable.id, owned.link.id));
       res.status(204).send();
     } catch (err) {
       req.log.error({ err }, "Portal keyword link delete error");
@@ -838,7 +944,10 @@ router.post("/businesses/me/gbp", requirePortalAuth, async (req, res) => {
       patch.placeId = body.placeId.trim();
     }
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -855,11 +964,17 @@ router.post("/businesses/me/gbp", requirePortalAuth, async (req, res) => {
       businessId: clientId,
       placeId: client.placeId,
       businessName:
-        typeof body.businessName === "string" ? body.businessName : client.businessName,
+        typeof body.businessName === "string"
+          ? body.businessName
+          : client.businessName,
       address: client.searchAddress,
       category: typeof body.category === "string" ? body.category : null,
-      isVerified: typeof body.isVerified === "boolean" ? body.isVerified : !!client.placeId,
-      phoneNumber: typeof body.phoneNumber === "string" ? body.phoneNumber : null,
+      isVerified:
+        typeof body.isVerified === "boolean"
+          ? body.isVerified
+          : !!client.placeId,
+      phoneNumber:
+        typeof body.phoneNumber === "string" ? body.phoneNumber : null,
       website: client.gmbUrl,
       createdAt: client.createdAt,
     });
@@ -887,7 +1002,9 @@ router.post("/businesses/me/websites", requirePortalAuth, async (req, res) => {
       return;
     }
     const linkType =
-      typeof body.linkType === "string" && body.linkType.trim() ? body.linkType : "other";
+      typeof body.linkType === "string" && body.linkType.trim()
+        ? body.linkType
+        : "other";
 
     res.status(201).json({
       id: 0,
@@ -908,7 +1025,10 @@ router.post("/businesses/me/websites", requirePortalAuth, async (req, res) => {
  * Resolve the report date for a ranking_reports row.
  * `date` is the canonical day-string; fall back to the timestamp when missing.
  */
-function reportDate(row: { date: string | null; timestamp: Date | null }): Date | null {
+function reportDate(row: {
+  date: string | null;
+  timestamp: Date | null;
+}): Date | null {
   if (row.date) {
     const parsed = new Date(`${row.date}T00:00:00Z`);
     if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -999,11 +1119,16 @@ router.get("/businesses/me/reports", requirePortalAuth, async (req, res) => {
       const prev = bucket.latestPerKeyword.get(row.keywordId);
       const atMs = row.at.getTime();
       if (!prev || atMs >= prev.atMs) {
-        bucket.latestPerKeyword.set(row.keywordId, { position: row.position, atMs });
+        bucket.latestPerKeyword.set(row.keywordId, {
+          position: row.position,
+          atMs,
+        });
       }
     }
 
-    const sortedBuckets = [...buckets.values()].sort((a, b) => a.index - b.index);
+    const sortedBuckets = [...buckets.values()].sort(
+      (a, b) => a.index - b.index,
+    );
 
     const out = sortedBuckets.map((bucket, position) => {
       const previous = position > 0 ? sortedBuckets[position - 1] : null;
@@ -1021,10 +1146,13 @@ router.get("/businesses/me/reports", requirePortalAuth, async (req, res) => {
 
       const averagePosition =
         bucket.positions.length > 0
-          ? bucket.positions.reduce((sum, p) => sum + p, 0) / bucket.positions.length
+          ? bucket.positions.reduce((sum, p) => sum + p, 0) /
+            bucket.positions.length
           : null;
       const visibilityScore =
-        bucket.totalRanked > 0 ? (bucket.topTen / bucket.totalRanked) * 100 : null;
+        bucket.totalRanked > 0
+          ? (bucket.topTen / bucket.totalRanked) * 100
+          : null;
 
       const periodStart = new Date(bucket.startMs).toISOString();
       // endMs is exclusive; expose the inclusive last day per spec.
@@ -1170,7 +1298,10 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
       sessionsTodayNum = Number(sessionsToday.count);
       totalSessionsNum = Number(totalSessions.count);
     } catch (sessionErr) {
-      req.log.warn({ sessionErr }, "Portal dashboard: failed to fetch sessions");
+      req.log.warn(
+        { sessionErr },
+        "Portal dashboard: failed to fetch sessions",
+      );
     }
 
     // Ranking position average (client-scoped)
@@ -1201,7 +1332,12 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
       const [tk] = await db
         .select({ count: count() })
         .from(keywordsTable)
-        .where(eq(keywordsTable.clientId, clientId));
+        .where(
+          and(
+            eq(keywordsTable.clientId, clientId),
+            isNull(keywordsTable.archivedAt),
+          ),
+        );
       const [ak] = await db
         .select({ count: count() })
         .from(keywordsTable)
@@ -1242,7 +1378,10 @@ router.get("/dashboard/summary", requirePortalAuth, async (req, res) => {
         );
       totalBacklinksFound = Number(blCount.count);
     } catch (kwErr) {
-      req.log.warn({ kwErr }, "Portal dashboard: failed to fetch keyword stats");
+      req.log.warn(
+        { kwErr },
+        "Portal dashboard: failed to fetch keyword stats",
+      );
     }
 
     /* totalClients/activeClients are per-tenant booleans here — a portal
@@ -1347,7 +1486,10 @@ router.patch("/clients/me", requirePortalAuth, async (req, res) => {
     }
 
     if (Object.keys(patch).length > 0) {
-      await db.update(clientsTable).set(patch).where(eq(clientsTable.id, clientId));
+      await db
+        .update(clientsTable)
+        .set(patch)
+        .where(eq(clientsTable.id, clientId));
     }
 
     const [client] = await db
@@ -1373,12 +1515,17 @@ router.get("/keywords", requirePortalAuth, async (req, res) => {
        filters are accepted, but clientId is force-bound to the portal
        user's client and ignored if passed. */
     const { businessId, aeoPlanId } = req.query as Record<string, string>;
-    const conditions: ReturnType<typeof eq>[] = [
+    // Exclude soft-deleted/archived keywords — admin DELETE only sets
+    // isActive=false + archivedAt, so without this the portal keeps showing them.
+    const conditions: SQL[] = [
       eq(keywordsTable.clientId, clientId),
+      eq(keywordsTable.isActive, true),
+      isNull(keywordsTable.archivedAt),
     ];
     if (businessId) {
       const bid = Number.parseInt(businessId, 10);
-      if (!Number.isNaN(bid)) conditions.push(eq(keywordsTable.businessId, bid));
+      if (!Number.isNaN(bid))
+        conditions.push(eq(keywordsTable.businessId, bid));
     }
     if (aeoPlanId) {
       const aid = Number.parseInt(aeoPlanId, 10);
@@ -1425,7 +1572,10 @@ router.get("/keywords", requirePortalAuth, async (req, res) => {
       })
       .from(keywordsTable)
       .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(keywordsTable.businessId, businessesTable.id),
+      )
       .leftJoin(
         clientAeoPlansTable,
         eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
@@ -1483,7 +1633,10 @@ router.get("/keywords/:id", requirePortalAuth, async (req, res) => {
       })
       .from(keywordsTable)
       .leftJoin(clientsTable, eq(keywordsTable.clientId, clientsTable.id))
-      .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+      .leftJoin(
+        businessesTable,
+        eq(keywordsTable.businessId, businessesTable.id),
+      )
       .leftJoin(
         clientAeoPlansTable,
         eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
@@ -1522,14 +1675,22 @@ router.post("/keywords", requirePortalAuth, async (req, res) => {
 
     let aeoPlanId: number | null = null;
     if (body.aeoPlanId !== undefined && body.aeoPlanId !== null) {
-      const plan = await loadOwnedAeoPlan(res, clientId, String(body.aeoPlanId));
+      const plan = await loadOwnedAeoPlan(
+        res,
+        clientId,
+        String(body.aeoPlanId),
+      );
       if (!plan) return;
       aeoPlanId = plan.id;
     }
 
     let businessId: number | null = null;
     if (body.businessId !== undefined && body.businessId !== null) {
-      const ok = await verifyBusinessBelongsToClient(res, clientId, body.businessId);
+      const ok = await verifyBusinessBelongsToClient(
+        res,
+        clientId,
+        body.businessId,
+      );
       if (!ok) return;
       businessId = Number(body.businessId);
     }
@@ -1569,11 +1730,19 @@ router.patch("/keywords/:id", requirePortalAuth, async (req, res) => {
     if ("clientId" in body) delete body.clientId;
 
     if ("aeoPlanId" in body && body.aeoPlanId !== null) {
-      const plan = await loadOwnedAeoPlan(res, clientId, String(body.aeoPlanId));
+      const plan = await loadOwnedAeoPlan(
+        res,
+        clientId,
+        String(body.aeoPlanId),
+      );
       if (!plan) return;
     }
     if ("businessId" in body && body.businessId !== null) {
-      const ok = await verifyBusinessBelongsToClient(res, clientId, body.businessId);
+      const ok = await verifyBusinessBelongsToClient(
+        res,
+        clientId,
+        body.businessId,
+      );
       if (!ok) return;
     }
 
@@ -1584,9 +1753,11 @@ router.patch("/keywords/:id", requirePortalAuth, async (req, res) => {
     if (body.keywordType !== undefined)
       allowed.keywordType = Number(body.keywordType);
     if (body.isActive !== undefined) allowed.isActive = Boolean(body.isActive);
-    if (body.isPrimary !== undefined) allowed.isPrimary = Number(body.isPrimary);
+    if (body.isPrimary !== undefined)
+      allowed.isPrimary = Number(body.isPrimary);
     if (body.aeoPlanId !== undefined)
-      allowed.aeoPlanId = body.aeoPlanId === null ? null : Number(body.aeoPlanId);
+      allowed.aeoPlanId =
+        body.aeoPlanId === null ? null : Number(body.aeoPlanId);
     if (body.businessId !== undefined)
       allowed.businessId =
         body.businessId === null ? null : Number(body.businessId);
@@ -1668,7 +1839,8 @@ router.post("/keywords/:id/links", requirePortalAuth, async (req, res) => {
         linkUrl: typeof body.linkUrl === "string" ? body.linkUrl : null,
         linkTypeLabel:
           typeof body.linkTypeLabel === "string" ? body.linkTypeLabel : null,
-        embeddedUrl: typeof body.embeddedUrl === "string" ? body.embeddedUrl : null,
+        embeddedUrl:
+          typeof body.embeddedUrl === "string" ? body.embeddedUrl : null,
         linkActive: body.linkActive !== false,
         initialRankReportLink:
           typeof body.initialRankReportLink === "string"
@@ -1775,7 +1947,9 @@ router.delete(
         return res.status(404).json({ error: "Link not found" });
       }
 
-      await db.delete(keywordLinksTable).where(eq(keywordLinksTable.id, linkId));
+      await db
+        .delete(keywordLinksTable)
+        .where(eq(keywordLinksTable.id, linkId));
       /* If we removed the last link, revert keyword type to plain
          "Keywords" (3) — matches admin's behavior. */
       const remaining = await db
@@ -1824,6 +1998,32 @@ router.get("/ranking-reports", requirePortalAuth, async (req, res) => {
       if (!Number.isNaN(kid))
         conditions.push(eq(rankingReportsTable.keywordId, kid));
     }
+
+    /* Admin-hidden keywords/dates never reach the client portal. */
+    conditions.push(
+      sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
+    );
+    const portalHideScope = {
+      clientId,
+      businessId: businessId ? Number.parseInt(businessId, 10) : null,
+      aeoPlanId: aeoPlanId ? Number.parseInt(aeoPlanId, 10) : null,
+    };
+    const hiddenDates = await hiddenDatesForScope(portalHideScope);
+    if (hiddenDates.length > 0)
+      conditions.push(
+        sql`(${rankingReportsTable.date} IS NULL OR ${rankingReportsTable.date} != ALL(ARRAY[${sql.join(
+          hiddenDates.map((d) => sql`${d}`),
+          sql`, `,
+        )}]::text[]))`,
+      );
+    const hiddenKwPlatforms = await hiddenKeywordPlatformPairs(portalHideScope);
+    if (hiddenKwPlatforms.length > 0)
+      conditions.push(
+        sql`(${rankingReportsTable.platform} IS NULL OR (${rankingReportsTable.keywordId}::text || '|' || lower(${rankingReportsTable.platform})) != ALL(ARRAY[${sql.join(
+          hiddenKwPlatforms.map((p) => sql`${p}`),
+          sql`, `,
+        )}]::text[]))`,
+      );
 
     const reports = await db
       .select({
@@ -1884,13 +2084,27 @@ router.get("/ranking-reports", requirePortalAuth, async (req, res) => {
       .where(and(...conditions))
       .orderBy(desc(rankingReportsTable.createdAt));
 
+    /* July-1 baseline (display only — see lib/july1-rebase.ts). Same remap the
+       admin list applies with applyHides=1: audit dates render on the Jul-1
+       cadence and audits older than the earliest slot never reach the client.
+       The query is unpaged, so each keyword's full (visible) history is present
+       and the cadence map is complete. */
+    const displayMaps = buildKeywordDateMaps(reports);
+
     res.json(
-      reports.map((r) => ({
-        ...r,
-        clientName: r.clientName ?? r.joinedClientName ?? null,
-        bizName: r.bizName ?? r.joinedBusinessName ?? null,
-        keyword: r.keyword ?? r.joinedKeywordText ?? null,
-      })),
+      reports.flatMap((r) => {
+        const shaped = {
+          ...r,
+          clientName: r.clientName ?? r.joinedClientName ?? null,
+          bizName: r.bizName ?? r.joinedBusinessName ?? null,
+          keyword: r.keyword ?? r.joinedKeywordText ?? null,
+        };
+        if (r.keywordId == null || !r.date) return [shaped];
+        const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+        if (displayDate === undefined) return [shaped];
+        if (displayDate === null) return []; // audit older than the first slot
+        return [{ ...shaped, date: displayDate }];
+      }),
     );
   } catch (err) {
     req.log.error({ err }, "Portal ranking-reports list error");
@@ -1932,17 +2146,52 @@ router.get(
         : null;
 
       const conds: string[] = ["date IS NOT NULL"];
-      const params: (number | null)[] = [];
+      const params: (number | number[] | string[] | null)[] = [];
       params.push(clientId);
       conds.push(`client_id = $${params.length}`);
       if (businessId !== null && !Number.isNaN(businessId)) {
         params.push(businessId);
         conds.push(`business_id = $${params.length}`);
       }
+      /* Archived (soft-deleted, status='inactive') client/business never reach
+         the portal report — mirrors the admin bi-weekly-report guard. */
+      const archived = await getArchivedEntityIds();
+      if (archived.clientIds.length > 0) {
+        params.push(archived.clientIds);
+        conds.push(`client_id <> ALL($${params.length}::int[])`);
+      }
+      if (archived.businessIds.length > 0) {
+        params.push(archived.businessIds);
+        conds.push(
+          `(business_id IS NULL OR business_id <> ALL($${params.length}::int[]))`,
+        );
+      }
       if (aeoPlanId !== null && !Number.isNaN(aeoPlanId)) {
         params.push(aeoPlanId);
         conds.push(
           `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
+        );
+      }
+      /* Admin-hidden keywords/dates never reach the client's report. */
+      conds.push(HIDDEN_KEYWORDS_SQL);
+      const hiddenDates = await hiddenDatesForScope({
+        clientId,
+        businessId: Number.isNaN(businessId as number) ? null : businessId,
+        aeoPlanId: Number.isNaN(aeoPlanId as number) ? null : aeoPlanId,
+      });
+      if (hiddenDates.length > 0) {
+        params.push(hiddenDates);
+        conds.push(`date != ALL($${params.length}::text[])`);
+      }
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs({
+        clientId,
+        businessId: Number.isNaN(businessId as number) ? null : businessId,
+        aeoPlanId: Number.isNaN(aeoPlanId as number) ? null : aeoPlanId,
+      });
+      if (hiddenKwPlatforms.length > 0) {
+        params.push(hiddenKwPlatforms);
+        conds.push(
+          `(platform IS NULL OR (keyword_id::text || '|' || lower(platform)) != ALL($${params.length}::text[]))`,
         );
       }
       const where = conds.join(" AND ");
@@ -1962,10 +2211,16 @@ router.get(
         });
       }
       const currentBatchDate = batchesRes.rows[0].date;
-      const allBatches = batchesRes.rows.map((r) => ({
-        date: r.date,
-        combos: Number(r.combos),
-      }));
+      /* Clients never see pre-July-1 audit dates (display-only baseline —
+         see lib/july1-rebase.ts). Batch rows before the anchor are dropped
+         from the response; the aggregate counts below still cover the full
+         history, matching the admin master report. */
+      const allBatches = batchesRes.rows
+        .filter((r) => r.date >= REBASE_ANCHOR)
+        .map((r) => ({
+          date: r.date,
+          combos: Number(r.combos),
+        }));
       const nextDue = new Date(currentBatchDate);
       nextDue.setUTCDate(nextDue.getUTCDate() + 14);
       const nextDueDate = nextDue.toISOString().slice(0, 10);
@@ -2056,7 +2311,10 @@ router.get(
       );
       const sBr = sB.rows[0];
       const sectionB = {
-        earliestDate: sBr.earliest_date,
+        earliestDate:
+          sBr.earliest_date && sBr.earliest_date < REBASE_ANCHOR
+            ? REBASE_ANCHOR
+            : sBr.earliest_date,
         latestOldDate: sBr.latest_old_date,
         totalOldCombos: Number(sBr.total_old),
         onSchedule: Number(sBr.on_schedule),
@@ -2204,35 +2462,32 @@ router.get("/aeo-plans", requirePortalAuth, async (req, res) => {
       )
       .orderBy(asc(clientAeoPlansTable.createdAt));
 
-    const ids = plans.map((p) => p.id);
-    const counts = new Map<number, number>();
-    for (const id of ids) counts.set(id, 0);
-    if (ids.length > 0) {
-      const kwRows = await db
-        .select({
-          aeoPlanId: keywordsTable.aeoPlanId,
-          c: sql<number>`count(*)::int`,
-        })
-        .from(keywordsTable)
-        .where(
-          and(
-            inArray(keywordsTable.aeoPlanId, ids),
-            eq(keywordsTable.isActive, true),
-          ),
-        )
-        .groupBy(keywordsTable.aeoPlanId);
-      for (const r of kwRows) {
-        if (r.aeoPlanId != null) counts.set(r.aeoPlanId, Number(r.c));
-      }
-    }
+    const buckets =
+      plans.length > 0
+        ? bucketCountsByPlan(
+            await scanClientKeywords(clientId, {
+              businessId:
+                businessIdNum != null && !Number.isNaN(businessIdNum)
+                  ? businessIdNum
+                  : undefined,
+            }),
+          )
+        : new Map<number, KeywordBuckets>();
 
     res.json(
-      plans.map((p) => ({
-        ...p,
-        keywordCount: counts.get(p.id) ?? 0,
-        monthlyAeoBudget:
-          p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
-      })),
+      plans.map((p) => {
+        const b = buckets.get(p.id) ?? { active: 0, watch: 0, locked: 0 };
+        return {
+          ...p,
+          activeCount: b.active,
+          watchCount: b.watch,
+          lockedCount: b.locked,
+          // back-compat: original "active keyword" count = all active keywords.
+          keywordCount: b.active + b.watch,
+          monthlyAeoBudget:
+            p.monthlyAeoBudget != null ? Number(p.monthlyAeoBudget) : null,
+        };
+      }),
     );
   } catch (err) {
     req.log.error({ err }, "Portal aeo-plans list error");
@@ -2253,6 +2508,108 @@ router.get("/aeo-plans/:planId", requirePortalAuth, async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Portal aeo-plan detail error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /portal/aeo-plans/:planId/billing
+   Read-only Stripe billing summary for the customer's own campaign — same
+   payload as the admin endpoint (client-aeo-plans.ts), but ownership comes
+   from the session-linked client instead of requireAdmin. It's the
+   customer's own subscription and charge history, so exposing it here is
+   safe; anything mutating stays admin-only. */
+router.get(
+  "/aeo-plans/:planId/billing",
+  requirePortalAuth,
+  async (req, res) => {
+    try {
+      const clientId = await requireLinkedClient(req, res);
+      if (clientId == null) return;
+      const plan = await loadOwnedAeoPlan(res, clientId, req.params.planId);
+      if (!plan) return;
+      if (!plan.subscriptionId) {
+        return res.json({ hasStripeRef: false, summary: null });
+      }
+      /* Each plan type bills through its own Stripe account — resolve the
+         right key or the lookup silently misses (see lib/stripe-accounts). */
+      const account = resolveStripeAccount(plan.planType ?? null);
+      const summary = await fetchStripeBillingSummary(plan.subscriptionId, {
+        log: req.log,
+        ...(account.secretKey ? { apiKey: account.secretKey } : {}),
+      });
+      return res.json({ hasStripeRef: true, summary });
+    } catch (err) {
+      req.log.error({ err }, "Portal aeo-plan billing error");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+/* POST /portal/checkout/subscription — start a self-serve campaign checkout.
+   Creates an incomplete Stripe subscription on the plan type's OWN Stripe
+   account (Signal AEO Plan and AEO SEO Local Plan bill through different
+   accounts) and returns the client secret + publishable key the frontend
+   needs to render Stripe's PaymentElement. The campaign row is only created
+   after the frontend confirms payment. */
+router.post("/checkout/subscription", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const planType = typeof body.planType === "string" ? body.planType : "";
+    const campaignName =
+      typeof body.campaignName === "string" ? body.campaignName.trim() : "";
+    if (!isKnownPlanType(planType)) {
+      return res.status(400).json({ error: "Unknown plan type" });
+    }
+    if (!campaignName) {
+      return res.status(400).json({ error: "campaignName is required" });
+    }
+
+    const account = resolveStripeAccount(planType);
+    if (!account.secretKey || !account.publishableKey) {
+      req.log.warn(
+        { planType, account: account.account },
+        "Portal checkout: Stripe keys not configured for plan type",
+      );
+      return res
+        .status(503)
+        .json({ error: "Online payment is not available right now." });
+    }
+
+    const userId = portalState(req).portalUserId;
+    const [user] = await db
+      .select({ email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId!));
+    const [client] = await db
+      .select({ businessName: clientsTable.businessName })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, clientId));
+
+    const result = await createCheckoutSubscription({
+      apiKey: account.secretKey,
+      planType,
+      campaignName,
+      amountCents: account.monthlyPriceCents,
+      customerEmail: user?.email ?? null,
+      customerName: client?.businessName ?? null,
+      clientId,
+      log: req.log,
+    });
+    if (!result.ok) {
+      return res.status(502).json({ error: result.reason });
+    }
+    res.json({
+      subscriptionId: result.subscriptionId,
+      clientSecret: result.clientSecret,
+      publishableKey: account.publishableKey,
+      amountCents: result.amountCents,
+      currency: result.currency,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Portal checkout subscription error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2328,9 +2685,7 @@ router.post("/aeo-plans", requirePortalAuth, async (req, res) => {
             ? Number(body.searchBoostTarget)
             : null,
         monthlyAeoBudget:
-          body.monthlyAeoBudget != null
-            ? String(body.monthlyAeoBudget)
-            : null,
+          body.monthlyAeoBudget != null ? String(body.monthlyAeoBudget) : null,
         schemaImplementor: (body.schemaImplementor as string) ?? null,
         searchAddress: (body.searchAddress as string) ?? null,
         subscriptionId: (body.subscriptionId as string) ?? null,
@@ -2485,7 +2840,10 @@ async function loadOwnedBusiness(
   clientId: number,
   rawId: string | string[] | undefined,
 ): Promise<typeof businessesTable.$inferSelect | null> {
-  const businessId = Number.parseInt(typeof rawId === "string" ? rawId : "", 10);
+  const businessId = Number.parseInt(
+    typeof rawId === "string" ? rawId : "",
+    10,
+  );
   if (Number.isNaN(businessId)) {
     res.status(400).json({ error: "Invalid business id" });
     return null;
@@ -2605,7 +2963,8 @@ router.post("/businesses", requirePortalAuth, async (req, res) => {
         clientId,
         name: trimmedName,
         gmbUrl: typeof body.gmbUrl === "string" ? body.gmbUrl : null,
-        websiteUrl: typeof body.websiteUrl === "string" ? body.websiteUrl : null,
+        websiteUrl:
+          typeof body.websiteUrl === "string" ? body.websiteUrl : null,
         category: typeof body.category === "string" ? body.category : null,
         publishedAddress:
           typeof body.publishedAddress === "string"
@@ -2752,5 +3111,947 @@ router.delete("/businesses/:id", requirePortalAuth, async (req, res) => {
 /* Password change is served by /api/auth/change-password (admin's route);
    it operates on the unified `users` table and works for both admins and
    customers. */
+
+/* ────────────────────────────────────────────────────────────
+   Insights — read-only optimization transparency for customers.
+   Mirrors the admin rotation/locked-keyword/variant views but is
+   ALWAYS scoped to the authenticated customer's own client. No
+   mutation: customers can SEE what we're optimizing, never trigger
+   rotation, lock, archive, or replacement themselves.
+──────────────────────────────────────────────────────────── */
+
+const TOP3 = 3;
+const PLATFORM_KEYS = ["chatgpt", "gemini", "perplexity", "google"] as const;
+
+export interface EnrichedKeyword {
+  id: number;
+  keywordText: string;
+  status: string | null;
+  isActive: boolean;
+  archivedAt: string | null;
+  archiveReason: string | null;
+  replacementSuggestion: string | null;
+  aeoPlanId: number | null;
+  businessId: number | null;
+  campaignName: string | null;
+  businessName: string | null;
+  latestPosition: number | null;
+  latestDate: string | null;
+  firstPosition: number | null;
+  priorPosition: number | null;
+  platforms: Record<string, { position: number | null; date: string | null }>;
+  sparkline: number[];
+  totalRuns: number;
+  top3Runs: number;
+  stabilityPercent: number;
+  trend: "improving" | "steady" | "declining";
+  atRisk: boolean;
+  stallingSince: string | null;
+  wonPlatform: string | null;
+  wonPosition: number | null;
+  wonAt: string | null;
+}
+
+function dayOf(date: string | null, createdAt: Date | null): string {
+  if (date) return date.slice(0, 10);
+  if (createdAt) return new Date(createdAt).toISOString().slice(0, 10);
+  return "";
+}
+
+/**
+ * Load all keywords for a client (optionally filtered to a campaign/business)
+ * and enrich each with daily rank series, per-platform latest rank, stability
+ * %, trend, at-risk detection, and won/lock metadata derived from
+ * ranking_reports. Pure read; no writes. Mirrors the admin rotation scan in
+ * services/keyword-rotation.ts but client-scoped.
+ */
+export async function scanClientKeywords(
+  clientId: number,
+  opts: {
+    aeoPlanId?: number;
+    businessId?: number;
+    keywordId?: number;
+    /** Restrict the rank series to runs on or before this YYYY-MM-DD (inclusive).
+     *  Used by the period-ending Summary Report; omit for all-time. */
+    asOfDate?: string;
+  },
+): Promise<EnrichedKeyword[]> {
+  const conditions = [
+    eq(keywordsTable.clientId, clientId),
+    // Admin-hidden keywords are excluded from summary reports everywhere.
+    eq(keywordsTable.hiddenFromReports, false),
+  ];
+  if (opts.aeoPlanId != null)
+    conditions.push(eq(keywordsTable.aeoPlanId, opts.aeoPlanId));
+  if (opts.businessId != null)
+    conditions.push(eq(keywordsTable.businessId, opts.businessId));
+  if (opts.keywordId != null)
+    conditions.push(eq(keywordsTable.id, opts.keywordId));
+
+  const kws = await db
+    .select({
+      id: keywordsTable.id,
+      keywordText: keywordsTable.keywordText,
+      status: keywordsTable.status,
+      isActive: keywordsTable.isActive,
+      archivedAt: keywordsTable.archivedAt,
+      archiveReason: keywordsTable.archiveReason,
+      replacementSuggestion: keywordsTable.replacementSuggestion,
+      aeoPlanId: keywordsTable.aeoPlanId,
+      businessId: keywordsTable.businessId,
+      campaignName: clientAeoPlansTable.name,
+      businessName: businessesTable.name,
+    })
+    .from(keywordsTable)
+    .leftJoin(
+      clientAeoPlansTable,
+      eq(keywordsTable.aeoPlanId, clientAeoPlansTable.id),
+    )
+    .leftJoin(businessesTable, eq(keywordsTable.businessId, businessesTable.id))
+    .where(and(...conditions));
+
+  if (kws.length === 0) return [];
+
+  const ids = kws.map((k) => k.id);
+  const allReports = await db
+    .select({
+      keywordId: rankingReportsTable.keywordId,
+      platform: rankingReportsTable.platform,
+      rankingPosition: rankingReportsTable.rankingPosition,
+      date: rankingReportsTable.date,
+      createdAt: rankingReportsTable.createdAt,
+    })
+    .from(rankingReportsTable)
+    .where(
+      and(
+        eq(rankingReportsTable.clientId, clientId),
+        inArray(rankingReportsTable.keywordId, ids),
+      ),
+    )
+    .orderBy(asc(rankingReportsTable.createdAt)); // oldest first
+
+  // Admin-hidden dates for this scope drop out of the scan (JS-side: dateless
+  // rows must survive, they fall back to createdAt).
+  const scanHideScope = {
+    clientId,
+    businessId: opts.businessId ?? null,
+    aeoPlanId: opts.aeoPlanId ?? null,
+  };
+  const hiddenDateSet = new Set(await hiddenDatesForScope(scanHideScope));
+  const hiddenKwPlatformSet = new Set(
+    await hiddenKeywordPlatformPairs(scanHideScope),
+  );
+  const visibleReports = allReports.filter(
+    (r) =>
+      (!r.date || !hiddenDateSet.has(r.date)) &&
+      (!r.platform ||
+        !hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)),
+  );
+
+  /* July-1 baseline (display only — see lib/july1-rebase.ts). Remapping here,
+     before any series is built, means every date this scan produces (rank
+     series, latest/prior dates, won-at, stalling-since) and everything derived
+     from it — the portal and the Summary Report — presents the same cadence as
+     the admin keyword table. Rows are never modified in the database. */
+  const displayMaps = buildKeywordDateMaps(visibleReports);
+  const reports = visibleReports.flatMap((r) => {
+    if (!r.date) return [r];
+    const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+    if (displayDate === undefined) return [r];
+    if (displayDate === null) return []; // audit older than the first slot
+    return [{ ...r, date: displayDate }];
+  });
+
+  const byKeyword = new Map<number, typeof reports>();
+  for (const r of reports) {
+    const arr = byKeyword.get(r.keywordId) ?? [];
+    arr.push(r);
+    byKeyword.set(r.keywordId, arr);
+  }
+
+  return kws.map((k) => {
+    let rs = byKeyword.get(k.id) ?? [];
+    if (opts.asOfDate) {
+      rs = rs.filter((r) => dayOf(r.date, r.createdAt) <= opts.asOfDate!);
+    }
+
+    // Per-platform latest rank (oldest-first → last write wins = latest).
+    const platforms: EnrichedKeyword["platforms"] = {};
+    for (const r of rs) {
+      if (!r.platform) continue;
+      platforms[r.platform] = {
+        position: r.rankingPosition,
+        date: dayOf(r.date, r.createdAt) || null,
+      };
+    }
+
+    // Daily series: best (min) position per day, chronological.
+    const byDay = new Map<string, number>();
+    for (const r of rs) {
+      if (r.rankingPosition == null || r.rankingPosition < 1) continue;
+      const day = dayOf(r.date, r.createdAt);
+      if (!day) continue;
+      const cur = byDay.get(day);
+      if (cur == null || r.rankingPosition < cur)
+        byDay.set(day, r.rankingPosition);
+    }
+    const days = [...byDay.keys()].sort();
+    const series = days.map((d) => byDay.get(d)!);
+    const totalRuns = series.length;
+    const top3Runs = series.filter((p) => p <= TOP3).length;
+    const stabilityPercent =
+      totalRuns > 0 ? Math.round((top3Runs / totalRuns) * 100) : 0;
+    const latestPosition = totalRuns > 0 ? series[series.length - 1] : null;
+    const latestDate = days.length > 0 ? days[days.length - 1] : null;
+    const firstPosition = totalRuns > 0 ? series[0] : null;
+    const priorPosition = totalRuns >= 2 ? series[series.length - 2] : null;
+
+    let trend: EnrichedKeyword["trend"] = "steady";
+    if (series.length >= 2) {
+      const a = series[series.length - 1];
+      const b = series[series.length - 2];
+      trend = a < b ? "improving" : a > b ? "declining" : "steady";
+    }
+
+    const active = k.isActive && k.status !== "locked" && k.archivedAt == null;
+    const last5 = series.slice(-5);
+    const atRisk = active && last5.length >= 5 && last5.every((p) => p > TOP3);
+    const stallingSince =
+      atRisk && days.length >= 5 ? days[days.length - 5] : null;
+
+    // Won info: most recent day the keyword was top-3 (oldest-first → last wins).
+    let wonPlatform: string | null = null;
+    let wonPosition: number | null = null;
+    let wonAt: string | null = null;
+    for (const r of rs) {
+      if (r.rankingPosition != null && r.rankingPosition <= TOP3) {
+        wonPlatform = r.platform ?? null;
+        wonPosition = r.rankingPosition;
+        wonAt = dayOf(r.date, r.createdAt) || null;
+      }
+    }
+
+    return {
+      id: k.id,
+      keywordText: k.keywordText,
+      status: k.status,
+      isActive: k.isActive,
+      archivedAt: k.archivedAt ? new Date(k.archivedAt).toISOString() : null,
+      archiveReason: k.archiveReason,
+      replacementSuggestion: k.replacementSuggestion,
+      aeoPlanId: k.aeoPlanId,
+      businessId: k.businessId,
+      campaignName: k.campaignName ?? null,
+      businessName: k.businessName ?? null,
+      latestPosition,
+      latestDate,
+      firstPosition,
+      priorPosition,
+      platforms,
+      sparkline: series.slice(-12),
+      totalRuns,
+      top3Runs,
+      stabilityPercent,
+      trend,
+      atRisk,
+      stallingSince,
+      wonPlatform,
+      wonPosition,
+      wonAt,
+    };
+  });
+}
+
+export interface KeywordBuckets {
+  /** Active + healthy (being worked, not slipping, not yet won). */
+  active: number;
+  /** Active but slipping — out of the top for its recent checks ("under watch"). */
+  watch: number;
+  /** Won and held ("locked"). */
+  locked: number;
+}
+
+/** Groups enriched keywords into disjoint Active / Under-watch / Locked tallies
+ *  per aeo_plan, using the same rules as the rotation-status summary. A keyword
+ *  counts in exactly one bucket (watch is the at-risk slice of active). */
+export function bucketCountsByPlan(
+  enriched: EnrichedKeyword[],
+): Map<number, KeywordBuckets> {
+  const byPlan = new Map<number, KeywordBuckets>();
+  for (const k of enriched) {
+    if (k.aeoPlanId == null) continue;
+    const b = byPlan.get(k.aeoPlanId) ?? { active: 0, watch: 0, locked: 0 };
+    if (k.status === "locked" && k.archivedAt == null) {
+      b.locked += 1;
+    } else if (k.isActive && k.status !== "locked" && k.archivedAt == null) {
+      if (k.atRisk) b.watch += 1;
+      else b.active += 1;
+    }
+    byPlan.set(k.aeoPlanId, b);
+  }
+  return byPlan;
+}
+
+function parseIntOrUndefined(v: unknown): number | undefined {
+  if (typeof v !== "string") return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/* ─── Summary Report builder (shared by portal + admin namespaces) ───
+   The single source of truth for the Summary Report payload. Both the
+   customer portal and the admin panel fetch through routes that call
+   this ONE function, so the content is guaranteed identical. Pure read;
+   derives everything from ranking_reports via scanClientKeywords. */
+
+const SUMMARY_PLATFORM_LABEL: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+export type SummaryScope = "client" | "business" | "campaign";
+
+export interface SummaryMetrics {
+  tracked: number;
+  withRank: number;
+  top3: number;
+  improved: number;
+  declined: number;
+  steady: number;
+  avgCurrent: number | null;
+  avgFirst: number | null;
+}
+
+export interface SummaryPlatformAggregate {
+  platform: string;
+  label: string;
+  tracked: number;
+  top3: number;
+  avgCurrent: number | null;
+}
+
+export interface SummaryMover {
+  keyword: string;
+  first: number | null;
+  current: number | null;
+}
+
+export interface SummaryLockedPlatform {
+  platform: string;
+  label: string;
+  position: number | null;
+  reason: string;
+}
+
+export interface SummaryLocked {
+  keyword: string;
+  campaignName: string | null;
+  businessName: string | null;
+  platforms: SummaryLockedPlatform[];
+}
+
+export interface SummaryWatch {
+  keyword: string;
+  latestPosition: number | null;
+  stallingSince: string | null;
+}
+
+export interface SummaryDecline {
+  keyword: string;
+  from: number | null;
+  to: number | null;
+  reason: string;
+}
+
+export interface SummaryReport {
+  scope: SummaryScope;
+  businessId: number | null;
+  aeoPlanId: number | null;
+  date: string | null;
+  /** "prior-run" when a period-ending date is chosen; "all-time" otherwise. */
+  comparison: "prior-run" | "all-time";
+  metrics: SummaryMetrics;
+  platforms: SummaryPlatformAggregate[];
+  movers: SummaryMover[];
+  locked: SummaryLocked[];
+  watch: SummaryWatch[];
+  declines: SummaryDecline[];
+  glossaryVersion: string;
+}
+
+function roundedAvg(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+/**
+ * Build the Summary Report payload for a client scope. When `date` is set the
+ * report ends on that day and per-keyword movement is measured vs the PRIOR
+ * run (bi-weekly delta); otherwise it is all-time (current vs first-ever run).
+ * All figures are derived from ranking_reports — never asserted.
+ */
+export async function buildSummaryReport(
+  clientId: number,
+  opts: {
+    scope: SummaryScope;
+    businessId?: number | null;
+    aeoPlanId?: number | null;
+    date?: string | null;
+  },
+): Promise<SummaryReport> {
+  const date = opts.date ?? null;
+  const enriched = await scanClientKeywords(clientId, {
+    businessId: opts.businessId ?? undefined,
+    aeoPlanId: opts.aeoPlanId ?? undefined,
+    asOfDate: date ?? undefined,
+  });
+
+  // Baseline for movement: prior run when a date is chosen, else first-ever run.
+  const baselineOf = (k: EnrichedKeyword): number | null =>
+    date ? k.priorPosition : k.firstPosition;
+
+  let improved = 0;
+  let declined = 0;
+  let steady = 0;
+  const currents: number[] = [];
+  const baselines: number[] = [];
+  let top3 = 0;
+
+  for (const k of enriched) {
+    const cur = k.latestPosition;
+    const base = baselineOf(k);
+    if (cur != null) {
+      currents.push(cur);
+      if (cur <= TOP3) top3 += 1;
+    }
+    if (base != null) baselines.push(base);
+    if (cur != null && base != null) {
+      if (cur < base) improved += 1;
+      else if (cur > base) declined += 1;
+      else steady += 1;
+    }
+  }
+
+  const metrics: SummaryMetrics = {
+    tracked: enriched.length,
+    withRank: currents.length,
+    top3,
+    improved,
+    declined,
+    steady,
+    avgCurrent: roundedAvg(currents),
+    avgFirst: roundedAvg(baselines),
+  };
+
+  // Per-platform aggregates from the latest per-platform position.
+  const platforms: SummaryPlatformAggregate[] = [];
+  for (const platform of Object.keys(SUMMARY_PLATFORM_LABEL)) {
+    const positions: number[] = [];
+    let pTop3 = 0;
+    for (const k of enriched) {
+      const pos = k.platforms[platform]?.position;
+      if (pos != null) {
+        positions.push(pos);
+        if (pos <= TOP3) pTop3 += 1;
+      }
+    }
+    if (positions.length > 0) {
+      platforms.push({
+        platform,
+        label: SUMMARY_PLATFORM_LABEL[platform],
+        tracked: positions.length,
+        top3: pTop3,
+        avgCurrent: roundedAvg(positions),
+      });
+    }
+  }
+
+  // Movers: biggest improvements (baseline → current), best first.
+  const movers: SummaryMover[] = enriched
+    .filter((k) => {
+      const base = baselineOf(k);
+      return (
+        base != null && k.latestPosition != null && k.latestPosition < base
+      );
+    })
+    .sort(
+      (a, b) =>
+        baselineOf(b)! -
+        b.latestPosition! -
+        (baselineOf(a)! - a.latestPosition!),
+    )
+    .slice(0, 5)
+    .map((k) => ({
+      keyword: k.keywordText,
+      first: baselineOf(k),
+      current: k.latestPosition,
+    }));
+
+  // Locked: won phrases, with a read-time per-platform reason derived from the
+  // latest per-platform position (never from the generic archive_reason text).
+  const locked: SummaryLocked[] = enriched
+    .filter((k) => k.status === "locked")
+    .map((k) => {
+      const platformReasons: SummaryLockedPlatform[] = [];
+      for (const platform of Object.keys(SUMMARY_PLATFORM_LABEL)) {
+        const pos = k.platforms[platform]?.position;
+        if (pos == null) continue;
+        const label = SUMMARY_PLATFORM_LABEL[platform];
+        platformReasons.push({
+          platform,
+          label,
+          position: pos,
+          reason:
+            pos <= TOP3
+              ? `Holding the top 3 (currently #${pos}) on ${label} — secured, so we rotated a fresh phrase in.`
+              : `Won earlier on ${label}; latest check was #${pos}.`,
+        });
+      }
+      return {
+        keyword: k.keywordText,
+        campaignName: k.campaignName,
+        businessName: k.businessName,
+        platforms: platformReasons,
+      };
+    });
+
+  // Watch: active phrases slipping out of the top 3 over recent checks.
+  const watch: SummaryWatch[] = enriched
+    .filter((k) => k.atRisk)
+    .map((k) => ({
+      keyword: k.keywordText,
+      latestPosition: k.latestPosition,
+      stallingSince: k.stallingSince,
+    }));
+
+  // Declines: genuine position movement only (current worse than baseline).
+  // NOTE(erven): the "platform not measured in period" decline reason is
+  // intentionally NOT asserted here — it requires cross-referencing sessions
+  // and success ranking_reports counts per (keyword, platform). Deferred to a
+  // follow-up so we never claim an outage the data doesn't prove.
+  const declines: SummaryDecline[] = enriched
+    .filter((k) => {
+      const base = baselineOf(k);
+      return (
+        base != null && k.latestPosition != null && k.latestPosition > base
+      );
+    })
+    .sort(
+      (a, b) =>
+        b.latestPosition! -
+        baselineOf(b)! -
+        (a.latestPosition! - baselineOf(a)!),
+    )
+    .slice(0, 5)
+    .map((k) => {
+      const from = baselineOf(k);
+      const to = k.latestPosition;
+      return {
+        keyword: k.keywordText,
+        from,
+        to,
+        reason: `Slipped from #${from} to #${to} — we're working it back up.`,
+      };
+    });
+
+  return {
+    scope: opts.scope,
+    businessId: opts.businessId ?? null,
+    aeoPlanId: opts.aeoPlanId ?? null,
+    date,
+    comparison: date ? "prior-run" : "all-time",
+    metrics,
+    platforms,
+    movers,
+    locked,
+    watch,
+    declines,
+    glossaryVersion: GLOSSARY_VERSION,
+  };
+}
+
+/** GET /api/portal/insights/locked-keywords — won (top-3, status=locked). */
+router.get("/insights/locked-keywords", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const enriched = await scanClientKeywords(clientId, {
+      aeoPlanId,
+      businessId,
+    });
+    const locked = enriched
+      .filter((k) => k.status === "locked")
+      .map((k) => ({
+        id: k.id,
+        keywordText: k.keywordText,
+        campaignName: k.campaignName,
+        businessName: k.businessName,
+        aeoPlanId: k.aeoPlanId,
+        businessId: k.businessId,
+        replacementSuggestion: k.replacementSuggestion,
+        archiveReason: k.archiveReason,
+        wonPlatform: k.wonPlatform,
+        wonPosition: k.wonPosition,
+        wonAt: k.wonAt,
+        stabilityPercent: k.stabilityPercent,
+        platforms: k.platforms,
+      }));
+    res.json(locked);
+  } catch (err) {
+    req.log.error({ err }, "Portal locked-keywords error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/insights/rotation-status — optimization transparency. */
+router.get("/insights/rotation-status", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const enriched = await scanClientKeywords(clientId, {
+      aeoPlanId,
+      businessId,
+    });
+
+    const summary = {
+      total: enriched.length,
+      locked: enriched.filter((k) => k.status === "locked").length,
+      active: enriched.filter(
+        (k) => k.isActive && k.status !== "locked" && !k.archivedAt,
+      ).length,
+      atRisk: enriched.filter((k) => k.atRisk).length,
+    };
+
+    const platformAggregate: Record<
+      string,
+      { tracked: number; top3: number; avgPosition: number | null }
+    > = {};
+    for (const pk of PLATFORM_KEYS) {
+      const positions = enriched
+        .map((k) => k.platforms[pk]?.position)
+        .filter((p): p is number => p != null);
+      platformAggregate[pk] = {
+        tracked: positions.length,
+        top3: positions.filter((p) => p <= TOP3).length,
+        avgPosition:
+          positions.length > 0
+            ? Math.round(
+                (positions.reduce((a, b) => a + b, 0) / positions.length) * 10,
+              ) / 10
+            : null,
+      };
+    }
+
+    const timeline: Array<Record<string, unknown>> = [];
+    for (const k of enriched) {
+      if (k.status === "locked" && k.wonAt) {
+        timeline.push({
+          type: "locked",
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          campaignName: k.campaignName,
+          platform: k.wonPlatform,
+          position: k.wonPosition,
+          date: k.wonAt,
+          detail: k.archiveReason,
+        });
+      }
+      if (k.archivedAt) {
+        timeline.push({
+          type: "archived",
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          campaignName: k.campaignName,
+          date: k.archivedAt,
+          detail: k.archiveReason,
+          replacement: k.replacementSuggestion,
+        });
+      }
+    }
+    timeline.sort((a, b) =>
+      String(a.date) < String(b.date)
+        ? 1
+        : String(a.date) > String(b.date)
+          ? -1
+          : 0,
+    );
+
+    res.json({
+      summary,
+      platformAggregate,
+      keywords: enriched,
+      timeline: timeline.slice(0, 50),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Portal rotation-status error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/keywords/:id/variants — read-only AI variant alternates. */
+router.get("/keywords/:id/variants", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const rawId = req.params.id;
+    const keywordId = Number.parseInt(
+      typeof rawId === "string" ? rawId : "",
+      10,
+    );
+    if (Number.isNaN(keywordId))
+      return res.status(400).json({ error: "Invalid keyword id" });
+
+    // Ownership check — 404 (don't leak existence) if not the client's keyword.
+    const [keyword] = await db
+      .select({ id: keywordsTable.id, clientId: keywordsTable.clientId })
+      .from(keywordsTable)
+      .where(eq(keywordsTable.id, keywordId));
+    if (!keyword || keyword.clientId !== clientId)
+      return res.status(404).json({ error: "Keyword not found" });
+
+    const variants = await db
+      .select()
+      .from(keywordVariantsTable)
+      .where(
+        and(
+          eq(keywordVariantsTable.keywordId, keywordId),
+          eq(keywordVariantsTable.isActive, true),
+        ),
+      )
+      .orderBy(desc(keywordVariantsTable.generatedAt));
+
+    res.json({ variants, total: variants.length });
+  } catch (err) {
+    req.log.error({ err }, "Portal keyword variants error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────
+   POST /api/portal/reports/summarize — DeepSeek plain-English recap
+   of a single report period. The customer already sees these numbers
+   in their report; we just turn them into a warm, jargon-free paragraph
+   a non-technical owner can understand. Portal-auth gated so only
+   logged-in customers can spend tokens. Cached in-memory because a
+   report's numbers are stable once its 2-week window has closed.
+──────────────────────────────────────────────────────────── */
+interface SummaryCacheEntry {
+  summary: string;
+  expiresMs: number;
+}
+const reportSummaryCache = new Map<string, SummaryCacheEntry>();
+const REPORT_SUMMARY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function num(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+router.post("/reports/summarize", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const periodStart = String(b.periodStart ?? "").slice(0, 10);
+    const periodEnd = String(b.periodEnd ?? "").slice(0, 10);
+    const tracked = num(b.keywordsTracked) ?? 0;
+    const improved = num(b.keywordsImproved) ?? 0;
+    const declined = num(b.keywordsDeclined) ?? 0;
+    const avgPos = num(b.averagePosition);
+    const visibility = num(b.visibilityScore);
+    const prevAvgPos = num(b.prevAveragePosition);
+    const prevVisibility = num(b.prevVisibilityScore);
+    const steady = Math.max(0, tracked - improved - declined);
+
+    if (!periodStart || !periodEnd) {
+      return res
+        .status(400)
+        .json({ error: "periodStart and periodEnd are required" });
+    }
+
+    const cacheKey = [
+      clientId,
+      periodStart,
+      periodEnd,
+      tracked,
+      improved,
+      declined,
+      avgPos ?? "-",
+      visibility ?? "-",
+    ].join("|");
+    const hit = reportSummaryCache.get(cacheKey);
+    if (hit && hit.expiresMs > Date.now()) {
+      return res.json({ summary: hit.summary, cached: true });
+    }
+
+    const facts = [
+      `Report period: ${periodStart} to ${periodEnd} (about two weeks).`,
+      `Search phrases tracked across ChatGPT, Gemini and Perplexity: ${tracked}.`,
+      `Phrases that ranked better than the previous report: ${improved}.`,
+      `Phrases that slipped: ${declined}.`,
+      `Phrases that stayed about the same: ${steady}.`,
+      avgPos != null
+        ? `Average position in AI answers: about #${Math.round(avgPos)} (closer to #1 is better).`
+        : `Average position: not enough data yet.`,
+      visibility != null
+        ? `Visibility (share of checks where the business appeared at all): about ${Math.round(visibility)}%.`
+        : `Visibility: not enough data yet.`,
+    ];
+    if (prevAvgPos != null && avgPos != null) {
+      const d = Math.round(prevAvgPos) - Math.round(avgPos);
+      facts.push(
+        d > 0
+          ? `Average position improved by ${d} spot(s) versus the previous report.`
+          : d < 0
+            ? `Average position dropped by ${Math.abs(d)} spot(s) versus the previous report.`
+            : `Average position held steady versus the previous report.`,
+      );
+    }
+    if (prevVisibility != null && visibility != null) {
+      const d = Math.round(visibility) - Math.round(prevVisibility);
+      if (d !== 0)
+        facts.push(
+          `Visibility ${d > 0 ? "rose" : "fell"} by ${Math.abs(d)} percentage point(s) versus the previous report.`,
+        );
+    }
+
+    const completion = await chatCompletion({
+      model: "deepseek-chat",
+      temperature: 0.5,
+      maxTokens: 320,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write short, warm, plain-English summaries of AI-search visibility reports for small business owners who have no technical or SEO background. " +
+            "Write 2 to 4 short sentences in a single paragraph. No markdown, no bullet points, no headings, no jargon (avoid words like 'keyword', 'SERP', 'algorithm'); say 'search phrases' and 'AI assistants'. " +
+            "Explain plainly how the business is doing at showing up when people ask AI assistants (ChatGPT, Gemini, Perplexity) about businesses like theirs. Be encouraging but honest — if things slipped, say so gently and reassuringly. End with one simple, non-technical takeaway. Address the reader as 'you' / 'your business'. " +
+            "Never write a negative number or a minus sign, and never state that a number went down by a specific figure. If a metric declined, mention it briefly and gently in words only (no number), then focus on what is positive or being worked on. Do not comment on the count of search phrases going up or down — that number naturally changes over time as phrases rotate.",
+        },
+        {
+          role: "user",
+          content:
+            "Here are this report's numbers. Write the summary for the business owner:\n\n" +
+            facts.join("\n"),
+        },
+      ],
+    });
+
+    const summary = completion.content.trim();
+    reportSummaryCache.set(cacheKey, {
+      summary,
+      expiresMs: Date.now() + REPORT_SUMMARY_TTL_MS,
+    });
+    res.json({ summary, cached: false });
+  } catch (err) {
+    req.log.error({ err }, "Portal report summarize error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
+  }
+});
+
+/* ─── Summary Report (client-scoped) ──────────────────────────
+   Customer-facing endpoints. Content is produced by the shared
+   builders (getGlossaryPayload / availableReportDates /
+   buildSummaryReport) so it matches the admin panel exactly. */
+
+/** GET /api/portal/glossary — plain-English term definitions. */
+router.get("/glossary", requirePortalAuth, (_req, res) => {
+  res.json(getGlossaryPayload());
+});
+
+function parseScope(v: unknown): SummaryScope {
+  return v === "business" || v === "campaign" ? v : "client";
+}
+
+/** GET /api/portal/summary/available-dates — calendar dates with report data. */
+router.get("/summary/available-dates", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const dates = await availableReportDates(clientId, {
+      businessId,
+      aeoPlanId,
+    });
+    res.json({ dates });
+  } catch (err) {
+    req.log.error({ err }, "Portal summary available-dates error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/summary — Summary Report payload for scope + optional date. */
+router.get("/summary", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const scope = parseScope(req.query.scope);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    res.json(report);
+  } catch (err) {
+    req.log.error({ err }, "Portal summary error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/portal/summary/narrative — plain-English AI narrative + how-AEO-works. */
+router.get("/summary/narrative", requirePortalAuth, async (req, res) => {
+  try {
+    const clientId = await requireLinkedClient(req, res);
+    if (clientId == null) return;
+    const scope = parseScope(req.query.scope);
+    const businessId = parseIntOrUndefined(req.query.businessId);
+    const aeoPlanId = parseIntOrUndefined(req.query.aeoPlanId);
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    if (businessId != null) {
+      const ok = await verifyBusinessBelongsToClient(res, clientId, businessId);
+      if (!ok) return;
+    }
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    const narrative = await generateSummaryNarrative(
+      report,
+      clientId,
+      Date.now(),
+    );
+    res.json(narrative);
+  } catch (err) {
+    req.log.error({ err }, "Portal summary narrative error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
+  }
+});
 
 export default router;

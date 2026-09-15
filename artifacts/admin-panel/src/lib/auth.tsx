@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthUser {
   id: number;
@@ -10,7 +17,22 @@ interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
+  /** True only for role === "owner" — for owner-gated beta features. */
   isOwner: boolean;
+  /** True for role === "sales" — narrowed to free-trial-only views. */
+  isSales: boolean;
+  /** True for role === "account-manager" — narrowed to non-free-trial views. */
+  isAccountManager: boolean;
+  /** True for role === "chuckslocal" — plan-scoped admin (Signal local plans).
+   *  Admin-like writes, but the BE confines them to his plan slice. */
+  isChucksLocal: boolean;
+  /** True when the user can perform destructive / create-top-level actions.
+   *  Subsumes owner. Use to gate Add/Delete buttons that should not appear
+   *  for editor or viewer roles. */
+  isAdmin: boolean;
+  /** True when the user can edit existing entities. Subsumes admin + owner.
+   *  Use to gate Edit / Patch buttons that should not appear for viewer. */
+  isEditor: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -20,7 +42,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(options?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((options?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
   const res = await fetch(BASE + path, {
     credentials: "include",
@@ -43,6 +68,7 @@ async function parseJSON(res: Response) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     apiFetch("/api/auth/me")
@@ -73,20 +99,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await parseJSON(res);
       if (!userData) throw new Error("No user data in response");
+      // Drop any cached data from a previous session in this browser so the new
+      // user only ever sees their own scoped data (never a prior owner's clients).
+      queryClient.clear();
       setUser(userData);
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : "Invalid server response");
+      throw new Error(
+        err instanceof Error ? err.message : "Invalid server response",
+      );
     }
   }
 
   async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
     setUser(null);
+    // Wipe the query cache so the next user in this browser can't read the
+    // previous session's cached clients/rankings from React Query.
+    queryClient.clear();
   }
 
   const isOwner = user?.role === "owner";
+  const isSales = user?.role === "sales";
+  const isAccountManager = user?.role === "account-manager";
+  const isChucksLocal = user?.role === "chuckslocal";
+  // Subsumptive: admin includes owner; editor includes admin + owner. Matches
+  // the BE hierarchy in middlewares/role-auth.ts. chuckslocal is admin-like for
+  // the UI (it needs the create/edit buttons); the BE enforces its plan scope.
+  const isAdmin = user?.role === "admin" || isOwner || isChucksLocal;
+  const isEditor = user?.role === "editor" || isAdmin;
 
-  return <AuthContext.Provider value={{ user, isLoading, isOwner, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        isOwner,
+        isSales,
+        isAccountManager,
+        isChucksLocal,
+        isAdmin,
+        isEditor,
+        login,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

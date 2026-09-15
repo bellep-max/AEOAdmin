@@ -10,50 +10,102 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  AlertDialog, 
-  AlertDialogAction, 
-  AlertDialogCancel, 
-  AlertDialogContent, 
-  AlertDialogDescription, 
-  AlertDialogFooter, 
-  AlertDialogHeader, 
-  AlertDialogTitle 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { CreatedByField } from "@/components/CreatedByField";
 import {
-  ExternalLink, Pencil, ChevronLeft, Building2, CreditCard, Loader2, Briefcase, StickyNote, CheckCircle2,
-  Mail, User, CalendarDays,
+  ExternalLink,
+  Pencil,
+  ChevronLeft,
+  Building2,
+  CreditCard,
+  Loader2,
+  Briefcase,
+  StickyNote,
+  CheckCircle2,
+  Mail,
+  User,
+  CalendarDays,
+  FileText,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getPlanMeta } from "@/lib/plan-meta";
 import ClientAeoPlans from "@/components/ClientAeoPlans";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
+import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
+import { DeclinedPaymentDialog } from "@/components/DeclinedPaymentDialog";
+import { SendWelcomeDialog } from "@/components/SendWelcomeDialog";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 /* ─── Read-only field ────────────────────────────────────────────────────── */
-function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
+function Field({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value?: string | null;
+  href?: string;
+}) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+        {label}
+      </p>
       {value ? (
         href ? (
           <a
-            href={href} target="_blank" rel="noopener noreferrer"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-sm text-primary hover:underline flex items-center gap-1 break-all"
           >
             {value} <ExternalLink className="w-3 h-3 flex-shrink-0" />
@@ -70,13 +122,17 @@ function Field({ label, value, href }: { label: string; value?: string | null; h
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 export default function ClientDetail() {
-  const [, params]  = useRoute("/clients/:id");
-  const clientId    = Number(params?.id);
+  const [, params] = useRoute("/clients/:id");
+  const clientId = Number(params?.id);
   const queryClient = useQueryClient();
-  const { toast }   = useToast();
+  const { toast } = useToast();
+  const { isEditor, isOwner } = useAuth();
 
-  const [editBizOpen,  setEditBizOpen]  = useState(false);
-  const [editAccOpen,  setEditAccOpen]  = useState(false);
+  const [editBizOpen, setEditBizOpen] = useState(false);
+  const [editAccOpen, setEditAccOpen] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -91,10 +147,10 @@ export default function ClientDetail() {
       window.history.replaceState(null, "", newUrl);
     }
   }, []);
-  const [notesOpen,    setNotesOpen]    = useState(false);
-  const [notesDraft,   setNotesDraft]   = useState("");
-  const [saving,       setSaving]       = useState(false);
-  const [notesSaving,  setNotesSaving]  = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   async function saveNotes() {
@@ -107,7 +163,9 @@ export default function ClientDetail() {
         body: JSON.stringify({ notes: notesDraft.trim() || null }),
       });
       if (!res.ok) throw new Error();
-      await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["getClient", clientId],
+      });
       toast({ title: "Notes saved" });
       setNotesOpen(false);
     } catch {
@@ -122,67 +180,100 @@ export default function ClientDetail() {
   });
 
   /* ── PATCH helper — accepts a close callback so both dialogs can share it ── */
-  async function patchClient(body: Record<string, string>, onSuccess: () => void) {
+  async function patchClient(
+    body: Record<string, string>,
+    onSuccess: () => void,
+  ) {
     setSaving(true);
     try {
       const res = await rawFetch(`/api/clients/${clientId}`, {
-        method:      "PATCH",
+        method: "PATCH",
         credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
-      await queryClient.invalidateQueries({ queryKey: ["getClient", clientId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["getClient", clientId],
+      });
       await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({ 
+      toast({
         title: "✅ Changes saved successfully!",
-        description: `Updated information for ${body.businessName || client?.businessName || "client"}.`
+        description: `Updated information for ${body.businessName || client?.businessName || "client"}.`,
       });
       onSuccess();
     } catch (err: unknown) {
-      toast({ title: "❌ Save failed", description: err instanceof Error ? err.message : "", variant: "destructive" });
+      toast({
+        title: "❌ Save failed",
+        description: err instanceof Error ? err.message : "",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
   }
 
   /* ── Loading / not found ── */
-  if (isLoading) return (
-    <div className="space-y-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-20 w-full rounded-xl" />
-      <div className="grid md:grid-cols-2 gap-6">
-        <Skeleton className="h-80 rounded-xl" />
-        <Skeleton className="h-80 rounded-xl" />
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <div className="grid md:grid-cols-2 gap-6">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  if (!client) return (
-    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
-      <Building2 className="w-12 h-12 opacity-20" />
-      <p>Client not found</p>
-      <Link href="/clients">
-        <Button variant="outline" size="sm">Back to Clients</Button>
-      </Link>
-    </div>
-  );
+  if (!client)
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+        <Building2 className="w-12 h-12 opacity-20" />
+        <p>Client not found</p>
+        <Link href="/clients">
+          <Button variant="outline" size="sm">
+            Back to Clients
+          </Button>
+        </Link>
+      </div>
+    );
 
-  const c        = client as unknown as Record<string, unknown>;
+  const c = client as unknown as Record<string, unknown>;
+  const planTypes = (c.planTypes as string[] | undefined) ?? [];
+  const isFreeTrial = planTypes.includes("Free Trial Plans");
+  // Every non-trial plan the client actually pays for, tagged separately from
+  // the plan_name text so a trial + paid client reads correctly.
+  const paidPlanTypes = planTypes.filter((pt) => pt !== "Free Trial Plans");
+  // plan_name is free text that usually repeats the plan type — hide it when a
+  // "… Paid" tag already says the same thing, so the Paid suffix reads clearly.
+  const planNameDuplicatesPaidTag = paidPlanTypes.some(
+    (pt) =>
+      pt.toLowerCase().trim() === (client.planName ?? "").toLowerCase().trim(),
+  );
   const initials = client.businessName
-    ? client.businessName.split(" ").slice(0, 2).map((w: string) => w[0]).join("").toUpperCase()
+    ? client.businessName
+        .split(" ")
+        .slice(0, 2)
+        .map((w: string) => w[0])
+        .join("")
+        .toUpperCase()
     : "?";
 
   return (
     <div className="space-y-6">
-
       {/* ── Breadcrumb ── */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/clients" className="hover:text-foreground transition-colors flex items-center gap-1">
+        <Link
+          href="/clients"
+          className="hover:text-foreground transition-colors flex items-center gap-1"
+        >
           <ChevronLeft className="w-3.5 h-3.5" /> Clients
         </Link>
         <span>/</span>
-        <span className="text-foreground font-medium">{client.businessName}</span>
+        <span className="text-foreground font-medium">
+          {client.businessName}
+        </span>
       </div>
 
       {/* ── Hero ── */}
@@ -192,33 +283,85 @@ export default function ClientDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{client.businessName}</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {client.businessName}
+            </h1>
             <Badge
               variant="outline"
-              className={client.status === "active"
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                : "bg-muted text-muted-foreground"
+              className={
+                client.status === "active"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-muted text-muted-foreground"
               }
             >
               {client.status}
             </Badge>
-            {client.planName && (
-              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+            {client.planName && !planNameDuplicatesPaidTag && (
+              <Badge
+                variant="outline"
+                className="bg-primary/10 text-primary border-primary/20"
+              >
                 {client.planName}
               </Badge>
             )}
             {(c.accountType as string) && (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs">
+              <Badge
+                variant="outline"
+                className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs"
+              >
                 {c.accountType as string}
               </Badge>
             )}
+            {paidPlanTypes.map((pt) => (
+              <Badge
+                key={pt}
+                variant="outline"
+                className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
+              >
+                {pt} Paid
+              </Badge>
+            ))}
           </div>
         </div>
+        {isOwner && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Welcome applies to direct signups too, so it isn't trial-gated. */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setWelcomeOpen(true)}
+            >
+              <Send className="w-4 h-4" />
+              Send welcome
+            </Button>
+            {isFreeTrial && (
+              <>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSalesEmailOpen(true)}
+                >
+                  <Send className="w-4 h-4" />
+                  Send free-trial proof
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-amber-600 border-amber-500/40 hover:text-amber-700"
+                  onClick={() => setDeclinedPaymentOpen(true)}
+                >
+                  <Send className="w-4 h-4" />
+                  Declined payment
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Two-column cards ── */}
       <div className="grid grid-cols-1 gap-6">
-
         {/* ── Client Details (commented out) ── */}
         {/*
         <Card className="border-border/50">
@@ -273,31 +416,49 @@ export default function ClientDetail() {
               <Briefcase className="w-4 h-4 text-primary" />
               Client Details
             </CardTitle>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setEditAccOpen(true)}
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </Button>
+            {isEditor && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setEditAccOpen(true)}
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </Button>
+            )}
           </CardHeader>
 
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-              <Field label="Account Type"              value={c.accountType as string} />
-              <Field label="Account User Name"         value={c.accountUserName as string} />
-              <Field label="Account Email"             value={c.accountEmail as string} />
-              <Field label="Contact / Billing Email"   value={c.billingEmail as string} />
+              <Field label="Account Type" value={c.accountType as string} />
+              <Field
+                label="Account User Name"
+                value={c.accountUserName as string}
+              />
+              <Field label="Account Email" value={c.accountEmail as string} />
+              <Field
+                label="Contact / Billing Email"
+                value={c.billingEmail as string}
+              />
               <Field label="Created By" value={c.createdBy as string} />
               {/* Notes — inline edit */}
               <div className="space-y-1 col-span-full">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Notes</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Notes
+                </p>
                 <button
-                  onClick={() => { setNotesDraft((c.notes as string) ?? ""); setNotesOpen(true); }}
+                  onClick={() => {
+                    setNotesDraft((c.notes as string) ?? "");
+                    setNotesOpen(true);
+                  }}
                   className="flex items-start gap-2 text-left w-full group"
                 >
-                  <StickyNote className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${(c.notes as string) ? "text-amber-500" : "text-muted-foreground/30 group-hover:text-primary"}`} />
-                  <span className={`text-sm ${(c.notes as string) ? "text-foreground" : "text-muted-foreground/40 italic group-hover:text-primary"}`}>
+                  <StickyNote
+                    className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${(c.notes as string) ? "text-amber-500" : "text-muted-foreground/30 group-hover:text-primary"}`}
+                  />
+                  <span
+                    className={`text-sm ${(c.notes as string) ? "text-foreground" : "text-muted-foreground/40 italic group-hover:text-primary"}`}
+                  >
                     {(c.notes as string) ? (c.notes as string) : "Add notes…"}
                   </span>
                 </button>
@@ -305,6 +466,29 @@ export default function ClientDetail() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* ═══ PERFORMANCE SUMMARY (commented out) ═══ */}
+      {/*
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={null}
+        aeoPlanId={null}
+        title="Overall Performance summary · this client"
+      />
+
+      <RankTrendChart scope="client" clientId={clientId} />
+
+      <BiWeeklyGraphsCard scope="client" clientId={clientId} />
+      */}
+
+      <div className="flex justify-end">
+        <Link href={`/clients/${clientId}/summary-report`}>
+          <Button variant="outline" size="sm" className="gap-1.5">
+            <FileText className="h-4 w-4" />
+            View Summary Report
+          </Button>
+        </Link>
       </div>
 
       {/* ═══ BUSINESSES ═══ */}
@@ -453,16 +637,25 @@ export default function ClientDetail() {
       */}
 
       {/* ═══ NOTES DIALOG ═══ */}
-      <Dialog open={notesOpen} onOpenChange={(o) => { if (!o && !notesSaving) setNotesOpen(false); }}>
+      <Dialog
+        open={notesOpen}
+        onOpenChange={(o) => {
+          if (!o && !notesSaving) setNotesOpen(false);
+        }}
+      >
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
                 <StickyNote className="w-4 h-4 text-amber-600" />
               </div>
-              <DialogTitle className="text-base font-bold">Notes — {client.businessName}</DialogTitle>
+              <DialogTitle className="text-base font-bold">
+                Notes — {client.businessName}
+              </DialogTitle>
             </div>
-            <DialogDescription>Add any important notes about this client.</DialogDescription>
+            <DialogDescription>
+              Add any important notes about this client.
+            </DialogDescription>
           </DialogHeader>
           <Textarea
             ref={notesRef}
@@ -473,8 +666,19 @@ export default function ClientDetail() {
             autoFocus
           />
           <div className="flex gap-2 mt-1">
-            <Button variant="outline" className="flex-1" onClick={() => setNotesOpen(false)} disabled={notesSaving}>Cancel</Button>
-            <Button className="flex-1 gap-1.5" onClick={saveNotes} disabled={notesSaving}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setNotesOpen(false)}
+              disabled={notesSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 gap-1.5"
+              onClick={saveNotes}
+              disabled={notesSaving}
+            >
               <CheckCircle2 className="w-4 h-4" />
               {notesSaving ? "Saving…" : "Save Notes"}
             </Button>
@@ -489,12 +693,12 @@ export default function ClientDetail() {
         saving={saving}
         onSave={(vals) => patchClient(vals, () => setEditBizOpen(false))}
         values={{
-          businessName:          client.businessName                    ?? "",
-          publishedAddress:      client.publishedAddress                ?? "",
-          gmbUrl:                client.gmbUrl                          ?? "",
-          websitePublishedOnGmb: (c.websitePublishedOnGmb as string)   ?? "",
-          websiteLinkedOnGmb:    (c.websiteLinkedOnGmb    as string)   ?? "",
-          accountUser:           (c.accountUser           as string)   ?? "",
+          businessName: client.businessName ?? "",
+          publishedAddress: client.publishedAddress ?? "",
+          gmbUrl: client.gmbUrl ?? "",
+          websitePublishedOnGmb: (c.websitePublishedOnGmb as string) ?? "",
+          websiteLinkedOnGmb: (c.websiteLinkedOnGmb as string) ?? "",
+          accountUser: (c.accountUser as string) ?? "",
         }}
       />
 
@@ -505,13 +709,30 @@ export default function ClientDetail() {
         saving={saving}
         onSave={(vals) => patchClient(vals, () => setEditAccOpen(false))}
         values={{
-          accountType:     (c.accountType     as string) ?? "",
+          accountType: (c.accountType as string) ?? "",
           accountUserName: (c.accountUserName as string) ?? "",
-          accountEmail:    (c.accountEmail    as string) ?? "",
-          billingEmail:    (c.billingEmail    as string) ?? "",
-          businessName:    client.businessName           ?? "",
-          createdBy:       (c.createdBy       as string) ?? "",
+          accountEmail: (c.accountEmail as string) ?? "",
+          billingEmail: (c.billingEmail as string) ?? "",
+          businessName: client.businessName ?? "",
+          createdBy: (c.createdBy as string) ?? "",
         }}
+      />
+
+      {/* ═══ FREE-TRIAL PROOF EMAIL (owner-only, single screenshot) ═══ */}
+      <FreeTrialProofDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
+        clientId={clientId}
+      />
+      <DeclinedPaymentDialog
+        open={declinedPaymentOpen}
+        onClose={() => setDeclinedPaymentOpen(false)}
+        clientId={clientId}
+      />
+      <SendWelcomeDialog
+        open={welcomeOpen}
+        onClose={() => setWelcomeOpen(false)}
+        clientId={clientId}
       />
     </div>
   );
@@ -521,15 +742,21 @@ export default function ClientDetail() {
 /* Shared full-screen dialog shell                             */
 /* ─────────────────────────────────────────────────────────── */
 function FullScreenDialog({
-  open, onOpenChange, title, icon: Icon, saving, onSave, children,
+  open,
+  onOpenChange,
+  title,
+  icon: Icon,
+  saving,
+  onSave,
+  children,
 }: {
-  open:         boolean;
+  open: boolean;
   onOpenChange: (v: boolean) => void;
-  title:        string;
-  icon:         React.ElementType;
-  saving:       boolean;
-  onSave:       () => void;
-  children:     React.ReactNode;
+  title: string;
+  icon: React.ElementType;
+  saving: boolean;
+  onSave: () => void;
+  children: React.ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -550,25 +777,32 @@ function FullScreenDialog({
 
             <div className="flex gap-4 pt-6">
               <Button
-                variant="outline" size="lg" className="flex-1 border-border/50 h-12"
+                variant="outline"
+                size="lg"
+                className="flex-1 border-border/50 h-12"
                 onClick={() => onOpenChange(false)}
                 disabled={saving}
               >
                 Cancel
               </Button>
               <Button
-                size="lg" className="flex-1 gap-2 h-12"
+                size="lg"
+                className="flex-1 gap-2 h-12"
                 disabled={saving}
                 onClick={onSave}
                 style={{
-                  background: "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
-                  boxShadow:  "0 4px 12px rgba(37,99,235,0.25)",
+                  background:
+                    "linear-gradient(135deg,hsl(217,91%,55%),hsl(217,91%,65%))",
+                  boxShadow: "0 4px 12px rgba(37,99,235,0.25)",
                 }}
               >
-                {saving
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-                  : "Save Changes"
-                }
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
               </Button>
             </div>
           </div>
@@ -581,23 +815,54 @@ function FullScreenDialog({
 /* ─────────────────────────────────────────────────────────── */
 /* Edit Client Details                                          */
 /* ─────────────────────────────────────────────────────────── */
-const BIZ_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; type?: string; dropdown?: string[] }> = [
-  { key: "businessName",          label: "Client Name", maxLength: 100 },
-  { key: "publishedAddress",      label: "GMB Address", maxLength: 200, wide: true },
-  { key: "gmbUrl",                label: "GMB Link", placeholder: "https://maps.google.com/…", maxLength: 500, wide: true, type: "url" },
-  { key: "websitePublishedOnGmb", label: "Website Published on GMB", placeholder: "https://…", maxLength: 200, wide: true },
-  { key: "websiteLinkedOnGmb",    label: "Website Linked to on GMB (if different)", placeholder: "https://…", maxLength: 200, wide: true },
-  { key: "accountUser",           label: "Account User", maxLength: 50 },
+const BIZ_FIELDS: Array<{
+  key: string;
+  label: string;
+  placeholder?: string;
+  maxLength?: number;
+  wide?: boolean;
+  type?: string;
+  dropdown?: string[];
+}> = [
+  { key: "businessName", label: "Client Name", maxLength: 100 },
+  { key: "publishedAddress", label: "GMB Address", maxLength: 200, wide: true },
+  {
+    key: "gmbUrl",
+    label: "GMB Link",
+    placeholder: "https://maps.google.com/…",
+    maxLength: 500,
+    wide: true,
+    type: "url",
+  },
+  {
+    key: "websitePublishedOnGmb",
+    label: "Website Published on GMB",
+    placeholder: "https://…",
+    maxLength: 200,
+    wide: true,
+  },
+  {
+    key: "websiteLinkedOnGmb",
+    label: "Website Linked to on GMB (if different)",
+    placeholder: "https://…",
+    maxLength: 200,
+    wide: true,
+  },
+  { key: "accountUser", label: "Account User", maxLength: 50 },
 ];
 
 function EditBizDialog({
-  open, onOpenChange, saving, onSave, values: initValues,
+  open,
+  onOpenChange,
+  saving,
+  onSave,
+  values: initValues,
 }: {
-  open:         boolean;
+  open: boolean;
   onOpenChange: (v: boolean) => void;
-  saving:       boolean;
-  onSave:       (vals: Record<string, string>) => void;
-  values:       Record<string, string>;
+  saving: boolean;
+  onSave: (vals: Record<string, string>) => void;
+  values: Record<string, string>;
 }) {
   const [vals, setVals] = useState<Record<string, string>>(initValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -612,7 +877,9 @@ function EditBizDialog({
       setErrors({});
     } else {
       // Check if any data has changed
-      const hasChanges = Object.keys(vals).some(key => vals[key] !== initValues[key]);
+      const hasChanges = Object.keys(vals).some(
+        (key) => vals[key] !== initValues[key],
+      );
       if (hasChanges) {
         setConfirmCancel(true);
       } else {
@@ -647,39 +914,55 @@ function EditBizDialog({
       }
     }
 
+    // URL checks apply only to values the user actually touched. Legacy rows
+    // hold free text here ("yes"/"no" from the signup form); re-validating an
+    // untouched field would block an unrelated edit with no way forward.
+    const edited = (key: string) => vals[key] !== initValues[key];
+
     // GMB Link URL validation
-    if (vals.gmbUrl && vals.gmbUrl.trim()) {
+    if (edited("gmbUrl") && vals.gmbUrl && vals.gmbUrl.trim()) {
       try {
         new URL(vals.gmbUrl);
         if (vals.gmbUrl.length > 500) {
           newErrors.gmbUrl = "URL cannot exceed 500 characters";
         }
       } catch {
-        newErrors.gmbUrl = "Please enter a valid URL (e.g., https://maps.google.com/...)";
+        newErrors.gmbUrl =
+          "Please enter a valid URL (e.g., https://maps.google.com/...)";
       }
     }
 
     // Website Published on GMB validation
-    if (vals.websitePublishedOnGmb && vals.websitePublishedOnGmb.trim()) {
+    if (
+      edited("websitePublishedOnGmb") &&
+      vals.websitePublishedOnGmb &&
+      vals.websitePublishedOnGmb.trim()
+    ) {
       try {
         new URL(vals.websitePublishedOnGmb);
         if (vals.websitePublishedOnGmb.length > 200) {
           newErrors.websitePublishedOnGmb = "URL cannot exceed 200 characters";
         }
       } catch {
-        newErrors.websitePublishedOnGmb = "Please enter a valid URL (e.g., https://example.com)";
+        newErrors.websitePublishedOnGmb =
+          "Please enter a valid URL (e.g., https://example.com)";
       }
     }
 
     // Website Linked on GMB validation
-    if (vals.websiteLinkedOnGmb && vals.websiteLinkedOnGmb.trim()) {
+    if (
+      edited("websiteLinkedOnGmb") &&
+      vals.websiteLinkedOnGmb &&
+      vals.websiteLinkedOnGmb.trim()
+    ) {
       try {
         new URL(vals.websiteLinkedOnGmb);
         if (vals.websiteLinkedOnGmb.length > 200) {
           newErrors.websiteLinkedOnGmb = "URL cannot exceed 200 characters";
         }
       } catch {
-        newErrors.websiteLinkedOnGmb = "Please enter a valid URL (e.g., https://example.com)";
+        newErrors.websiteLinkedOnGmb =
+          "Please enter a valid URL (e.g., https://example.com)";
       }
     }
 
@@ -694,7 +977,8 @@ function EditBizDialog({
     if (vals.startDate && vals.startDate.trim()) {
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(vals.startDate)) {
-        newErrors.startDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-01-15)";
+        newErrors.startDate =
+          "Please enter date in YYYY-MM-DD format (e.g., 2026-01-15)";
       } else {
         const date = new Date(vals.startDate);
         if (isNaN(date.getTime())) {
@@ -707,7 +991,8 @@ function EditBizDialog({
     if (vals.nextBillDate && vals.nextBillDate.trim()) {
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(vals.nextBillDate)) {
-        newErrors.nextBillDate = "Please enter date in YYYY-MM-DD format (e.g., 2026-04-15)";
+        newErrors.nextBillDate =
+          "Please enter date in YYYY-MM-DD format (e.g., 2026-04-15)";
       } else {
         const date = new Date(vals.nextBillDate);
         if (isNaN(date.getTime())) {
@@ -719,7 +1004,8 @@ function EditBizDialog({
     // Subscription ID validation
     if (vals.subscriptionId && vals.subscriptionId.trim()) {
       if (vals.subscriptionId.length > 50) {
-        newErrors.subscriptionId = "Subscription ID cannot exceed 50 characters";
+        newErrors.subscriptionId =
+          "Subscription ID cannot exceed 50 characters";
       }
     }
 
@@ -731,24 +1017,27 @@ function EditBizDialog({
     }
 
     setErrors(newErrors);
-    
+
     if (Object.keys(newErrors).length > 0) {
       const errorCount = Object.keys(newErrors).length;
-      const errorFields = Object.keys(newErrors).map(key => {
-        const field = BIZ_FIELDS.find(f => f.key === key);
-        return field?.label || key;
-      }).join(', ');
-      
+      const errorFields = Object.keys(newErrors)
+        .map((key) => {
+          const field = BIZ_FIELDS.find((f) => f.key === key);
+          return field?.label || key;
+        })
+        .join(", ");
+
       toast({
         title: "❌ Validation Error",
-        description: errorCount === 1 
-          ? `Please fix the error in: ${errorFields}. The field is shown with a red border.`
-          : `Please fix ${errorCount} errors. Fields with errors are shown with red borders.`,
+        description:
+          errorCount === 1
+            ? `Please fix the error in: ${errorFields}. The field is shown with a red border.`
+            : `Please fix ${errorCount} errors. Fields with errors are shown with red borders.`,
         variant: "destructive",
       });
       return false;
     }
-    
+
     return true;
   }
 
@@ -773,16 +1062,24 @@ function EditBizDialog({
   return (
     <>
       <FullScreenDialog
-        open={open} onOpenChange={handleOpenChange}
-        title="Edit Client Details" icon={Building2}
-        saving={saving} onSave={handleSave}
+        open={open}
+        onOpenChange={handleOpenChange}
+        title="Edit Client Details"
+        icon={Building2}
+        saving={saving}
+        onSave={handleSave}
       >
         <div className="grid grid-cols-2 gap-x-8 gap-y-6">
           {BIZ_FIELDS.map((f) => (
-            <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+            <div
+              key={f.key}
+              className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}
+            >
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 {f.label}
-                {f.key === "businessName" && <span className="text-red-500 ml-1">*</span>}
+                {f.key === "businessName" && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
               </Label>
               {f.key === "planName" ? (
                 <Select
@@ -794,7 +1091,9 @@ function EditBizDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {allPlanNames.map((plan) => (
-                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
+                      <SelectItem key={plan} value={plan}>
+                        {plan}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -808,7 +1107,9 @@ function EditBizDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {f.dropdown.map((o) => (
-                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -844,12 +1145,15 @@ function EditBizDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Save Changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              Would you like to save the changes to <strong>{vals.businessName}</strong>?
-              This will update the client information immediately.
+              Would you like to save the changes to{" "}
+              <strong>{vals.businessName}</strong>? This will update the client
+              information immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>
+              Go Back
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleConfirmSave}
@@ -867,11 +1171,14 @@ function EditBizDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Discard Changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to discard your changes? All unsaved modifications will be lost. This action cannot be undone.
+              Are you sure you want to discard your changes? All unsaved
+              modifications will be lost. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>
+              Continue Editing
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleConfirmCancel}
@@ -888,23 +1195,54 @@ function EditBizDialog({
 /* ─────────────────────────────────────────────────────────── */
 /* Edit Client Details                                          */
 /* ─────────────────────────────────────────────────────────── */
-const ACC_FIELDS: Array<{ key: string; label: string; placeholder?: string; maxLength?: number; wide?: boolean; dropdown?: string[]; type?: string }> = [
-  { key: "accountType",     label: "Account Type",             dropdown: ["Agency", "Retail"] },
-  { key: "accountUserName", label: "Account User Name",        maxLength: 100 },
-  { key: "accountEmail",    label: "Account Email",            placeholder: "user@example.com", wide: true, maxLength: 100, type: "email" },
-  { key: "billingEmail",    label: "Contact / Billing Email",  placeholder: "billing@example.com", wide: true, maxLength: 100, type: "email" },
-  { key: "businessName",    label: "Client Name",              maxLength: 100 },
-  { key: "createdBy",       label: "Created By",               placeholder: "e.g. Belle", maxLength: 50 },
+const ACC_FIELDS: Array<{
+  key: string;
+  label: string;
+  placeholder?: string;
+  maxLength?: number;
+  wide?: boolean;
+  dropdown?: string[];
+  type?: string;
+}> = [
+  { key: "accountType", label: "Account Type", dropdown: ["Agency", "Retail"] },
+  { key: "accountUserName", label: "Account User Name", maxLength: 100 },
+  {
+    key: "accountEmail",
+    label: "Account Email",
+    placeholder: "user@example.com",
+    wide: true,
+    maxLength: 100,
+    type: "email",
+  },
+  {
+    key: "billingEmail",
+    label: "Contact / Billing Email",
+    placeholder: "billing@example.com",
+    wide: true,
+    maxLength: 100,
+    type: "email",
+  },
+  { key: "businessName", label: "Client Name", maxLength: 100 },
+  {
+    key: "createdBy",
+    label: "Created By",
+    placeholder: "e.g. Belle",
+    maxLength: 50,
+  },
 ];
 
 function EditAccDialog({
-  open, onOpenChange, saving, onSave, values: initValues,
+  open,
+  onOpenChange,
+  saving,
+  onSave,
+  values: initValues,
 }: {
-  open:         boolean;
+  open: boolean;
   onOpenChange: (v: boolean) => void;
-  saving:       boolean;
-  onSave:       (vals: Record<string, string>) => void;
-  values:       Record<string, string>;
+  saving: boolean;
+  onSave: (vals: Record<string, string>) => void;
+  values: Record<string, string>;
 }) {
   const [vals, setVals] = useState<Record<string, string>>(initValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -927,7 +1265,7 @@ function EditAccDialog({
 
     // Check if user has made any changes (excluding createdBy field)
     const hasChanges = Object.keys(vals).some(
-      (key) => key !== 'createdBy' && vals[key] !== initValues[key]
+      (key) => key !== "createdBy" && vals[key] !== initValues[key],
     );
 
     // Account Type validation (dropdown - always valid if set)
@@ -936,9 +1274,11 @@ function EditAccDialog({
     // Account User Name validation
     if (vals.accountUserName && vals.accountUserName.trim()) {
       if (vals.accountUserName.length < 2) {
-        newErrors.accountUserName = "Account user name must be at least 2 characters";
+        newErrors.accountUserName =
+          "Account user name must be at least 2 characters";
       } else if (vals.accountUserName.length > 100) {
-        newErrors.accountUserName = "Account user name cannot exceed 100 characters";
+        newErrors.accountUserName =
+          "Account user name cannot exceed 100 characters";
       }
     }
 
@@ -946,7 +1286,8 @@ function EditAccDialog({
     if (vals.accountEmail && vals.accountEmail.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(vals.accountEmail)) {
-        newErrors.accountEmail = "Please enter a valid email address (e.g., user@example.com)";
+        newErrors.accountEmail =
+          "Please enter a valid email address (e.g., user@example.com)";
       } else if (vals.accountEmail.length > 100) {
         newErrors.accountEmail = "Email cannot exceed 100 characters";
       }
@@ -956,7 +1297,8 @@ function EditAccDialog({
     if (vals.billingEmail && vals.billingEmail.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(vals.billingEmail)) {
-        newErrors.billingEmail = "Please enter a valid billing email address (e.g., billing@example.com)";
+        newErrors.billingEmail =
+          "Please enter a valid billing email address (e.g., billing@example.com)";
       } else if (vals.billingEmail.length > 100) {
         newErrors.billingEmail = "Email cannot exceed 100 characters";
       }
@@ -993,8 +1335,9 @@ function EditAccDialog({
 
     if (Object.keys(newErrors).length > 0) {
       // Check if the only error is Created By (when user made changes)
-      const onlyCreatedByError = Object.keys(newErrors).length === 1 && newErrors.createdBy;
-      
+      const onlyCreatedByError =
+        Object.keys(newErrors).length === 1 && newErrors.createdBy;
+
       if (onlyCreatedByError) {
         toast({
           title: "❌ Created By Required",
@@ -1011,7 +1354,7 @@ function EditAccDialog({
         const errorCount = Object.keys(newErrors).length;
         toast({
           title: "❌ Validation Error",
-          description: `Please fix ${errorCount} ${errorCount === 1 ? 'error' : 'errors'} before saving. Fields with errors are shown in red.`,
+          description: `Please fix ${errorCount} ${errorCount === 1 ? "error" : "errors"} before saving. Fields with errors are shown in red.`,
           variant: "destructive",
         });
       }
@@ -1024,14 +1367,14 @@ function EditAccDialog({
     if (!v) {
       // Check if there are unsaved changes
       const hasChanges = Object.keys(vals).some(
-        (key) => vals[key] !== initValues[key]
+        (key) => vals[key] !== initValues[key],
       );
       if (hasChanges) {
         setConfirmCancel(true);
         return;
       }
     }
-    
+
     if (v) {
       setVals(initValues);
       setErrors({});
@@ -1060,20 +1403,26 @@ function EditAccDialog({
   return (
     <>
       <FullScreenDialog
-        open={open} onOpenChange={handleOpenChange}
-        title="Edit Client Details" icon={Briefcase}
-        saving={saving} onSave={handleSave}
+        open={open}
+        onOpenChange={handleOpenChange}
+        title="Edit Client Details"
+        icon={Briefcase}
+        saving={saving}
+        onSave={handleSave}
       >
         <div className="grid grid-cols-2 gap-x-8 gap-y-6">
           {ACC_FIELDS.map((f) => {
             // Check if user has made changes (for conditional required indicator)
             const hasChanges = Object.keys(vals).some(
-              (key) => key !== 'createdBy' && vals[key] !== initValues[key]
+              (key) => key !== "createdBy" && vals[key] !== initValues[key],
             );
-            
+
             if (f.key === "createdBy") {
               return (
-                <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+                <div
+                  key={f.key}
+                  className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}
+                >
                   <CreatedByField
                     value={vals.createdBy ?? ""}
                     onChange={(v) => {
@@ -1090,59 +1439,76 @@ function EditAccDialog({
                     labelClassName="text-xs font-medium text-muted-foreground uppercase tracking-wide"
                   />
                   {!hasChanges && !errors.createdBy && (
-                    <p className="text-[11px] text-muted-foreground">Optional unless you changed something else.</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Optional unless you changed something else.
+                    </p>
                   )}
                 </div>
               );
             }
             return (
-              <div key={f.key} className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}>
+              <div
+                key={f.key}
+                className={`space-y-2 ${f.wide ? "col-span-2" : ""}`}
+              >
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {f.label}
                 </Label>
-              {f.dropdown ? (
-                <Select
-                  value={vals[f.key] ?? ""}
-                  onValueChange={(v) => setVals((p) => ({ ...p, [f.key]: v }))}
-                >
-                  <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
-                    <SelectValue placeholder="Select…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {f.dropdown.map((o) => (
-                      <SelectItem key={o} value={o}>{o}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  className={`bg-muted/30 border-border/60 h-11 text-sm ${
-                    errors[f.key] 
-                      ? "border-red-500" 
-                      : f.key === "createdBy" && hasChanges && (!vals.createdBy || !vals.createdBy.trim())
-                      ? "border-red-500"
-                      : ""
-                  }`}
-                  placeholder={f.placeholder ?? ""}
-                  maxLength={f.maxLength}
-                  type={f.type}
-                  value={vals[f.key] ?? ""}
-                  onChange={(e) => {
-                    setVals((p) => ({ ...p, [f.key]: e.target.value }));
-                    if (errors[f.key]) {
-                      setErrors((p) => {
-                        const { [f.key]: _, ...rest } = p;
-                        return rest;
-                      });
+                {f.dropdown ? (
+                  <Select
+                    value={vals[f.key] ?? ""}
+                    onValueChange={(v) =>
+                      setVals((p) => ({ ...p, [f.key]: v }))
                     }
-                  }}
-                />
-              )}
-              {errors[f.key] && (
-                <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
-              )}
-            </div>
-          );
+                  >
+                    <SelectTrigger className="bg-muted/30 border-border/60 h-11 text-sm">
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Keep a stored value that predates this option list
+                          (105 clients are "Free Trial") — without it the field
+                          renders blank and reads as if the data were lost. */}
+                      {(vals[f.key] && !f.dropdown.includes(vals[f.key])
+                        ? [vals[f.key], ...f.dropdown]
+                        : f.dropdown
+                      ).map((o) => (
+                        <SelectItem key={o} value={o}>
+                          {o}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className={`bg-muted/30 border-border/60 h-11 text-sm ${
+                      errors[f.key]
+                        ? "border-red-500"
+                        : f.key === "createdBy" &&
+                            hasChanges &&
+                            (!vals.createdBy || !vals.createdBy.trim())
+                          ? "border-red-500"
+                          : ""
+                    }`}
+                    placeholder={f.placeholder ?? ""}
+                    maxLength={f.maxLength}
+                    type={f.type}
+                    value={vals[f.key] ?? ""}
+                    onChange={(e) => {
+                      setVals((p) => ({ ...p, [f.key]: e.target.value }));
+                      if (errors[f.key]) {
+                        setErrors((p) => {
+                          const { [f.key]: _, ...rest } = p;
+                          return rest;
+                        });
+                      }
+                    }}
+                  />
+                )}
+                {errors[f.key] && (
+                  <p className="text-xs text-red-500 mt-1">{errors[f.key]}</p>
+                )}
+              </div>
+            );
           })}
         </div>
       </FullScreenDialog>
@@ -1153,12 +1519,14 @@ function EditAccDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Save Changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              Would you like to save the changes to the client details?
-              This will update the information immediately.
+              Would you like to save the changes to the client details? This
+              will update the information immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmSave(false)}>Go Back</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmSave(false)}>
+              Go Back
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleConfirmSave}
@@ -1176,11 +1544,14 @@ function EditAccDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Discard Changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to discard your changes? All unsaved modifications will be lost. This action cannot be undone.
+              Are you sure you want to discard your changes? All unsaved
+              modifications will be lost. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>Continue Editing</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmCancel(false)}>
+              Continue Editing
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleConfirmCancel}
@@ -1212,14 +1583,27 @@ interface BusinessRow {
   campaignCount?: number;
 }
 
-function BusinessesSection({ clientId, clientName }: { clientId: number; clientName: string }) {
+function BusinessesSection({
+  clientId,
+  clientName,
+}: {
+  clientId: number;
+  clientName: string;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin, isEditor } = useAuth();
   const [addOpen, setAddOpen] = useState(false);
   const [editBiz, setEditBiz] = useState<BusinessRow | null>(null);
-  const [confirmDeleteBiz, setConfirmDeleteBiz] = useState<BusinessRow | null>(null);
+  const [confirmDeleteBiz, setConfirmDeleteBiz] = useState<BusinessRow | null>(
+    null,
+  );
 
-  const { data: businesses, isLoading, refetch } = useQuery<BusinessRow[]>({
+  const {
+    data: businesses,
+    isLoading,
+    refetch,
+  } = useQuery<BusinessRow[]>({
     queryKey: ["/api/businesses", { clientId }],
     queryFn: async () => {
       const res = await rawFetch(`/api/businesses?clientId=${clientId}`);
@@ -1248,18 +1632,30 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Building2 className="w-4 h-4 text-primary" />
-            Businesses {businesses ? <span className="text-muted-foreground font-normal">({businesses.length})</span> : null}
+            Businesses{" "}
+            {businesses ? (
+              <span className="text-muted-foreground font-normal">
+                ({businesses.length})
+              </span>
+            ) : null}
           </CardTitle>
-          <Button size="sm" className="h-8 gap-1" onClick={() => setAddOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Add Business
-          </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              className="h-8 gap-1"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Business
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading businesses…</p>
           ) : !businesses || businesses.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              No businesses yet. Click <strong>Add Business</strong> to create the first one.
+              No businesses yet. Click <strong>Add Business</strong> to create
+              the first one.
             </div>
           ) : (
             <div className="space-y-2">
@@ -1278,27 +1674,46 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
                       </Link>
                       <Badge
                         variant="outline"
-                        className={b.status === "active"
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
-                          : "bg-muted text-muted-foreground text-xs"}
+                        className={
+                          b.status === "active"
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
+                            : "bg-muted text-muted-foreground text-xs"
+                        }
                       >
                         {b.status}
                       </Badge>
                       {b.category && (
-                        <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-xs">
+                        <Badge
+                          variant="outline"
+                          className="bg-slate-500/10 text-slate-400 border-slate-500/20 text-xs"
+                        >
                           {b.category}
                         </Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                      {(b.city || b.state) && <span>{[b.city, b.state].filter(Boolean).join(", ")}</span>}
+                      {(b.city || b.state) && (
+                        <span>
+                          {[b.city, b.state].filter(Boolean).join(", ")}
+                        </span>
+                      )}
                       {b.gmbUrl && (
-                        <a href={b.gmbUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary flex items-center gap-1">
+                        <a
+                          href={b.gmbUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-primary flex items-center gap-1"
+                        >
                           GMB <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
                       {b.websiteUrl && (
-                        <a href={b.websiteUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary flex items-center gap-1">
+                        <a
+                          href={b.websiteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-primary flex items-center gap-1"
+                        >
                           Website <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
@@ -1306,24 +1721,28 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
-                      onClick={() => setEditBiz(b)}
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => setConfirmDeleteBiz(b)}
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {isEditor && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
+                        onClick={() => setEditBiz(b)}
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setConfirmDeleteBiz(b)}
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1337,32 +1756,51 @@ function BusinessesSection({ clientId, clientName }: { clientId: number; clientN
         onOpenChange={setAddOpen}
         clientId={clientId}
         clientName={clientName}
-        onCreated={() => { refetch(); }}
+        onCreated={() => {
+          refetch();
+        }}
       />
 
       {editBiz && (
         <AddBusinessDialog
           open={!!editBiz}
-          onOpenChange={(open) => { if (!open) setEditBiz(null); }}
+          onOpenChange={(open) => {
+            if (!open) setEditBiz(null);
+          }}
           clientId={clientId}
           business={editBiz}
-          onUpdated={() => { refetch(); setEditBiz(null); }}
+          onUpdated={() => {
+            refetch();
+            setEditBiz(null);
+          }}
         />
       )}
 
-      <AlertDialog open={!!confirmDeleteBiz} onOpenChange={(open) => { if (!open) setConfirmDeleteBiz(null); }}>
+      <AlertDialog
+        open={!!confirmDeleteBiz}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteBiz(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{confirmDeleteBiz?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete "{confirmDeleteBiz?.name}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the business and all keywords, sessions, and ranking reports scoped to it. This cannot be undone.
+              This permanently deletes the business and all keywords, sessions,
+              and ranking reports scoped to it. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDeleteBiz(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmDeleteBiz(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (confirmDeleteBiz) deleteBusiness(confirmDeleteBiz.id); }}
+              onClick={() => {
+                if (confirmDeleteBiz) deleteBusiness(confirmDeleteBiz.id);
+              }}
             >
               Yes, delete
             </AlertDialogAction>

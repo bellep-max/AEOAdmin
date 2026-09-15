@@ -4,35 +4,77 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Key, ChevronDown, ChevronRight, Pencil, Trash2, Lock, RefreshCw, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Key,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Trash2,
+  Lock,
+  Trophy,
+  RefreshCw,
+  Loader2,
+} from "lucide-react";
 import { format } from "date-fns";
 import {
   usePeriodComparison,
   countStatuses,
-  fmtPos,
-  periodLabel,
   rawFetch,
-  PLATFORM_ORDER,
   PLATFORM_COLORS,
   TOP_RANK_THRESHOLD,
+  sortPlatformsWithUnavailable,
+  platformLabel,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import { placeShort, movementWord, movementText } from "@/lib/plain-language";
+import {
+  StatusBadge,
+  ChangeCell,
+  UnverifiedMark,
+} from "@/components/period-badges";
 import { useToast } from "@/hooks/use-toast";
+import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
+import {
+  KeywordHideMenu,
+  HiddenKeywordsControl,
+} from "@/components/report-hides-controls";
 
-/** A keyword "wins" (locks) when its current rank is Top-3 on ANY one platform. */
-function lockTrigger(platforms: PeriodRow[]): { platform: string; position: number } | null {
-  let best: { platform: string; position: number } | null = null;
+/** Best (lowest) current rank across all platforms for this keyword. Returns
+ *  Infinity when the keyword has no ranking data yet, so unranked keywords
+ *  naturally fall to the bottom of an ascending sort. */
+function bestCurrentRank(platforms: PeriodRow[]): number {
+  let best = Infinity;
   for (const p of platforms) {
     const pos = p.currentPosition;
-    if (pos != null && pos >= 1 && pos <= TOP_RANK_THRESHOLD && (best == null || pos < best.position)) {
-      best = { platform: p.platform, position: pos };
-    }
+    if (pos != null && pos >= 1 && pos < best) best = pos;
   }
   return best;
+}
+
+/** Open the screenshot dialog with the (rankingReportId, keyword, platform,
+ *  position, date) context for the rank chip the user clicked. */
+interface ScreenshotTarget {
+  reportId: number;
+  keywordText: string;
+  platform: string;
+  position: number | null;
+  date: string | null;
 }
 
 interface RotationLock {
@@ -58,16 +100,158 @@ interface Props {
   showRotation?: boolean;
   /** Called after a real rotation runs, so the parent can refetch its keyword list. */
   onRotated?: () => void;
+  /** When provided, restrict the displayed keywords to exactly these ids — used
+   *  to render a single bucket (e.g. only the locked/won keywords) while still
+   *  pulling ranking history from the same period-comparison query. */
+  restrictToKeywordIds?: number[];
+  /** Render a card-level collapse toggle (chevron on the title). */
+  collapsible?: boolean;
+  /** When collapsible, start the card collapsed. */
+  defaultCollapsed?: boolean;
+  /** Locked/Won view: these keywords already graduated to Top-3, so the status
+   *  column never shows a red "Declined" — while still Top-3 it reads "Won",
+   *  and if it has slipped out it reads a neutral "Watch" (never negative). */
+  lockedView?: boolean;
 }
 
-function PlatformChip({ row }: { row: PeriodRow }) {
-  const cls = PLATFORM_COLORS[row.platform] ?? "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
-  const arrow = row.change == null ? "" : row.change > 0 ? " ↑" : row.change < 0 ? " ↓" : " =";
+function PlatformChip({
+  row,
+  onClick,
+}: {
+  row: PeriodRow;
+  /** When provided AND the row has a currentReportId, the chip becomes a
+   *  button that opens the screenshot dialog. */
+  onClick?: (target: ScreenshotTarget) => void;
+}) {
+  const unavailable = row.status === "unavailable";
+  // A win is per-platform: top-3 on THIS AI is a win on this AI, independent of
+  // the others. (Locking the keyword needs all three — that's separate.)
+  const won =
+    !unavailable &&
+    row.currentPosition != null &&
+    row.currentPosition <= TOP_RANK_THRESHOLD;
+  const cls = unavailable
+    ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
+    : won
+      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-400/50"
+      : (PLATFORM_COLORS[row.platform] ??
+        "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
+  const move =
+    row.change == null || row.change === 0
+      ? ""
+      : ` (${movementWord(row.change)})`;
+  const clickable =
+    !unavailable && onClick != null && row.currentReportId != null;
+  const interactive = clickable
+    ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-shadow"
+    : "";
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}>
-      <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">{fmtPos(row.currentPosition)}{arrow}</span>
+    <span
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={
+        clickable
+          ? (e) => {
+              e.stopPropagation();
+              onClick!({
+                reportId: row.currentReportId!,
+                keywordText: row.keywordText,
+                platform: row.platform,
+                position: row.currentPosition,
+                date: row.currentDate,
+              });
+            }
+          : undefined
+      }
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onClick!({
+                  reportId: row.currentReportId!,
+                  keywordText: row.keywordText,
+                  platform: row.platform,
+                  position: row.currentPosition,
+                  date: row.currentDate,
+                });
+              }
+            }
+          : undefined
+      }
+      title={clickable ? "Click to view screenshot" : undefined}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls} ${interactive}`}
+    >
+      {won && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
+      <span>{platformLabel(row.platform)}</span>
+      {unavailable ? (
+        <span className="font-medium opacity-80">Unavailable</span>
+      ) : (
+        <span className="font-bold inline-flex items-center gap-1">
+          {placeShort(row.currentPosition)}
+          {won && <span className="font-semibold">· Won</span>}
+          {move}
+          {row.currentUnverified && <UnverifiedMark date={row.currentDate} />}
+        </span>
+      )}
     </span>
+  );
+}
+
+/** A rank value in the detail grid (First / Last 2 weeks / Current). Clickable
+ *  to open that period's screenshot when a report exists; when there's no report
+ *  for the period, clicking explains the screenshot isn't available. */
+function RankShotCell({
+  reportId,
+  position,
+  date,
+  platform,
+  keywordText,
+  emphasis,
+  unverified,
+  onOpen,
+  onUnavailable,
+}: {
+  reportId: number | null;
+  position: number | null;
+  date: string | null;
+  platform: string;
+  keywordText: string;
+  /** Current-column cell uses the stronger foreground weight. */
+  emphasis?: boolean;
+  /** Top-3 whose screenshot the vision check could not confirm. */
+  unverified?: boolean;
+  onOpen: (target: ScreenshotTarget) => void;
+  onUnavailable: () => void;
+}) {
+  const text = placeShort(position);
+  const mark = unverified ? <UnverifiedMark date={date} /> : null;
+  if (reportId != null) {
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          onOpen({ reportId, keywordText, platform, position, date })
+        }
+        className={`cursor-pointer underline decoration-dotted decoration-muted-foreground/40 underline-offset-2 hover:text-primary hover:decoration-primary ${emphasis ? "text-foreground" : "text-muted-foreground"}`}
+        title="Click to view screenshot"
+      >
+        {text}
+        {mark}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onUnavailable}
+      className={`cursor-pointer hover:text-foreground ${emphasis ? "text-foreground" : "text-muted-foreground"}`}
+      title="Screenshot not available for this period"
+    >
+      {text}
+      {mark}
+    </button>
   );
 }
 
@@ -82,21 +266,45 @@ export function KeywordsWithRankingsCard({
   extraKeywords,
   showRotation = false,
   onRotated,
+  restrictToKeywordIds,
+  collapsible = false,
+  defaultCollapsed = false,
+  lockedView = false,
 }: Props) {
   const [period, setPeriod] = useState<Period>("weekly");
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // Per-keyword rows start collapsed (compact chip view); a keyword id is in
+  // this set only while the user has expanded its detail grid.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // Card-level collapse (whole section), distinct from per-keyword `collapsed`.
+  const [sectionCollapsed, setSectionCollapsed] = useState(defaultCollapsed);
+  // Screenshot dialog target. Null when the dialog is closed.
+  const [screenshotTarget, setScreenshotTarget] =
+    useState<ScreenshotTarget | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data, isLoading } = usePeriodComparison({ period, clientId, businessId, aeoPlanId });
-  const label = periodLabel(period);
+  const notifyNoShot = () =>
+    toast({
+      title: "Screenshot not available",
+      description: "No screenshot was captured for this period.",
+    });
 
+  const { data, isLoading } = usePeriodComparison({
+    period,
+    clientId,
+    businessId,
+    aeoPlanId,
+  });
   // ── Auto-rotation (lock-on-win) ───────────────────────────────────────────
   const [rotateOpen, setRotateOpen] = useState(false);
-  const [rotateBusy, setRotateBusy] = useState<false | "preview" | "run">(false);
+  const [rotateBusy, setRotateBusy] = useState<false | "preview" | "run">(
+    false,
+  );
   const [preview, setPreview] = useState<RotationLock[] | null>(null);
 
-  async function postRotate(dryRun: boolean): Promise<{ scanned: number; locked: RotationLock[] }> {
+  async function postRotate(
+    dryRun: boolean,
+  ): Promise<{ scanned: number; locked: RotationLock[] }> {
     const res = await rawFetch("/api/keywords/rotate-winners", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -113,7 +321,11 @@ export function KeywordsWithRankingsCard({
       setPreview(d.locked ?? []);
       setRotateOpen(true);
     } catch (e) {
-      toast({ title: "Couldn't preview rotation", description: String(e), variant: "destructive" });
+      toast({
+        title: "Couldn't preview rotation",
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
       setRotateBusy(false);
     }
@@ -125,51 +337,96 @@ export function KeywordsWithRankingsCard({
       const d = await postRotate(false);
       const n = d.locked?.length ?? 0;
       toast({
-        title: n ? `Locked & rotated ${n} keyword${n === 1 ? "" : "s"}` : "Nothing to rotate",
-        description: n ? d.locked.map((l) => l.keywordText).slice(0, 3).join(", ") + (n > 3 ? "…" : "") : undefined,
+        title: n
+          ? `Locked & rotated ${n} keyword${n === 1 ? "" : "s"}`
+          : "Nothing to rotate",
+        description: n
+          ? d.locked
+              .map((l) => l.keywordText)
+              .slice(0, 3)
+              .join(", ") + (n > 3 ? "…" : "")
+          : undefined,
       });
       setRotateOpen(false);
       setPreview(null);
-      qc.invalidateQueries({ queryKey: ["/api/ranking-reports/period-comparison"] });
+      qc.invalidateQueries({
+        queryKey: ["/api/ranking-reports/period-comparison"],
+      });
       onRotated?.();
     } catch (e) {
-      toast({ title: "Rotation failed", description: String(e), variant: "destructive" });
+      toast({
+        title: "Rotation failed",
+        description: String(e),
+        variant: "destructive",
+      });
     } finally {
       setRotateBusy(false);
     }
   }
 
   const grouped = useMemo(() => {
-    const byKeyword = new Map<number, { keywordId: number; keywordText: string; platforms: PeriodRow[] }>();
+    const byKeyword = new Map<
+      number,
+      { keywordId: number; keywordText: string; platforms: PeriodRow[] }
+    >();
     for (const r of data?.rows ?? []) {
       const existing = byKeyword.get(r.keywordId);
       if (existing) existing.platforms.push(r);
-      else byKeyword.set(r.keywordId, { keywordId: r.keywordId, keywordText: r.keywordText, platforms: [r] });
+      else
+        byKeyword.set(r.keywordId, {
+          keywordId: r.keywordId,
+          keywordText: r.keywordText,
+          platforms: [r],
+        });
     }
     // Merge in keywords that have no ranking data yet, so the card is the canonical "keywords for this scope" list.
     for (const k of extraKeywords ?? []) {
       if (!byKeyword.has(k.id)) {
-        byKeyword.set(k.id, { keywordId: k.id, keywordText: k.keywordText, platforms: [] });
+        byKeyword.set(k.id, {
+          keywordId: k.id,
+          keywordText: k.keywordText,
+          platforms: [],
+        });
       }
     }
     const list = [...byKeyword.values()];
-    if (showRotation && extraKeywords) {
-      // Conveyor belt: only ACTIVE keywords show here — locked/archived ones drop
-      // off (they're absent from extraKeywords, which is the active set for this
-      // scope, even though their rank history still comes back in `data.rows`).
-      const activeIds = new Set(extraKeywords.map((k) => k.id));
-      return list
-        .filter((g) => activeIds.has(g.keywordId))
-        // Oldest first, newest (AI replacements) at the bottom.
-        .sort((a, b) => a.keywordId - b.keywordId);
-    }
-    return list.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
-  }, [data, extraKeywords, showRotation]);
+    // Restrict the displayed set:
+    //  • restrictToKeywordIds — explicit bucket (e.g. only the locked/won set),
+    //  • else rotation mode — drop locked/archived keywords (they're absent from
+    //    extraKeywords, the active set, even though their rank history still
+    //    comes back in `data.rows`).
+    const restrictSet =
+      restrictToKeywordIds != null
+        ? new Set(restrictToKeywordIds)
+        : showRotation && extraKeywords
+          ? new Set(extraKeywords.map((k) => k.id))
+          : null;
+    const filtered = restrictSet
+      ? list.filter((g) => restrictSet.has(g.keywordId))
+      : list;
+    // Sort by most-recent ranking date first (latest current date across
+    // platforms, descending) so freshly-run keywords lead. Ties break by best
+    // (lowest) current rank, then alphabetically for a stable bottom.
+    const latestDateOf = (platforms: PeriodRow[]) =>
+      platforms
+        .map((p) => p.currentDate)
+        .filter((d): d is string => !!d)
+        .sort((a, b) => b.localeCompare(a))[0] ?? "";
+    return filtered.sort((a, b) => {
+      const da = latestDateOf(a.platforms);
+      const db = latestDateOf(b.platforms);
+      if (da !== db) return db.localeCompare(da);
+      const ra = bestCurrentRank(a.platforms);
+      const rb = bestCurrentRank(b.platforms);
+      if (ra !== rb) return ra - rb;
+      return a.keywordText.localeCompare(b.keywordText);
+    });
+  }, [data, extraKeywords, showRotation, restrictToKeywordIds]);
 
   const counts = useMemo(() => countStatuses(data?.rows ?? []), [data]);
 
   function toggle(kid: number): void {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(kid)) next.delete(kid);
       else next.add(kid);
@@ -177,176 +434,382 @@ export function KeywordsWithRankingsCard({
     });
   }
 
+  const showBody = !(collapsible && sectionCollapsed);
+
   return (
     <Card className="border-border/50">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Key className="w-4 h-4 text-primary" />
-            {title}
-            <span className="text-muted-foreground font-normal">({grouped.length})</span>
-          </CardTitle>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="weekly">Biweekly</SelectItem>
-                <SelectItem value="monthly">Monthly</SelectItem>
-                <SelectItem value="quarterly">Quarterly</SelectItem>
-                <SelectItem value="lifetime">Since start</SelectItem>
-              </SelectContent>
-            </Select>
-            {showRotation && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1"
-                onClick={runPreview}
-                disabled={rotateBusy !== false}
-                title="Lock keywords that are Top-3 on any platform and rotate in AI replacements"
+            {collapsible ? (
+              <button
+                type="button"
+                onClick={() => setSectionCollapsed((v) => !v)}
+                className="flex items-center gap-2 text-left"
+                aria-label={sectionCollapsed ? "Expand" : "Collapse"}
               >
-                {rotateBusy === "preview" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                Run rotation
-              </Button>
+                {sectionCollapsed ? (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                )}
+                <Key className="w-4 h-4 text-primary" />
+                {title}
+                <span className="text-muted-foreground font-normal">
+                  ({grouped.length})
+                </span>
+              </button>
+            ) : (
+              <>
+                <Key className="w-4 h-4 text-primary" />
+                {title}
+                <span className="text-muted-foreground font-normal">
+                  ({grouped.length})
+                </span>
+              </>
             )}
-            {addButton}
-          </div>
+            <HiddenKeywordsControl
+              scope={{ clientId, businessId, aeoPlanId }}
+            />
+          </CardTitle>
+          {showBody && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select
+                value={period}
+                onValueChange={(v) => setPeriod(v as Period)}
+              >
+                <SelectTrigger className="w-36 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Biweekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="lifetime">Since start</SelectItem>
+                </SelectContent>
+              </Select>
+              {showRotation && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1"
+                  onClick={runPreview}
+                  disabled={rotateBusy !== false}
+                  title="Lock keywords that are Top-3 on any platform and rotate in AI replacements"
+                >
+                  {rotateBusy === "preview" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  Run rotation
+                </Button>
+              )}
+              {addButton}
+            </div>
+          )}
         </div>
-        {!isLoading && (data?.rows.length ?? 0) > 0 && (
+        {showBody && !isLoading && (data?.rows.length ?? 0) > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap pt-2">
-            {counts.improved > 0 && <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">↑ {counts.improved}</Badge>}
-            {counts.declined > 0 && <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[10px]">↓ {counts.declined}</Badge>}
-            {counts.steady > 0 && <Badge variant="outline" className="text-[10px]">= {counts.steady}</Badge>}
-            {counts.newCount > 0 && <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">+ {counts.newCount} new</Badge>}
+            {counts.improved > 0 && (
+              <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px]">
+                {counts.improved} improved
+              </Badge>
+            )}
+            {!lockedView && counts.declined > 0 && (
+              <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px]">
+                {counts.declined} slipped
+              </Badge>
+            )}
+            {counts.steady > 0 && (
+              <Badge variant="outline" className="text-[10px]">
+                {counts.steady} no change
+              </Badge>
+            )}
+            {counts.newCount > 0 && (
+              <Badge className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">
+                {counts.newCount} new
+              </Badge>
+            )}
           </div>
         )}
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
-        ) : grouped.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No keywords yet. {addButton ? "Click Add Keyword to create one." : ""}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {grouped.map(({ keywordId, keywordText, platforms }) => {
-              const isOpen = !collapsed.has(keywordId);
-              const sorted = [...platforms].sort((a, b) => {
-                const ai = PLATFORM_ORDER.indexOf(a.platform as typeof PLATFORM_ORDER[number]);
-                const bi = PLATFORM_ORDER.indexOf(b.platform as typeof PLATFORM_ORDER[number]);
-                return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-              });
-              const hasData = platforms.length > 0;
-              const lock = showRotation ? lockTrigger(platforms) : null;
-              return (
-                <div key={keywordId} className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
-                  <div className="flex items-center gap-3 px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => hasData && toggle(keywordId)}
-                      className={`shrink-0 ${hasData ? "cursor-pointer text-muted-foreground hover:text-primary" : "cursor-default text-muted-foreground"}`}
-                      disabled={!hasData}
-                      aria-label={isOpen ? "Collapse" : "Expand"}
-                    >
-                      {hasData ? (
-                        isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />
-                      ) : (
-                        <Key className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Link
-                        href={`/keywords?keywordId=${keywordId}`}
-                        className="text-sm font-semibold text-primary hover:underline truncate"
+      {showBody && (
+        <CardContent>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Loading…
+            </p>
+          ) : grouped.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              No keywords yet.{" "}
+              {addButton ? "Click Add Keyword to create one." : ""}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {grouped.map(({ keywordId, keywordText, platforms }) => {
+                const isOpen = expanded.has(keywordId);
+                // Adds an "Unavailable" placeholder for any outage platform
+                // (e.g. Gemini) missing from a keyword that otherwise has data.
+                const sorted = sortPlatformsWithUnavailable(platforms);
+                const hasData = platforms.length > 0;
+                // Unified baseline: the keyword's earliest audit date (the BE
+                // aligns every platform's "when we started" rank to it).
+                const startDate = platforms.reduce<string | null>(
+                  (min, p) =>
+                    p.firstDate && (!min || p.firstDate < min)
+                      ? p.firstDate
+                      : min,
+                  null,
+                );
+                // Freshness at a glance: the most recent Current-rank audit date
+                // across this keyword's platforms, shown on the collapsed row so
+                // the date is visible without expanding.
+                const latestCurrentDate =
+                  platforms
+                    .map((p) => p.currentDate)
+                    .filter((d): d is string => !!d)
+                    .sort((a, b) => b.localeCompare(a))[0] ?? null;
+                return (
+                  <div
+                    key={keywordId}
+                    className="rounded-lg border border-border/40 bg-muted/10 overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => hasData && toggle(keywordId)}
+                        className={`shrink-0 ${hasData ? "cursor-pointer text-muted-foreground hover:text-primary" : "cursor-default text-muted-foreground"}`}
+                        disabled={!hasData}
+                        aria-label={isOpen ? "Collapse" : "Expand"}
                       >
-                        {keywordText}
-                      </Link>
-                      {lock && (
-                        <Badge
-                          className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 shrink-0"
-                          title={`Top-3 on ${lock.platform} (#${lock.position}) — will lock & rotate`}
+                        {hasData ? (
+                          isOpen ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          )
+                        ) : (
+                          <Key className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Link
+                          href={`/keywords?keywordId=${keywordId}${clientId != null ? `&clientId=${clientId}` : ""}${businessId != null ? `&businessId=${businessId}` : ""}${aeoPlanId != null ? `&aeoPlanId=${aeoPlanId}` : ""}`}
+                          className="text-sm font-semibold text-primary hover:underline truncate"
                         >
-                          <Lock className="w-2.5 h-2.5" /> Locks · {lock.platform} #{lock.position}
-                        </Badge>
+                          {keywordText}
+                        </Link>
+                        {!hasData && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] text-muted-foreground"
+                          >
+                            No data yet
+                          </Badge>
+                        )}
+                      </div>
+                      {latestCurrentDate && (
+                        <span
+                          className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap"
+                          title="Most recent audit date for this keyword"
+                        >
+                          as of {format(new Date(latestCurrentDate), "MMM d")}
+                        </span>
                       )}
-                      {!hasData && (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">No data yet</Badge>
+                      <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                        {sorted.map((p) => (
+                          <PlatformChip
+                            key={`chip-${p.keywordId}-${p.platform}`}
+                            row={p}
+                            onClick={setScreenshotTarget}
+                          />
+                        ))}
+                      </div>
+                      <KeywordHideMenu
+                        scope={{ clientId, businessId, aeoPlanId }}
+                        keywordId={keywordId}
+                        keywordText={keywordText}
+                      />
+                      {onEditKeyword && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditKeyword(keywordId);
+                          }}
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {onDeleteKeyword && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteKeyword(keywordId);
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                      {sorted.map((p) => (
-                        <PlatformChip key={`chip-${p.keywordId}-${p.platform}`} row={p} />
-                      ))}
-                    </div>
-                    {onEditKeyword && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-primary shrink-0"
-                        onClick={(e) => { e.stopPropagation(); onEditKeyword(keywordId); }}
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {onDeleteKeyword && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={(e) => { e.stopPropagation(); onDeleteKeyword(keywordId); }}
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+
+                    {isOpen && hasData && (
+                      <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
+                        <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
+                          <div className="col-span-2">AI assistant</div>
+                          <div
+                            className="col-span-2"
+                            title="Baseline audit date — same for all platforms"
+                          >
+                            {startDate
+                              ? `Started ${format(new Date(startDate), "MMM d, yyyy")}`
+                              : "When we started"}
+                          </div>
+                          <div className="col-span-2">Two weeks ago</div>
+                          <div className="col-span-2">Now</div>
+                          <div className="col-span-2">Movement</div>
+                          <div className="col-span-2">Result</div>
+                        </div>
+                        {sorted.map((p) => (
+                          <div
+                            key={`${p.keywordId}-${p.platform}-detail`}
+                            className="px-1 py-1"
+                          >
+                            <div className="grid grid-cols-12 gap-2 items-center text-sm">
+                              <div className="col-span-2 font-semibold">
+                                {platformLabel(p.platform)}
+                              </div>
+                              <div className="col-span-2 text-muted-foreground">
+                                <RankShotCell
+                                  reportId={p.firstReportId}
+                                  position={p.firstPosition}
+                                  date={p.firstDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  unverified={p.firstUnverified}
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
+                              </div>
+                              <div className="col-span-2 text-muted-foreground">
+                                <RankShotCell
+                                  reportId={p.previousReportId}
+                                  position={p.previousPosition}
+                                  date={p.previousDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  unverified={p.previousUnverified}
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
+                              </div>
+                              <div className="col-span-2 font-semibold">
+                                <RankShotCell
+                                  reportId={p.currentReportId}
+                                  position={p.currentPosition}
+                                  date={p.currentDate}
+                                  platform={p.platform}
+                                  keywordText={p.keywordText}
+                                  emphasis
+                                  unverified={p.currentUnverified}
+                                  onOpen={setScreenshotTarget}
+                                  onUnavailable={notifyNoShot}
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                {lockedView ? (
+                                  // Locked/Won card: no red. Show the delta in a
+                                  // neutral tone (never the red decline styling).
+                                  <span className="text-xs text-muted-foreground">
+                                    {p.change == null
+                                      ? "—"
+                                      : p.change === 0
+                                        ? "No change"
+                                        : movementText(p.change)}
+                                  </span>
+                                ) : (
+                                  <ChangeCell change={p.change} />
+                                )}
+                              </div>
+                              <div className="col-span-2">
+                                {p.status === "unavailable" ? (
+                                  <StatusBadge status="unavailable" />
+                                ) : lockedView ? (
+                                  p.currentPosition != null &&
+                                  p.currentPosition <= TOP_RANK_THRESHOLD ? (
+                                    <Badge className="gap-1 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                                      <Lock className="w-2.5 h-2.5" /> Won
+                                    </Badge>
+                                  ) : (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] text-amber-600 border-amber-500/40 dark:text-amber-400"
+                                    >
+                                      Watch
+                                    </Badge>
+                                  )
+                                ) : (
+                                  <StatusBadge status={p.status} />
+                                )}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-12 gap-2 text-[10px] text-muted-foreground mt-0.5">
+                              <div className="col-span-2" />
+                              <div className="col-span-2">
+                                {/* one shared start date lives in the header;
+                                    only surface a per-row date when this
+                                    platform's earliest audit differs */}
+                                {p.firstDate && p.firstDate !== startDate
+                                  ? format(new Date(p.firstDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-2">
+                                {p.previousDate
+                                  ? format(new Date(p.previousDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-2">
+                                {p.currentDate
+                                  ? format(new Date(p.currentDate), "MMM d")
+                                  : ""}
+                              </div>
+                              <div className="col-span-4" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      )}
 
-                  {isOpen && hasData && (
-                    <div className="bg-background/70 border-t border-border/40 px-3 py-2 space-y-1">
-                      <div className="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold px-1">
-                        <div className="col-span-2">Platform</div>
-                        <div className="col-span-2">First</div>
-                        <div className="col-span-2">{label.previousLabel}</div>
-                        <div className="col-span-2">{label.currentLabel}</div>
-                        <div className="col-span-2">Change</div>
-                        <div className="col-span-2">Status</div>
-                      </div>
-                      {sorted.map((p) => (
-                        <div key={`${p.keywordId}-${p.platform}-detail`} className="px-1 py-1">
-                          <div className="grid grid-cols-12 gap-2 items-center text-sm">
-                            <div className="col-span-2 capitalize font-semibold">{p.platform}</div>
-                            <div className="col-span-2 text-muted-foreground">{fmtPos(p.firstPosition)}</div>
-                            <div className="col-span-2 text-muted-foreground">{fmtPos(p.previousPosition)}</div>
-                            <div className="col-span-2 font-semibold">{fmtPos(p.currentPosition)}</div>
-                            <div className="col-span-2"><ChangeCell change={p.change} /></div>
-                            <div className="col-span-2"><StatusBadge status={p.status} /></div>
-                          </div>
-                          <div className="grid grid-cols-12 gap-2 text-[9px] text-muted-foreground/60 mt-0.5">
-                            <div className="col-span-2" />
-                            <div className="col-span-2">{p.firstDate ? format(new Date(p.firstDate), "MMM d") : ""}</div>
-                            <div className="col-span-2">{p.previousDate ? format(new Date(p.previousDate), "MMM d") : ""}</div>
-                            <div className="col-span-2">{p.currentDate ? format(new Date(p.currentDate), "MMM d") : ""}</div>
-                            <div className="col-span-4" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-
-      <Dialog open={rotateOpen} onOpenChange={(o) => { if (!o) { setRotateOpen(false); setPreview(null); } }}>
+      <Dialog
+        open={rotateOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRotateOpen(false);
+            setPreview(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Lock className="w-4 h-4 text-emerald-600" /> Run rotation — this campaign</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-emerald-600" /> Run rotation — this
+              campaign
+            </DialogTitle>
             <DialogDescription>
               {preview && preview.length > 0
                 ? `${preview.length} keyword${preview.length === 1 ? "" : "s"} are Top-3 on a platform and will be locked (archived) and replaced with an AI-generated keyword.`
@@ -356,7 +819,10 @@ export function KeywordsWithRankingsCard({
           {preview && preview.length > 0 && (
             <div className="max-h-72 overflow-y-auto space-y-1.5 py-1">
               {preview.map((l) => (
-                <div key={l.keywordId} className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/20 px-2.5 py-1.5 text-sm">
+                <div
+                  key={l.keywordId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/20 px-2.5 py-1.5 text-sm"
+                >
                   <span className="font-medium truncate">{l.keywordText}</span>
                   <Badge className="shrink-0 text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
                     {l.triggerPlatform} #{l.triggerPosition}
@@ -366,14 +832,48 @@ export function KeywordsWithRankingsCard({
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRotateOpen(false); setPreview(null); }} disabled={rotateBusy === "run"}>Cancel</Button>
-            <Button onClick={confirmRotate} disabled={rotateBusy === "run" || !preview || preview.length === 0}>
-              {rotateBusy === "run" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-              {preview && preview.length > 0 ? `Lock & rotate ${preview.length}` : "Nothing to rotate"}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRotateOpen(false);
+                setPreview(null);
+              }}
+              disabled={rotateBusy === "run"}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmRotate}
+              disabled={
+                rotateBusy === "run" || !preview || preview.length === 0
+              }
+            >
+              {rotateBusy === "run" ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Lock className="w-4 h-4" />
+              )}
+              {preview && preview.length > 0
+                ? `Lock & rotate ${preview.length}`
+                : "Nothing to rotate"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RankingScreenshotDialog
+        recordId={screenshotTarget?.reportId ?? null}
+        endpoint="/api/ranking-reports/{id}/screenshot-url"
+        onClose={() => setScreenshotTarget(null)}
+        title="Rank screenshot"
+        subtitle={
+          screenshotTarget
+            ? `${screenshotTarget.keywordText} · ${screenshotTarget.platform}`
+            : undefined
+        }
+        rank={screenshotTarget?.position ?? null}
+        date={screenshotTarget?.date ?? null}
+      />
     </Card>
   );
 }

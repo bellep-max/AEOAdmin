@@ -9,23 +9,107 @@ import {
   rankingReportsTable,
   clientAeoPlansTable,
 } from "@workspace/db/schema";
-import { eq, and, ilike, sql, desc, inArray } from "drizzle-orm";
+import {
+  eq,
+  and,
+  ilike,
+  sql,
+  desc,
+  inArray,
+  isNull,
+  isNotNull,
+} from "drizzle-orm";
+import {
+  isChucksLocal,
+  requireAdmin,
+  requireEditor,
+  requireScopedAdmin,
+  requireScopedEditor,
+  requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
+} from "../middlewares/role-auth";
+import {
+  getScopedClientIds,
+  assertScopedAccessToClient,
+  isPlanAllowedForScope,
+  isScopedRole,
+  LOCAL_ADMIN_PLAN_TYPES,
+} from "../lib/scoped-access";
+import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
+/**
+ * For scoped sessions on /:id sub-routes, 404 if the targeted client isn't in
+ * the caller's local-plan slice. Unscoped sessions pass through unchanged. The
+ * handler still runs its own ownership/auth as needed.
+ */
+async function gateClientForScopedRoles(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!isScopedRole(req)) return next();
+  const targetId = Number(req.params.id);
+  if (Number.isNaN(targetId)) return next();
+  const eligibleIds = await getScopedClientIds(req);
+  if (!eligibleIds || !eligibleIds.includes(targetId)) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  next();
+}
+
+/*
+ * Client lifecycle has three independent dimensions:
+ *   - status          'active' | 'inactive'   → Switch toggle (pause / resume)
+ *   - archived_at     timestamptz | null      → Trash icon (move to Archived)
+ *   - locked_at       timestamptz | null      → Auto-set by rotation when any
+ *                                                keyword on this client hits top-3
+ *
+ * Three views the FE asks for:
+ *   GET /api/clients                 → not archived  (default Clients page)
+ *   GET /api/clients?archived=true   → archived_at IS NOT NULL
+ *   GET /api/clients?locked=true     → locked_at   IS NOT NULL
+ *
+ * The legacy status=active/inactive/all param still works on top — useful
+ * for the Status switch filter on the main page, which only wants to see
+ * paused vs running.
+ */
+router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
-    const { status, search } = req.query as Record<string, string>;
-    let query = db.select().from(clientsTable);
+    const { status, search, archived, locked } = req.query as Record<
+      string,
+      string
+    >;
     const conditions: ReturnType<typeof eq>[] = [];
-    /* Default to hiding archived clients (status='inactive') from every
-       consumer (Rankings filter, Sessions filter, etc.). Pass status=all
-       to surface everything, or status=inactive to see only archived. */
-    const statusFilter =
-      status === "all" ? null : status === "inactive" ? "inactive" : "active";
-    if (statusFilter) {
-      conditions.push(eq(clientsTable.status, statusFilter));
+
+    // Sessions in a scoped role (sales / account-manager) see only their
+    // slice of clients. Pre-fetch the eligible IDs and intersect; unscoped
+    // sessions get a null back and skip the filter.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null) {
+      if (eligibleIds.length === 0) return res.json([]);
+      conditions.push(inArray(clientsTable.id, eligibleIds));
     }
+
+    // archived dimension (default: hide archived rows)
+    if (archived === "true") {
+      conditions.push(isNotNull(clientsTable.archivedAt));
+    } else if (archived !== "all") {
+      conditions.push(isNull(clientsTable.archivedAt));
+    }
+
+    // locked dimension (optional; defaults to no filter)
+    if (locked === "true") conditions.push(isNotNull(clientsTable.lockedAt));
+    else if (locked === "false") conditions.push(isNull(clientsTable.lockedAt));
+
+    // status filter still applies on top
+    if (status === "active" || status === "inactive") {
+      conditions.push(eq(clientsTable.status, status));
+    } else if (!status || status === "all") {
+      // no status filter — both active and inactive are returned
+    }
+
     const baseClients = await db
       .select()
       .from(clientsTable)
@@ -105,13 +189,24 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireScopedAdmin, async (req, res) => {
   try {
     const body = req.body;
 
     const trimmedName = String(body.businessName ?? "").trim();
     if (!trimmedName) {
       return res.status(400).json({ error: "businessName is required" });
+    }
+
+    // Scoped role (chuckslocal): a created client must carry one of its allowed
+    // plans (set as plan_name here) so it lands inside the user's slice and
+    // stays visible. Reject any other plan choice.
+    if (isChucksLocal(req) && !isPlanAllowedForScope(req, body.plan)) {
+      return res.status(403).json({
+        error: `You can only create clients on these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
     }
 
     const [existing] = await db
@@ -171,25 +266,58 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
-    if (!client) return res.status(404).json({ error: "Not found" });
-    res.json(client);
-  } catch (err) {
-    req.log.error({ err }, "Error fetching client");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+router.get(
+  "/:id",
+  requireExecutorOrSalesAllowed,
+  gateClientForScopedRoles,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
+      // planTypes mirrors the list endpoint's shape so callers (e.g. the
+      // free-trial "Send proof" button) can gate on plan type without a
+      // second request.
+      const planTypeRows = await db
+        .select({ planType: clientAeoPlansTable.planType })
+        .from(clientAeoPlansTable)
+        .where(eq(clientAeoPlansTable.clientId, id));
+      const planTypes = Array.from(
+        new Set(
+          planTypeRows
+            .map((r) => r.planType)
+            .filter((pt): pt is string => !!pt),
+        ),
+      );
+      res.json({ ...client, planTypes });
+    } catch (err) {
+      req.log.error({ err }, "Error fetching client");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    // Scoped role: may only edit clients inside its plan slice.
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
     const body = req.body;
+    // ...and may not move a client onto a plan outside its scope.
+    if (
+      isChucksLocal(req) &&
+      body.plan != null &&
+      !isPlanAllowedForScope(req, body.plan)
+    ) {
+      return res.status(403).json({
+        error: `You can only assign these plans: ${LOCAL_ADMIN_PLAN_TYPES.join(
+          ", ",
+        )}.`,
+      });
+    }
     const keywords = body.keywords ?? []; // Optional: array of keywords to add
 
     // Remove keywords from body so it doesn't try to update the client with it
@@ -290,21 +418,31 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-/* Soft-delete: archive the client by flipping status -> 'inactive' and
-   cascading is_active=false to its keywords + keyword_links. Preserves
-   all historical sessions / ranking_reports / audit_logs. Re-deleting an
-   already-inactive client is a no-op (idempotent). */
-router.delete("/:id", async (req, res) => {
+/* Archive: stamp archived_at on the client and cascade is_active=false to
+   its keywords + keyword_links so audits stop running. status is left
+   alone — that's the Switch's column (pause vs running). Re-archiving an
+   already-archived client is a no-op (COALESCE keeps the original stamp). */
+router.delete("/:id", requireScopedAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
+
+    const reason =
+      (req.body as { reason?: string } | undefined)?.reason ??
+      "Archived from Clients page";
 
     const [client] = await db
       .update(clientsTable)
-      .set({ status: "inactive" })
+      .set({
+        archivedAt: sql`COALESCE(${clientsTable.archivedAt}, now())`,
+        archiveReason: sql`COALESCE(${clientsTable.archiveReason}, ${reason})`,
+      })
       .where(eq(clientsTable.id, id))
       .returning();
     if (!client) return res.status(404).json({ error: "Not found" });
 
+    // Cascade: stop ranking work for this client's keywords + links.
     await db
       .update(keywordsTable)
       .set({ isActive: false })
@@ -333,140 +471,194 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-router.get("/:id/gbp-snippet", async (req, res) => {
+/* Restore the inverse of DELETE: clear archived_at + archive_reason and
+   flip status back to 'active' so the client is running again. locked_at
+   is left alone — graduation history shouldn't reset on restore. */
+router.post("/:id/restore", requireScopedAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (!(await assertScopedAccessToClient(req, res, id))) return;
+
     const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
+      .update(clientsTable)
+      .set({ archivedAt: null, archiveReason: null, status: "active" })
+      .where(eq(clientsTable.id, id))
+      .returning();
     if (!client) return res.status(404).json({ error: "Not found" });
 
-    // Get most recent ranking report for maps presence
-    const [latestReport] = await db
-      .select({
-        mapsPresence: rankingReportsTable.mapsPresence,
-        createdAt: rankingReportsTable.createdAt,
-      })
-      .from(rankingReportsTable)
-      .where(eq(rankingReportsTable.clientId, id))
-      .orderBy(desc(rankingReportsTable.createdAt))
-      .limit(1);
-
-    const keywords = await db
-      .select()
-      .from(keywordsTable)
+    await db
+      .update(keywordsTable)
+      .set({ isActive: true })
       .where(eq(keywordsTable.clientId, id));
 
-    const verificationStatus =
-      keywords.length > 0 &&
-      keywords.every((k) => k.verificationStatus === "verified")
-        ? "verified"
-        : keywords.some((k) => k.verificationStatus === "failed")
-          ? "failed"
-          : "pending";
-
-    res.json({
-      clientId: client.id,
-      businessName: client.businessName,
-      gmbUrl: client.gmbUrl,
-      placeId: client.placeId,
-      verificationStatus,
-      publishedAddress: client.publishedAddress,
-      city: client.city,
-      state: client.state,
-      mapsPresence: latestReport?.mapsPresence ?? null,
-      lastChecked: latestReport?.createdAt ?? null,
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error fetching GBP snippet");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/:id/aeo-summary", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [client] = await db
-      .select()
-      .from(clientsTable)
-      .where(eq(clientsTable.id, id));
-    if (!client) return res.status(404).json({ error: "Not found" });
-
-    const keywords = await db
-      .select()
+    const clientKwIds = await db
+      .select({ id: keywordsTable.id })
       .from(keywordsTable)
       .where(eq(keywordsTable.clientId, id));
-
-    const keywordIds = keywords.map((k) => k.id);
-
-    // Get initial and current rankings for each keyword
-    const rankingData: Record<
-      number,
-      {
-        initial?: typeof rankingReportsTable.$inferSelect;
-        current?: typeof rankingReportsTable.$inferSelect;
-      }
-    > = {};
-    for (const kwId of keywordIds) {
-      const reports = await db
-        .select()
-        .from(rankingReportsTable)
+    if (clientKwIds.length > 0) {
+      await db
+        .update(keywordLinksTable)
+        .set({ linkActive: true })
         .where(
-          and(
-            eq(rankingReportsTable.clientId, id),
-            eq(rankingReportsTable.keywordId, kwId),
+          inArray(
+            keywordLinksTable.keywordId,
+            clientKwIds.map((k) => k.id),
           ),
-        )
-        .orderBy(rankingReportsTable.createdAt);
-
-      rankingData[kwId] = {
-        initial: reports.find((r) => r.isInitialRanking) ?? reports[0],
-        current: reports[reports.length - 1],
-      };
+        );
     }
 
-    const totalClicks = 0;
-    const allReportPositions = Object.values(rankingData)
-      .map((r) => r.current?.rankingPosition)
-      .filter((p): p is number => p != null);
-    const avgPos = allReportPositions.length
-      ? allReportPositions.reduce((a, b) => a + b, 0) /
-        allReportPositions.length
-      : null;
-
-    // Sessions for date range
-    const sessions = await db
-      .select({ timestamp: sessionsTable.timestamp })
-      .from(sessionsTable)
-      .where(eq(sessionsTable.clientId, id))
-      .orderBy(sessionsTable.timestamp);
-
-    const aeoKeywords = keywords.map((k) => ({
-      keywordId: k.id,
-      keywordText: k.keywordText,
-      initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
-      initialRankingPosition:
-        rankingData[k.id]?.initial?.rankingPosition ?? null,
-      currentRankingPosition:
-        rankingData[k.id]?.current?.rankingPosition ?? null,
-      clicksDelivered: 0,
-      verificationStatus: k.verificationStatus,
-    }));
-
-    res.json({
-      clientId: client.id,
-      businessName: client.businessName,
-      aeoKeywords,
-      totalClicksDelivered: totalClicks,
-      averageRankingPosition: avgPos,
-      startDate: sessions[0]?.timestamp ?? null,
-      lastSessionDate: sessions[sessions.length - 1]?.timestamp ?? null,
-    });
+    res.json({ success: true, client });
   } catch (err) {
-    req.log.error({ err }, "Error fetching AEO summary");
+    req.log.error({ err }, "Error restoring client");
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+router.get(
+  "/:id/gbp-snippet",
+  requireSalesAllowed,
+  gateClientForScopedRoles,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
+
+      // Get most recent ranking report for maps presence
+      const [latestReport] = await db
+        .select({
+          mapsPresence: rankingReportsTable.mapsPresence,
+          createdAt: rankingReportsTable.createdAt,
+        })
+        .from(rankingReportsTable)
+        .where(eq(rankingReportsTable.clientId, id))
+        .orderBy(desc(rankingReportsTable.createdAt))
+        .limit(1);
+
+      const keywords = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.clientId, id));
+
+      const verificationStatus =
+        keywords.length > 0 &&
+        keywords.every((k) => k.verificationStatus === "verified")
+          ? "verified"
+          : keywords.some((k) => k.verificationStatus === "failed")
+            ? "failed"
+            : "pending";
+
+      res.json({
+        clientId: client.id,
+        businessName: client.businessName,
+        gmbUrl: client.gmbUrl,
+        placeId: client.placeId,
+        verificationStatus,
+        publishedAddress: client.publishedAddress,
+        city: client.city,
+        state: client.state,
+        mapsPresence: latestReport?.mapsPresence ?? null,
+        lastChecked: latestReport?.createdAt ?? null,
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error fetching GBP snippet");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+router.get(
+  "/:id/aeo-summary",
+  requireSalesAllowed,
+  gateClientForScopedRoles,
+  async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [client] = await db
+        .select()
+        .from(clientsTable)
+        .where(eq(clientsTable.id, id));
+      if (!client) return res.status(404).json({ error: "Not found" });
+
+      const keywords = await db
+        .select()
+        .from(keywordsTable)
+        .where(eq(keywordsTable.clientId, id));
+
+      const keywordIds = keywords.map((k) => k.id);
+
+      // Get initial and current rankings for each keyword
+      const rankingData: Record<
+        number,
+        {
+          initial?: typeof rankingReportsTable.$inferSelect;
+          current?: typeof rankingReportsTable.$inferSelect;
+        }
+      > = {};
+      for (const kwId of keywordIds) {
+        const reports = await db
+          .select()
+          .from(rankingReportsTable)
+          .where(
+            and(
+              eq(rankingReportsTable.clientId, id),
+              eq(rankingReportsTable.keywordId, kwId),
+            ),
+          )
+          .orderBy(rankingReportsTable.createdAt);
+
+        rankingData[kwId] = {
+          initial: reports.find((r) => r.isInitialRanking) ?? reports[0],
+          current: reports[reports.length - 1],
+        };
+      }
+
+      const totalClicks = 0;
+      const allReportPositions = Object.values(rankingData)
+        .map((r) => r.current?.rankingPosition)
+        .filter((p): p is number => p != null);
+      const avgPos = allReportPositions.length
+        ? allReportPositions.reduce((a, b) => a + b, 0) /
+          allReportPositions.length
+        : null;
+
+      // Sessions for date range
+      const sessions = await db
+        .select({ timestamp: sessionsTable.timestamp })
+        .from(sessionsTable)
+        .where(eq(sessionsTable.clientId, id))
+        .orderBy(sessionsTable.timestamp);
+
+      const aeoKeywords = keywords.map((k) => ({
+        keywordId: k.id,
+        keywordText: k.keywordText,
+        initialRankingDate: rankingData[k.id]?.initial?.createdAt ?? null,
+        initialRankingPosition:
+          rankingData[k.id]?.initial?.rankingPosition ?? null,
+        currentRankingPosition:
+          rankingData[k.id]?.current?.rankingPosition ?? null,
+        clicksDelivered: 0,
+        verificationStatus: k.verificationStatus,
+      }));
+
+      res.json({
+        clientId: client.id,
+        businessName: client.businessName,
+        aeoKeywords,
+        totalClicksDelivered: totalClicks,
+        averageRankingPosition: avgPos,
+        startDate: sessions[0]?.timestamp ?? null,
+        lastSessionDate: sessions[sessions.length - 1]?.timestamp ?? null,
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error fetching AEO summary");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 export default router;

@@ -7,9 +7,16 @@ import {
   clientAeoPlansTable,
   keywordsTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, count, gte, lte, like, sql } from "drizzle-orm";
+import { eq, and, desc, count, gte, lte, like, sql, inArray } from "drizzle-orm";
 import { rankingReportsTable } from "@workspace/db/schema";
 import { requireExecutorToken } from "../middlewares/executor-auth";
+import {
+  requireOwner,
+  requireViewer,
+  requireAdmin,
+  requireSalesAllowed,
+} from "../middlewares/role-auth";
+import { getScopedClientIds } from "../lib/scoped-access";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -39,7 +46,7 @@ function parseFilterDate(raw: string, kind: "start" | "end"): Date {
 /* ────────────────────────────────────────────────────────────
    GET /api/audit-logs
 ──────────────────────────────────────────────────────────── */
-router.get("/", async (req, res) => {
+router.get("/", requireSalesAllowed, async (req, res) => {
   try {
     const {
       clientId,
@@ -55,7 +62,16 @@ router.get("/", async (req, res) => {
       offset = "0",
     } = req.query as Record<string, string>;
 
+    // Scoped roles (chuckslocal, sales, account-manager) only see their own
+    // clients' audit logs; admins/owners get null = no restriction.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json({ logs: [], total: 0 });
+    }
+
     const conditions = [] as ReturnType<typeof eq>[];
+    if (eligibleIds)
+      conditions.push(inArray(auditLogsTable.clientId, eligibleIds));
     if (clientId)
       conditions.push(eq(auditLogsTable.clientId, parseInt(clientId)));
     if (businessId)
@@ -221,7 +237,7 @@ router.post("/", requireExecutorToken, async (req, res) => {
    Backfills audit_logs from ranking_reports for rows that
    don't have a matching audit_log entry yet.
 ──────────────────────────────────────────────────────────── */
-router.post("/sync", async (req, res) => {
+router.post("/sync", requireOwner, async (req, res) => {
   try {
     const { from, to, dryRun } = req.query as Record<string, string>;
     const isDryRun = dryRun === "true" || dryRun === "1";
@@ -285,7 +301,7 @@ router.post("/sync", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -310,7 +326,7 @@ router.delete("/:id", async (req, res) => {
        Structured-field matching (rather than basename) is required because
        S3 keys use a renamed scheme `{date}_rank{N}_{trend}.png` that has
        no relation to the original `kw{id}_{platform}_{unix_ts}.png` file. */
-router.get("/:id/screenshot-url", async (req, res) => {
+router.get("/:id/screenshot-url", requireViewer, async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "invalid id" });

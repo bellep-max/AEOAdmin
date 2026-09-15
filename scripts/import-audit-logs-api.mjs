@@ -75,12 +75,39 @@ const kwRes = await db.query(`
 `);
 const kwByTextBiz = new Map();
 const kwByText = new Map();
+/* The producer encodes campaign_id as `business_id ++ keyword_id` (padded to
+   4) whenever it emits a synthesized id. Decoding that names the exact keyword
+   that ran, which matters because (keyword_text, biz_name) is NOT unique —
+   85 text+biz keys map to several keywords, and last-wins there silently
+   attributes a run to a sibling keyword, sometimes under a different campaign
+   (e.g. a La Branch ranking landing on the Memorial campaign for a
+   multi-location client). Measured on the 2026-08-01 stale file: text+biz
+   disagreed with the decode on 387 of 1810 rows. */
+const kwBySynthId = new Map();
 for (const k of kwRes.rows) {
   const t = (k.keyword_text ?? "").toLowerCase().trim();
   const b = (k.biz_name ?? "").toLowerCase().trim();
   kwByTextBiz.set(`${t}|${b}`, k);
   if (!kwByText.has(t)) kwByText.set(t, k);
+  kwBySynthId.set(`${k.business_id}${String(k.keyword_id).padStart(4, "0")}`, k);
 }
+
+/* Exact keyword for a row, best evidence first:
+     1. decoded synthesized campaign_id (verified against the keyword text)
+     2. (keyword_text, biz_name)
+     3. keyword_text alone
+   The decode is only trusted when its keyword text matches the row's, so a
+   campaign_id that happens to be a real plan id can't produce a false hit. */
+function resolveKeywordRow(campaignId, keywordLc, textBizKey) {
+  const decoded = kwBySynthId.get(String(parseInt(campaignId, 10)));
+  if (decoded && (decoded.keyword_text ?? "").toLowerCase().trim() === keywordLc)
+    return { kw: decoded, via: "decode" };
+  const byTb = kwByTextBiz.get(textBizKey);
+  if (byTb) return { kw: byTb, via: "text+biz" };
+  const byText = kwByText.get(keywordLc);
+  return byText ? { kw: byText, via: "text" } : { kw: null, via: null };
+}
+let viaDecode = 0, viaTextBiz = 0, viaText = 0;
 
 const varRes = await db.query("SELECT id, variant_text FROM keyword_variants");
 const variantById = new Map();
@@ -124,16 +151,14 @@ let rankOk = 0, rankFail = 0;
 let missingKw = 0;
 const failures = [];
 
-const dateAuditRunCreatedAt = (() => {
-  /* All audit rows from the same CSV share a single representative
-     created_at (noon UTC of the run date) so the Rankings 'latest run'
-     filter groups all rows together. Computed from the first row's date. */
-  for (let i = 1; i < allRows.length; i++) {
-    const ts = (allRows[i][headerIdx["timestamp"]] ?? "").trim();
-    if (ts) return ts.slice(0, 10) + "T12:00:00Z";
-  }
-  return null;
-})();
+/* created_at is noon UTC of the row's OWN date, so the row displays on the
+   same calendar day in any timezone and the Rankings 'latest run' filter
+   groups a run together. Derived per row rather than from the first row:
+   a stale catch-up file carries each combo's own bi-weekly due date (the
+   2026-08-01 file spans 16 dates from Jun 9 to Jul 31), and stamping all of
+   them with the first row's date would collapse them into one run. For a
+   normal single-date file this is identical to the old behaviour. */
+const createdAtForDate = (ts) => (ts ? ts.slice(0, 10) + "T12:00:00Z" : null);
 
 for (let i = 1; i < allRows.length; i++) {
   const row = allRows[i];
@@ -142,12 +167,19 @@ for (let i = 1; i < allRows.length; i++) {
   const keyword = v(row, "keyword");
   const bizName = v(row, "biz_name");
   const tb = `${keyword.toLowerCase()}|${bizName.toLowerCase()}`;
-  const kw = kwByTextBiz.get(tb) ?? kwByText.get(keyword.toLowerCase());
+  const { kw, via } = resolveKeywordRow(
+    v(row, "campaign_id"),
+    keyword.toLowerCase(),
+    tb,
+  );
 
   if (!kw) {
     missingKw++;
     continue;
   }
+  if (via === "decode") viaDecode++;
+  else if (via === "text+biz") viaTextBiz++;
+  else viaText++;
 
   const variantId = v(row, "variant_id");
   const variantText = variantId ? (variantById.get(variantId) ?? null) : null;
@@ -209,7 +241,7 @@ for (let i = 1; i < allRows.length; i++) {
     proxyRegion:      v(row, "proxy_region") || null,
     proxyZip:         v(row, "proxy_zip") || null,
     isInitialRanking: false,
-    createdAt:        dateAuditRunCreatedAt,
+    createdAt:        createdAtForDate(ts),
   };
 
   if (process.env.SKIP_AUDIT_LOGS !== "1") {
@@ -229,6 +261,7 @@ console.log("\n=== summary ===");
 console.log(`audit_logs:      ${auditOk} ok, ${auditFail} failed`);
 console.log(`ranking_reports: ${rankOk} ok, ${rankFail} failed`);
 console.log(`missing keyword: ${missingKw}`);
+console.log(`keyword resolved by: decode=${viaDecode} text+biz=${viaTextBiz} text=${viaText}`);
 if (failures.length > 0) {
   console.log("\nfirst failures:");
   for (const f of failures) console.log(`  ${f}`);

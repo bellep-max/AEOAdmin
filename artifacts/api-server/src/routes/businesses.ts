@@ -6,19 +6,52 @@ import {
   clientAeoPlansTable,
 } from "@workspace/db/schema";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import {
+  requireAdmin,
+  requireEditor,
+  requireScopedAdmin,
+  requireScopedEditor,
+  requireSalesAllowed,
+  requireExecutorOrSalesAllowed,
+} from "../middlewares/role-auth";
+import {
+  assertScopedAccessToClient,
+  getScopedClientIds,
+} from "../lib/scoped-access";
+import { computeBusinessMomentum } from "../services/business-momentum";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
+/* GET /api/businesses/momentum
+   Business-level "Needs Attention" flagging for the dashboard: per-status
+   counts + the flagged businesses. Declared BEFORE /:id so "momentum" isn't
+   parsed as a business id. Scoped roles only see their own slice. */
+router.get("/momentum", requireExecutorOrSalesAllowed, async (req, res) => {
+  try {
+    const eligibleIds = await getScopedClientIds(req);
+    const summary = await computeBusinessMomentum(eligibleIds);
+    return res.json(summary);
+  } catch (err) {
+    req.log.error({ err }, "Error computing business momentum");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const { clientId } = req.query as Record<string, string>;
-    const query = db
+    // Scoped roles see only businesses under clients in their plan slice.
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null && eligibleIds.length === 0) return res.json([]);
+    const conds = [];
+    if (clientId) conds.push(eq(businessesTable.clientId, parseInt(clientId)));
+    if (eligibleIds !== null)
+      conds.push(inArray(businessesTable.clientId, eligibleIds));
+    const rows = await db
       .select()
       .from(businessesTable)
+      .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(businessesTable.createdAt));
-    const rows = clientId
-      ? await query.where(eq(businessesTable.clientId, parseInt(clientId)))
-      : await query;
 
     const ids = rows.map((b) => b.id);
     const counts = new Map<
@@ -62,7 +95,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", requireExecutorOrSalesAllowed, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const [business] = await db
@@ -70,6 +103,8 @@ router.get("/:id", async (req, res) => {
       .from(businessesTable)
       .where(eq(businessesTable.id, id));
     if (!business) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, business.clientId)))
+      return;
     res.json(business);
   } catch (err) {
     req.log.error({ err }, "Error fetching business");
@@ -77,12 +112,15 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requireScopedAdmin, async (req, res) => {
   try {
     const body = req.body;
     if (!body.clientId || !body.name) {
       return res.status(400).json({ error: "clientId and name are required" });
     }
+    // Scoped role: the parent client must be inside the user's plan slice.
+    if (!(await assertScopedAccessToClient(req, res, Number(body.clientId))))
+      return;
     const trimmedName = String(body.name).trim();
     if (!trimmedName) {
       return res.status(400).json({ error: "name cannot be empty" });
@@ -134,9 +172,16 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireScopedEditor, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    // Scoped role: the business's client must be inside the user's plan slice.
+    const [owner] = await db
+      .select({ clientId: businessesTable.clientId })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, id));
+    if (!owner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, owner.clientId))) return;
     const { searchAddress: _ignored, ...rest } = req.body ?? {};
     const body = { ...rest, updatedAt: new Date() };
 
@@ -184,9 +229,15 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireScopedAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const [owner] = await db
+      .select({ clientId: businessesTable.clientId })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, id));
+    if (!owner) return res.status(404).json({ error: "Not found" });
+    if (!(await assertScopedAccessToClient(req, res, owner.clientId))) return;
     await db.delete(businessesTable).where(eq(businessesTable.id, id));
     res.status(204).send();
   } catch (err) {

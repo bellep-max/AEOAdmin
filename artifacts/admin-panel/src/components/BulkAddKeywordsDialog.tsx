@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Key } from "lucide-react";
@@ -24,8 +36,14 @@ interface Props {
 }
 
 export function BulkAddKeywordsDialog({
-  open, onOpenChange,
-  clientId, clientName, businessId, businessName, aeoPlanId, campaignName,
+  open,
+  onOpenChange,
+  clientId,
+  clientName,
+  businessId,
+  businessName,
+  aeoPlanId,
+  campaignName,
   onSaved,
 }: Props) {
   const { toast } = useToast();
@@ -35,7 +53,10 @@ export function BulkAddKeywordsDialog({
   const [keywordType, setKeywordType] = useState("3");
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -96,7 +117,8 @@ export function BulkAddKeywordsDialog({
     if (failed.length === 0) {
       toast({
         title: `Added ${succeeded} keyword${succeeded === 1 ? "" : "s"}`,
-        description: "Tip: open any keyword's detail page to generate search variants.",
+        description:
+          "Tip: open any keyword's detail page to generate search variants.",
       });
       onSaved?.(succeeded);
       onOpenChange(false);
@@ -117,11 +139,13 @@ export function BulkAddKeywordsDialog({
       <DialogContent className="sm:max-w-[720px] bg-white max-h-[90vh]">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
-              <Key className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Key className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-bold text-black">Add Keywords</DialogTitle>
+              <DialogTitle className="text-lg font-bold text-black">
+                Add Keywords
+              </DialogTitle>
               <DialogDescription className="text-sm text-slate-600 mt-0.5">
                 {clientName} · {businessName} · {campaignName ?? "Campaign"}
               </DialogDescription>
@@ -144,10 +168,14 @@ export function BulkAddKeywordsDialog({
             <div className="flex items-center justify-between text-xs text-slate-600">
               <span>
                 {unique.length} unique keyword{unique.length === 1 ? "" : "s"}
-                {duplicateCount > 0 ? ` · ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"} ignored` : ""}
+                {duplicateCount > 0
+                  ? ` · ${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"} ignored`
+                  : ""}
               </span>
               {progress ? (
-                <span>Saving {progress.done} / {progress.total}…</span>
+                <span>
+                  Saving {progress.done} / {progress.total}…
+                </span>
               ) : null}
             </div>
           </div>
@@ -157,7 +185,11 @@ export function BulkAddKeywordsDialog({
               <Label className="text-xs uppercase tracking-wide text-slate-600 font-semibold">
                 Keyword Type (applied to all)
               </Label>
-              <Select value={keywordType} onValueChange={setKeywordType} disabled={submitting}>
+              <Select
+                value={keywordType}
+                onValueChange={setKeywordType}
+                disabled={submitting}
+              >
                 <SelectTrigger className="h-10 bg-slate-50 text-black">
                   <SelectValue />
                 </SelectTrigger>
@@ -169,17 +201,30 @@ export function BulkAddKeywordsDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-slate-600 font-semibold">Active</Label>
+              <Label className="text-xs uppercase tracking-wide text-slate-600 font-semibold">
+                Active
+              </Label>
               <div className="h-10 flex items-center gap-2">
-                <Switch checked={isActive} onCheckedChange={setIsActive} disabled={submitting} />
-                <span className="text-sm text-slate-700">{isActive ? "Yes" : "No"}</span>
+                <Switch
+                  checked={isActive}
+                  onCheckedChange={setIsActive}
+                  disabled={submitting}
+                />
+                <span className="text-sm text-slate-700">
+                  {isActive ? "Yes" : "No"}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         <div className="pt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
             {submitting ? "Cancel" : "Later"}
           </Button>
           <Button

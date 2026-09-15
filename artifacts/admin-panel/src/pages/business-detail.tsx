@@ -2,27 +2,57 @@ import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BusinessMomentumBadge } from "@/components/MomentumBadge";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Pencil, ExternalLink, Building2, MapPin, ClipboardList, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Pencil,
+  ExternalLink,
+  Building2,
+  MapPin,
+  ClipboardList,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { getPlanMeta } from "@/lib/plan-meta";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useLocation } from "wouter";
 import { RankingsSection } from "@/components/RankingsSection";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 interface Business {
@@ -56,15 +86,33 @@ interface CampaignRow {
   schemaImplementor: string | null;
   createdBy: string | null;
   keywordCount?: number;
+  activeCount?: number;
+  watchCount?: number;
+  lockedCount?: number;
 }
 
-function Field({ label, value, href }: { label: string; value?: string | null; href?: string }) {
+function Field({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value?: string | null;
+  href?: string;
+}) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+        {label}
+      </p>
       {value ? (
         href ? (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1 break-all">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline flex items-center gap-1 break-all"
+          >
             {value} <ExternalLink className="w-3 h-3 flex-shrink-0" />
           </a>
         ) : (
@@ -79,14 +127,21 @@ function Field({ label, value, href }: { label: string; value?: string | null; h
 
 export default function BusinessDetail() {
   const [, params] = useRoute("/clients/:clientId/businesses/:businessId");
-  const clientId = Number(params?.clientId);
-  const businessId = Number(params?.businessId);
+  // Params may carry a readable "-slug" suffix (e.g. "11-carrot-software");
+  // parseInt takes the leading id and ignores the rest.
+  const clientId = parseInt(String(params?.clientId ?? ""), 10);
+  const businessId = parseInt(String(params?.businessId ?? ""), 10);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isAdmin, isEditor } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null);
-  const [deletingCampaign, setDeletingCampaign] = useState<CampaignRow | null>(null);
+  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(
+    null,
+  );
+  const [deletingCampaign, setDeletingCampaign] = useState<CampaignRow | null>(
+    null,
+  );
   const [, navigate] = useLocation();
 
   const { data: business, isLoading } = useQuery<Business>({
@@ -109,10 +164,14 @@ export default function BusinessDetail() {
     enabled: !!clientId,
   });
 
-  const { data: campaigns, refetch: refetchCampaigns } = useQuery<CampaignRow[]>({
+  const { data: campaigns, refetch: refetchCampaigns } = useQuery<
+    CampaignRow[]
+  >({
     queryKey: ["/api/clients", clientId, "aeo-plans", { businessId }],
     queryFn: async () => {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans?businessId=${businessId}`);
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans?businessId=${businessId}`,
+      );
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -121,7 +180,9 @@ export default function BusinessDetail() {
 
   async function deleteCampaign(id: number) {
     try {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, { method: "DELETE" });
+      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${id}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error();
       toast({ title: "Campaign deleted" });
       refetchCampaigns();
@@ -144,7 +205,10 @@ export default function BusinessDetail() {
     return (
       <div className="py-20 text-center text-muted-foreground">
         <p>Business not found.</p>
-        <Link href={`/clients/${clientId}`} className="text-primary hover:underline mt-2 inline-block">
+        <Link
+          href={`/clients/${clientId}`}
+          className="text-primary hover:underline mt-2 inline-block"
+        >
           ← Back to client
         </Link>
       </div>
@@ -154,11 +218,17 @@ export default function BusinessDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/clients" className="hover:text-foreground transition-colors flex items-center gap-1">
+        <Link
+          href="/clients"
+          className="hover:text-foreground transition-colors flex items-center gap-1"
+        >
           <ChevronLeft className="w-3.5 h-3.5" /> Clients
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {client?.businessName ?? "Client"}
         </Link>
         <span>/</span>
@@ -171,25 +241,40 @@ export default function BusinessDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{business.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {business.name}
+            </h1>
             <Badge
               variant="outline"
-              className={business.status === "active"
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                : "bg-muted text-muted-foreground"}
+              className={
+                business.status === "active"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-muted text-muted-foreground"
+              }
             >
               {business.status}
             </Badge>
+            <BusinessMomentumBadge businessId={businessId} />
             {business.category && (
-              <Badge variant="outline" className="bg-slate-500/10 text-slate-400 border-slate-500/20">
+              <Badge
+                variant="outline"
+                className="bg-slate-500/10 text-slate-400 border-slate-500/20"
+              >
                 {business.category}
               </Badge>
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </Button>
+        {isEditor && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </Button>
+        )}
       </div>
 
       <Card className="border-border/50">
@@ -203,9 +288,20 @@ export default function BusinessDetail() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Name" value={business.name} />
             <Field label="Service Category" value={business.category} />
-            <Field label="Website" value={business.websiteUrl} href={business.websiteUrl ?? undefined} />
-            <Field label="GMB URL" value={business.gmbUrl} href={business.gmbUrl ?? undefined} />
-            <Field label="Published (GMB) Address" value={business.publishedAddress} />
+            <Field
+              label="Website"
+              value={business.websiteUrl}
+              href={business.websiteUrl ?? undefined}
+            />
+            <Field
+              label="GMB URL"
+              value={business.gmbUrl}
+              href={business.gmbUrl ?? undefined}
+            />
+            <Field
+              label="Published (GMB) Address"
+              value={business.publishedAddress}
+            />
             <Field label="City" value={business.city} />
             <Field label="State" value={business.state} />
             <Field label="Country" value={business.country} />
@@ -219,20 +315,32 @@ export default function BusinessDetail() {
         <CardHeader className="pb-4 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-primary" />
-            Campaigns {campaigns ? <span className="text-muted-foreground font-normal">({campaigns.length})</span> : null}
+            Campaigns{" "}
+            {campaigns ? (
+              <span className="text-muted-foreground font-normal">
+                ({campaigns.length})
+              </span>
+            ) : null}
           </CardTitle>
-          <Button
-            variant="outline" size="sm"
-            className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
-            onClick={() => { setEditingCampaign(null); setCampaignDialogOpen(true); }}
-          >
-            <Plus className="w-3 h-3" /> Add Campaign
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 gap-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
+              onClick={() => {
+                setEditingCampaign(null);
+                setCampaignDialogOpen(true);
+              }}
+            >
+              <Plus className="w-3 h-3" /> Add Campaign
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {!campaigns || campaigns.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              No campaigns yet. Click <strong>Add Campaign</strong> to create one.
+              No campaigns yet. Click <strong>Add Campaign</strong> to create
+              one.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -253,51 +361,106 @@ export default function BusinessDetail() {
                       <TableRow
                         key={c.id}
                         className="hover:bg-muted/30 cursor-pointer"
-                        onClick={() => navigate(`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`)}
+                        onClick={() =>
+                          navigate(
+                            `/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`,
+                          )
+                        }
                       >
                         <TableCell className="text-sm">
-                          <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <div
+                            className="flex flex-col gap-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Link
                               href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
                               className="font-semibold text-primary hover:underline"
                             >
                               {c.name ?? "(unnamed campaign)"}
                             </Link>
-                            <Link
-                              href={`/clients/${clientId}/businesses/${businessId}/campaigns/${c.id}`}
-                              className="text-[11px] text-primary hover:underline w-fit"
-                            >
-                              {c.keywordCount ?? 0} active keyword{(c.keywordCount ?? 0) === 1 ? "" : "s"}
-                            </Link>
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.activeCount ?? c.keywordCount ?? 0}
+                                </span>{" "}
+                                active
+                                <InfoTip label="What are active keywords">
+                                  Keywords we&rsquo;re actively working to move
+                                  up the rankings right now.
+                                </InfoTip>
+                              </span>
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.watchCount ?? 0}
+                                </span>{" "}
+                                under watch
+                                <InfoTip label="What are under-watch keywords">
+                                  Keywords that were ranking but have slipped
+                                  out of the top lately — we&rsquo;re watching
+                                  these closely and adjusting.
+                                </InfoTip>
+                              </span>
+                              <span>
+                                <span className="font-semibold text-foreground">
+                                  {c.lockedCount ?? 0}
+                                </span>{" "}
+                                locked
+                                <InfoTip label="What are locked keywords">
+                                  Keywords that reached the top and are
+                                  &ldquo;won&rdquo; — we hold their spot and
+                                  shift effort to other keywords.
+                                </InfoTip>
+                              </span>
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}
+                          >
                             {c.planType}
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}
+                          >
                             {meta.tier}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm">{c.createdBy ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="text-sm">
+                          {c.createdBy ?? (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className="text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                              onClick={() => { setEditingCampaign(c); setCampaignDialogOpen(true); }}
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                              onClick={() => setDeletingCampaign(c)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                            {isEditor && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  setEditingCampaign(c);
+                                  setCampaignDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                                onClick={() => setDeletingCampaign(c)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -310,16 +473,41 @@ export default function BusinessDetail() {
         </CardContent>
       </Card>
 
+      {/* ═══ PERFORMANCE SUMMARY + GRAPHS (commented out) ═══ */}
+      {/*
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={null}
+        title="Overall Performance summary · this business"
+      />
+
+      <RankTrendChart
+        scope="business"
+        clientId={clientId}
+        businessId={businessId}
+      />
+
+      <BiWeeklyGraphsCard
+        scope="business"
+        clientId={clientId}
+        businessId={businessId}
+      />
+
       <PlatformAggregateStrip
         clientId={clientId}
         businessId={businessId}
         aeoPlanId={null}
         title={`Overall ranking · Business — ${business?.name ?? "Business"}`}
       />
+      */}
 
       <CampaignFormDialog
         open={campaignDialogOpen}
-        onOpenChange={(open) => { setCampaignDialogOpen(open); if (!open) setEditingCampaign(null); }}
+        onOpenChange={(open) => {
+          setCampaignDialogOpen(open);
+          if (!open) setEditingCampaign(null);
+        }}
         clientId={clientId}
         businessId={businessId}
         businessName={business?.name}
@@ -327,19 +515,32 @@ export default function BusinessDetail() {
         onSaved={() => refetchCampaigns()}
       />
 
-      <AlertDialog open={!!deletingCampaign} onOpenChange={(open) => { if (!open) setDeletingCampaign(null); }}>
+      <AlertDialog
+        open={!!deletingCampaign}
+        onOpenChange={(open) => {
+          if (!open) setDeletingCampaign(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete campaign "{deletingCampaign?.name ?? deletingCampaign?.planType}"?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete campaign "
+              {deletingCampaign?.name ?? deletingCampaign?.planType}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the campaign and all linked keywords. This cannot be undone.
+              This permanently deletes the campaign and all linked keywords.
+              This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeletingCampaign(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeletingCampaign(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (deletingCampaign) deleteCampaign(deletingCampaign.id); }}
+              onClick={() => {
+                if (deletingCampaign) deleteCampaign(deletingCampaign.id);
+              }}
             >
               Yes, delete
             </AlertDialogAction>
@@ -353,7 +554,9 @@ export default function BusinessDetail() {
         clientId={clientId}
         business={business}
         onUpdated={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/businesses", businessId] });
+          queryClient.invalidateQueries({
+            queryKey: ["/api/businesses", businessId],
+          });
           toast({ title: "Business updated" });
         }}
       />

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,12 +11,17 @@ import {
   fmtPos,
   fmtShortET,
   periodLabel,
-  PLATFORM_ORDER,
+  rawFetch,
   PLATFORM_COLORS,
+  sortPlatformsWithUnavailable,
   type Period,
   type PeriodRow,
 } from "@/lib/period-comparison";
-import { StatusBadge, ChangeCell } from "@/components/period-badges";
+import {
+  StatusBadge,
+  ChangeCell,
+  UnverifiedMark,
+} from "@/components/period-badges";
 import { RankingScreenshotDialog } from "@/components/RankingScreenshotDialog";
 
 interface Props {
@@ -23,6 +29,7 @@ interface Props {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  planType?: string | null;
   /* When true, drop keywords where no platform has a prior rank (Loose
      "has comparison" rule). State is owned by the parent so CSV/PDF
      exports respect the same toggle. */
@@ -51,9 +58,11 @@ interface CampaignGroup {
 const UNASSIGNED_PLAN = 0;
 
 function PlatformChip({ row }: { row: PeriodRow }) {
-  const cls =
-    PLATFORM_COLORS[row.platform] ??
-    "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400";
+  const unavailable = row.status === "unavailable";
+  const cls = unavailable
+    ? "bg-slate-500/10 border-slate-400/30 text-muted-foreground"
+    : (PLATFORM_COLORS[row.platform] ??
+      "bg-slate-500/10 border-slate-500/30 text-slate-600 dark:text-slate-400");
   const arrow =
     row.change == null
       ? ""
@@ -62,16 +71,19 @@ function PlatformChip({ row }: { row: PeriodRow }) {
         : row.change < 0
           ? " ↓"
           : " =";
-  const pos = fmtPos(row.currentPosition);
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${cls}`}
     >
       <span className="capitalize">{row.platform}</span>
-      <span className="font-bold">
-        {pos}
-        {arrow}
-      </span>
+      {unavailable ? (
+        <span className="font-medium opacity-80">Unavailable</span>
+      ) : (
+        <span className="font-bold">
+          {fmtPos(row.currentPosition)}
+          {arrow}
+        </span>
+      )}
     </span>
   );
 }
@@ -81,6 +93,7 @@ export function PeriodByClientTab({
   clientId,
   businessId,
   aeoPlanId,
+  planType = null,
   comparisonOnly = false,
   auditDate = "all",
   firstDate = null,
@@ -101,11 +114,34 @@ export function PeriodByClientTab({
     clientId,
     businessId,
     aeoPlanId,
+    planType,
     firstDate,
     prevDate,
     currentDate,
   });
   const label = periodLabel(period);
+
+  /* Active keyword set (GET /api/keywords already excludes archived + locked).
+     Used to drop archived/locked keywords from this report — their old rank
+     history still comes back in the period data otherwise. Scoped to the
+     current view when possible. On error the query throws → activeIds stays
+     null → no filtering (safe fallback, never blanks the report). */
+  const { data: activeKws } = useQuery<{ id: number }[]>({
+    queryKey: ["/api/keywords/active-set", { clientId, aeoPlanId }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (aeoPlanId) params.set("aeoPlanId", String(aeoPlanId));
+      else if (clientId) params.set("clientId", String(clientId));
+      const qs = params.toString();
+      const res = await rawFetch(`/api/keywords${qs ? `?${qs}` : ""}`);
+      if (!res.ok) throw new Error(`keywords ${res.status}`);
+      return res.json();
+    },
+  });
+  const activeIds = useMemo(
+    () => (activeKws ? new Set(activeKws.map((k) => k.id)) : null),
+    [activeKws],
+  );
 
   /* When a Current date is pinned, also drop rows that don't have an audit
      on that date. Lets the operator pin Current=YYYY-MM-DD and see only the
@@ -154,6 +190,8 @@ export function PeriodByClientTab({
         continue;
       if (!matchesCurrentPin(r.currentDate)) continue;
       if (comparisonOnly && !keywordsWithPrev.has(r.keywordId)) continue;
+      // Drop archived/locked keywords (only present once the active set loads).
+      if (activeIds && !activeIds.has(r.keywordId)) continue;
       const pid = r.aeoPlanId ?? UNASSIGNED_PLAN;
       let group = map.get(pid);
       if (!group) {
@@ -181,7 +219,15 @@ export function PeriodByClientTab({
     return [...map.values()].sort((a, b) =>
       a.campaignName.toLowerCase().localeCompare(b.campaignName.toLowerCase()),
     );
-  }, [data, search, auditDate, comparisonOnly, keywordsWithPrev, currentDate]);
+  }, [
+    data,
+    search,
+    auditDate,
+    comparisonOnly,
+    keywordsWithPrev,
+    currentDate,
+    activeIds,
+  ]);
 
   if (isLoading) {
     return (
@@ -271,7 +317,7 @@ export function PeriodByClientTab({
                       </Badge>
                     )}
                     {counts.declined > 0 && (
-                      <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30 text-[11px]">
+                      <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[11px]">
                         ↓ {counts.declined}
                       </Badge>
                     )}
@@ -295,19 +341,24 @@ export function PeriodByClientTab({
 
               <CardContent className="pt-0 pb-4 space-y-2">
                 {campaign.keywords
-                  .sort((a, b) =>
-                    a.keyword.keywordText.localeCompare(b.keyword.keywordText),
-                  )
+                  .sort((a, b) => {
+                    const latest = (ps: PeriodRow[]) =>
+                      ps
+                        .map((p) => p.currentDate)
+                        .filter((d): d is string => !!d)
+                        .sort((x, y) => y.localeCompare(x))[0] ?? "";
+                    const da = latest(a.platforms);
+                    const db = latest(b.platforms);
+                    if (da !== db) return db.localeCompare(da);
+                    return a.keyword.keywordText.localeCompare(
+                      b.keyword.keywordText,
+                    );
+                  })
                   .map(({ keyword, platforms }) => {
-                    const sortedPlatforms = [...platforms].sort((a, b) => {
-                      const ai = PLATFORM_ORDER.indexOf(
-                        a.platform as (typeof PLATFORM_ORDER)[number],
-                      );
-                      const bi = PLATFORM_ORDER.indexOf(
-                        b.platform as (typeof PLATFORM_ORDER)[number],
-                      );
-                      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-                    });
+                    // Adds an "Unavailable" placeholder for any outage platform
+                    // (e.g. Gemini) missing from a keyword that otherwise has data.
+                    const sortedPlatforms =
+                      sortPlatformsWithUnavailable(platforms);
 
                     return (
                       <div
@@ -317,19 +368,15 @@ export function PeriodByClientTab({
                         <div className="px-3 py-2.5">
                           <div className="flex items-center gap-3">
                             <div className="flex-1 min-w-0">
-                              {keyword.businessId != null &&
-                              keyword.aeoPlanId != null ? (
-                                <Link
-                                  href={`/clients/${keyword.clientId}/businesses/${keyword.businessId}/campaigns/${keyword.aeoPlanId}`}
-                                  className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline inline-block"
-                                >
-                                  {keyword.keywordText}
-                                </Link>
-                              ) : (
-                                <p className="text-sm font-semibold text-foreground truncate">
-                                  {keyword.keywordText}
-                                </p>
-                              )}
+                              {/* Deep-link to the specific keyword on the Keywords
+                                  page (it reads ?keywordId and scrolls to it),
+                                  not the campaign page. */}
+                              <Link
+                                href={`/keywords?keywordId=${keyword.keywordId}`}
+                                className="text-sm font-semibold text-foreground truncate hover:text-primary hover:underline inline-block"
+                              >
+                                {keyword.keywordText}
+                              </Link>
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                               {sortedPlatforms.map((p) => (
@@ -370,6 +417,7 @@ export function PeriodByClientTab({
                                     rank={p.firstPosition}
                                     date={p.firstDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.firstUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -379,6 +427,7 @@ export function PeriodByClientTab({
                                     rank={p.previousPosition}
                                     date={p.previousDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.previousUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -388,6 +437,7 @@ export function PeriodByClientTab({
                                     rank={p.currentPosition}
                                     date={p.currentDate}
                                     label={`${p.platform} · ${p.keywordText}`}
+                                    unverified={p.currentUnverified}
                                     onPick={setShotCell}
                                   />
                                 </div>
@@ -441,6 +491,8 @@ interface RankCellButtonProps {
   rank: number | null;
   date: string | null;
   label: string;
+  /** Top-3 whose screenshot the vision check could not confirm. */
+  unverified?: boolean;
   onPick: (cell: {
     id: number;
     label: string;
@@ -456,11 +508,18 @@ function RankCellButton({
   rank,
   date,
   label,
+  unverified,
   onPick,
 }: RankCellButtonProps) {
   const text = fmtPos(rank);
+  const mark = unverified ? <UnverifiedMark date={date} /> : null;
   if (reportId == null) {
-    return <span>{text}</span>;
+    return (
+      <span>
+        {text}
+        {mark}
+      </span>
+    );
   }
   return (
     <button
@@ -470,6 +529,7 @@ function RankCellButton({
       title="View screenshot"
     >
       {text}
+      {mark}
     </button>
   );
 }

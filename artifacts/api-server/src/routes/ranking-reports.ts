@@ -10,29 +10,89 @@ import {
 import { eq, and, desc, asc, sql, gte, lte, inArray } from "drizzle-orm";
 import { requireExecutorToken } from "../middlewares/executor-auth";
 import { requireApiToken } from "../middlewares/api-token";
+import { requireSalesAllowed, requireRoles } from "../middlewares/role-auth";
+import {
+  getScopedClientIds,
+  getArchivedEntityIds,
+  assertScopedAccessToClient,
+  isScopedRole,
+} from "../lib/scoped-access";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { rotateWinners, TOP3_THRESHOLD } from "../services/keyword-rotation";
+import {
+  hiddenDatePairs,
+  hiddenKeywordPlatformPairs,
+  HIDDEN_KEYWORDS_SQL,
+} from "../lib/report-hides";
+import {
+  REBASE_ANCHOR,
+  cadenceSlots,
+  isPreAnchor,
+  buildKeywordDateMaps,
+} from "../lib/july1-rebase";
+import { exportProofIfQualifies } from "../services/proof-export";
 import { logger } from "../lib/logger";
+import {
+  getGlossaryPayload,
+  availableReportDates,
+} from "../lib/summary-content";
+import { generateSummaryNarrative } from "../lib/summary-narrative";
+import { buildSummaryReport, type SummaryScope } from "./portal";
 
 const router = Router();
 
-/* Auto-lock-on-win: when a ranking report records a top-3 position for a
-   keyword, immediately lock it (archive + status='locked') and rotate in an
-   AI replacement. Fire-and-forget so it never blocks/fails report ingestion;
-   rotateWinners is idempotent (it only touches active, non-archived keywords). */
-function maybeAutoLock(keywordId: unknown, rankingPosition: unknown): void {
+/* Auto-lock-on-SUSTAINED-win: when a ranking report records a top-3 position
+   for a keyword, kick the rotation engine, which locks the keyword
+   (status='locked') ONLY if the win is sustained across two consecutive
+   bi-weekly runs (see services/keyword-rotation.ts). Fire-and-forget so it never
+   blocks/fails report ingestion; rotateWinners is idempotent.
+
+   Auto-rotation is OFF BY DEFAULT — only MANUAL rotation (the bulk
+   /api/keywords/rotate-winners endpoint) may lock keywords. This automatic
+   lock-on-ingest path is opt-in via AUTO_ROTATION_ENABLED=1, so a bulk import
+   can never cascade-lock (the June 2026 incident that retired ~1,457 keywords).
+   When enabled, two further guards apply:
+     1. Freshness guard: only reports dated within FRESH_WINDOW_DAYS trigger —
+        historical/back-filled rows are inert.
+     2. Kill switch AUTO_ROTATION_DISABLED=1 still force-disables. */
+const FRESH_WINDOW_DAYS = 7;
+
+function isFreshReportDate(reportDate: unknown): boolean {
+  // Only "live" runs trigger rotation. A missing/unparseable date is treated as
+  // stale (safe default — back-fills without a fresh date never cascade).
+  if (typeof reportDate !== "string" || reportDate.length < 8) return false;
+  const t = Date.parse(reportDate);
+  if (Number.isNaN(t)) return false;
+  const ageDays = (Date.now() - t) / 86_400_000;
+  return ageDays <= FRESH_WINDOW_DAYS && ageDays >= -1; // allow minor clock skew
+}
+
+function maybeAutoLock(
+  keywordId: unknown,
+  rankingPosition: unknown,
+  reportDate: unknown,
+): void {
+  // OFF by default: auto lock-on-ingest only runs when explicitly opted in.
+  if (!process.env.AUTO_ROTATION_ENABLED) return;
+  if (process.env.AUTO_ROTATION_DISABLED) return; // hard kill switch still wins
   const kid = Number(keywordId);
   const pos = Number(rankingPosition);
   if (!Number.isFinite(kid) || kid <= 0) return;
   if (!Number.isFinite(pos) || pos < 1 || pos > TOP3_THRESHOLD) return;
+  if (!isFreshReportDate(reportDate)) return; // back-fill imports can't trigger
   rotateWinners({ keywordId: kid, dryRun: false })
     .then((r) => {
       if (r.locked.length > 0) {
-        logger.info({ keywordId: kid, locked: r.locked }, "auto-rotation: locked keyword on win");
+        logger.info(
+          { keywordId: kid, locked: r.locked },
+          "auto-rotation: locked keyword on sustained win",
+        );
       }
     })
-    .catch((err) => logger.warn({ err, keywordId: kid }, "auto-rotation: lock-on-win failed"));
+    .catch((err) =>
+      logger.warn({ err, keywordId: kid }, "auto-rotation: lock-on-win failed"),
+    );
 }
 
 /* Shared S3 client. Credentials are resolved from the App Runner instance role
@@ -52,7 +112,12 @@ const s3Client = new S3Client({
      - limit (default 1000, max 5000) + offset    (pagination)
    Filters are combined with AND. Sorted newest first. */
 const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
-const intInRange = (raw: unknown, min: number, max: number, fallback: number) => {
+const intInRange = (
+  raw: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+) => {
   const n = parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
@@ -66,7 +131,9 @@ router.get("/", requireApiToken, async (req, res) => {
     if (q.clientId)
       conditions.push(eq(rankingReportsTable.clientId, parseInt(q.clientId)));
     if (q.businessId)
-      conditions.push(eq(rankingReportsTable.businessId, parseInt(q.businessId)));
+      conditions.push(
+        eq(rankingReportsTable.businessId, parseInt(q.businessId)),
+      );
     if (q.aeoPlanId)
       conditions.push(eq(keywordsTable.aeoPlanId, parseInt(q.aeoPlanId)));
     if (q.keywordId)
@@ -94,6 +161,46 @@ router.get("/", requireApiToken, async (req, res) => {
 
     if (q.isActive === "true" || q.isActive === "false")
       conditions.push(eq(keywordsTable.isActive, q.isActive === "true"));
+
+    /* applyHides=1 (the detail-page charts): exclude admin-hidden keywords and
+       admin-hidden audit dates for this view. Opt-in so the operator list
+       views, exports and the public API keep returning raw data. */
+    if (q.applyHides === "1") {
+      conditions.push(
+        sql`COALESCE(${keywordsTable.hiddenFromReports}, false) = false`,
+      );
+      const hideScope = {
+        clientId: q.clientId ? parseInt(q.clientId) : null,
+        businessId: q.businessId ? parseInt(q.businessId) : null,
+        aeoPlanId: q.aeoPlanId ? parseInt(q.aeoPlanId) : null,
+      };
+      const hiddenPairs = await hiddenDatePairs(hideScope);
+      if (hiddenPairs.length > 0)
+        conditions.push(
+          sql`(${rankingReportsTable.date} IS NULL OR (${rankingReportsTable.clientId}::text || '|' || ${rankingReportsTable.date}) != ALL(ARRAY[${sql.join(
+            hiddenPairs.map((p) => sql`${p}`),
+            sql`, `,
+          )}]::text[]))`,
+        );
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs(hideScope);
+      if (hiddenKwPlatforms.length > 0)
+        conditions.push(
+          sql`(${rankingReportsTable.platform} IS NULL OR (${rankingReportsTable.keywordId}::text || '|' || lower(${rankingReportsTable.platform})) != ALL(ARRAY[${sql.join(
+            hiddenKwPlatforms.map((p) => sql`${p}`),
+            sql`, `,
+          )}]::text[]))`,
+        );
+    }
+
+    // Scoped-role sessions (e.g. chuckslocal) see only their plan slice. Bearer
+    // token + owner/admin sessions return null here → unfiltered (full access).
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds !== null)
+      conditions.push(
+        eligibleIds.length === 0
+          ? sql`1=0`
+          : inArray(rankingReportsTable.clientId, eligibleIds),
+      );
 
     const limit = intInRange(q.limit, 1, 5000, 1000);
     const offset = intInRange(q.offset, 0, Number.MAX_SAFE_INTEGER, 0);
@@ -155,7 +262,15 @@ router.get("/", requireApiToken, async (req, res) => {
         eq(rankingReportsTable.keywordId, keywordsTable.id),
       )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(rankingReportsTable.createdAt))
+      /* id breaks ties: created_at is noon-UTC-of-the-row's-date, so hundreds of
+         rows share one value (755 on 2026-07-09). Postgres does not order ties
+         deterministically, so limit/offset paging sliced a tie group differently
+         per request — adjacent pages overlapped by ~134 rows and a full 23-page
+         sweep returned 20,499 of 22,520 distinct rows, silently dropping 9%. */
+      .orderBy(
+        desc(rankingReportsTable.createdAt),
+        desc(rankingReportsTable.id),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -169,14 +284,48 @@ router.get("/", requireApiToken, async (req, res) => {
       .where(conditions.length > 0 ? and(...conditions) : undefined);
     const total = totalRows[0]?.n ?? 0;
 
-    res.json({
-      meta: { total, limit, offset, returned: reports.length },
-      data: reports.map((r) => ({
+    /* July-1 baseline for the detail-page charts (same applyHides=1 opt-in as
+       the hide filters, so exports and the token-gated public API keep real
+       dates). The map is built from the keyword's FULL date history, not just
+       this page, so paging can't shift a keyword's cadence. */
+    const displayMaps =
+      q.applyHides === "1"
+        ? buildKeywordDateMaps(
+            await db
+              .select({
+                keywordId: rankingReportsTable.keywordId,
+                date: rankingReportsTable.date,
+              })
+              .from(rankingReportsTable)
+              .leftJoin(
+                keywordsTable,
+                eq(rankingReportsTable.keywordId, keywordsTable.id),
+              )
+              .where(conditions.length > 0 ? and(...conditions) : undefined),
+          )
+        : null;
+
+    const data = reports.flatMap((r) => {
+      const shaped = {
         ...r,
         clientName: r.clientName ?? r.joinedClientName ?? null,
         bizName: r.bizName ?? r.joinedBusinessName ?? null,
         keyword: r.keyword ?? r.joinedKeywordText ?? null,
-      })),
+      };
+      if (!displayMaps || r.keywordId == null || !r.date) return [shaped];
+      const displayDate = displayMaps.get(r.keywordId)?.get(r.date);
+      if (displayDate === undefined) return [shaped];
+      /* null = audit older than the earliest cadence slot: hidden from this
+         view only. The row itself is untouched in the database. */
+      if (displayDate === null) return [];
+      /* realDate keeps the true audit day reachable so admin tooling (e.g. the
+         Hide-dates control) can still act on the actual rows. */
+      return [{ ...shaped, date: displayDate, realDate: r.date }];
+    });
+
+    res.json({
+      meta: { total, limit, offset, returned: data.length },
+      data,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching ranking reports");
@@ -184,12 +333,27 @@ router.get("/", requireApiToken, async (req, res) => {
   }
 });
 
+/* Adjudicated top-3 verdict supplied by the importer (pre-import validation),
+   so a validated row lands already-marked and needs no scan pass. Accept only
+   true/false/null — anything else is a caller bug and must not be coerced into
+   a verdict. `undefined` means "not supplied": the caller is silent about
+   visibility, which is NOT the same as "unverified", so the stored value is
+   left untouched. That distinction matters because this route upserts — an
+   error retry re-POSTs the row without the field and would otherwise erase a
+   verdict that was written by the scan or by hand. */
+function parseRankVisible(raw: unknown): boolean | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null || typeof raw === "boolean") return raw;
+  return undefined;
+}
+
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
     if (body.mode === "voice" || body.inputMode === "voice") return res.status(400).json({ error: "Voice results must use /api/executions; legacy reports are typed imports" });
     const platform =
       typeof body.platform === "string" ? body.platform.toLowerCase() : null;
+    const rankVisible = parseRankVisible(body.screenshotRankVisible);
 
     /* Upsert key: prefer body.date for backfills (so re-running an import for
        a past day finds yesterday's row), else fall back to today's date. */
@@ -241,6 +405,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
           mapsUrl: body.mapsUrl ?? null,
           isInitialRanking: body.isInitialRanking ?? false,
           screenshotUrl: body.screenshotUrl ?? null,
+          ...(rankVisible !== undefined
+            ? { screenshotRankVisible: rankVisible }
+            : {}),
           textRanking: body.textRanking ?? null,
           proxyStatus: body.proxyStatus ?? null,
           proxyUsername: body.proxyUsername ?? null,
@@ -262,7 +429,8 @@ router.post("/", requireExecutorToken, async (req, res) => {
         .where(eq(rankingReportsTable.id, existing[0].id))
         .returning();
       res.status(200).json({ ...updated, upserted: true });
-      maybeAutoLock(body.keywordId, body.rankingPosition);
+      maybeAutoLock(body.keywordId, body.rankingPosition, body.date);
+      exportProofIfQualifies(body.keywordId, body.date);
       return;
     }
 
@@ -291,6 +459,9 @@ router.post("/", requireExecutorToken, async (req, res) => {
         mapsUrl: body.mapsUrl ?? null,
         isInitialRanking: body.isInitialRanking ?? false,
         screenshotUrl: body.screenshotUrl ?? null,
+        ...(rankVisible !== undefined
+          ? { screenshotRankVisible: rankVisible }
+          : {}),
         textRanking: body.textRanking ?? null,
         proxyStatus: body.proxyStatus ?? null,
         proxyUsername: body.proxyUsername ?? null,
@@ -311,7 +482,8 @@ router.post("/", requireExecutorToken, async (req, res) => {
       })
       .returning();
     res.status(201).json(report);
-    maybeAutoLock(body.keywordId, body.rankingPosition);
+    maybeAutoLock(body.keywordId, body.rankingPosition, body.date);
+    exportProofIfQualifies(body.keywordId, body.date);
   } catch (err) {
     req.log.error({ err }, "Error creating ranking report");
     res.status(500).json({ error: "Internal server error" });
@@ -439,8 +611,12 @@ router.delete("/:id", requireExecutorToken, async (req, res) => {
 
 /* GET /api/ranking-reports/platform-summary
    Returns per-platform initial-vs-current comparison rows */
-router.get("/platform-summary", async (req, res) => {
+router.get("/platform-summary", requireSalesAllowed, async (req, res) => {
   try {
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json([]);
+    }
     const PLATFORMS = ["chatgpt", "gemini", "perplexity"] as const;
     const [clients, keywords, businesses, platformRows] = await Promise.all([
       db.select().from(clientsTable),
@@ -456,6 +632,11 @@ router.get("/platform-summary", async (req, res) => {
           createdAt: rankingReportsTable.createdAt,
         })
         .from(rankingReportsTable)
+        .where(
+          eligibleIds
+            ? inArray(rankingReportsTable.clientId, eligibleIds)
+            : undefined,
+        )
         .orderBy(asc(rankingReportsTable.createdAt)),
     ]);
 
@@ -501,11 +682,24 @@ router.get("/platform-summary", async (req, res) => {
           positionChange: change,
         };
       });
+      // Drop archived (soft-deleted) clients/businesses from every platform stat.
+      const comparisonsActive = comparisons.filter(
+        (c) =>
+          clientMap.get(c.clientId)?.status !== "inactive" &&
+          (c.businessId == null ||
+            businessMap.get(c.businessId)?.status !== "inactive"),
+      );
 
-      const withData = comparisons.filter((c) => c.currentPosition != null);
-      const improving = comparisons.filter((c) => (c.positionChange ?? 0) > 0);
-      const declining = comparisons.filter((c) => (c.positionChange ?? 0) < 0);
-      const steady = comparisons.filter((c) => c.positionChange === 0);
+      const withData = comparisonsActive.filter(
+        (c) => c.currentPosition != null,
+      );
+      const improving = comparisonsActive.filter(
+        (c) => (c.positionChange ?? 0) > 0,
+      );
+      const declining = comparisonsActive.filter(
+        (c) => (c.positionChange ?? 0) < 0,
+      );
+      const steady = comparisonsActive.filter((c) => c.positionChange === 0);
       const avgPos =
         withData.length > 0
           ? Math.round(
@@ -521,7 +715,7 @@ router.get("/platform-summary", async (req, res) => {
 
       return {
         platform,
-        totalKeywords: comparisons.length,
+        totalKeywords: comparisonsActive.length,
         withData: withData.length,
         improving: improving.length,
         steady: steady.length,
@@ -535,7 +729,7 @@ router.get("/platform-summary", async (req, res) => {
               change: bestKw.positionChange,
             }
           : null,
-        keywords: comparisons,
+        keywords: comparisonsActive,
       };
     });
 
@@ -549,8 +743,12 @@ router.get("/platform-summary", async (req, res) => {
 /* GET /api/ranking-reports/per-keyword-platform
    Returns per-keyword, per-platform latest ranking position.
    Shape: [{ keywordId, chatgpt, gemini, perplexity }] */
-router.get("/per-keyword-platform", async (req, res) => {
+router.get("/per-keyword-platform", requireSalesAllowed, async (req, res) => {
   try {
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json([]);
+    }
     const allReports = await db
       .select({
         keywordId: rankingReportsTable.keywordId,
@@ -559,7 +757,14 @@ router.get("/per-keyword-platform", async (req, res) => {
         createdAt: rankingReportsTable.createdAt,
       })
       .from(rankingReportsTable)
-      .orderBy(asc(rankingReportsTable.createdAt));
+      .where(
+        eligibleIds
+          ? inArray(rankingReportsTable.clientId, eligibleIds)
+          : undefined,
+      )
+      // by real ranking `date` (id tiebreak), not created_at (import time) —
+      // keeps current/previous/initial correct for out-of-order back-fills.
+      .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id));
 
     // Group by keywordId + platform, keep only the latest
     const latest = new Map<
@@ -601,6 +806,17 @@ router.get("/per-keyword-platform", async (req, res) => {
    One row per (keyword × platform) with current window vs previous window.
    For lifetime, "previous" = first ever, "current" = latest ever. */
 type PeriodKey = "weekly" | "monthly" | "quarterly" | "lifetime";
+
+/* July-1 campaign baseline (display-only) — see lib/july1-rebase.ts. The
+   expanded keyword table shows three columns, so it uses the anchor plus the
+   two newest cadence slots. */
+function periodComparisonSlots(): { current: string; previous: string } {
+  const slots = cadenceSlots();
+  return {
+    current: slots[slots.length - 1],
+    previous: slots[slots.length - 2] ?? REBASE_ANCHOR,
+  };
+}
 
 /* America/New_York midnight for the calendar date that contains `d`.
    Returns a UTC Date aligned to that ET midnight. EDT = UTC-4 (Mar–Nov),
@@ -676,8 +892,12 @@ function windowsFor(
   return { curStart, curEnd, prevStart, prevEnd };
 }
 
-router.get("/period-comparison", async (req, res) => {
+router.get("/period-comparison", requireSalesAllowed, async (req, res) => {
   try {
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json({ period: "weekly", window: null, rows: [] });
+    }
     const period = ((req.query.period as string) ?? "weekly") as PeriodKey;
     if (!["weekly", "monthly", "quarterly", "lifetime"].includes(period)) {
       return res.status(400).json({ error: "Invalid period" });
@@ -691,6 +911,10 @@ router.get("/period-comparison", async (req, res) => {
     const aeoPlanId = req.query.aeoPlanId
       ? parseInt(req.query.aeoPlanId as string, 10)
       : null;
+    const planType =
+      typeof req.query.planType === "string" && req.query.planType.trim()
+        ? (req.query.planType as string).trim()
+        : null;
 
     /* Optional date overrides — pin one column to a specific ET YYYY-MM-DD.
        When present, that column ignores the period window and picks the
@@ -715,39 +939,84 @@ router.get("/period-comparison", async (req, res) => {
         }
       : windowsFor(period as Exclude<PeriodKey, "lifetime">, new Date());
 
-    const [clients, keywords, businesses, plans, reports] = await Promise.all([
-      db.select().from(clientsTable),
-      db.select().from(keywordsTable),
-      db.select().from(businessesTable),
-      db.select().from(clientAeoPlansTable),
-      db
-        .select({
-          id: rankingReportsTable.id,
-          clientId: rankingReportsTable.clientId,
-          businessId: rankingReportsTable.businessId,
-          keywordId: rankingReportsTable.keywordId,
-          rankingPosition: rankingReportsTable.rankingPosition,
-          platform: rankingReportsTable.platform,
-          createdAt: rankingReportsTable.createdAt,
-          date: rankingReportsTable.date,
-          keywordVariant: rankingReportsTable.keywordVariant,
-        })
-        .from(rankingReportsTable)
-        .orderBy(asc(rankingReportsTable.createdAt)),
-    ]);
+    const [clients, keywords, businesses, plans, reportsRaw] =
+      await Promise.all([
+        db.select().from(clientsTable),
+        db.select().from(keywordsTable),
+        db.select().from(businessesTable),
+        db.select().from(clientAeoPlansTable),
+        db
+          .select({
+            id: rankingReportsTable.id,
+            clientId: rankingReportsTable.clientId,
+            businessId: rankingReportsTable.businessId,
+            keywordId: rankingReportsTable.keywordId,
+            rankingPosition: rankingReportsTable.rankingPosition,
+            platform: rankingReportsTable.platform,
+            createdAt: rankingReportsTable.createdAt,
+            date: rankingReportsTable.date,
+            keywordVariant: rankingReportsTable.keywordVariant,
+            screenshotRankVisible: rankingReportsTable.screenshotRankVisible,
+          })
+          .from(rankingReportsTable)
+          .where(
+            eligibleIds
+              ? inArray(rankingReportsTable.clientId, eligibleIds)
+              : undefined,
+          )
+          // Order by the ranking's actual `date` (id as tiebreak), NOT created_at.
+          // created_at reflects IMPORT time, which diverges from real date for
+          // back-filled batches imported out of chronological order — that made
+          // "current"/"previous" flip (e.g. May 29 shown as current over Jun 12).
+          // Date ordering makes latest-by-date = current regardless of import order.
+          .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id)),
+      ]);
 
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
     const businessMap = new Map(businesses.map((b) => [b.id, b]));
     const planMap = new Map(plans.map((p) => [p.id, p]));
 
+    // Admin-hidden audit dates + (keyword, platform) pairs for this view.
+    // Filter ONCE here so every picker path (window, date-override, lifetime,
+    // second-latest) sees the same cleaned rows; hidden keywords are dropped
+    // separately by keywordAllowed().
+    const hiddenPairSet = new Set(
+      await hiddenDatePairs({ clientId, businessId, aeoPlanId }),
+    );
+    const hiddenKwPlatformSet = new Set(
+      await hiddenKeywordPlatformPairs({ clientId, businessId, aeoPlanId }),
+    );
+    const reports = reportsRaw.filter(
+      (r) =>
+        !(r.date && hiddenPairSet.has(`${r.clientId}|${r.date}`)) &&
+        !(
+          r.platform &&
+          hiddenKwPlatformSet.has(`${r.keywordId}|${r.platform.toLowerCase()}`)
+        ),
+    );
+
     // filter by cascade if provided, applied to the keyword, not the report
     const keywordAllowed = (kid: number): boolean => {
       const kw = keywordMap.get(kid);
       if (!kw) return false;
+      if (kw.hiddenFromReports) return false;
+      // Archived (soft-deleted, status='inactive') client or business must never
+      // appear in rankings — these views don't otherwise filter archive status.
+      if (clientMap.get(kw.clientId)?.status === "inactive") return false;
+      if (
+        kw.businessId != null &&
+        businessMap.get(kw.businessId)?.status === "inactive"
+      )
+        return false;
       if (clientId != null && kw.clientId !== clientId) return false;
       if (businessId != null && kw.businessId !== businessId) return false;
       if (aeoPlanId != null && kw.aeoPlanId !== aeoPlanId) return false;
+      if (planType != null) {
+        const plan =
+          kw.aeoPlanId != null ? planMap.get(kw.aeoPlanId) : undefined;
+        if (!plan || plan.planType !== planType) return false;
+      }
       return true;
     };
 
@@ -757,10 +1026,13 @@ router.get("/period-comparison", async (req, res) => {
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
-        const t = new Date(r.createdAt as unknown as string).getTime();
+        if (!r.date) continue;
+        // Window membership by the ranking's real `date` (noon UTC), not
+        // created_at (import time) — keeps back-filled rows in the right window.
+        const t = new Date(`${r.date}T12:00:00Z`).getTime();
         if (t < from.getTime() || t >= to.getTime()) continue;
         const key = `${r.keywordId}|${r.platform}`;
-        map.set(key, r); // reports are asc-ordered, so last wins
+        map.set(key, r); // reports are date-asc ordered, so last wins
       }
       return map;
     };
@@ -775,15 +1047,30 @@ router.get("/period-comparison", async (req, res) => {
       return map;
     };
 
-    // For lifetime, previous = first-ever, current = latest-ever per (keyword × platform)
+    /* "When we started" = ONE baseline date per KEYWORD — its earliest audit
+       date across all platforms — so the three platforms' start ranks are
+       comparable and the UI can show a single start date. Per platform we pick
+       the row ON that date; a platform not audited that day (retries,
+       backfills) falls back to its own earliest row so its data still shows. */
     const firstEver = () => {
+      const keywordStart = new Map<number, string>();
+      for (const r of reports) {
+        if (!r.platform || !r.date) continue;
+        if (!keywordAllowed(r.keywordId)) continue;
+        const min = keywordStart.get(r.keywordId);
+        if (!min || r.date < min) keywordStart.set(r.keywordId, r.date);
+      }
       const map = new Map<PairKey, (typeof reports)[number]>();
+      const fallback = new Map<PairKey, (typeof reports)[number]>();
       for (const r of reports) {
         if (!r.platform) continue;
         if (!keywordAllowed(r.keywordId)) continue;
         const key = `${r.keywordId}|${r.platform}`;
-        if (!map.has(key)) map.set(key, r); // reports are asc, first wins
+        if (!fallback.has(key)) fallback.set(key, r); // asc, first wins
+        if (r.date && r.date === keywordStart.get(r.keywordId) && !map.has(key))
+          map.set(key, r);
       }
+      for (const [key, r] of fallback) if (!map.has(key)) map.set(key, r);
       return map;
     };
 
@@ -861,6 +1148,20 @@ router.get("/period-comparison", async (req, res) => {
       const prev = previous.get(key);
       const firstEverRow = first.get(key);
       const lastEver = ever.get(key);
+      /* A top-3 whose screenshot the vision check couldn't confirm
+         (screenshot_rank_visible = false). The rank is still reported as
+         measured — the flag only marks the row for a re-run, since the
+         validator currently rejects ~58% of top-3 claims including ones
+         whose screenshot plainly shows the business. Applies per part. */
+      const isUnverifiedTop3 = (r: typeof cur): boolean =>
+        !!r &&
+        r.screenshotRankVisible === false &&
+        r.rankingPosition != null &&
+        r.rankingPosition <= 3;
+      const currentUnverified = isUnverifiedTop3(cur);
+      const previousUnverified = isUnverifiedTop3(prev);
+      const firstUnverified = isUnverifiedTop3(firstEverRow);
+
       const change =
         cur?.rankingPosition != null && prev?.rankingPosition != null
           ? prev.rankingPosition - cur.rankingPosition
@@ -905,18 +1206,47 @@ router.get("/period-comparison", async (req, res) => {
            backfilled rows where created_at = midnight-ET (T04:00:00Z). */
         currentDate: cur?.date ?? null,
         currentVariant: cur?.keywordVariant ?? null,
+        currentUnverified,
         previousReportId: prev?.id ?? null,
         previousPosition: prev?.rankingPosition ?? null,
         previousDate: prev?.date ?? null,
+        previousUnverified,
         firstReportId: firstEverRow?.id ?? null,
         firstPosition: firstEverRow?.rankingPosition ?? null,
         firstDate: firstEverRow?.date ?? null,
+        firstUnverified,
         change,
         status,
         freshness,
         lastRunAt,
       };
     });
+
+    /* July-1 rebase relabel. Skipped when the caller pins explicit dates —
+       date-override callers expect the requested dates echoed back. */
+    const hasDateOverride = !!(
+      firstDateOverride ||
+      prevDateOverride ||
+      currentDateOverride
+    );
+    const rebasedKeywordIds = new Set<number>();
+    if (!hasDateOverride) {
+      for (const r of reports) {
+        if (!isPreAnchor(r.date)) continue;
+        if (keywordAllowed(r.keywordId)) rebasedKeywordIds.add(r.keywordId);
+      }
+    }
+    const slots = periodComparisonSlots();
+    const outRows = rows.map((row) =>
+      rebasedKeywordIds.has(row.keywordId)
+        ? {
+            ...row,
+            firstDate: row.firstDate ? REBASE_ANCHOR : row.firstDate,
+            previousDate: row.previousDate ? slots.previous : row.previousDate,
+            currentDate: row.currentDate ? slots.current : row.currentDate,
+          }
+        : row,
+    );
 
     res.json({
       period,
@@ -928,7 +1258,7 @@ router.get("/period-comparison", async (req, res) => {
             previousStart: prevStart,
             previousEnd: prevEnd,
           },
-      rows,
+      rows: outRows,
     });
   } catch (err) {
     req.log.error({ err }, "Error fetching period comparison");
@@ -936,8 +1266,12 @@ router.get("/period-comparison", async (req, res) => {
   }
 });
 
-router.get("/initial-vs-current", async (req, res) => {
+router.get("/initial-vs-current", requireSalesAllowed, async (req, res) => {
   try {
+    const eligibleIds = await getScopedClientIds(req);
+    if (eligibleIds && eligibleIds.length === 0) {
+      return res.json([]);
+    }
     const clients = await db.select().from(clientsTable);
     const keywords = await db.select().from(keywordsTable);
     const businesses = await db.select().from(businessesTable);
@@ -956,7 +1290,14 @@ router.get("/initial-vs-current", async (req, res) => {
         keywordVariant: rankingReportsTable.keywordVariant,
       })
       .from(rankingReportsTable)
-      .orderBy(asc(rankingReportsTable.createdAt));
+      .where(
+        eligibleIds
+          ? inArray(rankingReportsTable.clientId, eligibleIds)
+          : undefined,
+      )
+      // by real ranking `date` (id tiebreak), not created_at (import time) —
+      // keeps current/previous/initial correct for out-of-order back-fills.
+      .orderBy(asc(rankingReportsTable.date), asc(rankingReportsTable.id));
 
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const keywordMap = new Map(keywords.map((k) => [k.id, k]));
@@ -981,6 +1322,13 @@ router.get("/initial-vs-current", async (req, res) => {
       const client = clientMap.get(report.clientId);
       const keyword = keywordMap.get(report.keywordId);
       if (!client || !keyword) continue;
+      // Skip archived (soft-deleted) client or business.
+      if (client.status === "inactive") continue;
+      if (
+        keyword.businessId != null &&
+        businessMap.get(keyword.businessId)?.status === "inactive"
+      )
+        continue;
       if (!grouped[key]) {
         const business =
           keyword.businessId != null
@@ -1045,68 +1393,152 @@ router.get("/initial-vs-current", async (req, res) => {
    Master report for the bi-weekly cadence: current batch summary, old-file
    status, ranking trend across combos with 2+ prior runs, and initial-rank
    distribution for combos new to the current batch. */
-router.get("/bi-weekly-report", async (req, res) => {
-  try {
-    const clientId = req.query.clientId
-      ? parseInt(req.query.clientId as string, 10)
-      : null;
-    const businessId = req.query.businessId
-      ? parseInt(req.query.businessId as string, 10)
-      : null;
-    const aeoPlanId = req.query.aeoPlanId
-      ? parseInt(req.query.aeoPlanId as string, 10)
-      : null;
+router.get(
+  "/bi-weekly-report",
+  // Same gate as period-comparison: admins/owners + scoped roles (incl.
+  // chuckslocal) are allowed; getScopedClientIds confines the data per role.
+  requireSalesAllowed,
+  async (req, res) => {
+    try {
+      const eligibleIds = await getScopedClientIds(req);
+      if (eligibleIds && eligibleIds.length === 0) {
+        return res.json({
+          currentBatch: null,
+          oldFile: null,
+          rankingTrend: null,
+          initialRanking: null,
+          allBatches: [],
+          clientMatrix: [],
+          details: {
+            oldCombos: [],
+            newCombos: [],
+            rankingTrendRows: [],
+            errors: [],
+            platformOld: [],
+            platformNew: [],
+            platformTrend: [],
+          },
+        });
+      }
+      const clientId = req.query.clientId
+        ? parseInt(req.query.clientId as string, 10)
+        : null;
+      const businessId = req.query.businessId
+        ? parseInt(req.query.businessId as string, 10)
+        : null;
+      const aeoPlanId = req.query.aeoPlanId
+        ? parseInt(req.query.aeoPlanId as string, 10)
+        : null;
+      const planType =
+        typeof req.query.planType === "string" && req.query.planType.trim()
+          ? (req.query.planType as string).trim()
+          : null;
 
-    /* Filter sub-clause and params shared by every CTE. The text-based
-       date column requires explicit ::date casts for arithmetic. */
-    const conds: string[] = ["date IS NOT NULL"];
-    const params: (number | null)[] = [];
-    if (clientId !== null) {
-      params.push(clientId);
-      conds.push(`client_id = $${params.length}`);
-    }
-    if (businessId !== null) {
-      params.push(businessId);
-      conds.push(`business_id = $${params.length}`);
-    }
-    if (aeoPlanId !== null) {
-      params.push(aeoPlanId);
-      conds.push(
-        `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
-      );
-    }
-    const where = conds.join(" AND ");
-
-    /* 1) Identify current batch = newest distinct date in scope. */
-    const batchesRes = await pool.query<{ date: string; combos: string }>(
-      `SELECT date, COUNT(*) AS combos FROM ranking_reports WHERE ${where}
-       GROUP BY date ORDER BY date DESC`,
-      params,
-    );
-    if (batchesRes.rows.length === 0) {
-      return res.json({
-        currentBatch: null,
-        oldFile: null,
-        rankingTrend: null,
-        initialRanking: null,
-        allBatches: [],
+      /* Filter sub-clause and params shared by every CTE. The text-based
+         date column requires explicit ::date casts for arithmetic. */
+      const conds: string[] = ["date IS NOT NULL"];
+      const params: (number | number[] | string | string[] | null)[] = [];
+      if (clientId !== null) {
+        params.push(clientId);
+        conds.push(`client_id = $${params.length}`);
+      }
+      if (businessId !== null) {
+        params.push(businessId);
+        conds.push(`business_id = $${params.length}`);
+      }
+      if (aeoPlanId !== null) {
+        params.push(aeoPlanId);
+        conds.push(
+          `keyword_id IN (SELECT id FROM keywords WHERE aeo_plan_id = $${params.length})`,
+        );
+      }
+      if (planType !== null) {
+        params.push(planType);
+        conds.push(
+          `keyword_id IN (SELECT k.id FROM keywords k JOIN client_aeo_plans p ON k.aeo_plan_id = p.id WHERE p.plan_type = $${params.length})`,
+        );
+      }
+      /* Sales role: restrict to free-trial client ids. Layered ON TOP OF
+         the explicit clientId filter — the sales scope and the user filter
+         intersect. The `${where}` template gets rewritten with `rr.` prefixes
+         in CTEs further down, so use the bare `client_id` column name here. */
+      if (eligibleIds) {
+        params.push(eligibleIds);
+        conds.push(`client_id = ANY($${params.length}::int[])`);
+      }
+      /* Archived (soft-deleted, status='inactive') clients/businesses never reach
+         the report. Bare column names + int[] params — same shape as the
+         eligibleIds clause above, safe under the rr.-prefix CTE rewrite. */
+      const archived = await getArchivedEntityIds();
+      if (archived.clientIds.length > 0) {
+        params.push(archived.clientIds);
+        conds.push(`client_id <> ALL($${params.length}::int[])`);
+      }
+      if (archived.businessIds.length > 0) {
+        params.push(archived.businessIds);
+        conds.push(
+          `(business_id IS NULL OR business_id <> ALL($${params.length}::int[]))`,
+        );
+      }
+      /* Admin-hidden data never reaches the report. Keyword fragment is safe
+         under the rr.-prefix rewrite (subquery uses no rewritable names);
+         hidden dates are precomputed to "clientId|date" keys for the same
+         reason. */
+      conds.push(HIDDEN_KEYWORDS_SQL);
+      const hiddenPairs = await hiddenDatePairs({
+        clientId,
+        businessId,
+        aeoPlanId,
       });
-    }
-    const currentBatchDate = batchesRes.rows[0].date;
-    const allBatches = batchesRes.rows.map((r) => ({
-      date: r.date,
-      combos: Number(r.combos),
-    }));
-    const nextDue = new Date(currentBatchDate);
-    nextDue.setUTCDate(nextDue.getUTCDate() + 14);
-    const nextDueDate = nextDue.toISOString().slice(0, 10);
+      if (hiddenPairs.length > 0) {
+        params.push(hiddenPairs);
+        conds.push(
+          `(client_id::text || '|' || date) != ALL($${params.length}::text[])`,
+        );
+      }
+      const hiddenKwPlatforms = await hiddenKeywordPlatformPairs({
+        clientId,
+        businessId,
+        aeoPlanId,
+      });
+      if (hiddenKwPlatforms.length > 0) {
+        params.push(hiddenKwPlatforms);
+        conds.push(
+          `(platform IS NULL OR (keyword_id::text || '|' || lower(platform)) != ALL($${params.length}::text[]))`,
+        );
+      }
+      const where = conds.join(" AND ");
 
-    const currentParamIdx = params.length + 1;
-    const paramsWithBatch = [...params, currentBatchDate];
+      /* 1) Identify current batch = newest distinct date in scope. */
+      const batchesRes = await pool.query<{ date: string; combos: string }>(
+        `SELECT date, COUNT(*) AS combos FROM ranking_reports WHERE ${where}
+       GROUP BY date ORDER BY date DESC`,
+        params,
+      );
+      if (batchesRes.rows.length === 0) {
+        return res.json({
+          currentBatch: null,
+          oldFile: null,
+          rankingTrend: null,
+          initialRanking: null,
+          allBatches: [],
+        });
+      }
+      const currentBatchDate = batchesRes.rows[0].date;
+      const allBatches = batchesRes.rows.map((r) => ({
+        date: r.date,
+        combos: Number(r.combos),
+      }));
+      const nextDue = new Date(currentBatchDate);
+      nextDue.setUTCDate(nextDue.getUTCDate() + 14);
+      const nextDueDate = nextDue.toISOString().slice(0, 10);
 
-    /* Section A — current batch summary */
-    const sA = await pool.query(
-      `SELECT
+      const currentParamIdx = params.length + 1;
+      const paramsWithBatch = [...params, currentBatchDate];
+
+      /* Section A — current batch summary */
+      const sA = await pool.query(
+        `SELECT
          COUNT(DISTINCT (keyword_id, lower(platform))) AS unique_combos,
          COUNT(DISTINCT business_id) AS unique_businesses,
          COUNT(DISTINCT client_id)   AS unique_clients,
@@ -1117,37 +1549,48 @@ router.get("/bi-weekly-report", async (req, res) => {
              AND r2.date < ranking_reports.date
          )) AS new_combos
        FROM ranking_reports WHERE ${where} AND date = $${currentParamIdx}`,
-      paramsWithBatch,
-    );
-    const sessions = await pool.query<{ n: string }>(
-      `SELECT COUNT(*) AS n FROM audit_logs
-       WHERE to_char(((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') = $1
-         ${clientId !== null ? `AND client_id = $2` : ""}
-         ${businessId !== null ? `AND business_id = $${clientId !== null ? 3 : 2}` : ""}`,
-      [
-        currentBatchDate,
-        ...(clientId !== null ? [clientId] : []),
-        ...(businessId !== null ? [businessId] : []),
-      ],
-    );
-    const sectA = sA.rows[0];
-    const sectionA = {
-      batchDate: currentBatchDate,
-      nextDueDate,
-      totalSessions: Number(sessions.rows[0].n),
-      uniqueCombos: Number(sectA.unique_combos),
-      uniqueBusinesses: Number(sectA.unique_businesses),
-      uniqueClients: Number(sectA.unique_clients),
-      newCombos: Number(sectA.new_combos),
-      auditType:
-        Number(sectA.new_combos) === Number(sectA.unique_combos)
-          ? "First-Ever Audit"
-          : "Recurring Audit",
-    };
+        paramsWithBatch,
+      );
+      const sessConds: string[] = [
+        `to_char(((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York'),'YYYY-MM-DD') = $1`,
+      ];
+      const sessParams: (string | number | number[])[] = [currentBatchDate];
+      if (clientId !== null) {
+        sessParams.push(clientId);
+        sessConds.push(`client_id = $${sessParams.length}`);
+      }
+      if (businessId !== null) {
+        sessParams.push(businessId);
+        sessConds.push(`business_id = $${sessParams.length}`);
+      }
+      // Scoped roles: the session count must not include clients outside their
+      // eligible set (was previously an unscoped global count).
+      if (eligibleIds) {
+        sessParams.push(eligibleIds);
+        sessConds.push(`client_id = ANY($${sessParams.length}::int[])`);
+      }
+      const sessions = await pool.query<{ n: string }>(
+        `SELECT COUNT(*) AS n FROM audit_logs WHERE ${sessConds.join(" AND ")}`,
+        sessParams,
+      );
+      const sectA = sA.rows[0];
+      const sectionA = {
+        batchDate: currentBatchDate,
+        nextDueDate,
+        totalSessions: Number(sessions.rows[0].n),
+        uniqueCombos: Number(sectA.unique_combos),
+        uniqueBusinesses: Number(sectA.unique_businesses),
+        uniqueClients: Number(sectA.unique_clients),
+        newCombos: Number(sectA.new_combos),
+        auditType:
+          Number(sectA.new_combos) === Number(sectA.unique_combos)
+            ? "First-Ever Audit"
+            : "Recurring Audit",
+      };
 
-    /* Section B — old file: combos from batches before the current one */
-    const sB = await pool.query(
-      `WITH old_combos AS (
+      /* Section B — old file: combos from batches before the current one */
+      const sB = await pool.query(
+        `WITH old_combos AS (
          SELECT keyword_id, lower(platform) AS platform,
                 MIN(date::date) AS first_date,
                 MAX(date::date) AS last_date,
@@ -1163,13 +1606,13 @@ router.get("/bi-weekly-report", async (req, res) => {
          MIN(first_date)::text AS earliest_date,
          MAX(last_date)::text  AS latest_old_date
        FROM old_combos`,
-      paramsWithBatch,
-    );
-    const sBBatches = await pool.query<{
-      expected_batch_date: string;
-      combos: string;
-    }>(
-      `WITH old_combos AS (
+        paramsWithBatch,
+      );
+      const sBBatches = await pool.query<{
+        expected_batch_date: string;
+        combos: string;
+      }>(
+        `WITH old_combos AS (
          SELECT keyword_id, lower(platform) AS platform,
                 MAX(date::date) AS last_date
          FROM ranking_reports WHERE ${where} AND date < $${currentParamIdx}
@@ -1181,25 +1624,25 @@ router.get("/bi-weekly-report", async (req, res) => {
        WHERE last_date < (CURRENT_DATE - INTERVAL '14 days')
        GROUP BY expected_batch_date
        ORDER BY expected_batch_date`,
-      paramsWithBatch,
-    );
-    const sBr = sB.rows[0];
-    const sectionB = {
-      earliestDate: sBr.earliest_date,
-      latestOldDate: sBr.latest_old_date,
-      totalOldCombos: Number(sBr.total_old),
-      onSchedule: Number(sBr.on_schedule),
-      stillBehindTotal: Number(sBr.still_behind),
-      withErrors: Number(sBr.with_errors),
-      stillBehindByBatch: sBBatches.rows.map((r) => ({
-        expectedBatchDate: r.expected_batch_date,
-        combos: Number(r.combos),
-      })),
-    };
+        paramsWithBatch,
+      );
+      const sBr = sB.rows[0];
+      const sectionB = {
+        earliestDate: sBr.earliest_date,
+        latestOldDate: sBr.latest_old_date,
+        totalOldCombos: Number(sBr.total_old),
+        onSchedule: Number(sBr.on_schedule),
+        stillBehindTotal: Number(sBr.still_behind),
+        withErrors: Number(sBr.with_errors),
+        stillBehindByBatch: sBBatches.rows.map((r) => ({
+          expectedBatchDate: r.expected_batch_date,
+          combos: Number(r.combos),
+        })),
+      };
 
-    /* Section C — ranking trend for OLD-FILE combos with 2+ runs */
-    const sC = await pool.query(
-      `WITH old_runs AS (
+      /* Section C — ranking trend for OLD-FILE combos with 2+ runs */
+      const sC = await pool.query(
+        `WITH old_runs AS (
          SELECT keyword_id, lower(platform) AS platform,
                 array_agg(ranking_position ORDER BY date DESC, id DESC) AS ranks_desc
          FROM ranking_reports WHERE ${where} AND date < $${currentParamIdx}
@@ -1213,22 +1656,22 @@ router.get("/bi-weekly-report", async (req, res) => {
          COUNT(*) FILTER (WHERE ranks_desc[1] IS NULL) AS not_ranked,
          COUNT(*) AS eligible_total
        FROM old_runs`,
-      paramsWithBatch,
-    );
-    const sCr = sC.rows[0];
-    const sectionC = {
-      eligibleCombos: Number(sCr.eligible_total),
-      improved: Number(sCr.improved),
-      declined: Number(sCr.declined),
-      noChange: Number(sCr.no_change),
-      notRanked: Number(sCr.not_ranked),
-    };
+        paramsWithBatch,
+      );
+      const sCr = sC.rows[0];
+      const sectionC = {
+        eligibleCombos: Number(sCr.eligible_total),
+        improved: Number(sCr.improved),
+        declined: Number(sCr.declined),
+        noChange: Number(sCr.no_change),
+        notRanked: Number(sCr.not_ranked),
+      };
 
-    /* Section D — initial-rank distribution for combos NEW to the current batch.
+      /* Section D — initial-rank distribution for combos NEW to the current batch.
        Re-use the same filter conditions; column names are unprefixed in the
        where-clause so they resolve against ranking_reports cleanly. */
-    const sD = await pool.query(
-      `WITH new_combos AS (
+      const sD = await pool.query(
+        `WITH new_combos AS (
          SELECT ranking_position FROM ranking_reports
          WHERE ${where}
            AND date = $${currentParamIdx}
@@ -1247,43 +1690,43 @@ router.get("/bi-weekly-report", async (req, res) => {
          COUNT(*) FILTER (WHERE ranking_position > 30) AS beyond,
          COUNT(*) FILTER (WHERE ranking_position IS NULL OR ranking_position = 0) AS not_ranked
        FROM new_combos`,
-      paramsWithBatch,
-    );
-    const sDr = sD.rows[0];
-    const total = Number(sDr.total) || 1;
-    const sectionD = {
-      totalNewCombos: Number(sDr.total),
-      buckets: {
-        top3: {
-          count: Number(sDr.top3),
-          pct: Number(((Number(sDr.top3) / total) * 100).toFixed(1)),
+        paramsWithBatch,
+      );
+      const sDr = sD.rows[0];
+      const total = Number(sDr.total) || 1;
+      const sectionD = {
+        totalNewCombos: Number(sDr.total),
+        buckets: {
+          top3: {
+            count: Number(sDr.top3),
+            pct: Number(((Number(sDr.top3) / total) * 100).toFixed(1)),
+          },
+          top4to10: {
+            count: Number(sDr.top4_10),
+            pct: Number(((Number(sDr.top4_10) / total) * 100).toFixed(1)),
+          },
+          top11to30: {
+            count: Number(sDr.top11_30),
+            pct: Number(((Number(sDr.top11_30) / total) * 100).toFixed(1)),
+          },
+          beyond30: {
+            count: Number(sDr.beyond),
+            pct: Number(((Number(sDr.beyond) / total) * 100).toFixed(1)),
+          },
+          notRanked: {
+            count: Number(sDr.not_ranked),
+            pct: Number(((Number(sDr.not_ranked) / total) * 100).toFixed(1)),
+          },
         },
-        top4to10: {
-          count: Number(sDr.top4_10),
-          pct: Number(((Number(sDr.top4_10) / total) * 100).toFixed(1)),
-        },
-        top11to30: {
-          count: Number(sDr.top11_30),
-          pct: Number(((Number(sDr.top11_30) / total) * 100).toFixed(1)),
-        },
-        beyond30: {
-          count: Number(sDr.beyond),
-          pct: Number(((Number(sDr.beyond) / total) * 100).toFixed(1)),
-        },
-        notRanked: {
-          count: Number(sDr.not_ranked),
-          pct: Number(((Number(sDr.not_ranked) / total) * 100).toFixed(1)),
-        },
-      },
-    };
+      };
 
-    /* Detail tables — one query each, returned as arrays for the FE
+      /* Detail tables — one query each, returned as arrays for the FE
        to render. Heavy aggregations use window functions; keep them
        within the same scope filter ($1..$N). */
 
-    /* Old combos detail — every (kw, platform) before current batch */
-    const oldCombosRows = await pool.query(
-      `WITH base AS (
+      /* Old combos detail — every (kw, platform) before current batch */
+      const oldCombosRows = await pool.query(
+        `WITH base AS (
          SELECT rr.id, rr.keyword_id, lower(rr.platform) AS platform,
                 rr.date::date AS d, rr.ranking_position, rr.ranking_total, rr.status,
                 ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
@@ -1342,12 +1785,12 @@ router.get("/bi-weekly-report", async (req, res) => {
        LEFT JOIN clients cl ON cl.id = k.client_id
        LEFT JOIN businesses b ON b.id = k.business_id
        ORDER BY (a.last_date + INTERVAL '14 days') ASC, client, keyword, platform`,
-      paramsWithBatch,
-    );
+        paramsWithBatch,
+      );
 
-    /* New combos detail — rows in the current batch (with prior-audit context) */
-    const newCombosRows = await pool.query(
-      `SELECT
+      /* New combos detail — rows in the current batch (with prior-audit context) */
+      const newCombosRows = await pool.query(
+        `SELECT
          cl.business_name AS client,
          b.name AS business,
          rr.keyword AS keyword,
@@ -1374,12 +1817,12 @@ router.get("/bi-weekly-report", async (req, res) => {
          .replace(/\bbusiness_id\b/g, "rr.business_id")}
          AND rr.date = $${currentParamIdx}
        ORDER BY client, business, keyword, platform`,
-      paramsWithBatch,
-    );
+        paramsWithBatch,
+      );
 
-    /* Ranking trend detail — for old-file combos with 2+ runs */
-    const trendRows = await pool.query(
-      `WITH base AS (
+      /* Ranking trend detail — for old-file combos with 2+ runs */
+      const trendRows = await pool.query(
+        `WITH base AS (
          SELECT rr.id, rr.keyword_id, lower(rr.platform) AS platform,
                 rr.date::date AS d, rr.ranking_position,
                 ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
@@ -1430,23 +1873,32 @@ router.get("/bi-weekly-report", async (req, res) => {
            ELSE p.latest_rank - p.first_rank
          END DESC,
          client, keyword, platform`,
-      paramsWithBatch,
-    );
+        paramsWithBatch,
+      );
 
-    /* Errors — all audit_logs error rows scoped to old file (before current batch) */
-    const errorsParams: (number | string | null)[] = [currentBatchDate];
-    let errClientFilter = "";
-    let errBusinessFilter = "";
-    if (clientId !== null) {
-      errorsParams.push(clientId);
-      errClientFilter = `AND al.client_id = $${errorsParams.length}`;
-    }
-    if (businessId !== null) {
-      errorsParams.push(businessId);
-      errBusinessFilter = `AND al.business_id = $${errorsParams.length}`;
-    }
-    const errorsRows = await pool.query(
-      `SELECT
+      /* Errors — all audit_logs error rows scoped to old file (before current batch) */
+      const errorsParams: (number | string | null | number[])[] = [
+        currentBatchDate,
+      ];
+      let errClientFilter = "";
+      let errBusinessFilter = "";
+      let errScopeFilter = "";
+      if (clientId !== null) {
+        errorsParams.push(clientId);
+        errClientFilter = `AND al.client_id = $${errorsParams.length}`;
+      }
+      if (businessId !== null) {
+        errorsParams.push(businessId);
+        errBusinessFilter = `AND al.business_id = $${errorsParams.length}`;
+      }
+      // Scoped roles: the error detail rows must be limited to their eligible
+      // clients (was previously every client's error logs).
+      if (eligibleIds) {
+        errorsParams.push(eligibleIds);
+        errScopeFilter = `AND al.client_id = ANY($${errorsParams.length}::int[])`;
+      }
+      const errorsRows = await pool.query(
+        `SELECT
          cl.business_name AS client,
          al.keyword_text AS keyword,
          lower(al.platform) AS platform,
@@ -1467,13 +1919,14 @@ router.get("/bi-weekly-report", async (req, res) => {
          AND ((al.timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'America/New_York')::date < $1::date
          ${errClientFilter}
          ${errBusinessFilter}
+         ${errScopeFilter}
        ORDER BY error_date DESC, client, keyword`,
-      errorsParams,
-    );
+        errorsParams,
+      );
 
-    /* Platform scorecards — old file + new file + old-file trend */
-    const platformOld = await pool.query(
-      `WITH latest_per_combo AS (
+      /* Platform scorecards — old file + new file + old-file trend */
+      const platformOld = await pool.query(
+        `WITH latest_per_combo AS (
          SELECT DISTINCT ON (keyword_id, lower(platform))
                 lower(platform) AS platform, ranking_position
          FROM ranking_reports rr
@@ -1494,10 +1947,10 @@ router.get("/bi-weekly-report", async (req, res) => {
          COUNT(*) FILTER (WHERE ranking_position IS NULL OR ranking_position = 0)::int AS not_ranked
        FROM latest_per_combo
        GROUP BY platform ORDER BY platform`,
-      paramsWithBatch,
-    );
-    const platformNew = await pool.query(
-      `SELECT
+        paramsWithBatch,
+      );
+      const platformNew = await pool.query(
+        `SELECT
          lower(platform) AS platform,
          COUNT(*)::int AS total_combos,
          COUNT(*) FILTER (WHERE ranking_position BETWEEN 1 AND 3)::int AS in_top3,
@@ -1512,10 +1965,10 @@ router.get("/bi-weekly-report", async (req, res) => {
          .replace(/\bbusiness_id\b/g, "rr.business_id")}
          AND rr.date = $${currentParamIdx}
        GROUP BY lower(platform) ORDER BY lower(platform)`,
-      paramsWithBatch,
-    );
-    const platformTrend = await pool.query(
-      `WITH base AS (
+        paramsWithBatch,
+      );
+      const platformTrend = await pool.query(
+        `WITH base AS (
          SELECT rr.keyword_id, lower(rr.platform) AS platform, rr.id, rr.date::date AS d, rr.ranking_position,
                 ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date ASC, rr.id ASC) AS rn_asc,
                 ROW_NUMBER() OVER (PARTITION BY rr.keyword_id, lower(rr.platform) ORDER BY rr.date DESC, rr.id DESC) AS rn_desc,
@@ -1543,13 +1996,40 @@ router.get("/bi-weekly-report", async (req, res) => {
          COUNT(*) FILTER (WHERE first_rank IS NOT NULL AND latest_rank IS NOT NULL AND latest_rank = first_rank)::int AS no_change,
          COUNT(*) FILTER (WHERE latest_rank IS NULL OR first_rank IS NULL)::int AS not_ranked
        FROM paired GROUP BY platform ORDER BY platform`,
-      paramsWithBatch,
-    );
+        paramsWithBatch,
+      );
 
-    /* Client Health Matrix — one row per client, columns are the batch dates.
+      /* Top-3 count per check, split by AI platform. Starts at the July-1
+         baseline (REBASE_ANCHOR) like every other campaign view — older rounds
+         belong to the pre-rebase history and would contradict the reports next
+         to this chart. */
+      const top3ByPlatformRows = await pool.query<{
+        date: string;
+        platform: string;
+        in_top3: number;
+        total: number;
+      }>(
+        `SELECT
+           rr.date::text AS date,
+           lower(rr.platform) AS platform,
+           COUNT(*) FILTER (WHERE rr.ranking_position IS NOT NULL AND rr.ranking_position <= 3)::int AS in_top3,
+           COUNT(*)::int AS total
+         FROM ranking_reports rr
+         WHERE ${where
+           .replace(/\bdate\b/g, "rr.date")
+           .replace(/\bkeyword_id\b/g, "rr.keyword_id")
+           .replace(/\bclient_id\b/g, "rr.client_id")
+           .replace(/\bbusiness_id\b/g, "rr.business_id")}
+           AND rr.date >= '${REBASE_ANCHOR}'
+         GROUP BY rr.date, lower(rr.platform)
+         ORDER BY rr.date ASC, lower(rr.platform) ASC`,
+        params,
+      );
+
+      /* Client Health Matrix — one row per client, columns are the batch dates.
        Each cell carries success/error counts so the FE can color-code. */
-    const clientMatrixRows = await pool.query(
-      `WITH per_batch AS (
+      const clientMatrixRows = await pool.query(
+        `WITH per_batch AS (
          SELECT
            rr.client_id,
            rr.date::text AS batch_date,
@@ -1602,31 +2082,33 @@ router.get("/bi-weekly-report", async (req, res) => {
          CASE WHEN ct.last_batch::date < (CURRENT_DATE - INTERVAL '14 days') THEN 0 ELSE 1 END,
          ct.last_batch ASC,
          cl.business_name`,
-      params,
-    );
+        params,
+      );
 
-    res.json({
-      currentBatch: sectionA,
-      oldFile: sectionB,
-      rankingTrend: sectionC,
-      initialRanking: sectionD,
-      allBatches,
-      clientMatrix: clientMatrixRows.rows,
-      details: {
-        oldCombos: oldCombosRows.rows,
-        newCombos: newCombosRows.rows,
-        rankingTrendRows: trendRows.rows,
-        errors: errorsRows.rows,
-        platformOld: platformOld.rows,
-        platformNew: platformNew.rows,
-        platformTrend: platformTrend.rows,
-      },
-    });
-  } catch (err) {
-    req.log.error({ err }, "Error building bi-weekly report");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      res.json({
+        currentBatch: sectionA,
+        oldFile: sectionB,
+        rankingTrend: sectionC,
+        initialRanking: sectionD,
+        allBatches,
+        clientMatrix: clientMatrixRows.rows,
+        details: {
+          oldCombos: oldCombosRows.rows,
+          newCombos: newCombosRows.rows,
+          rankingTrendRows: trendRows.rows,
+          errors: errorsRows.rows,
+          platformOld: platformOld.rows,
+          platformNew: platformNew.rows,
+          platformTrend: platformTrend.rows,
+          top3ByPlatform: top3ByPlatformRows.rows,
+        },
+      });
+    } catch (err) {
+      req.log.error({ err }, "Error building bi-weekly report");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 /* GET /api/ranking-reports/:id/screenshot-url
    Resolves the row's screenshot_url into a viewable URL for the admin UI:
@@ -1636,19 +2118,28 @@ router.get("/bi-weekly-report", async (req, res) => {
        the screenshot section without erroring.
    Requires no auth — viewing a row's screenshot is allowed for any admin
    that can see the row itself; rate-limited by the App Runner front. */
-router.get("/:id/screenshot-url", async (req, res) => {
+router.get("/:id/screenshot-url", requireSalesAllowed, async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "invalid id" });
   }
   try {
     const rows = await db
-      .select({ url: rankingReportsTable.screenshotUrl })
+      .select({
+        url: rankingReportsTable.screenshotUrl,
+        clientId: rankingReportsTable.clientId,
+      })
       .from(rankingReportsTable)
       .where(eq(rankingReportsTable.id, id))
       .limit(1);
     if (rows.length === 0) {
       return res.status(404).json({ error: "ranking report not found" });
+    }
+    if (isScopedRole(req)) {
+      const eligibleIds = await getScopedClientIds(req);
+      if (!eligibleIds || !eligibleIds.includes(rows[0].clientId)) {
+        return res.status(404).json({ error: "ranking report not found" });
+      }
     }
     const raw = rows[0].url ?? null;
     if (!raw) {
@@ -1676,6 +2167,127 @@ router.get("/:id/screenshot-url", async (req, res) => {
   } catch (err) {
     req.log.error({ err, id }, "Error generating screenshot URL");
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ─── Summary Report (admin) ───────────────────────────────────
+   Admin-panel counterparts of the portal Summary Report routes.
+   Same shared builders → identical content; scoped by ?clientId. */
+
+function parseAdminScope(v: unknown): SummaryScope {
+  return v === "business" || v === "campaign" ? v : "client";
+}
+
+/** GET /api/ranking-reports/glossary — same payload as the portal glossary. */
+router.get("/glossary", requireSalesAllowed, (_req, res) => {
+  res.json(getGlossaryPayload());
+});
+
+/** GET /api/ranking-reports/summary/available-dates?clientId=... */
+router.get(
+  "/summary/available-dates",
+  requireSalesAllowed,
+  async (req, res) => {
+    try {
+      const clientId = req.query.clientId
+        ? parseInt(req.query.clientId as string, 10)
+        : null;
+      if (clientId == null || Number.isNaN(clientId)) {
+        return res.status(400).json({ error: "clientId is required" });
+      }
+      // Scoped roles may only read dates for a client in their eligible set —
+      // mirrors /summary and /summary/narrative.
+      if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+      const businessId = req.query.businessId
+        ? parseInt(req.query.businessId as string, 10)
+        : undefined;
+      const aeoPlanId = req.query.aeoPlanId
+        ? parseInt(req.query.aeoPlanId as string, 10)
+        : undefined;
+      const dates = await availableReportDates(clientId, {
+        businessId,
+        aeoPlanId,
+      });
+      res.json({ dates });
+    } catch (err) {
+      logger.error({ err }, "Admin summary available-dates error");
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+/** GET /api/ranking-reports/summary?clientId=&scope=&businessId=&aeoPlanId=&date= */
+router.get("/summary", requireSalesAllowed, async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    if (clientId == null || Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    // A scoped role may only pull a report for a client in its slice.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+    const scope = parseAdminScope(req.query.scope);
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : undefined;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : undefined;
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    res.json(report);
+  } catch (err) {
+    logger.error({ err }, "Admin summary error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /api/ranking-reports/summary/narrative?clientId=&scope=&businessId=&aeoPlanId=&date= */
+router.get("/summary/narrative", requireSalesAllowed, async (req, res) => {
+  try {
+    const clientId = req.query.clientId
+      ? parseInt(req.query.clientId as string, 10)
+      : null;
+    if (clientId == null || Number.isNaN(clientId)) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    // A scoped role may only pull a narrative for a client in its slice.
+    if (!(await assertScopedAccessToClient(req, res, clientId))) return;
+    const scope = parseAdminScope(req.query.scope);
+    const businessId = req.query.businessId
+      ? parseInt(req.query.businessId as string, 10)
+      : undefined;
+    const aeoPlanId = req.query.aeoPlanId
+      ? parseInt(req.query.aeoPlanId as string, 10)
+      : undefined;
+    const date =
+      typeof req.query.date === "string" && req.query.date.trim()
+        ? req.query.date.trim()
+        : null;
+    const report = await buildSummaryReport(clientId, {
+      scope,
+      businessId,
+      aeoPlanId,
+      date,
+    });
+    const narrative = await generateSummaryNarrative(
+      report,
+      clientId,
+      Date.now(),
+    );
+    res.json(narrative);
+  } catch (err) {
+    logger.error({ err }, "Admin summary narrative error");
+    res.status(500).json({ error: "Could not generate a summary right now." });
   }
 });
 

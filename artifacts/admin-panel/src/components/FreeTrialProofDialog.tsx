@@ -1,0 +1,637 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { rawFetch } from "@/lib/period-comparison";
+import { X, Send, CheckCircle2, Trophy, ImageOff } from "lucide-react";
+
+/* The free-trial proof email is deliberately different from the sales proofs:
+   ONE operator-picked screenshot (no before/after), a fixed "Schedule a Call"
+   Calendly button, "reply to us" close. This dialog is opened by the owner-only
+   "Send free-trial proof" button on a free-trial client's page. */
+
+interface CampaignShot {
+  keywordId: number;
+  keyword: string | null;
+  platform: string;
+  afterRank: number;
+  afterRankVisible: boolean | null;
+  afterUrl: string | null;
+}
+
+interface GalleryResponse {
+  shots: CampaignShot[];
+}
+
+interface PreviewResponse {
+  html: string;
+  business: string;
+  keyword: string;
+  platform: string;
+  rank: number;
+  cityState: string | null;
+  defaultSubject: string;
+  defaultIntro: string;
+  defaultBody: string;
+}
+
+interface RecipientsResponse {
+  businessName: string | null;
+  contactEmail: string | null;
+  accountEmail: string | null;
+  billingEmail: string | null;
+}
+
+interface FreeTrialProofDialogProps {
+  open: boolean;
+  onClose: () => void;
+  clientId: number | null;
+  /* Campaign-page trigger: limit the screenshot pool to one campaign. */
+  businessId?: number | null;
+  aeoPlanId?: number | null;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TOP3 = 3;
+
+function platformLabel(p: string): string {
+  if (p === "chatgpt") return "ChatGPT";
+  if (p === "gemini") return "Gemini";
+  if (p === "perplexity") return "Perplexity";
+  return p;
+}
+
+export function FreeTrialProofDialog({
+  open,
+  onClose,
+  clientId,
+  businessId,
+  aeoPlanId,
+}: FreeTrialProofDialogProps) {
+  const { toast } = useToast();
+  const [recipients, setRecipients] = useState<string[]>([]);
+  const [newRecipient, setNewRecipient] = useState("");
+  const [cityState, setCityState] = useState("");
+  const [subject, setSubject] = useState("");
+  const [introText, setIntroText] = useState("");
+  const [bodyText, setBodyText] = useState("");
+  /* Last server defaults — lets us tell "operator edited" apart from "still on
+     the template", so re-picking a screenshot refreshes untouched text. */
+  const introDefault = useRef("");
+  const bodyDefault = useRef("");
+  /* Debounced copies so preview doesn't refetch per keystroke. */
+  const [debouncedIntro, setDebouncedIntro] = useState("");
+  const [debouncedBody, setDebouncedBody] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedIntro(introText);
+      setDebouncedBody(bodyText);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [introText, bodyText]);
+  const [selected, setSelected] = useState<{
+    keywordId: number;
+    platform: string;
+  } | null>(null);
+  const [result, setResult] = useState<{
+    ok: boolean;
+    message: string;
+    safeModeActive?: boolean;
+  } | null>(null);
+  /* Send is irreversible — a real client gets "you're moving to the paid
+     plan" — so the button opens this confirm step instead of firing directly. */
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const { data: defaults } = useQuery<RecipientsResponse>({
+    enabled: open && clientId != null,
+    queryKey: ["/api/rankings/email-recipients", clientId],
+    queryFn: async () => {
+      const res = await rawFetch(`/api/rankings/email-recipients/${clientId}`);
+      if (!res.ok) throw new Error("Failed to load client emails");
+      return res.json();
+    },
+  });
+
+  const scopeParams = useMemo(() => {
+    if (clientId == null) return null;
+    const p = new URLSearchParams({ clientId: String(clientId) });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
+    return p.toString();
+  }, [clientId, businessId, aeoPlanId]);
+
+  const { data: gallery, isLoading: galleryLoading } =
+    useQuery<GalleryResponse>({
+      enabled: open && scopeParams != null,
+      queryKey: ["/api/sales/campaign-screenshots", scopeParams],
+      queryFn: async () => {
+        const res = await rawFetch(
+          `/api/sales/campaign-screenshots?${scopeParams}`,
+        );
+        if (!res.ok) throw new Error("Failed to load screenshots");
+        return res.json();
+      },
+    });
+
+  /* Seed the recipient list from the client's own emails. */
+  useEffect(() => {
+    if (!defaults) return;
+    const candidates = [
+      defaults.contactEmail,
+      defaults.accountEmail,
+      defaults.billingEmail,
+    ].filter((e): e is string => Boolean(e && EMAIL_RE.test(e)));
+    setRecipients(Array.from(new Set(candidates)));
+  }, [defaults]);
+
+  /* Default the featured screenshot to the strongest verified Top-3 shot. */
+  const shots = useMemo(() => gallery?.shots ?? [], [gallery]);
+  useEffect(() => {
+    if (selected != null || shots.length === 0) return;
+    const best =
+      shots.find((s) => s.afterRank <= TOP3 && s.afterRankVisible === true) ??
+      shots[0];
+    setSelected({ keywordId: best.keywordId, platform: best.platform });
+  }, [shots, selected]);
+
+  /* Reset everything when the dialog target changes. */
+  useEffect(() => {
+    setSelected(null);
+    setCityState("");
+    setSubject("");
+    setIntroText("");
+    setBodyText("");
+    introDefault.current = "";
+    bodyDefault.current = "";
+    setResult(null);
+  }, [clientId, businessId, aeoPlanId]);
+
+  const previewParams = useMemo(() => {
+    if (clientId == null || selected == null) return null;
+    const p = new URLSearchParams({
+      clientId: String(clientId),
+      keywordId: String(selected.keywordId),
+      platform: selected.platform,
+    });
+    if (businessId != null) p.set("businessId", String(businessId));
+    if (aeoPlanId != null) p.set("aeoPlanId", String(aeoPlanId));
+    if (cityState.trim()) p.set("cityState", cityState.trim());
+    // Only send edited text — an untouched template renders server-side with
+    // its richer markup (bold headline etc.).
+    if (debouncedIntro.trim() && debouncedIntro !== introDefault.current)
+      p.set("introText", debouncedIntro);
+    if (debouncedBody.trim() && debouncedBody !== bodyDefault.current)
+      p.set("bodyText", debouncedBody);
+    return p.toString();
+  }, [
+    clientId,
+    businessId,
+    aeoPlanId,
+    selected,
+    cityState,
+    debouncedIntro,
+    debouncedBody,
+  ]);
+
+  const { data: preview, isLoading: previewLoading } =
+    useQuery<PreviewResponse>({
+      enabled: open && previewParams != null,
+      queryKey: ["/api/sales/free-trial-proof-preview", previewParams],
+      queryFn: async () => {
+        const res = await rawFetch(
+          `/api/sales/free-trial-proof-preview?${previewParams}`,
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to load preview");
+        }
+        return res.json();
+      },
+    });
+
+  /* Seed City/State + subject once the preview resolves them. Message fields
+     re-seed whenever they're still on the previous template (blank or exactly
+     the old default) so switching screenshots refreshes rank/keyword copy —
+     operator edits always survive. */
+  useEffect(() => {
+    if (!preview) return;
+    setCityState((cur) => (cur.trim() ? cur : (preview.cityState ?? "")));
+    setSubject((cur) => (cur.trim() ? cur : preview.defaultSubject));
+    setIntroText((cur) =>
+      !cur.trim() || cur === introDefault.current ? preview.defaultIntro : cur,
+    );
+    setBodyText((cur) =>
+      !cur.trim() || cur === bodyDefault.current ? preview.defaultBody : cur,
+    );
+    introDefault.current = preview.defaultIntro;
+    bodyDefault.current = preview.defaultBody;
+  }, [preview]);
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await rawFetch("/api/sales/send-free-trial-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          businessId: businessId ?? undefined,
+          aeoPlanId: aeoPlanId ?? undefined,
+          keywordId: selected?.keywordId,
+          platform: selected?.platform,
+          recipients,
+          subject: subject.trim() || undefined,
+          cityState: cityState.trim() || undefined,
+          introText:
+            introText.trim() && introText !== introDefault.current
+              ? introText
+              : undefined,
+          bodyText:
+            bodyText.trim() && bodyText !== bodyDefault.current
+              ? bodyText
+              : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Send failed");
+      return data as {
+        deliveredVia: string | null;
+        recipientsActual: string[];
+        safeModeActive?: boolean;
+        conversion?: {
+          attempted: boolean;
+          converted: boolean;
+          subscriptionId: string | null;
+          amount: number | null;
+          reason: string | null;
+        };
+      };
+    },
+    onSuccess: (data) => {
+      const sent = data.safeModeActive
+        ? `Safe mode: sent to ${data.recipientsActual.join(", ")} instead of the client.`
+        : `Sent via ${data.deliveredVia ?? "email"} to ${data.recipientsActual.join(", ")}.`;
+      const conv = data.conversion;
+      const convMsg = !conv
+        ? ""
+        : conv.converted
+          ? ` Moved to paid plan${conv.amount != null ? ` — $${conv.amount}/mo subscription started` : ""}.`
+          : ` NOT converted to paid: ${conv.reason ?? "unknown reason"}.`;
+      setResult({
+        ok: true,
+        safeModeActive: data.safeModeActive,
+        message: sent + convMsg,
+      });
+      toast({ title: "Free-trial proof sent" });
+    },
+    onError: (err: unknown) => {
+      setResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Send failed",
+      });
+      toast({ title: "Send failed", variant: "destructive" });
+    },
+  });
+
+  function addRecipient() {
+    const trimmed = newRecipient.trim();
+    if (!EMAIL_RE.test(trimmed) || recipients.includes(trimmed)) return;
+    setRecipients([...recipients, trimmed]);
+    setNewRecipient("");
+  }
+
+  function removeRecipient(r: string) {
+    setRecipients(recipients.filter((x) => x !== r));
+  }
+
+  function handleClose() {
+    setResult(null);
+    onClose();
+  }
+
+  const canSend =
+    selected != null &&
+    recipients.length > 0 &&
+    !sendMutation.isPending &&
+    preview != null;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-[1400px] w-[96vw] h-[94vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle>Send free-trial proof</DialogTitle>
+          <DialogDescription>
+            {defaults?.businessName
+              ? `Email ${defaults.businessName} a single Top-3 screenshot and move them to the paid plan.`
+              : "Pick one ranking screenshot to feature — no before/after comparison."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-hidden min-h-0">
+          {/* ── Left: controls ── */}
+          <div className="overflow-auto space-y-5 pr-1">
+            {/* Screenshot gallery */}
+            <div className="space-y-2">
+              <Label>Screenshot to feature</Label>
+              {galleryLoading && (
+                <p className="text-sm text-muted-foreground">
+                  Loading screenshots…
+                </p>
+              )}
+              {!galleryLoading && shots.length === 0 && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground p-4 border rounded-md">
+                  <ImageOff className="w-4 h-4" />
+                  No ranking screenshots available for this client yet.
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {shots.map((s) => {
+                  const isSel =
+                    selected?.keywordId === s.keywordId &&
+                    selected?.platform === s.platform;
+                  const isTop3Visible =
+                    s.afterRank <= TOP3 && s.afterRankVisible === true;
+                  return (
+                    <button
+                      key={`${s.keywordId}:${s.platform}`}
+                      type="button"
+                      onClick={() =>
+                        setSelected({
+                          keywordId: s.keywordId,
+                          platform: s.platform,
+                        })
+                      }
+                      className={`relative text-left border rounded-lg overflow-hidden transition-all ${
+                        isSel
+                          ? "ring-2 ring-primary border-primary"
+                          : "hover:border-primary/50"
+                      }`}
+                    >
+                      {s.afterUrl ? (
+                        <img
+                          src={s.afterUrl}
+                          alt={`${s.keyword ?? "keyword"} on ${s.platform}`}
+                          className="w-full h-24 object-cover object-top bg-slate-100"
+                        />
+                      ) : (
+                        <div className="w-full h-24 bg-slate-100 flex items-center justify-center">
+                          <ImageOff className="w-5 h-5 text-slate-400" />
+                        </div>
+                      )}
+                      <div className="p-1.5 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <Badge
+                            variant={isTop3Visible ? "default" : "secondary"}
+                            className="text-[10px] px-1 py-0"
+                          >
+                            #{s.afterRank}
+                          </Badge>
+                          {isTop3Visible && (
+                            <Trophy className="w-3 h-3 text-amber-500" />
+                          )}
+                          {isSel && (
+                            <CheckCircle2 className="w-3 h-3 text-primary ml-auto" />
+                          )}
+                        </div>
+                        <p
+                          className="text-[11px] font-medium truncate"
+                          title={s.keyword ?? ""}
+                        >
+                          {s.keyword ?? "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {platformLabel(s.platform)}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* City / State */}
+            <div className="space-y-2">
+              <Label>City, State</Label>
+              <Input
+                placeholder="e.g. Middletown, CT"
+                value={cityState}
+                onChange={(e) => setCityState(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Used in “When people in {"{City, State}"} search…”. Leave blank
+                to drop the location.
+              </p>
+            </div>
+
+            {/* Message above the screenshot */}
+            <div className="space-y-2">
+              <Label>Message (above screenshot)</Label>
+              <Textarea
+                rows={4}
+                placeholder="Loads once a screenshot is picked…"
+                value={introText}
+                onChange={(e) => setIntroText(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Blank line = new paragraph. The greeting and “Here’s your
+                proof:” line stay fixed.
+              </p>
+            </div>
+
+            {/* Message below the screenshot */}
+            <div className="space-y-2">
+              <Label>Message (below screenshot)</Label>
+              <Textarea
+                rows={6}
+                placeholder="Loads once a screenshot is picked…"
+                value={bodyText}
+                onChange={(e) => setBodyText(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Followed by the fixed “Schedule a Call” button, closing lines
+                and the team signature.
+              </p>
+            </div>
+
+            {/* Subject */}
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <Input
+                placeholder={preview?.defaultSubject ?? "Subject line"}
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              />
+            </div>
+
+            {/* Recipients */}
+            <div className="space-y-2">
+              <Label>Recipients</Label>
+              <div className="flex flex-wrap gap-1.5 p-2 border rounded-md min-h-[40px]">
+                {recipients.length === 0 && (
+                  <span className="text-xs text-muted-foreground self-center">
+                    No recipients — add at least one
+                  </span>
+                )}
+                {recipients.map((r) => (
+                  <Badge key={r} variant="secondary" className="gap-1">
+                    {r}
+                    <button
+                      type="button"
+                      onClick={() => removeRecipient(r)}
+                      className="hover:text-destructive"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="add another email…"
+                  value={newRecipient}
+                  onChange={(e) => setNewRecipient(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addRecipient();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addRecipient}
+                  disabled={!EMAIL_RE.test(newRecipient.trim())}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            {result && (
+              <div
+                className={`text-sm rounded-md p-3 ${
+                  result.ok
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "bg-destructive/10 text-destructive"
+                }`}
+              >
+                {result.message}
+              </div>
+            )}
+          </div>
+
+          {/* ── Right: live preview ── */}
+          <div className="border rounded-md overflow-hidden flex flex-col min-h-0 bg-white">
+            <div className="bg-muted/50 px-3 py-2 text-xs text-muted-foreground flex-shrink-0">
+              Client preview
+              {preview && (
+                <span className="ml-2">
+                  · “{preview.keyword}” · Top #{preview.rank} on{" "}
+                  {platformLabel(preview.platform)}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-auto bg-white min-h-0">
+              {previewLoading && (
+                <div className="p-4 text-sm text-muted-foreground">
+                  Loading preview…
+                </div>
+              )}
+              {!previewLoading && !preview && (
+                <div className="p-6 text-sm text-muted-foreground text-center">
+                  Pick a screenshot to preview the email.
+                </div>
+              )}
+              {preview?.html && (
+                <iframe
+                  title="free-trial proof preview"
+                  srcDoc={preview.html}
+                  className="w-full h-full min-h-[500px] border-0"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="flex-shrink-0">
+          <Button variant="outline" onClick={handleClose}>
+            Close
+          </Button>
+          <Button
+            onClick={() => setConfirmOpen(true)}
+            disabled={!canSend}
+            className="gap-1.5"
+          >
+            <Send className="w-4 h-4" />
+            {sendMutation.isPending ? "Sending…" : "Send proof"}
+          </Button>
+        </DialogFooter>
+
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send this proof email?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    This emails the client that they are moving to the paid
+                    plan, <strong>starts their paid subscription</strong> (their
+                    card on file gets charged), and flips the campaign off the
+                    free trial. It cannot be unsent.
+                  </p>
+                  <p>
+                    <span className="font-semibold text-foreground">To:</span>{" "}
+                    {recipients.join(", ")}
+                  </p>
+                  {preview && (
+                    <p>
+                      <span className="font-semibold text-foreground">
+                        Proof:
+                      </span>{" "}
+                      “{preview.keyword}” · Top #{preview.rank} on{" "}
+                      {platformLabel(preview.platform)}
+                    </p>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmOpen(false);
+                  sendMutation.mutate();
+                }}
+              >
+                Yes, send it
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </DialogContent>
+    </Dialog>
+  );
+}

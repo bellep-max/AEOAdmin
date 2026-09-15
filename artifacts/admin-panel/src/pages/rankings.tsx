@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent } from "@/components/ui/card";
 import { RankingRunBanner } from "@/components/RankingRunBanner";
 import { PeriodOverview } from "@/components/PeriodOverview";
 import { PeriodByClientTab } from "@/components/PeriodByClientTab";
@@ -34,10 +35,12 @@ import {
   fmtIsoDateET,
   fmtDateTimeET,
   buildPeriodUrl,
+  isPlatformUnavailable,
   type Period,
   type PeriodResponse,
   type PeriodRow,
 } from "@/lib/period-comparison";
+import { usePlanTypes } from "@/lib/plan-types";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -45,11 +48,16 @@ import {
   type ExportFiltersValue,
 } from "@/components/ExportRankingsDialog";
 import { SendReportDialog } from "@/components/SendReportDialog";
-import { Mail } from "lucide-react";
+import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/lib/auth";
+import { Mail, TrendingUp, ScanEye, Loader2 } from "lucide-react";
 
 interface ClientRow {
   id: number;
   businessName: string;
+  /* Distinct plan types this client has — drives the plan-scoped client picker. */
+  planTypes?: string[];
 }
 
 interface BusinessRow {
@@ -141,6 +149,10 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
     )
     .map(({ base, platforms }) => {
       const g = (p: string) => platforms.get(p);
+      // Missing data on an outage platform (e.g. Gemini) reads as "Unavailable"
+      // in exports too, so a client report never shows a bare "—" there.
+      const statusOf = (p: string) =>
+        g(p)?.status ?? (isPlatformUnavailable(p) ? "Unavailable" : "—");
       return {
         client: base.clientName ?? "",
         business: base.businessName ?? "",
@@ -153,7 +165,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         chatgptCurr: pos(g("chatgpt")?.currentPosition ?? null),
         chatgptCurrDate: dt(g("chatgpt")?.currentDate),
         chatgptChange: chg(g("chatgpt")?.change ?? null),
-        chatgptStatus: g("chatgpt")?.status ?? "—",
+        chatgptStatus: statusOf("chatgpt"),
         geminiFirst: pos(g("gemini")?.firstPosition ?? null),
         geminiFirstDate: dt(g("gemini")?.firstDate),
         geminiPrev: pos(g("gemini")?.previousPosition ?? null),
@@ -161,7 +173,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         geminiCurr: pos(g("gemini")?.currentPosition ?? null),
         geminiCurrDate: dt(g("gemini")?.currentDate),
         geminiChange: chg(g("gemini")?.change ?? null),
-        geminiStatus: g("gemini")?.status ?? "—",
+        geminiStatus: statusOf("gemini"),
         perplexityFirst: pos(g("perplexity")?.firstPosition ?? null),
         perplexityFirstDate: dt(g("perplexity")?.firstDate),
         perplexityPrev: pos(g("perplexity")?.previousPosition ?? null),
@@ -169,7 +181,7 @@ function pivotRows(rows: PeriodRow[]): PivotRow[] {
         perplexityCurr: pos(g("perplexity")?.currentPosition ?? null),
         perplexityCurrDate: dt(g("perplexity")?.currentDate),
         perplexityChange: chg(g("perplexity")?.change ?? null),
-        perplexityStatus: g("perplexity")?.status ?? "—",
+        perplexityStatus: statusOf("perplexity"),
       };
     });
 }
@@ -336,11 +348,45 @@ function exportRankingsPDF(
   }
 
   const pivoted = pivotRows(rows);
+
+  // Empty-state guard: never produce a blank PDF — say so plainly instead.
+  if (pivoted.length === 0) {
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(120, 130, 150);
+    doc.text(
+      "No ranking data for the selected filters.",
+      10,
+      headerBandHeight + 16,
+    );
+    doc.save(`rankings-${label}-empty-${fmtIsoDateET(new Date())}.pdf`);
+    return;
+  }
+
   const grouped = new Map<string, PivotRow[]>();
   for (const r of pivoted) {
     const key = r.client || "Unassigned";
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(r);
+  }
+
+  // Per-client summary (Top-3 / improved / declined) from the raw rows so the
+  // reader gets the headline numbers without scanning the table.
+  const summaryByClient = new Map<
+    string,
+    { top3: Set<number>; improved: number; declined: number }
+  >();
+  for (const r of rows) {
+    const key = r.clientName || "Unassigned";
+    let s = summaryByClient.get(key);
+    if (!s) {
+      s = { top3: new Set(), improved: 0, declined: 0 };
+      summaryByClient.set(key, s);
+    }
+    if (r.currentPosition != null && r.currentPosition <= 3)
+      s.top3.add(r.keywordId);
+    if (r.status === "improved") s.improved++;
+    else if (r.status === "declined") s.declined++;
   }
 
   let startY = headerBandHeight + 6;
@@ -370,8 +416,12 @@ function exportRankingsPDF(
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(120, 130, 150);
+    const sum = summaryByClient.get(clientName);
+    const sumTxt = sum
+      ? `  ·  ${sum.top3.size} in Top 3  ·  ${sum.improved} improved  ·  ${sum.declined} declined`
+      : "";
     doc.text(
-      `${clientRows.length} keyword${clientRows.length !== 1 ? "s" : ""}`,
+      `${clientRows.length} keyword${clientRows.length !== 1 ? "s" : ""}${sumTxt}`,
       10,
       startY + 4,
     );
@@ -526,6 +576,7 @@ export default function Rankings() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
     null,
   );
+  const [selectedPlanType, setSelectedPlanType] = useState<string | null>(null);
   const [comparisonOnly, setComparisonOnly] = useState(false);
   const [auditDate, setAuditDate] = useState<string>("all");
   /* Optional per-column date overrides (ET YYYY-MM-DD). When set, the
@@ -540,6 +591,14 @@ export default function Rankings() {
   );
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
   const [sendReportOpen, setSendReportOpen] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const { isOwner, isSales, isAdmin, isChucksLocal } = useAuth();
+  const canSendSalesEmail = isOwner || isSales || isAdmin;
+  // isAdmin subsumes chuckslocal (plan-scoped, admin-like for CRUD) — the
+  // screenshot scanner hits every client's rows, so it must stay strictly
+  // admin/owner, never chuckslocal.
+  const isStrictAdmin = isAdmin && !isChucksLocal;
   const queryClient = useQueryClient();
 
   const effectivePeriod: Period =
@@ -572,12 +631,52 @@ export default function Rankings() {
     },
   });
 
+  // Role-scoped plan-type options (owner: all; everyone else: local plan only).
+  const { data: planTypes = [] } = usePlanTypes();
+
+  const { data: unscannedCount } = useQuery<number>({
+    queryKey: ["/api/screenshot-scan/unscanned-count"],
+    queryFn: async () => {
+      const res = await rawFetch("/api/screenshot-scan/unscanned-count");
+      if (!res.ok) throw new Error("Failed");
+      const body = await res.json();
+      return body.count as number;
+    },
+    enabled: isStrictAdmin,
+  });
+
+  async function handleScanScreenshots() {
+    setScanning(true);
+    try {
+      let remaining = 1;
+      while (remaining > 0) {
+        const res = await rawFetch("/api/screenshot-scan/scan", {
+          method: "POST",
+        });
+        if (!res.ok) throw new Error("Scan failed");
+        const body = await res.json();
+        remaining = body.remaining as number;
+      }
+    } finally {
+      setScanning(false);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/screenshot-scan/unscanned-count"],
+      });
+    }
+  }
+
   const byName = (a: string | null | undefined, b: string | null | undefined) =>
     (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
 
-  const clientsSorted = [...(allClients ?? [])].sort((a, b) =>
-    byName(a.businessName, b.businessName),
-  );
+  /* When a plan type is selected, the client picker only lists clients that
+     have it — so the plan filter narrows the whole cascade, not just the rows. */
+  const clientsSorted = [...(allClients ?? [])]
+    .filter(
+      (c) =>
+        selectedPlanType === null ||
+        (c.planTypes ?? []).includes(selectedPlanType),
+    )
+    .sort((a, b) => byName(a.businessName, b.businessName));
   const bizScope = (allBusinesses ?? [])
     .filter((b) => selectedClientId === null || b.clientId === selectedClientId)
     .sort((a, b) => byName(a.name, b.name));
@@ -593,19 +692,30 @@ export default function Rankings() {
     selectedClientId !== null ||
     selectedBusinessId !== null ||
     selectedCampaignId !== null ||
+    selectedPlanType !== null ||
     firstDateOverride !== null ||
     prevDateOverride !== null ||
     currentDateOverride !== null;
 
-  const { data: periodData } = usePeriodComparison({
-    period: effectivePeriod,
-    clientId: selectedClientId,
-    businessId: selectedBusinessId,
-    aeoPlanId: selectedCampaignId,
-    firstDate: firstDateOverride,
-    prevDate: prevDateOverride,
-    currentDate: currentDateOverride,
-  });
+  // Lazy-load: hold the (large) all-clients fetch until a client is picked.
+  // The page lagged badly loading every client up front; now nothing loads
+  // until the operator selects a client.
+  // A plan-type filter is cross-client, so it also unlocks the query even when
+  // no single client is picked (loads every client on that plan the role sees).
+  const clientChosen = selectedClientId !== null || selectedPlanType !== null;
+  const { data: periodData } = usePeriodComparison(
+    {
+      period: effectivePeriod,
+      clientId: selectedClientId,
+      businessId: selectedBusinessId,
+      aeoPlanId: selectedCampaignId,
+      planType: selectedPlanType,
+      firstDate: firstDateOverride,
+      prevDate: prevDateOverride,
+      currentDate: currentDateOverride,
+    },
+    clientChosen,
+  );
 
   const label = periodLabel(effectivePeriod);
   const hasRows = (periodData?.rows?.length ?? 0) > 0;
@@ -681,6 +791,26 @@ export default function Rankings() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isStrictAdmin && !!unscannedCount && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-violet-300 text-violet-600 hover:text-violet-700 hover:bg-violet-50 font-semibold"
+              onClick={handleScanScreenshots}
+              disabled={scanning}
+              title="Vision-validate top-3 screenshots that are pending review before they surface in proofs/reports"
+            >
+              {scanning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ScanEye className="w-3.5 h-3.5" />
+              )}
+              Scan screenshots
+              <Badge variant="secondary" className="ml-0.5 h-5 px-1.5">
+                {unscannedCount}
+              </Badge>
+            </Button>
+          )}
           <Button
             variant={comparisonOnly ? "default" : "outline"}
             size="sm"
@@ -721,12 +851,36 @@ export default function Rankings() {
           >
             <Mail className="w-3.5 h-3.5" /> Send Report
           </Button>
+          {canSendSalesEmail && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-emerald-300 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-semibold"
+              onClick={() => setSalesEmailOpen(true)}
+              disabled={selectedClientId == null}
+              title={
+                selectedClientId == null
+                  ? "Pick a client first"
+                  : "Email this client their before/after ranking improvement proof"
+              }
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> Sales Email
+            </Button>
+          )}
         </div>
       </div>
 
       <SendReportDialog
         open={sendReportOpen}
         onClose={() => setSendReportOpen(false)}
+        clientId={selectedClientId}
+        businessId={selectedBusinessId}
+        aeoPlanId={selectedCampaignId}
+      />
+
+      <SalesEmailDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
         clientId={selectedClientId}
         businessId={selectedBusinessId}
         aeoPlanId={selectedCampaignId}
@@ -748,10 +902,10 @@ export default function Rankings() {
           }}
         >
           <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
-            <SelectValue placeholder="All Clients" />
+            <SelectValue placeholder="Select a client" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Clients</SelectItem>
+            <SelectItem value="all">Select a client</SelectItem>
             {clientsSorted.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.businessName}
@@ -801,6 +955,38 @@ export default function Rankings() {
             {planScope.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>
                 {p.name ?? p.planType}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-slate-400">›</span>
+        <Select
+          value={selectedPlanType ?? "all"}
+          onValueChange={(v) => {
+            const next = v === "all" ? null : v;
+            setSelectedPlanType(next);
+            // Drop a client selection that doesn't have the new plan type so the
+            // picker and the rows stay in sync.
+            if (next !== null && selectedClientId !== null) {
+              const c = (allClients ?? []).find(
+                (x) => x.id === selectedClientId,
+              );
+              if (!(c?.planTypes ?? []).includes(next)) {
+                setSelectedClientId(null);
+                setSelectedBusinessId(null);
+                setSelectedCampaignId(null);
+              }
+            }
+          }}
+        >
+          <SelectTrigger className="w-52 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
+            <SelectValue placeholder="All Plans" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Plans</SelectItem>
+            {planTypes.map((pt) => (
+              <SelectItem key={pt} value={pt}>
+                {pt}
               </SelectItem>
             ))}
           </SelectContent>
@@ -859,6 +1045,7 @@ export default function Rankings() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setSelectedPlanType(null);
               setFirstDateOverride(null);
               setPrevDateOverride(null);
               setCurrentDateOverride(null);
@@ -904,29 +1091,48 @@ export default function Rankings() {
         )}
       </div>
 
-      {/* Period overview — all three periods at a glance */}
-      {compareMode === "period" && (
-        <PeriodOverview
-          clientId={selectedClientId}
-          businessId={selectedBusinessId}
-          aeoPlanId={selectedCampaignId}
-          activePeriod={period}
-          onSelect={(p) => setPeriod(p)}
-        />
-      )}
+      {!clientChosen ? (
+        <Card className="border-border/50 border-dashed">
+          <CardContent className="py-16 text-center">
+            <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+            <p className="text-sm font-medium">
+              Select a client to view rankings
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Rankings load per client to keep the page fast — pick a client
+              above to begin.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Period overview — all three periods at a glance */}
+          {compareMode === "period" && (
+            <PeriodOverview
+              clientId={selectedClientId}
+              businessId={selectedBusinessId}
+              aeoPlanId={selectedCampaignId}
+              planType={selectedPlanType}
+              activePeriod={period}
+              onSelect={(p) => setPeriod(p)}
+            />
+          )}
 
-      {/* Single view — grouped by Client with inline Business · Campaign context */}
-      <PeriodByClientTab
-        period={effectivePeriod}
-        clientId={selectedClientId}
-        businessId={selectedBusinessId}
-        aeoPlanId={selectedCampaignId}
-        comparisonOnly={comparisonOnly}
-        auditDate={auditDate}
-        firstDate={firstDateOverride}
-        prevDate={prevDateOverride}
-        currentDate={currentDateOverride}
-      />
+          {/* Single view — grouped by Client with inline Business · Campaign context */}
+          <PeriodByClientTab
+            period={effectivePeriod}
+            clientId={selectedClientId}
+            businessId={selectedBusinessId}
+            aeoPlanId={selectedCampaignId}
+            planType={selectedPlanType}
+            comparisonOnly={comparisonOnly}
+            auditDate={auditDate}
+            firstDate={firstDateOverride}
+            prevDate={prevDateOverride}
+            currentDate={currentDateOverride}
+          />
+        </>
+      )}
 
       {/* Export dialog (PDF or CSV) — reviews/edits filters before generating */}
       {exportMode && (

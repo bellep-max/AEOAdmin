@@ -14,18 +14,19 @@ interface Props {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  planType?: string | null;
   activePeriod: Period;
   onSelect: (p: Period) => void;
 }
 
 const PERIODS: Exclude<Period, "lifetime">[] = ["weekly", "monthly", "quarterly"];
 
-export function PeriodOverview({ clientId, businessId, aeoPlanId, activePeriod, onSelect }: Props) {
+export function PeriodOverview({ clientId, businessId, aeoPlanId, planType = null, activePeriod, onSelect }: Props) {
   const queries = useQueries({
     queries: PERIODS.map((p) => ({
-      queryKey: ["/api/ranking-reports/period-comparison", p, clientId, businessId, aeoPlanId],
+      queryKey: ["/api/ranking-reports/period-comparison", p, clientId, businessId, aeoPlanId, planType],
       queryFn: async () => {
-        const res = await rawFetch(buildPeriodUrl({ period: p, clientId, businessId, aeoPlanId }));
+        const res = await rawFetch(buildPeriodUrl({ period: p, clientId, businessId, aeoPlanId, planType }));
         if (!res.ok) throw new Error("Failed");
         return res.json() as Promise<PeriodResponse>;
       },
@@ -65,7 +66,7 @@ export function PeriodOverview({ clientId, businessId, aeoPlanId, activePeriod, 
                     </span>
                   )}
                   {net < 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400 text-xs font-semibold">
+                    <span className="inline-flex items-center gap-0.5 text-yellow-700 dark:text-yellow-400 text-xs font-semibold">
                       <TrendingDown className="w-3 h-3" /> {net}
                     </span>
                   )}
@@ -81,7 +82,7 @@ export function PeriodOverview({ clientId, businessId, aeoPlanId, activePeriod, 
                 ) : (
                   <div className="flex items-center gap-3 text-xs">
                     <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{counts.improved} ↑</span>
-                    <span className="text-red-600 dark:text-red-400 font-semibold">{counts.declined} ↓</span>
+                    <span className="text-yellow-700 dark:text-yellow-400 font-semibold">{counts.declined} ↓</span>
                     <span className="text-muted-foreground font-semibold">{counts.steady} =</span>
                     {counts.newCount > 0 && <span className="text-blue-600 dark:text-blue-400 font-semibold">{counts.newCount} new</span>}
                   </div>

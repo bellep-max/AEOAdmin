@@ -1,0 +1,39 @@
+[
+  {
+    "leadRef": "SAMPLE-1",
+    "email": "erven.i+leadpull-sample1@appstango.com",
+    "businessName": "Miami Emergency Plumbers",
+    "address": "123 Biscayne Blvd, Miami, FL 33132",
+    "service": "emergency plumber",
+    "website": "https://miami-emergency-plumbers.example",
+    "contactName": "Alex Rivera",
+    "stripeCustomerId": "cus_SAMPLE0001",
+    "signupType": "trial"
+  },
+  {
+    "leadRef": "SAMPLE-2-NO-CARD",
+    "email": "erven.i+leadpull-sample2@appstango.com",
+    "businessName": "No Card Roofing",
+    "service": "roof repair",
+    "note": "ineligible: no stripeCustomerId (card on file)"
+  },
+  {
+    "leadRef": "SAMPLE-3-DIRECT",
+    "email": "erven.i+leadpull-sample3@appstango.com",
+    "businessName": "Downtown Dental Direct",
+    "address": "500 Main St, Austin, TX 78701",
+    "service": "cosmetic dentist",
+    "keywords": ["cosmetic dentist austin", "teeth whitening downtown austin"],
+    "contactName": "Dr. Sam Lee",
+    "stripeCustomerId": "cus_SAMPLE0003",
+    "stripeSubscriptionId": "sub_SAMPLE0003",
+    "signupType": "direct"
+  },
+  {
+    "leadRef": "SAMPLE-4-NO-BASELINE",
+    "email": "erven.i+leadpull-sample4@appstango.com",
+    "businessName": "Bare Lead LLC",
+    "stripeCustomerId": "cus_SAMPLE0004",
+    "note": "ineligible: no address/website/service baseline"
+  }
+]

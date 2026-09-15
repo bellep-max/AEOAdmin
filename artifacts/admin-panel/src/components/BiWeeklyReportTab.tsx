@@ -167,6 +167,7 @@ interface Props {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  planType?: string | null;
 }
 
 function daysBetween(fromYmd: string, toYmd: string): number {
@@ -184,11 +185,17 @@ function todayYmd(): string {
   });
 }
 
-export function BiWeeklyReportTab({ clientId, businessId, aeoPlanId }: Props) {
+export function BiWeeklyReportTab({
+  clientId,
+  businessId,
+  aeoPlanId,
+  planType = null,
+}: Props) {
   const params = new URLSearchParams();
   if (clientId !== null) params.set("clientId", String(clientId));
   if (businessId !== null) params.set("businessId", String(businessId));
   if (aeoPlanId !== null) params.set("aeoPlanId", String(aeoPlanId));
+  if (planType) params.set("planType", planType);
   const qs = params.toString();
 
   const { data, isLoading } = useQuery<BiWeeklyReport>({

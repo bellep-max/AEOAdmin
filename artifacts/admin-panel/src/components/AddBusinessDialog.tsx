@@ -78,6 +78,9 @@ export function AddBusinessDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
+  /* Server rejection (e.g. 409 duplicate name) shown inline — the toast alone
+     disappears too fast and the save looks like a silent failure. */
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -93,6 +96,7 @@ export function AddBusinessDialog({
   });
 
   useEffect(() => {
+    setServerError(null);
     if (!open) {
       form.reset();
       return;
@@ -112,8 +116,26 @@ export function AddBusinessDialog({
 
   const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
+  /* A blocked submit used to show only an inline message, which sits below the
+     fold in this scrolling form — the Save button just looked dead. Say it out
+     loud and jump to the offending field. */
+  const onInvalid = (errors: Record<string, { message?: string }>) => {
+    const [firstKey, firstError] = Object.entries(errors)[0] ?? [];
+    toast({
+      title: "Can't save yet",
+      description: firstError?.message ?? "Please fix the highlighted fields.",
+      variant: "destructive",
+    });
+    if (firstKey) {
+      document
+        .querySelector(`[name="${firstKey}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
+    setServerError(null);
     const payload = {
       clientId,
       name: values.name,
@@ -155,6 +177,7 @@ export function AddBusinessDialog({
       else onCreated?.(saved);
       onOpenChange(false);
     } catch (err) {
+      setServerError(err instanceof Error ? err.message : "Save failed");
       toast({
         title: isEdit
           ? "Failed to update business"
@@ -179,7 +202,7 @@ export function AddBusinessDialog({
         </DialogHeader>
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
             className="space-y-4 mt-4 max-h-[70vh] overflow-y-auto pr-2"
           >
             <FormField
@@ -313,6 +336,11 @@ export function AddBusinessDialog({
                 </FormItem>
               )}
             />
+            {serverError && (
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {serverError}
+              </div>
+            )}
             <div className="pt-4 flex justify-end gap-2 sticky bottom-0 bg-white">
               <Button
                 type="button"

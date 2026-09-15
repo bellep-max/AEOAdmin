@@ -1,30 +1,56 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { useAllPlanNames } from "@/hooks/use-all-plan-names";
 import {
-  ClipboardList, Plus, Pencil, Trash2, Loader2, Search, ExternalLink, ArrowRight,
+  ClipboardList,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Search,
+  ExternalLink,
+  ArrowRight,
 } from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
-const SCHEMA_IMPLEMENTORS   = ["Us (Signal AEO)", "Client Developer", "Other"];
+const SCHEMA_IMPLEMENTORS = ["Us (Signal AEO)", "Client Developer", "Other"];
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface AeoPlan {
@@ -94,8 +120,13 @@ function PlanForm({
   hideClientSelector?: boolean;
 }) {
   const allPlanNames = useAllPlanNames();
-  const [customPlanType, setCustomPlanType]               = useState(!allPlanNames.includes(values.planType) && values.planType !== "");
-  const [customSchemaImplementor, setCustomSchemaImpl]    = useState(!SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") && (values.schemaImplementor ?? "") !== "");
+  const [customPlanType, setCustomPlanType] = useState(
+    !allPlanNames.includes(values.planType) && values.planType !== "",
+  );
+  const [customSchemaImplementor, setCustomSchemaImpl] = useState(
+    !SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") &&
+      (values.schemaImplementor ?? "") !== "",
+  );
 
   function set(key: keyof PlanFormData, val: unknown) {
     onChange({ ...values, [key]: val });
@@ -109,7 +140,9 @@ function PlanForm({
         {/* Client selector */}
         {!hideClientSelector && (
           <div className="space-y-2 sm:col-span-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client *</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Client *
+            </Label>
             <Select
               value={selectedClientId != null ? String(selectedClientId) : ""}
               onValueChange={(v) => onClientChange(Number(v))}
@@ -129,9 +162,19 @@ function PlanForm({
                   .map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       <div className="flex flex-col gap-0">
-                        <span className="font-bold">{c.businessName ?? `Client #${c.id}`}</span>
-                        {c.searchAddress && <span className="text-xs text-muted-foreground">Search: {c.searchAddress}</span>}
-                        {c.publishedAddress && <span className="text-xs text-muted-foreground">GMB: {c.publishedAddress}</span>}
+                        <span className="font-bold">
+                          {c.businessName ?? `Client #${c.id}`}
+                        </span>
+                        {c.searchAddress && (
+                          <span className="text-xs text-muted-foreground">
+                            Search: {c.searchAddress}
+                          </span>
+                        )}
+                        {c.publishedAddress && (
+                          <span className="text-xs text-muted-foreground">
+                            GMB: {c.publishedAddress}
+                          </span>
+                        )}
                       </div>
                     </SelectItem>
                   ))}
@@ -142,7 +185,9 @@ function PlanForm({
 
         {/* Business Name */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Business Name</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Business Name
+          </Label>
           <Input
             className="h-10 bg-muted/30 border-border/60"
             placeholder="Override or leave blank to use client name"
@@ -153,14 +198,20 @@ function PlanForm({
 
         {/* Plan Type */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Type of Plan *</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Type of Plan *
+          </Label>
           {!customPlanType ? (
             <div className="flex gap-2">
               <Select
-                value={allPlanNames.includes(values.planType) ? values.planType : ""}
+                value={
+                  allPlanNames.includes(values.planType) ? values.planType : ""
+                }
                 onValueChange={(v) => {
-                  if (v === "__custom__") { setCustomPlanType(true); set("planType", ""); }
-                  else set("planType", v);
+                  if (v === "__custom__") {
+                    setCustomPlanType(true);
+                    set("planType", "");
+                  } else set("planType", v);
                 }}
               >
                 <SelectTrigger className="h-10 bg-muted/30 border-border/60">
@@ -168,7 +219,9 @@ function PlanForm({
                 </SelectTrigger>
                 <SelectContent>
                   {allPlanNames.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
                   ))}
                   <SelectItem value="__custom__">Custom...</SelectItem>
                 </SelectContent>
@@ -182,24 +235,35 @@ function PlanForm({
                 value={values.planType}
                 onChange={(e) => set("planType", e.target.value)}
               />
-              <Button variant="ghost" size="sm" className="text-xs px-2 text-muted-foreground" onClick={() => { setCustomPlanType(false); set("planType", ""); }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2 text-muted-foreground"
+                onClick={() => {
+                  setCustomPlanType(false);
+                  set("planType", "");
+                }}
+              >
                 ← Presets
               </Button>
             </div>
           )}
         </div>
-
       </div>
 
       {/* 10 Sample Questions */}
       <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">10 Sample Questions</Label>
+        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          10 Sample Questions
+        </Label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {questions.map((n) => {
             const key = `sampleQuestion${n}` as keyof PlanFormData;
             return (
               <div key={n} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-5 text-right flex-shrink-0">{n}.</span>
+                <span className="text-xs text-muted-foreground w-5 text-right flex-shrink-0">
+                  {n}.
+                </span>
                 <Input
                   className="h-9 bg-muted/30 border-border/60 text-sm"
                   placeholder={`Question ${n}`}
@@ -215,7 +279,9 @@ function PlanForm({
       {/* Bottom fields */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Answer Presence</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Current Answer Presence
+          </Label>
           <Input
             className="h-10 bg-muted/30 border-border/60"
             placeholder="e.g. 0% (typical)"
@@ -225,35 +291,57 @@ function PlanForm({
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">3-Month Search Boost Target</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            3-Month Search Boost Target
+          </Label>
           <Input
             type="number"
             className="h-10 bg-muted/30 border-border/60"
             placeholder="e.g. 450"
             value={values.searchBoostTarget ?? ""}
-            onChange={(e) => set("searchBoostTarget", e.target.value !== "" ? Number(e.target.value) : null)}
+            onChange={(e) =>
+              set(
+                "searchBoostTarget",
+                e.target.value !== "" ? Number(e.target.value) : null,
+              )
+            }
           />
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monthly AEO Budget ($)</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Monthly AEO Budget ($)
+          </Label>
           <Input
             type="number"
             className="h-10 bg-muted/30 border-border/60"
             placeholder="e.g. 500.00"
             value={values.monthlyAeoBudget ?? ""}
-            onChange={(e) => set("monthlyAeoBudget", e.target.value !== "" ? Number(e.target.value) : null)}
+            onChange={(e) =>
+              set(
+                "monthlyAeoBudget",
+                e.target.value !== "" ? Number(e.target.value) : null,
+              )
+            }
           />
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Who Implements Schema</Label>
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Who Implements Schema
+          </Label>
           {!customSchemaImplementor ? (
             <Select
-              value={SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "") ? (values.schemaImplementor ?? "") : ""}
+              value={
+                SCHEMA_IMPLEMENTORS.includes(values.schemaImplementor ?? "")
+                  ? (values.schemaImplementor ?? "")
+                  : ""
+              }
               onValueChange={(v) => {
-                if (v === "__custom__") { setCustomSchemaImpl(true); set("schemaImplementor", ""); }
-                else set("schemaImplementor", v);
+                if (v === "__custom__") {
+                  setCustomSchemaImpl(true);
+                  set("schemaImplementor", "");
+                } else set("schemaImplementor", v);
               }}
             >
               <SelectTrigger className="h-10 bg-muted/30 border-border/60">
@@ -261,7 +349,9 @@ function PlanForm({
               </SelectTrigger>
               <SelectContent>
                 {SCHEMA_IMPLEMENTORS.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
                 ))}
                 <SelectItem value="__custom__">Other (custom)…</SelectItem>
               </SelectContent>
@@ -274,7 +364,15 @@ function PlanForm({
                 value={values.schemaImplementor ?? ""}
                 onChange={(e) => set("schemaImplementor", e.target.value)}
               />
-              <Button variant="ghost" size="sm" className="text-xs px-2 text-muted-foreground" onClick={() => { setCustomSchemaImpl(false); set("schemaImplementor", ""); }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2 text-muted-foreground"
+                onClick={() => {
+                  setCustomSchemaImpl(false);
+                  set("schemaImplementor", "");
+                }}
+              >
                 ← Presets
               </Button>
             </div>
@@ -291,19 +389,19 @@ function PlanForm({
 export default function Plans() {
   const { toast } = useToast();
 
-  const [plans, setPlans]           = useState<AeoPlan[]>([]);
-  const [clients, setClients]       = useState<Client[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState("");
+  const [plans, setPlans] = useState<AeoPlan[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   /* dialog state */
-  const [dialogOpen, setDialogOpen]           = useState(false);
-  const [editingPlan, setEditingPlan]         = useState<AeoPlan | null>(null);
-  const [formValues, setFormValues]           = useState<PlanFormData>(EMPTY_FORM);
-  const [selectedClientId, setClientId]       = useState<number | null>(null);
-  const [saving, setSaving]                   = useState(false);
-  const [deleteConfirm, setDeleteConfirm]     = useState<AeoPlan | null>(null);
-  const [deleting, setDeleting]               = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<AeoPlan | null>(null);
+  const [formValues, setFormValues] = useState<PlanFormData>(EMPTY_FORM);
+  const [selectedClientId, setClientId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<AeoPlan | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   /* ── Fetch all plans ── */
   const fetchPlans = useCallback(async () => {
@@ -325,7 +423,9 @@ export default function Plans() {
       if (!res.ok) return;
       const data = await res.json();
       setClients(Array.isArray(data) ? data : (data.clients ?? []));
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   }, []);
 
   useEffect(() => {
@@ -346,22 +446,22 @@ export default function Plans() {
     setEditingPlan(plan);
     setClientId(plan.clientId);
     setFormValues({
-      businessName:          plan.businessName,
-      planType:              plan.planType,
-      sampleQuestion1:       plan.sampleQuestion1,
-      sampleQuestion2:       plan.sampleQuestion2,
-      sampleQuestion3:       plan.sampleQuestion3,
-      sampleQuestion4:       plan.sampleQuestion4,
-      sampleQuestion5:       plan.sampleQuestion5,
-      sampleQuestion6:       plan.sampleQuestion6,
-      sampleQuestion7:       plan.sampleQuestion7,
-      sampleQuestion8:       plan.sampleQuestion8,
-      sampleQuestion9:       plan.sampleQuestion9,
-      sampleQuestion10:      plan.sampleQuestion10,
+      businessName: plan.businessName,
+      planType: plan.planType,
+      sampleQuestion1: plan.sampleQuestion1,
+      sampleQuestion2: plan.sampleQuestion2,
+      sampleQuestion3: plan.sampleQuestion3,
+      sampleQuestion4: plan.sampleQuestion4,
+      sampleQuestion5: plan.sampleQuestion5,
+      sampleQuestion6: plan.sampleQuestion6,
+      sampleQuestion7: plan.sampleQuestion7,
+      sampleQuestion8: plan.sampleQuestion8,
+      sampleQuestion9: plan.sampleQuestion9,
+      sampleQuestion10: plan.sampleQuestion10,
       currentAnswerPresence: plan.currentAnswerPresence,
-      searchBoostTarget:     plan.searchBoostTarget,
-      monthlyAeoBudget:      plan.monthlyAeoBudget,
-      schemaImplementor:     plan.schemaImplementor,
+      searchBoostTarget: plan.searchBoostTarget,
+      monthlyAeoBudget: plan.monthlyAeoBudget,
+      schemaImplementor: plan.schemaImplementor,
     });
     setDialogOpen(true);
   }
@@ -369,22 +469,27 @@ export default function Plans() {
   /* ── Save (create or update) ── */
   async function handleSave() {
     if (!selectedClientId) {
-      toast({ title: "Please select a client", variant: "destructive" }); return;
+      toast({ title: "Please select a client", variant: "destructive" });
+      return;
     }
     if (!formValues.planType.trim()) {
-      toast({ title: "Plan type is required", variant: "destructive" }); return;
+      toast({ title: "Plan type is required", variant: "destructive" });
+      return;
     }
 
     setSaving(true);
     try {
       let res: Response;
       if (editingPlan) {
-        res = await rawFetch(`/api/clients/${selectedClientId}/aeo-plans/${editingPlan.id}`, {
-          method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formValues),
-        });
+        res = await rawFetch(
+          `/api/clients/${selectedClientId}/aeo-plans/${editingPlan.id}`,
+          {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formValues),
+          },
+        );
       } else {
         res = await rawFetch(`/api/clients/${selectedClientId}/aeo-plans`, {
           method: "POST",
@@ -417,10 +522,13 @@ export default function Plans() {
   async function handleDelete(plan: AeoPlan) {
     setDeleting(true);
     try {
-      const res = await rawFetch(`/api/clients/${plan.clientId}/aeo-plans/${plan.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await rawFetch(
+        `/api/clients/${plan.clientId}/aeo-plans/${plan.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
       if (!res.ok) throw new Error("Delete failed");
       toast({ title: "Plan deleted" });
       setDeleteConfirm(null);
@@ -435,10 +543,12 @@ export default function Plans() {
   /* ── Filtering ── */
   const filtered = plans.filter((p) => {
     const q = search.toLowerCase();
-    return !q
-      || (p.clientBusinessName ?? "").toLowerCase().includes(q)
-      || (p.businessName ?? "").toLowerCase().includes(q)
-      || p.planType.toLowerCase().includes(q);
+    return (
+      !q ||
+      (p.clientBusinessName ?? "").toLowerCase().includes(q) ||
+      (p.businessName ?? "").toLowerCase().includes(q) ||
+      p.planType.toLowerCase().includes(q)
+    );
   });
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -451,7 +561,9 @@ export default function Plans() {
             <ClipboardList className="w-6 h-6 text-primary" />
             Campaigns
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">All client AEO campaigns across clients</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            All client AEO campaigns across clients
+          </p>
         </div>
         <Button onClick={openAdd} className="gap-1.5">
           <Plus className="w-4 h-4" /> Add Plan
@@ -488,15 +600,22 @@ export default function Plans() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 9}).map((__, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                  {Array.from({ length: 9 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
-                  {plans.length === 0 ? "No AEO plans yet. Click Add Plan to create one." : "No plans match your search."}
+                <TableCell
+                  colSpan={9}
+                  className="h-32 text-center text-muted-foreground"
+                >
+                  {plans.length === 0
+                    ? "No AEO plans yet. Click Add Plan to create one."
+                    : "No plans match your search."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -505,86 +624,114 @@ export default function Plans() {
                   <TableRow key={plan.id} className="group hover:bg-muted/30">
                     {/* Client name → link to client detail */}
                     <TableCell className="font-medium">
-                        {(() => {
-                          const c = clients.find((x) => x.id === plan.clientId);
-                          return (
-                            <div className="flex flex-col gap-0.5">
-                              <Link
-                                href={`/clients/${plan.clientId}`}
-                                className="text-primary hover:underline flex items-center gap-1"
-                              >
-                                {plan.clientBusinessName ?? `Client #${plan.clientId}`}
-                                <ExternalLink className="w-3 h-3 opacity-50" />
-                              </Link>
-                              {c?.searchAddress && <span className="text-xs text-muted-foreground">{c.searchAddress}</span>}
-                              {c?.publishedAddress && <span className="text-xs text-muted-foreground">{c.publishedAddress}</span>}
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
-
-                      <TableCell>
-                        {(() => {
-                          const meta = getPlanMeta(plan.planType);
-                          return (
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}>
-                              {plan.planType}
-                            </span>
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const meta = getPlanMeta(plan.planType);
-                          return (
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}>
-                              {meta.tier}
-                            </span>
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell className="text-sm">{plan.currentAnswerPresence ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-                      <TableCell className="text-sm">
-                        {plan.searchBoostTarget != null
-                          ? plan.searchBoostTarget.toLocaleString()
-                          : <span className="text-muted-foreground/40">—</span>}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {plan.monthlyAeoBudget != null
-                          ? `$${Number(plan.monthlyAeoBudget).toLocaleString("en-US", { minimumFractionDigits: 2 })}`
-                          : <span className="text-muted-foreground/40">—</span>}
-                      </TableCell>
-                      <TableCell className="text-sm">{plan.schemaImplementor ?? <span className="text-muted-foreground/40">—</span>}</TableCell>
-
-                      {/* Actions */}
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Link href={`/clients/${plan.clientId}`}>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-primary"
-                              title="View client details"
+                      {(() => {
+                        const c = clients.find((x) => x.id === plan.clientId);
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            <Link
+                              href={`/clients/${plan.clientId}`}
+                              className="text-primary hover:underline flex items-center gap-1"
                             >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </Button>
-                          </Link>
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => openEdit(plan)}
+                              {plan.clientBusinessName ??
+                                `Client #${plan.clientId}`}
+                              <ExternalLink className="w-3 h-3 opacity-50" />
+                            </Link>
+                            {c?.searchAddress && (
+                              <span className="text-xs text-muted-foreground">
+                                {c.searchAddress}
+                              </span>
+                            )}
+                            {c?.publishedAddress && (
+                              <span className="text-xs text-muted-foreground">
+                                {c.publishedAddress}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+
+                    <TableCell>
+                      {(() => {
+                        const meta = getPlanMeta(plan.planType);
+                        return (
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass} whitespace-nowrap`}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
-                            onClick={() => setDeleteConfirm(plan)}
+                            {plan.planType}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const meta = getPlanMeta(plan.planType);
+                        return (
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass} whitespace-nowrap`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {meta.tier}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {plan.currentAnswerPresence ?? (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {plan.searchBoostTarget != null ? (
+                        plan.searchBoostTarget.toLocaleString()
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {plan.monthlyAeoBudget != null ? (
+                        `$${Number(plan.monthlyAeoBudget).toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {plan.schemaImplementor ?? (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+
+                    {/* Actions */}
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link href={`/clients/${plan.clientId}`}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-primary"
+                            title="View client details"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => openEdit(plan)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                          onClick={() => setDeleteConfirm(plan)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
@@ -601,7 +748,12 @@ export default function Plans() {
       )}
 
       {/* ════ ADD / EDIT DIALOG ════ */}
-      <Dialog open={dialogOpen} onOpenChange={(v) => { if (!saving) setDialogOpen(v); }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(v) => {
+          if (!saving) setDialogOpen(v);
+        }}
+      >
         <DialogContent className="w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-card overflow-y-auto flex flex-col">
           <DialogHeader className="px-8 pt-8 pb-0">
             <div className="flex items-center gap-3 mb-1">
@@ -631,29 +783,58 @@ export default function Plans() {
           </div>
 
           <div className="px-8 py-5 border-t border-border/50 flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              disabled={saving}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="gap-1.5 min-w-[110px]">
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : editingPlan ? "Save Changes" : "Create Plan"}
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-1.5 min-w-[110px]"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                </>
+              ) : editingPlan ? (
+                "Save Changes"
+              ) : (
+                "Create Plan"
+              )}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* ════ DELETE CONFIRM DIALOG ════ */}
-      <Dialog open={!!deleteConfirm} onOpenChange={(v) => { if (!deleting && !v) setDeleteConfirm(null); }}>
+      <Dialog
+        open={!!deleteConfirm}
+        onOpenChange={(v) => {
+          if (!deleting && !v) setDeleteConfirm(null);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Delete Plan?</DialogTitle>
             <DialogDescription>
-              This will permanently delete the <strong>{deleteConfirm?.planType}</strong> plan for{" "}
-              <strong>{deleteConfirm?.clientBusinessName ?? `Client #${deleteConfirm?.clientId}`}</strong>.
-              This cannot be undone.
+              This will permanently delete the{" "}
+              <strong>{deleteConfirm?.planType}</strong> plan for{" "}
+              <strong>
+                {deleteConfirm?.clientBusinessName ??
+                  `Client #${deleteConfirm?.clientId}`}
+              </strong>
+              . This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={deleting}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirm(null)}
+              disabled={deleting}
+            >
               Cancel
             </Button>
             <Button
@@ -662,7 +843,13 @@ export default function Plans() {
               onClick={() => deleteConfirm && handleDelete(deleteConfirm)}
               className="gap-1.5"
             >
-              {deleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</> : "Delete"}
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </div>
         </DialogContent>

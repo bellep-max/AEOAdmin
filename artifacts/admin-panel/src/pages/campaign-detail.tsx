@@ -4,26 +4,65 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { KeywordDialog, type KwRecord } from "@/components/KeywordDialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, ClipboardList, Key, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  CreditCard,
+  Key,
+  Mail,
+  Plus,
+  Pencil,
+  Send,
+  Tag,
+  Ban,
+  RotateCcw,
+} from "lucide-react";
+import { SalesEmailDialog } from "@/components/SalesEmailDialog";
+import { CampaignMomentumBadge } from "@/components/MomentumBadge";
+import { FreeTrialProofDialog } from "@/components/FreeTrialProofDialog";
+import { DeclinedPaymentDialog } from "@/components/DeclinedPaymentDialog";
 import { getPlanMeta } from "@/lib/plan-meta";
 import { KeywordsWithRankingsCard } from "@/components/KeywordsWithRankingsCard";
+import { PerformanceSummaryCard } from "@/components/PerformanceSummaryCard";
+import { RankTrendChart } from "@/components/RankTrendChart";
+import { BiWeeklyGraphsCard } from "@/components/BiWeeklyGraphsCard";
 import { PlatformAggregateStrip } from "@/components/PlatformAggregateStrip";
 import { CampaignSessionsCard } from "@/components/CampaignSessionsCard";
+import { CampaignLockedMonitoringCard } from "@/components/locked-keywords/CampaignLockedMonitoringCard";
 import { CampaignAuditRankingsCard } from "@/components/CampaignAuditRankingsCard";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 interface Campaign {
@@ -43,6 +82,67 @@ interface Campaign {
   nextBillingDate: string | null;
   cardLast4: string | null;
   createdBy: string | null;
+  campaignStatus: string;
+  cancelReason: string | null;
+  canceledAt: string | null;
+  trialStartDate: string | null;
+  trialEndDate: string | null;
+  paidConversionDate: string | null;
+  promoCodeId: number | null;
+  promo?: Promo | null;
+}
+
+interface Promo {
+  id: number;
+  code: string;
+  discountType: string;
+  discountValue: string | number | null;
+  startDate: string | null;
+  endDate: string | null;
+  providedBy: string | null;
+}
+
+function formatDiscount(p: Promo): string | null {
+  if (p.discountValue == null) return null;
+  const n = Number(p.discountValue);
+  if (!Number.isFinite(n)) return null;
+  return p.discountType === "amount" ? `$${n.toFixed(2)}` : `${n}%`;
+}
+
+interface BillingSummary {
+  hasStripeRef: boolean;
+  summary: {
+    stripeCustomerId: string | null;
+    billingEmail: string | null;
+    cardLast4: string | null;
+    subscription: {
+      id: string;
+      status: string;
+      monthlyPrice: number | null;
+      currency: string | null;
+      billingCycle: string | null;
+      trialStartDate: string | null;
+      trialEndDate: string | null;
+      trialConversionDate: string | null;
+      cancelAtPeriodEnd: boolean;
+      canceledAt: string | null;
+      cancelEffectiveDate: string | null;
+      currentPeriodEnd: string | null;
+    } | null;
+    charges: Array<{
+      id: string;
+      amount: number;
+      currency: string;
+      status: string;
+      date: string | null;
+      description: string | null;
+      invoiceId: string | null;
+      receiptNumber: string | null;
+    }>;
+    paymentStatus: string | null;
+    hasFailedPayment: boolean;
+    lastPaymentDate: string | null;
+  } | null;
 }
 
 interface Keyword {
@@ -63,12 +163,21 @@ interface Business {
 interface Client {
   id: number;
   businessName: string;
+  source: string | null;
 }
 
-function Field({ label, value }: { label: string; value?: string | number | null }) {
+function Field({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | number | null;
+}) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+        {label}
+      </p>
       {value != null && value !== "" ? (
         <p className="text-sm text-foreground">{value}</p>
       ) : (
@@ -78,16 +187,168 @@ function Field({ label, value }: { label: string; value?: string | number | null
   );
 }
 
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+  paused: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  canceled: "bg-red-500/10 text-red-500 border-red-500/20",
+};
+
+/** Editor-gated inline editor for campaign status, cancel reason and the
+ *  trial/paid dates. PATCHes the plan directly — separate from the big
+ *  CampaignFormDialog so lifecycle changes stay one click away. */
+function CampaignLifecycleEditor({
+  clientId,
+  campaign,
+  onSaved,
+}: {
+  clientId: number;
+  campaign: Campaign;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [status, setStatus] = useState(campaign.campaignStatus || "active");
+  const [cancelReason, setCancelReason] = useState(campaign.cancelReason ?? "");
+  const [trialStart, setTrialStart] = useState(
+    (campaign.trialStartDate ?? "").slice(0, 10),
+  );
+  const [trialEnd, setTrialEnd] = useState(
+    (campaign.trialEndDate ?? "").slice(0, 10),
+  );
+  const [paidDate, setPaidDate] = useState(
+    (campaign.paidConversionDate ?? "").slice(0, 10),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const dirty =
+    status !== (campaign.campaignStatus || "active") ||
+    cancelReason.trim() !== (campaign.cancelReason ?? "").trim() ||
+    trialStart !== (campaign.trialStartDate ?? "").slice(0, 10) ||
+    trialEnd !== (campaign.trialEndDate ?? "").slice(0, 10) ||
+    paidDate !== (campaign.paidConversionDate ?? "").slice(0, 10);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaign.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignStatus: status,
+            cancelReason: cancelReason.trim() || null,
+            trialStartDate: trialStart || null,
+            trialEndDate: trialEnd || null,
+            paidConversionDate: paidDate || null,
+          }),
+        },
+      );
+      if (!res.ok)
+        throw new Error((await res.json().catch(() => ({}))).error ?? "Failed");
+      toast({ title: "Campaign updated" });
+      onSaved();
+    } catch (err: unknown) {
+      toast({
+        title: err instanceof Error ? err.message : "Failed to save",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="col-span-full border-t border-border/50 pt-4 mt-1 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Campaign Status</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="canceled">Canceled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Trial Start Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={trialStart}
+            onChange={(e) => setTrialStart(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Trial End Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={trialEnd}
+            onChange={(e) => setTrialEnd(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Paid / Conversion Date</Label>
+          <Input
+            type="date"
+            className="h-9"
+            value={paidDate}
+            onChange={(e) => setPaidDate(e.target.value)}
+          />
+        </div>
+      </div>
+      {status === "canceled" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Reason they canceled</Label>
+          <Textarea
+            rows={2}
+            placeholder="Why did the client cancel? This is kept as data."
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+          />
+        </div>
+      )}
+      {dirty && (
+        <Button size="sm" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function CampaignDetail() {
-  const [, params] = useRoute("/clients/:clientId/businesses/:businessId/campaigns/:campaignId");
+  const [, params] = useRoute(
+    "/clients/:clientId/businesses/:businessId/campaigns/:campaignId",
+  );
   const clientId = Number(params?.clientId);
   const businessId = Number(params?.businessId);
   const campaignId = Number(params?.campaignId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const {
+    isAdmin,
+    isEditor,
+    isOwner,
+    isSales,
+    isAccountManager,
+    isChucksLocal,
+  } = useAuth();
+  // Locked-monitoring endpoint is admin-chain only (requireViewer) — scoped
+  // roles would just get a 403, so don't render the card for them.
+  const canSeeLockedMonitoring =
+    !isSales && !isAccountManager && !isChucksLocal;
   const [, navigate] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
-  const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState(false);
+  const [salesEmailOpen, setSalesEmailOpen] = useState(false);
+  const [ftpOpen, setFtpOpen] = useState(false);
+  const [declinedPaymentOpen, setDeclinedPaymentOpen] = useState(false);
+  const [confirmCancelCampaign, setConfirmCancelCampaign] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [kwDialogOpen, setKwDialogOpen] = useState(false);
   const [savingKw, setSavingKw] = useState(false);
   const [editingKw, setEditingKw] = useState<KwRecord | null>(null);
@@ -96,7 +357,9 @@ export default function CampaignDetail() {
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
     queryFn: async () => {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${campaignId}`);
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
+      );
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -123,6 +386,76 @@ export default function CampaignDetail() {
     enabled: !!clientId,
   });
 
+  // Live Stripe billing — admin/owner only (the endpoint 403s below that).
+  const { data: billing } = useQuery<BillingSummary>({
+    queryKey: ["/api/clients", clientId, "aeo-plans", campaignId, "billing"],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/billing`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!clientId && !!campaignId && isAdmin,
+    staleTime: 60_000,
+  });
+
+  // Count for the clickable Sent Emails summary — the list lives on its own
+  // page (…/campaigns/:campaignId/emails).
+  const { data: emailsData } = useQuery<{ sends: unknown[] }>({
+    queryKey: ["/api/sales/email-sends", "campaign", clientId, campaignId],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/sales/email-sends?clientId=${clientId}&aeoPlanId=${campaignId}`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!clientId && !!campaignId,
+  });
+
+  // Promo catalog for the attach picker — admin/owner only (endpoint 403s below).
+  const { data: promoCodes } = useQuery<Promo[]>({
+    queryKey: ["/api/promo-codes"],
+    queryFn: async () => {
+      const res = await rawFetch(`/api/promo-codes`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
+  const [promoPick, setPromoPick] = useState("");
+
+  async function handleSetPromo(promoCodeId: number | null) {
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promoCodeId }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? "Failed to update the promo code");
+      }
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/promo-codes"] });
+      setPromoPick("");
+      toast({ title: promoCodeId ? "Promo attached" : "Promo removed" });
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed",
+        variant: "destructive",
+      });
+    }
+  }
+
   const { data: keywords, refetch: refetchKeywords } = useQuery<Keyword[]>({
     queryKey: ["/api/keywords", { aeoPlanId: campaignId }],
     queryFn: async () => {
@@ -133,10 +466,34 @@ export default function CampaignDetail() {
     enabled: !!campaignId,
   });
 
+  // Locked/won keywords — shown in their own card. They stay rankable (we keep
+  // running them to confirm they hold top-3), so they're excluded from the main
+  // active list above and surfaced separately here.
+  const { data: lockedKeywords } = useQuery<Keyword[]>({
+    queryKey: ["/api/keywords", { aeoPlanId: campaignId, status: "locked" }],
+    queryFn: async () => {
+      const res = await rawFetch(
+        `/api/keywords?aeoPlanId=${campaignId}&status=locked`,
+      );
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!campaignId,
+  });
+
   async function handleSaveKeyword(data: KwRecord) {
     setSavingKw(true);
     try {
-      const { id, linkUrl, linkTypeLabel, linkActive, embeddedUrl, initialRankReportLink, currentRankReportLink, ...kwData } = data;
+      const {
+        id,
+        linkUrl,
+        linkTypeLabel,
+        linkActive,
+        embeddedUrl,
+        initialRankReportLink,
+        currentRankReportLink,
+        ...kwData
+      } = data;
       const isEdit = id != null;
       const url = isEdit ? `/api/keywords/${id}` : `/api/keywords`;
       const res = await rawFetch(url, {
@@ -177,17 +534,60 @@ export default function CampaignDetail() {
     }
   }
 
-  async function deleteCampaign() {
+  async function cancelCampaign() {
     try {
-      const res = await rawFetch(`/api/clients/${clientId}/aeo-plans/${campaignId}`, { method: "DELETE" });
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: cancelReason.trim() || undefined }),
+        },
+      );
       if (!res.ok) throw new Error();
-      toast({ title: "Campaign deleted" });
-      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "aeo-plans"] });
-      navigate(`/clients/${clientId}/businesses/${businessId}`);
+      const body = (await res.json()) as { clientArchived?: boolean };
+      toast({
+        title: "Campaign cancelled",
+        description: body.clientArchived
+          ? "Last active campaign — the whole client was cancelled too."
+          : "Keywords stopped. History is kept; restore it from Cancelled.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["cancellations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      navigate(
+        body.clientArchived
+          ? "/cancelled"
+          : `/clients/${clientId}/businesses/${businessId}`,
+      );
     } catch {
-      toast({ title: "Failed to delete campaign", variant: "destructive" });
+      toast({ title: "Failed to cancel campaign", variant: "destructive" });
     } finally {
-      setConfirmDeleteCampaign(false);
+      setConfirmCancelCampaign(false);
+      setCancelReason("");
+    }
+  }
+
+  async function restoreCampaign() {
+    try {
+      const res = await rawFetch(
+        `/api/clients/${clientId}/aeo-plans/${campaignId}/restore`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error();
+      toast({
+        title: "Campaign restored",
+        description: "Keywords are running again.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["cancellations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    } catch {
+      toast({ title: "Failed to restore campaign", variant: "destructive" });
     }
   }
 
@@ -216,7 +616,10 @@ export default function CampaignDetail() {
     return (
       <div className="py-20 text-center text-muted-foreground">
         <p>Campaign not found.</p>
-        <Link href={`/clients/${clientId}/businesses/${businessId}`} className="text-primary hover:underline mt-2 inline-block">
+        <Link
+          href={`/clients/${clientId}/businesses/${businessId}`}
+          className="text-primary hover:underline mt-2 inline-block"
+        >
           ← Back to business
         </Link>
       </div>
@@ -228,19 +631,30 @@ export default function CampaignDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-        <Link href="/clients" className="hover:text-foreground transition-colors flex items-center gap-1">
+        <Link
+          href="/clients"
+          className="hover:text-foreground transition-colors flex items-center gap-1"
+        >
           <ChevronLeft className="w-3.5 h-3.5" /> Clients
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {client?.businessName ?? "Client"}
         </Link>
         <span>/</span>
-        <Link href={`/clients/${clientId}/businesses/${businessId}`} className="hover:text-foreground transition-colors">
+        <Link
+          href={`/clients/${clientId}/businesses/${businessId}`}
+          className="hover:text-foreground transition-colors"
+        >
           {business?.name ?? "Business"}
         </Link>
         <span>/</span>
-        <span className="text-foreground font-medium">{campaign.planType} Campaign</span>
+        <span className="text-foreground font-medium">
+          {campaign.planType} Campaign
+        </span>
       </div>
 
       <div className="rounded-xl border border-border/50 bg-card/60 p-5 flex items-center gap-4">
@@ -249,32 +663,113 @@ export default function CampaignDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{campaign.name ?? `${campaign.planType} Campaign`}</h1>
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass}`}>
-              {campaign.planType}
+            <h1 className="text-2xl font-bold text-foreground">
+              {campaign.name ?? `${campaign.planType} Campaign`}
+            </h1>
+            {/* Paid vs trial, stated on the campaign itself — the plan name
+                alone doesn't say which one the client is billed for. */}
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.badgeClass}`}
+            >
+              {campaign.planType === "Free Trial Plans"
+                ? campaign.planType
+                : `${campaign.planType} Paid`}
             </span>
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass}`}>
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tierClass}`}
+            >
               {meta.tier}
             </span>
+            <CampaignMomentumBadge campaignId={campaignId} />
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {campaign.searchAddress ?? ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </Button>
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
-            variant="outline"
             size="sm"
-            className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setConfirmDeleteCampaign(true)}
+            className="gap-1"
+            onClick={() => setSalesEmailOpen(true)}
           >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
+            <Send className="w-3.5 h-3.5" /> Send proof
           </Button>
+          {isOwner && campaign.planType === "Free Trial Plans" && (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1"
+                onClick={() => setFtpOpen(true)}
+              >
+                <Send className="w-3.5 h-3.5" /> Send free-trial proof
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1 text-amber-600 border-amber-500/40 hover:text-amber-700"
+                onClick={() => setDeclinedPaymentOpen(true)}
+              >
+                <Send className="w-3.5 h-3.5" /> Declined payment
+              </Button>
+            </>
+          )}
+          {isEditor && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() => setEditOpen(true)}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </Button>
+          )}
+          {isAdmin &&
+            (campaign.campaignStatus === "canceled" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10"
+                onClick={restoreCampaign}
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restore
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setConfirmCancelCampaign(true)}
+              >
+                <Ban className="w-3.5 h-3.5" /> Cancel
+              </Button>
+            ))}
         </div>
       </div>
+
+      {/* Proof emails scoped to THIS campaign — the screenshot pool only
+          offers this campaign's keywords. */}
+      <SalesEmailDialog
+        open={salesEmailOpen}
+        onClose={() => setSalesEmailOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
+      <FreeTrialProofDialog
+        open={ftpOpen}
+        onClose={() => setFtpOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
+      <DeclinedPaymentDialog
+        open={declinedPaymentOpen}
+        onClose={() => setDeclinedPaymentOpen(false)}
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
 
       <CampaignFormDialog
         open={editOpen}
@@ -284,25 +779,44 @@ export default function CampaignDetail() {
         businessName={business?.name}
         campaign={campaign}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "aeo-plans", campaignId] });
+          queryClient.invalidateQueries({
+            queryKey: ["/api/clients", clientId, "aeo-plans", campaignId],
+          });
         }}
       />
 
-      <AlertDialog open={confirmDeleteCampaign} onOpenChange={setConfirmDeleteCampaign}>
+      <AlertDialog
+        open={confirmCancelCampaign}
+        onOpenChange={setConfirmCancelCampaign}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this campaign?</AlertDialogTitle>
+            <AlertDialogTitle>Cancel this campaign?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes the campaign and all linked keywords. This cannot be undone.
+              Ranking work stops on this campaign's keywords and it moves to the
+              Cancelled page. Nothing is deleted — sessions, audits, and ranking
+              history stay, and you can restore it later. If this is the
+              client's last active campaign, the whole client is cancelled too.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="cancel-reason" className="text-xs">
+              Reason (optional)
+            </Label>
+            <Input
+              id="cancel-reason"
+              placeholder="e.g. client churned, moved to another plan…"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={deleteCampaign}
+              onClick={cancelCampaign}
             >
-              Yes, delete
+              Yes, cancel campaign
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -317,14 +831,73 @@ export default function CampaignDetail() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-            <Field label="Plan Type" value={campaign.planType} />
-            <Field label="Tier" value={meta.tier} />
-            <Field label="Search Address" value={campaign.searchAddress} />
-            <Field label="Answer Presence" value={campaign.currentAnswerPresence} />
-            <Field label="Search Boost Target" value={campaign.searchBoostTarget} />
-            <Field label="Monthly AEO Budget" value={campaign.monthlyAeoBudget} />
-            <Field label="Schema Implementor" value={campaign.schemaImplementor} />
+            <Field label="Product" value="Signal AEO" />
+            <Field label="Plan Tier" value={campaign.planType} />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                Campaign Status
+              </p>
+              <Badge
+                variant="outline"
+                className={`capitalize ${STATUS_BADGE[campaign.campaignStatus] ?? ""}`}
+              >
+                {campaign.campaignStatus || "active"}
+              </Badge>
+            </div>
+            <Field
+              label="Primary Campaign Goal"
+              value="Reach Top 3 in AI answers"
+            />
+            <Field
+              label="Primary Search Location"
+              value={campaign.searchAddress}
+            />
+            <Field
+              label="Signup Source"
+              value={client?.source ?? campaign.createdBy}
+            />
+            <Field
+              label="Trial Start Date"
+              value={(campaign.trialStartDate ?? "").slice(0, 10) || null}
+            />
+            <Field
+              label="Trial End Date"
+              value={(campaign.trialEndDate ?? "").slice(0, 10) || null}
+            />
+            <Field
+              label="Paid / Conversion Date"
+              value={(campaign.paidConversionDate ?? "").slice(0, 10) || null}
+            />
             <Field label="Created By" value={campaign.createdBy} />
+            {campaign.campaignStatus === "canceled" && (
+              <>
+                <Field
+                  label="Canceled On"
+                  value={(campaign.canceledAt ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Reason they canceled"
+                  value={campaign.cancelReason}
+                />
+              </>
+            )}
+            {isEditor && (
+              <CampaignLifecycleEditor
+                key={`${campaign.id}-${campaign.campaignStatus}-${campaign.trialStartDate}-${campaign.trialEndDate}-${campaign.paidConversionDate}-${campaign.cancelReason}`}
+                clientId={clientId}
+                campaign={campaign}
+                onSaved={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: [
+                      "/api/clients",
+                      clientId,
+                      "aeo-plans",
+                      campaignId,
+                    ],
+                  })
+                }
+              />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -332,19 +905,289 @@ export default function CampaignDetail() {
       <Card className="border-border/50">
         <CardHeader className="pb-4">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-primary" />
+            <CreditCard className="w-4 h-4 text-primary" />
             Subscription
+            {billing?.summary?.hasFailedPayment && (
+              <Badge variant="destructive" className="ml-1">
+                Payment failed
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
             <Field label="Subscription ID" value={campaign.subscriptionId} />
-            <Field label="Card (last 4)" value={campaign.cardLast4 ? `•••• ${campaign.cardLast4}` : null} />
-            <Field label="Start Date" value={campaign.subscriptionStartDate} />
-            <Field label="Next Billing Date" value={campaign.nextBillingDate} />
+            <Field
+              label="Card (last 4)"
+              value={
+                (billing?.summary?.cardLast4 ?? campaign.cardLast4)
+                  ? `•••• ${billing?.summary?.cardLast4 ?? campaign.cardLast4}`
+                  : null
+              }
+            />
+            <Field
+              label="Start Date"
+              value={
+                (campaign.subscriptionStartDate ?? "").slice(0, 10) || null
+              }
+            />
+            <Field
+              label="Next Billing Date"
+              value={
+                billing?.summary?.subscription?.currentPeriodEnd ??
+                ((campaign.nextBillingDate ?? "").slice(0, 10) || null)
+              }
+            />
+          </div>
+
+          {/* Live Stripe state — admin/owner only (the query is gated). */}
+          {billing?.summary && (
+            <div className="border-t border-border/50 pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  Subscription Status
+                </p>
+                {billing.summary.subscription ? (
+                  <Badge variant="outline" className="capitalize">
+                    {billing.summary.subscription.status}
+                  </Badge>
+                ) : (
+                  <p className="text-sm text-muted-foreground/60">
+                    No subscription yet — card on file only
+                  </p>
+                )}
+              </div>
+              <Field
+                label="Monthly Price"
+                value={
+                  billing.summary.subscription?.monthlyPrice != null
+                    ? `$${billing.summary.subscription.monthlyPrice.toFixed(2)} ${(billing.summary.subscription.currency ?? "").toUpperCase()}`
+                    : null
+                }
+              />
+              <Field
+                label="Billing Cycle"
+                value={
+                  billing.summary.subscription?.billingCycle
+                    ? `per ${billing.summary.subscription.billingCycle}`
+                    : null
+                }
+              />
+              <Field
+                label="Trial Start (Stripe)"
+                value={billing.summary.subscription?.trialStartDate}
+              />
+              <Field
+                label="Trial Conversion Date"
+                value={billing.summary.subscription?.trialConversionDate}
+              />
+              <Field
+                label="Payment Status"
+                value={billing.summary.paymentStatus}
+              />
+              <Field
+                label="Cancellation Status"
+                value={
+                  billing.summary.subscription
+                    ? billing.summary.subscription.status === "canceled"
+                      ? "canceled"
+                      : billing.summary.subscription.cancelAtPeriodEnd
+                        ? "cancels at period end"
+                        : "not canceled"
+                    : null
+                }
+              />
+              <Field
+                label="Cancellation Effective"
+                value={billing.summary.subscription?.cancelEffectiveDate}
+              />
+              <Field
+                label="Failed-Payment Status"
+                value={billing.summary.hasFailedPayment ? "FAILED" : "none"}
+              />
+              <Field
+                label="Last Payment Date"
+                value={billing.summary.lastPaymentDate}
+              />
+            </div>
+          )}
+
+          {/* Charge history — amount + date, newest first. */}
+          {billing?.summary && billing.summary.charges.length > 0 && (
+            <div className="border-t border-border/50 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2">
+                Charge History
+              </p>
+              <div className="space-y-1.5">
+                {billing.summary.charges.map((ch) => (
+                  <div
+                    key={ch.id}
+                    className="flex items-center gap-3 text-sm border-b border-border/30 last:border-b-0 pb-1.5"
+                  >
+                    <span className="text-muted-foreground w-28 flex-shrink-0">
+                      {ch.date ?? "—"}
+                    </span>
+                    <span className="font-medium w-28 flex-shrink-0">
+                      ${ch.amount.toFixed(2)} {ch.currency.toUpperCase()}
+                    </span>
+                    <Badge
+                      variant={
+                        ch.status === "succeeded"
+                          ? "outline"
+                          : ch.status === "failed"
+                            ? "destructive"
+                            : "secondary"
+                      }
+                      className="capitalize"
+                    >
+                      {ch.status}
+                    </Badge>
+                    <span className="text-muted-foreground truncate">
+                      {ch.description ?? ""}
+                    </span>
+                    <span
+                      className="ml-auto font-mono text-xs text-muted-foreground/70 flex-shrink-0"
+                      title={`Charge ${ch.id}${ch.invoiceId ? ` · Invoice ${ch.invoiceId}` : ""}`}
+                    >
+                      {ch.receiptNumber ?? ch.invoiceId ?? ch.id}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {billing != null && !billing.hasStripeRef && (
+            <p className="text-xs text-muted-foreground">
+              No Stripe customer/subscription is linked to this campaign.
+            </p>
+          )}
+          {billing != null && billing.hasStripeRef && !billing.summary && (
+            <p className="text-xs text-muted-foreground">
+              Live billing unavailable: the stored Subscription ID (
+              {campaign.subscriptionId}) is not a Stripe reference — Stripe ids
+              start with cus_ or sub_. Fix the ID to see the subscription and
+              charge history here.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Promo Code Information — shown when the campaign has a promo; admins
+          also see it (with the attach picker) so they can add one. */}
+      {(campaign.promo || isAdmin) && (
+        <Card className="border-border/50">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Tag className="w-4 h-4 text-primary" />
+              Promo Code Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {campaign.promo ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">
+                <Field label="Promo Code" value={campaign.promo.code} />
+                <Field
+                  label="Discount"
+                  value={formatDiscount(campaign.promo)}
+                />
+                <Field
+                  label="Promo Start Date"
+                  value={(campaign.promo.startDate ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Promo End Date"
+                  value={(campaign.promo.endDate ?? "").slice(0, 10) || null}
+                />
+                <Field
+                  label="Provided / Approved By"
+                  value={campaign.promo.providedBy}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground/60">
+                No promo code on this campaign.
+              </p>
+            )}
+            {isAdmin && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-4">
+                <Select value={promoPick} onValueChange={setPromoPick}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select a promo code…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(promoCodes ?? []).map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.code}
+                        {formatDiscount(p) ? ` — ${formatDiscount(p)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  disabled={!promoPick}
+                  onClick={() => handleSetPromo(Number(promoPick))}
+                >
+                  {campaign.promo ? "Change" : "Attach"}
+                </Button>
+                {campaign.promo && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSetPromo(null)}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card
+        className="border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
+        onClick={() =>
+          navigate(
+            `/clients/${clientId}/businesses/${businessId}/campaigns/${campaignId}/emails`,
+          )
+        }
+      >
+        <CardContent className="py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Mail className="w-4 h-4 text-primary" />
+            Sent Emails · this campaign
+            {emailsData && (
+              <Badge variant="secondary">{emailsData.sends.length}</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            View list
+            <ChevronRight className="w-4 h-4" />
           </div>
         </CardContent>
       </Card>
+
+      <PerformanceSummaryCard
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+        title="Overall Performance summary · this campaign"
+      />
+
+      <RankTrendChart
+        scope="campaign"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
+
+      <BiWeeklyGraphsCard
+        scope="campaign"
+        clientId={clientId}
+        businessId={businessId}
+        aeoPlanId={campaignId}
+      />
 
       <PlatformAggregateStrip
         clientId={clientId}
@@ -359,23 +1202,73 @@ export default function CampaignDetail() {
         businessId={businessId}
         aeoPlanId={campaignId}
         addButton={
-          <Button size="sm" className="h-8 gap-1" onClick={() => setKwDialogOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Add Keyword
-          </Button>
+          isEditor ? (
+            <Button
+              size="sm"
+              className="h-8 gap-1"
+              onClick={() => setKwDialogOpen(true)}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Keyword
+            </Button>
+          ) : undefined
         }
-        onEditKeyword={(id) => {
-          const kw = (keywords ?? []).find((k) => k.id === id);
-          if (!kw) {
-            toast({ title: "Keyword not found", variant: "destructive" });
-            return;
-          }
-          setEditingKw(kw as unknown as KwRecord);
-        }}
-        onDeleteKeyword={(id) => { const kw = (keywords ?? []).find((k) => k.id === id); if (kw) setConfirmDeleteKw(kw); else deleteKeyword(id); }}
-        extraKeywords={(keywords ?? []).map((k) => ({ id: k.id, keywordText: k.keywordText }))}
+        onEditKeyword={
+          isEditor
+            ? (id) => {
+                const kw = (keywords ?? []).find((k) => k.id === id);
+                if (!kw) {
+                  toast({ title: "Keyword not found", variant: "destructive" });
+                  return;
+                }
+                setEditingKw(kw as unknown as KwRecord);
+              }
+            : undefined
+        }
+        onDeleteKeyword={
+          isAdmin
+            ? (id) => {
+                const kw = (keywords ?? []).find((k) => k.id === id);
+                if (kw) setConfirmDeleteKw(kw);
+                else deleteKeyword(id);
+              }
+            : undefined
+        }
+        extraKeywords={(keywords ?? [])
+          .filter((k) => {
+            const status = String((k as { status?: unknown }).status ?? "");
+            return (
+              k.isActive !== false &&
+              status !== "archived" &&
+              status !== "locked"
+            );
+          })
+          .map((k) => ({ id: k.id, keywordText: k.keywordText }))}
         showRotation
-        onRotated={() => { refetchKeywords(); }}
+        onRotated={() => {
+          refetchKeywords();
+        }}
       />
+
+      {canSeeLockedMonitoring && (
+        <CampaignLockedMonitoringCard aeoPlanId={campaignId} />
+      )}
+
+      {(lockedKeywords?.length ?? 0) > 0 && (
+        <KeywordsWithRankingsCard
+          title="Locked / Won Keywords"
+          clientId={clientId}
+          businessId={businessId}
+          aeoPlanId={campaignId}
+          extraKeywords={(lockedKeywords ?? []).map((k) => ({
+            id: k.id,
+            keywordText: k.keywordText,
+          }))}
+          restrictToKeywordIds={(lockedKeywords ?? []).map((k) => k.id)}
+          collapsible
+          defaultCollapsed
+          lockedView
+        />
+      )}
 
       <KeywordDialog
         open={kwDialogOpen}
@@ -386,37 +1279,59 @@ export default function CampaignDetail() {
         defaultClientId={clientId}
         defaultBusinessId={businessId}
         defaultCampaignId={campaignId}
-        clients={client ? [{ id: client.id, businessName: client.businessName }] : []}
-        businesses={business ? [{ id: business.id, clientId, name: business.name }] : []}
-        plans={campaign ? [{
-          id: campaign.id,
-          clientId,
-          businessId,
-          name: campaign.name,
-          planType: campaign.planType,
-        }] : []}
+        clients={
+          client ? [{ id: client.id, businessName: client.businessName }] : []
+        }
+        businesses={
+          business ? [{ id: business.id, clientId, name: business.name }] : []
+        }
+        plans={
+          campaign
+            ? [
+                {
+                  id: campaign.id,
+                  clientId,
+                  businessId,
+                  name: campaign.name,
+                  planType: campaign.planType,
+                },
+              ]
+            : []
+        }
         onSave={handleSaveKeyword}
       />
 
       {editingKw && (
         <KeywordDialog
           open
-          onOpenChange={(o) => { if (!o) setEditingKw(null); }}
+          onOpenChange={(o) => {
+            if (!o) setEditingKw(null);
+          }}
           title="Edit Keyword"
           saving={savingKw}
           lockContext
           defaultClientId={clientId}
           defaultBusinessId={businessId}
           defaultCampaignId={campaignId}
-          clients={client ? [{ id: client.id, businessName: client.businessName }] : []}
-          businesses={business ? [{ id: business.id, clientId, name: business.name }] : []}
-          plans={campaign ? [{
-            id: campaign.id,
-            clientId,
-            businessId,
-            name: campaign.name,
-            planType: campaign.planType,
-          }] : []}
+          clients={
+            client ? [{ id: client.id, businessName: client.businessName }] : []
+          }
+          businesses={
+            business ? [{ id: business.id, clientId, name: business.name }] : []
+          }
+          plans={
+            campaign
+              ? [
+                  {
+                    id: campaign.id,
+                    clientId,
+                    businessId,
+                    name: campaign.name,
+                    planType: campaign.planType,
+                  },
+                ]
+              : []
+          }
           initial={editingKw}
           onSave={handleSaveKeyword}
         />
@@ -426,16 +1341,25 @@ export default function CampaignDetail() {
 
       <CampaignAuditRankingsCard campaignId={campaignId} />
 
-      <AlertDialog open={!!confirmDeleteKw} onOpenChange={(o) => { if (!o) setConfirmDeleteKw(null); }}>
+      <AlertDialog
+        open={!!confirmDeleteKw}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDeleteKw(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this keyword?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>"{confirmDeleteKw?.keywordText ?? ""}"</strong> and any associated links. This action cannot be undone.
+              This will permanently delete{" "}
+              <strong>"{confirmDeleteKw?.keywordText ?? ""}"</strong> and any
+              associated links. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setConfirmDeleteKw(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {

@@ -5,14 +5,23 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
-  Cpu, Wifi, RefreshCcw, ShieldCheck, BarChart2, Search, TrendingUp, TrendingDown,
+  Cpu,
+  Wifi,
+  RefreshCcw,
+  ShieldCheck,
+  BarChart2,
+  Search,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { ...init, headers });
+  return fetch(BASE + path, { credentials: "include", ...init, headers });
 }
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -50,11 +59,41 @@ interface BusinessData {
 
 /* ─── Metric column definitions ──────────────────────────── */
 const METRIC_COLS = [
-  { key: "deviceRotation", label: "Device Rotation", icon: Cpu, color: "text-blue-500", bg: "bg-blue-500/10" },
-  { key: "ipRotation", label: "IP Rotation", icon: Wifi, color: "text-purple-500", bg: "bg-purple-500/10" },
-  { key: "cacheClearing", label: "Cache Clearing", icon: RefreshCcw, color: "text-emerald-500", bg: "bg-emerald-500/10" },
-  { key: "promptAccuracy", label: "Prompt Accuracy", icon: ShieldCheck, color: "text-amber-500", bg: "bg-amber-500/10" },
-  { key: "volumeAccuracy", label: "Volume Accuracy", icon: BarChart2, color: "text-rose-500", bg: "bg-rose-500/10" },
+  {
+    key: "deviceRotation",
+    label: "Device Rotation",
+    icon: Cpu,
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
+  },
+  {
+    key: "ipRotation",
+    label: "IP Rotation",
+    icon: Wifi,
+    color: "text-purple-500",
+    bg: "bg-purple-500/10",
+  },
+  {
+    key: "cacheClearing",
+    label: "Cache Clearing",
+    icon: RefreshCcw,
+    color: "text-emerald-500",
+    bg: "bg-emerald-500/10",
+  },
+  {
+    key: "promptAccuracy",
+    label: "Prompt Accuracy",
+    icon: ShieldCheck,
+    color: "text-amber-500",
+    bg: "bg-amber-500/10",
+  },
+  {
+    key: "volumeAccuracy",
+    label: "Volume Accuracy",
+    icon: BarChart2,
+    color: "text-rose-500",
+    bg: "bg-rose-500/10",
+  },
 ] as const;
 
 export default function Metrics() {
@@ -62,11 +101,14 @@ export default function Metrics() {
 
   const { data, isLoading } = useQuery<BusinessData>({
     queryKey: ["business-metrics"],
-    queryFn: () => rawFetch(`/api/metrics/business`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () =>
+      rawFetch(`/api/metrics/business`, { credentials: "include" }).then((r) =>
+        r.json(),
+      ),
   });
 
   const filtered = (data?.metrics ?? []).filter((m) =>
-    m.client.name.toLowerCase().includes(search.toLowerCase())
+    m.client.name.toLowerCase().includes(search.toLowerCase()),
   );
 
   if (isLoading || !data) {
@@ -89,11 +131,12 @@ export default function Metrics() {
       .map((m) => m[col.key as keyof BusinessMetric] as MetricCell)
       .filter((cell) => cell.value !== null)
       .map((cell) => cell.value as number);
-    
-    const avg = values.length > 0
-      ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
-      : 0;
-    
+
+    const avg =
+      values.length > 0
+        ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+        : 0;
+
     return avg;
   });
 
@@ -101,7 +144,9 @@ export default function Metrics() {
     <div className="space-y-6">
       {/* ── Page header ── */}
       <div>
-        <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">Metrics</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-black dark:text-white">
+          Metrics
+        </h1>
         <p className="text-lg text-slate-700 dark:text-slate-300 mt-1">
           Performance tracking across all businesses
         </p>
@@ -111,11 +156,16 @@ export default function Metrics() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         {METRIC_COLS.map((col, idx) => {
           const Icon = col.icon;
-          const targetKey = col.key === "deviceRotation" ? "device_rotation" : 
-                            col.key === "ipRotation" ? "ip_rotation" :
-                            col.key === "cacheClearing" ? "cache_clearing" :
-                            col.key === "promptAccuracy" ? "prompt_exec_accuracy" :
-                            "volume_search_accuracy";
+          const targetKey =
+            col.key === "deviceRotation"
+              ? "device_rotation"
+              : col.key === "ipRotation"
+                ? "ip_rotation"
+                : col.key === "cacheClearing"
+                  ? "cache_clearing"
+                  : col.key === "promptAccuracy"
+                    ? "prompt_exec_accuracy"
+                    : "volume_search_accuracy";
           const target = (data.targets ?? {})[targetKey] ?? 100;
           const avg = averages[idx];
           const isGood = avg >= target;
@@ -124,7 +174,9 @@ export default function Metrics() {
             <Card key={col.key} className="border-border/50">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <div className={`w-10 h-10 rounded-xl ${col.bg} flex items-center justify-center`}>
+                  <div
+                    className={`w-10 h-10 rounded-xl ${col.bg} flex items-center justify-center`}
+                  >
                     <Icon className={`w-5 h-5 ${col.color}`} />
                   </div>
                   {isGood ? (
@@ -140,11 +192,13 @@ export default function Metrics() {
               <CardContent>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold">{avg}%</span>
-                  <span className="text-xs text-muted-foreground">/ {target}%</span>
+                  <span className="text-xs text-muted-foreground">
+                    / {target}%
+                  </span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
                   <div
-                    className={`h-full transition-all ${isGood ? 'bg-emerald-500' : 'bg-destructive'}`}
+                    className={`h-full transition-all ${isGood ? "bg-emerald-500" : "bg-destructive"}`}
                     style={{ width: `${Math.min(100, (avg / target) * 100)}%` }}
                   />
                 </div>
@@ -182,12 +236,19 @@ export default function Metrics() {
                 {METRIC_COLS.map((col) => {
                   const Icon = col.icon;
                   return (
-                    <th key={col.key} className="text-center p-4 font-bold text-base text-black dark:text-white">
+                    <th
+                      key={col.key}
+                      className="text-center p-4 font-bold text-base text-black dark:text-white"
+                    >
                       <div className="flex flex-col items-center gap-2">
-                        <div className={`w-8 h-8 rounded-lg ${col.bg} flex items-center justify-center`}>
+                        <div
+                          className={`w-8 h-8 rounded-lg ${col.bg} flex items-center justify-center`}
+                        >
                           <Icon className={`w-4 h-4 ${col.color}`} />
                         </div>
-                        <span className="text-muted-foreground text-xs">{col.label}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {col.label}
+                        </span>
                       </div>
                     </th>
                   );
@@ -197,38 +258,56 @@ export default function Metrics() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-muted-foreground">
+                  <td
+                    colSpan={6}
+                    className="text-center py-12 text-muted-foreground"
+                  >
                     {search ? "No businesses found" : "No businesses yet"}
                   </td>
                 </tr>
               ) : (
                 filtered.map((business) => (
-                  <tr key={business.client.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                  <tr
+                    key={business.client.id}
+                    className="border-b border-border/30 hover:bg-muted/30 transition-colors"
+                  >
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
-                        <span className="font-bold text-base text-black dark:text-white">{business.client.name}</span>
+                        <span className="font-bold text-base text-black dark:text-white">
+                          {business.client.name}
+                        </span>
                         <div className="flex items-center gap-2">
                           <Badge
-                            variant={business.client.status === "active" ? "default" : "secondary"}
+                            variant={
+                              business.client.status === "active"
+                                ? "default"
+                                : "secondary"
+                            }
                             className="text-xs"
                           >
                             {business.client.status}
                           </Badge>
                           {business.client.plan && (
-                            <span className="text-xs text-muted-foreground">{business.client.plan}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {business.client.plan}
+                            </span>
                           )}
                         </div>
                       </div>
                     </td>
                     {METRIC_COLS.map((col) => {
-                      const cell = business[col.key as keyof BusinessMetric] as MetricCell;
+                      const cell = business[
+                        col.key as keyof BusinessMetric
+                      ] as MetricCell;
                       const value = cell.value;
                       const target = cell.target;
 
                       if (value === null) {
                         return (
                           <td key={col.key} className="p-4 text-center">
-                            <span className="text-xs text-muted-foreground italic">—</span>
+                            <span className="text-xs text-muted-foreground italic">
+                              —
+                            </span>
                           </td>
                         );
                       }
@@ -258,11 +337,17 @@ export default function Metrics() {
                                   strokeWidth="6"
                                   fill="none"
                                   strokeDasharray={`${(percentage / 100) * 175.93} 175.93`}
-                                  className={isGood ? "text-emerald-500" : "text-destructive"}
+                                  className={
+                                    isGood
+                                      ? "text-emerald-500"
+                                      : "text-destructive"
+                                  }
                                 />
                               </svg>
                               <div className="absolute inset-0 flex items-center justify-center">
-                                <span className={`text-sm font-bold ${isGood ? "text-emerald-500" : "text-destructive"}`}>
+                                <span
+                                  className={`text-sm font-bold ${isGood ? "text-emerald-500" : "text-destructive"}`}
+                                >
                                   {percentage}%
                                 </span>
                               </div>

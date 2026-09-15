@@ -21,7 +21,8 @@ export type Status =
   | "steady"
   | "declined"
   | "missing"
-  | "pending";
+  | "pending"
+  | "unavailable";
 export type Freshness = "fresh" | "stale" | "cold" | "never";
 
 export interface PeriodRow {
@@ -38,12 +39,17 @@ export interface PeriodRow {
   currentPosition: number | null;
   currentDate: string | null;
   currentVariant: string | null;
+  /* Top-3 whose screenshot the vision check couldn't confirm. The rank is
+     real and shown as measured — this only marks the row for a re-run. */
+  currentUnverified?: boolean;
   previousReportId: number | null;
   previousPosition: number | null;
   previousDate: string | null;
+  previousUnverified?: boolean;
   firstReportId: number | null;
   firstPosition: number | null;
   firstDate: string | null;
+  firstUnverified?: boolean;
   change: number | null;
   status: Status;
   freshness: Freshness;
@@ -66,6 +72,9 @@ export interface PeriodFilters {
   clientId: number | null;
   businessId: number | null;
   aeoPlanId: number | null;
+  /** Filter to keywords whose campaign is on this plan type. Role-scoped:
+   *  non-owners can only ever pass "AEO SEO Local Plan". */
+  planType?: string | null;
   /* Optional ET YYYY-MM-DD overrides. When set, that column's source row
      is pinned to the audit on that exact date per (keyword, platform). */
   firstDate?: string | null;
@@ -81,13 +90,20 @@ export function buildPeriodUrl(filters: PeriodFilters): string {
     params.set("businessId", String(filters.businessId));
   if (filters.aeoPlanId != null)
     params.set("aeoPlanId", String(filters.aeoPlanId));
+  if (filters.planType) params.set("planType", filters.planType);
   if (filters.firstDate) params.set("firstDate", filters.firstDate);
   if (filters.prevDate) params.set("prevDate", filters.prevDate);
   if (filters.currentDate) params.set("currentDate", filters.currentDate);
   return `/api/ranking-reports/period-comparison?${params}`;
 }
 
-export function usePeriodComparison(filters: PeriodFilters) {
+export function usePeriodComparison(
+  filters: PeriodFilters,
+  /** When false, the query is held back (no network call). Used to require a
+   *  client selection before loading the full dataset — the all-clients payload
+   *  is large and makes the page lag. */
+  enabled = true,
+) {
   return useQuery<PeriodResponse>({
     queryKey: [
       "/api/ranking-reports/period-comparison",
@@ -95,10 +111,12 @@ export function usePeriodComparison(filters: PeriodFilters) {
       filters.clientId,
       filters.businessId,
       filters.aeoPlanId,
+      filters.planType ?? null,
       filters.firstDate ?? null,
       filters.prevDate ?? null,
       filters.currentDate ?? null,
     ],
+    enabled,
     queryFn: async () => {
       const res = await rawFetch(buildPeriodUrl(filters));
       if (!res.ok) throw new Error("Failed to load period comparison");
@@ -195,6 +213,18 @@ export function fmtRelative(s: string | null): string {
 
 export const PLATFORM_ORDER = ["chatgpt", "gemini", "perplexity"] as const;
 
+/** Proper display names for the AI platforms — CSS `capitalize` would render
+ *  "chatgpt" as "Chatgpt". Falls back to the raw value for anything unknown. */
+const PLATFORM_LABELS: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  gemini: "Gemini",
+  perplexity: "Perplexity",
+};
+
+export function platformLabel(platform: string): string {
+  return PLATFORM_LABELS[platform] ?? platform;
+}
+
 export const PLATFORM_COLORS: Record<string, string> = {
   chatgpt:
     "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
@@ -202,6 +232,72 @@ export const PLATFORM_COLORS: Record<string, string> = {
   perplexity:
     "bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400",
 };
+
+/**
+ * Platforms with a known platform-wide outage (the upstream platform isn't
+ * reporting). For these, a keyword with no row shows an explicit "Unavailable"
+ * status instead of an empty cell, so nobody reads a blank as "rank lost".
+ * Flip this list (remove the platform) when it's reporting again — every
+ * surface keys off this one constant.
+ */
+export const UNAVAILABLE_PLATFORMS: readonly string[] = ["gemini"];
+
+export function isPlatformUnavailable(platform: string): boolean {
+  return UNAVAILABLE_PLATFORMS.includes(platform.toLowerCase());
+}
+
+/** Synthetic placeholder row marking a platform as unavailable for a keyword. */
+function makeUnavailableRow(platform: string, like: PeriodRow): PeriodRow {
+  return {
+    keywordId: like.keywordId,
+    keywordText: like.keywordText,
+    platform,
+    clientId: like.clientId,
+    clientName: like.clientName,
+    businessId: like.businessId,
+    businessName: like.businessName,
+    aeoPlanId: like.aeoPlanId,
+    campaignName: like.campaignName,
+    currentReportId: null,
+    currentPosition: null,
+    currentDate: null,
+    currentVariant: null,
+    previousReportId: null,
+    previousPosition: null,
+    previousDate: null,
+    firstReportId: null,
+    firstPosition: null,
+    firstDate: null,
+    change: null,
+    status: "unavailable",
+    freshness: "never",
+    lastRunAt: null,
+  };
+}
+
+/**
+ * Return a keyword's platform rows in PLATFORM_ORDER, appending an "unavailable"
+ * placeholder for each configured-unavailable platform that has no real row.
+ * No-op when the keyword has no rows at all — a brand-new keyword should read
+ * "No data yet", not show a lone outage chip.
+ */
+export function sortPlatformsWithUnavailable(
+  rows: readonly PeriodRow[],
+): PeriodRow[] {
+  const out = [...rows];
+  if (rows.length > 0) {
+    const present = new Set(rows.map((r) => r.platform.toLowerCase()));
+    for (const platform of UNAVAILABLE_PLATFORMS) {
+      if (!present.has(platform))
+        out.push(makeUnavailableRow(platform, rows[0]));
+    }
+  }
+  const idx = (p: string) => {
+    const i = PLATFORM_ORDER.indexOf(p as (typeof PLATFORM_ORDER)[number]);
+    return i === -1 ? 99 : i;
+  };
+  return out.sort((a, b) => idx(a.platform) - idx(b.platform));
+}
 
 export interface StatusCounts {
   total: number;
@@ -293,6 +389,100 @@ export function countStatuses(rows: readonly PeriodRow[]): StatusCounts {
     newCount: rows.filter((r) => r.status === "new").length,
     missing: rows.filter((r) => r.status === "missing").length,
   };
+}
+
+/** Per-keyword "since start" progress: the keyword's best (lowest) initial rank
+ *  across platforms vs its best current rank. Positive `improvement` = moved up
+ *  (lower rank number is better). Null ranks mean the keyword had no scan for
+ *  that column yet. Shared by PerformanceSummaryCard and the AI summary card so
+ *  their headline numbers can never diverge. */
+export interface KeywordProgress {
+  keywordId: number;
+  keywordText: string;
+  firstBest: number | null;
+  currentBest: number | null;
+  improvement: number | null;
+}
+
+export function bestOf(positions: (number | null)[]): number | null {
+  let best: number | null = null;
+  for (const p of positions) {
+    if (p != null && p >= 1 && (best == null || p < best)) best = p;
+  }
+  return best;
+}
+
+export interface PerformanceSummary {
+  keywords: KeywordProgress[];
+  withRank: number;
+  inTop3: number;
+  improved: number;
+  declined: number;
+  steady: number;
+  avgCurrent: number | null;
+  avgFirst: number | null;
+}
+
+export function summarizeProgress(rows: PeriodRow[]): PerformanceSummary {
+  const byKeyword = new Map<
+    number,
+    { keywordText: string; rows: PeriodRow[] }
+  >();
+  for (const r of rows) {
+    const existing = byKeyword.get(r.keywordId);
+    if (existing) existing.rows.push(r);
+    else byKeyword.set(r.keywordId, { keywordText: r.keywordText, rows: [r] });
+  }
+
+  const keywords: KeywordProgress[] = [];
+  for (const [keywordId, { keywordText, rows: kwRows }] of byKeyword) {
+    const firstBest = bestOf(kwRows.map((r) => r.firstPosition));
+    const currentBest = bestOf(kwRows.map((r) => r.currentPosition));
+    const improvement =
+      firstBest != null && currentBest != null ? firstBest - currentBest : null;
+    keywords.push({
+      keywordId,
+      keywordText,
+      firstBest,
+      currentBest,
+      improvement,
+    });
+  }
+
+  const ranked = keywords.filter((k) => k.currentBest != null);
+  const currents = ranked.map((k) => k.currentBest as number);
+  const firsts = keywords
+    .map((k) => k.firstBest)
+    .filter((n): n is number => n != null);
+
+  const round = (n: number | null) => (n == null ? null : Math.round(n));
+
+  return {
+    keywords,
+    withRank: ranked.length,
+    inTop3: ranked.filter(
+      (k) => (k.currentBest as number) <= TOP_RANK_THRESHOLD,
+    ).length,
+    improved: keywords.filter((k) => k.improvement != null && k.improvement > 0)
+      .length,
+    declined: keywords.filter((k) => k.improvement != null && k.improvement < 0)
+      .length,
+    steady: keywords.filter((k) => k.improvement === 0).length,
+    avgCurrent: round(avg(currents)),
+    avgFirst: round(avg(firsts)),
+  };
+}
+
+/** Keywords that moved, most-improved first — the "biggest movers" ordering
+ *  shared by the summary card and AI card. */
+export function sortMovers(keywords: KeywordProgress[]): KeywordProgress[] {
+  return keywords
+    .filter((k) => k.improvement != null && k.improvement !== 0)
+    .sort(
+      (a, b) =>
+        (b.improvement as number) - (a.improvement as number) ||
+        (a.currentBest ?? 99) - (b.currentBest ?? 99),
+    );
 }
 
 export function periodLabel(p: Period): {

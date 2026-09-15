@@ -461,6 +461,12 @@ async function callSeedingLlm(args: SeedingArgs): Promise<string> {
     lines.push(`Naturalness filler (optionally drop this word in): ${filler}`);
   }
 
+  // Some models (notably the Ollama fallback) reliably name the neighborhood but
+  // drop the city. Restate it as a hard requirement keyed to the actual value.
+  if (ctx.city) {
+    lines.push(`REQUIRED: the message MUST contain the city name "${ctx.city}" verbatim, in addition to any neighborhood reference.`);
+  }
+
   const completion = await chatCompletion({
     model: "deepseek-chat",
     messages: [

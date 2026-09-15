@@ -51,7 +51,19 @@ app.use(
   }),
 );
 app.use(cookieParser());
-app.use(express.json({ limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    /* Stash the raw body for webhook routes — provider signature verification
+       (e.g. SendGrid ECDSA) is computed over the exact bytes, not re-serialized
+       JSON. Scoped to /api/webhooks so other routes don't hold the buffer. */
+    verify: (req, _res, buf) => {
+      if (req.url?.startsWith("/api/webhooks")) {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      }
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const isProd = process.env.NODE_ENV === "production";

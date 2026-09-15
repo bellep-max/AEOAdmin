@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+/** The only plan the chuckslocal role may assign. Mirrors LOCAL_ADMIN_PLAN_TYPES
+ *  on the server (lib/scoped-access.ts). */
+export const LOCAL_ADMIN_PLAN_NAMES = ["AEO SEO Local Plan"];
 
 function rawFetch(path: string): Promise<Response> {
   const headers: Record<string, string> = {};
   if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-  return fetch(BASE + path, { headers });
+  return fetch(BASE + path, { headers, credentials: "include" });
 }
 
 /**
@@ -15,20 +20,36 @@ function rawFetch(path: string): Promise<Response> {
  */
 export function useAllPlanNames(): string[] {
   const [allNames, setAllNames] = useState<string[]>([]);
+  const { isChucksLocal } = useAuth();
 
   useEffect(() => {
     Promise.all([
       rawFetch("/api/plans").then((r) => (r.ok ? r.json() : [])),
       rawFetch("/api/packages").then((r) => (r.ok ? r.json() : [])),
     ])
-      .then(([standardPlans, customPlans]: [{ planName: string }[], { name: string }[]]) => {
-        const standardNames = standardPlans.map((p) => p.planName).filter(Boolean);
-        const customNames = customPlans.map((p) => p.name).filter(Boolean);
-        const merged = [...standardNames, ...customNames.filter((n) => !standardNames.includes(n))];
-        setAllNames(merged);
-      })
+      .then(
+        ([standardPlans, customPlans]: [
+          { planName: string }[],
+          { name: string }[],
+        ]) => {
+          const standardNames = standardPlans
+            .map((p) => p.planName)
+            .filter(Boolean);
+          const customNames = customPlans.map((p) => p.name).filter(Boolean);
+          const merged = [
+            ...standardNames,
+            ...customNames.filter((n) => !standardNames.includes(n)),
+          ];
+          setAllNames(merged);
+        },
+      )
       .catch(() => setAllNames([]));
   }, []);
 
+  // chuckslocal may only assign "AEO SEO Local Plan" — restrict the picker to
+  // that (intersected with what actually exists). The server enforces this too.
+  if (isChucksLocal) {
+    return allNames.filter((n) => LOCAL_ADMIN_PLAN_NAMES.includes(n));
+  }
   return allNames;
 }

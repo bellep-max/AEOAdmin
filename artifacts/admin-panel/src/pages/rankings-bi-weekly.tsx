@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { rawFetch } from "@/lib/period-comparison";
+import { usePlanTypes } from "@/lib/plan-types";
 import { BarChart3, Building2, X, Download, FileDown } from "lucide-react";
 import {
   ExportBiWeeklyDialog,
@@ -21,6 +22,8 @@ import type { BiWeeklyReport } from "@/components/BiWeeklyReportTab";
 interface ClientRow {
   id: number;
   businessName: string;
+  /* Distinct plan types this client has — drives the plan-scoped client picker. */
+  planTypes?: string[];
 }
 interface BusinessRow {
   id: number;
@@ -43,7 +46,9 @@ export default function RankingsBiWeekly() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(
     null,
   );
+  const [selectedPlanType, setSelectedPlanType] = useState<string | null>(null);
   const [exportMode, setExportMode] = useState<"csv" | "pdf" | null>(null);
+  const { data: planTypes = [] } = usePlanTypes();
 
   const { data: allClients } = useQuery<ClientRow[]>({
     queryKey: ["/api/clients"],
@@ -73,9 +78,15 @@ export default function RankingsBiWeekly() {
   const byName = (a: string | null | undefined, b: string | null | undefined) =>
     (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
 
-  const clientsSorted = [...(allClients ?? [])].sort((a, b) =>
-    byName(a.businessName, b.businessName),
-  );
+  /* When a plan type is selected, the client picker only lists clients that
+     have it — so the plan filter narrows the whole cascade, not just the rows. */
+  const clientsSorted = [...(allClients ?? [])]
+    .filter(
+      (c) =>
+        selectedPlanType === null ||
+        (c.planTypes ?? []).includes(selectedPlanType),
+    )
+    .sort((a, b) => byName(a.businessName, b.businessName));
   const bizScope = (allBusinesses ?? [])
     .filter((b) => selectedClientId === null || b.clientId === selectedClientId)
     .sort((a, b) => byName(a.name, b.name));
@@ -90,7 +101,8 @@ export default function RankingsBiWeekly() {
   const filtersActive =
     selectedClientId !== null ||
     selectedBusinessId !== null ||
-    selectedCampaignId !== null;
+    selectedCampaignId !== null ||
+    selectedPlanType !== null;
 
   return (
     <div className="space-y-5">
@@ -143,10 +155,10 @@ export default function RankingsBiWeekly() {
           }}
         >
           <SelectTrigger className="w-56 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
-            <SelectValue placeholder="All Clients" />
+            <SelectValue placeholder="Select a client" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Clients</SelectItem>
+            <SelectItem value="all">Select a client</SelectItem>
             {clientsSorted.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.businessName}
@@ -200,6 +212,38 @@ export default function RankingsBiWeekly() {
             ))}
           </SelectContent>
         </Select>
+        <span className="text-slate-400">›</span>
+        <Select
+          value={selectedPlanType ?? "all"}
+          onValueChange={(v) => {
+            const next = v === "all" ? null : v;
+            setSelectedPlanType(next);
+            // Drop a client selection that doesn't have the new plan type so the
+            // picker and the rows stay in sync.
+            if (next !== null && selectedClientId !== null) {
+              const c = (allClients ?? []).find(
+                (x) => x.id === selectedClientId,
+              );
+              if (!(c?.planTypes ?? []).includes(next)) {
+                setSelectedClientId(null);
+                setSelectedBusinessId(null);
+                setSelectedCampaignId(null);
+              }
+            }
+          }}
+        >
+          <SelectTrigger className="w-52 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 h-10 text-sm font-semibold">
+            <SelectValue placeholder="All Plans" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Plans</SelectItem>
+            {planTypes.map((pt) => (
+              <SelectItem key={pt} value={pt}>
+                {pt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {filtersActive && (
           <button
             type="button"
@@ -207,6 +251,7 @@ export default function RankingsBiWeekly() {
               setSelectedClientId(null);
               setSelectedBusinessId(null);
               setSelectedCampaignId(null);
+              setSelectedPlanType(null);
             }}
             className="flex items-center gap-1.5 ml-auto text-sm text-slate-600 hover:text-slate-900 dark:hover:text-white font-semibold"
           >
@@ -215,11 +260,25 @@ export default function RankingsBiWeekly() {
         )}
       </div>
 
-      <BiWeeklyReportTab
-        clientId={selectedClientId}
-        businessId={selectedBusinessId}
-        aeoPlanId={selectedCampaignId}
-      />
+      {selectedClientId === null && selectedPlanType === null ? (
+        <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-16 text-center">
+          <Building2 className="w-8 h-8 mx-auto mb-3 text-muted-foreground/50" />
+          <p className="text-sm font-medium">
+            Select a client to view the bi-weekly report
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            The report loads per client to keep it fast — pick a client above to
+            begin.
+          </p>
+        </div>
+      ) : (
+        <BiWeeklyReportTab
+          clientId={selectedClientId}
+          businessId={selectedBusinessId}
+          aeoPlanId={selectedCampaignId}
+          planType={selectedPlanType}
+        />
+      )}
 
       {exportMode && (
         <ExportBiWeeklyDialog

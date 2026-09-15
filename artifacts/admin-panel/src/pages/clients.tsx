@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import {
+  useMomentum,
+  MOMENTUM_FILTER_OPTIONS,
+} from "@/components/MomentumBadge";
 import {
   useGetClients,
   useCreateClient,
@@ -57,10 +61,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SearchableSelect,
+  type ComboOption,
+} from "@/components/SearchableSelect";
 import { AddBusinessDialog } from "@/components/AddBusinessDialog";
 import { CampaignFormDialog } from "@/components/CampaignFormDialog";
 import { BulkAddKeywordsDialog } from "@/components/BulkAddKeywordsDialog";
 import { CreatedByField } from "@/components/CreatedByField";
+import { useAuth } from "@/lib/auth";
 
 const businessFormSchema = z.object({
   // Business Information
@@ -117,6 +126,8 @@ const businessFormSchema = z.object({
 });
 
 export default function Clients() {
+  const { isAdmin, isEditor } = useAuth();
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [filterAccountType, setFilterAccountType] = useState("all");
@@ -124,6 +135,18 @@ export default function Clients() {
      "all" from the Status filter to surface them. */
   const [filterStatus, setFilterStatus] = useState("active");
   const [filterPlan, setFilterPlan] = useState("all");
+  const [filterMomentum, setFilterMomentum] = useState("all");
+  const { data: momentum } = useMomentum();
+  /* A client matches a momentum filter when ANY of its businesses carries
+     that status (momentum is computed per business). */
+  const momentumClientIds = useMemo(() => {
+    if (filterMomentum === "all") return null;
+    return new Set(
+      (momentum?.businesses ?? [])
+        .filter((b) => b.status === filterMomentum)
+        .map((b) => b.clientId),
+    );
+  }, [momentum, filterMomentum]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
   /* Forward the Status filter to the API so flipping between Active /
@@ -205,7 +228,7 @@ export default function Clients() {
       "Content-Type": "application/json",
     };
     if (BASE.includes("ngrok")) headers["ngrok-skip-browser-warning"] = "true";
-    return fetch(BASE + path, { ...init, headers });
+    return fetch(BASE + path, { credentials: "include", ...init, headers });
   }
 
   async function toggleStatus(
@@ -233,7 +256,26 @@ export default function Clients() {
         method: "DELETE",
       });
       if (!res.ok && res.status !== 204) throw new Error("Failed");
-      toast({ title: "Client archived" });
+      // Optimistically stamp archivedAt on every cached /api/clients row.
+      // The secondary FE filter (archivedMatch) excludes any row with an
+      // archivedAt, so the row vanishes from the table instantly without
+      // waiting on refetch. Refetch then reconciles with server truth.
+      const stampedAt = new Date().toISOString();
+      queryClient.setQueriesData<unknown[]>(
+        { queryKey: ["/api/clients"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.map((c) =>
+                (c as { id: number }).id === clientId
+                  ? { ...(c as object), archivedAt: stampedAt }
+                  : c,
+              )
+            : old,
+      );
+      toast({
+        title: "Client archived",
+        description: "Moved to Archived Clients. Restore from there.",
+      });
       refetch();
     } catch {
       toast({ title: "Failed to archive client", variant: "destructive" });
@@ -247,10 +289,20 @@ export default function Clients() {
     const newStatus = currentStatus === "active" ? "inactive" : "active";
     setTogglingId(clientId);
     // Optimistic update
-    queryClient.setQueryData(["/api/clients"], (old: any) =>
-      old?.map((c: any) =>
-        c.id === clientId ? { ...c, status: newStatus } : c,
-      ),
+    // setQueriesData with the prefix queryKey matches every cached
+    // /api/clients variant (active/inactive/all) so the optimistic update
+    // actually reaches the right cache entry. Plain setQueryData with the
+    // literal key was a no-op because the real cache key includes the params.
+    queryClient.setQueriesData<unknown[]>(
+      { queryKey: ["/api/clients"] },
+      (old) =>
+        Array.isArray(old)
+          ? old.map((c) =>
+              (c as { id: number }).id === clientId
+                ? { ...(c as object), status: newStatus }
+                : c,
+            )
+          : old,
     );
     try {
       const res = await rawFetch(`/api/clients/${clientId}`, {
@@ -268,10 +320,16 @@ export default function Clients() {
       });
     } catch {
       // Revert
-      queryClient.setQueryData(["/api/clients"], (old: any) =>
-        old?.map((c: any) =>
-          c.id === clientId ? { ...c, status: currentStatus } : c,
-        ),
+      queryClient.setQueriesData<unknown[]>(
+        { queryKey: ["/api/clients"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.map((c) =>
+                (c as { id: number }).id === clientId
+                  ? { ...(c as object), status: currentStatus }
+                  : c,
+              )
+            : old,
       );
       toast({ title: "Failed to update status", variant: "destructive" });
     } finally {
@@ -374,8 +432,19 @@ export default function Clients() {
     form.reset();
   };
 
+  const clientOptions: ComboOption[] = (clients ?? [])
+    .filter((c) => !(c as { archivedAt?: string }).archivedAt)
+    .map((c) => ({
+      value: String(c.id),
+      label: c.businessName,
+      sublabel: c.city ?? undefined,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   const filteredClients = (clients ?? [])
     .filter((c) => {
+      const clientMatch =
+        selectedClientId === null || String(c.id) === selectedClientId;
       const nameMatch =
         !search || c.businessName.toLowerCase().includes(search.toLowerCase());
       const locMatch =
@@ -391,7 +460,22 @@ export default function Clients() {
       const planMatch =
         filterPlan === "all" ||
         ((c as any).planTypes ?? []).includes(filterPlan);
-      return nameMatch && locMatch && typeMatch && statusMatch && planMatch;
+      const momentumMatch =
+        momentumClientIds === null || momentumClientIds.has(c.id);
+      // Archived rows live on /cancelled; hide them here so an
+      // optimistic stamp from doDeleteClient takes effect immediately even
+      // before refetch returns the filtered list from the BE.
+      const archivedMatch = !(c as any).archivedAt;
+      return (
+        clientMatch &&
+        nameMatch &&
+        locMatch &&
+        typeMatch &&
+        statusMatch &&
+        planMatch &&
+        momentumMatch &&
+        archivedMatch
+      );
     })
     .sort((a, b) => (a.businessName ?? "").localeCompare(b.businessName ?? ""));
 
@@ -415,12 +499,14 @@ export default function Clients() {
         </div>
 
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
-          <DialogTrigger asChild>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Client
-            </Button>
-          </DialogTrigger>
+          {isAdmin && (
+            <DialogTrigger asChild>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 text-base font-bold h-11">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Client
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-[1200px] bg-white max-h-[90vh]">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-black">
@@ -680,6 +766,18 @@ export default function Clients() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-center">
+        {/* Select / search a client */}
+        <SearchableSelect
+          value={selectedClientId}
+          onChange={(v) => {
+            setSelectedClientId(v);
+            setPage(0);
+          }}
+          options={clientOptions}
+          placeholder="Select a client"
+          allLabel="All Clients"
+          width="w-56"
+        />
         {/* Client Name */}
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
@@ -762,22 +860,48 @@ export default function Clients() {
             ))}
           </SelectContent>
         </Select>
+        {/* Momentum (growth-cycle) status — same buckets as the dashboard's
+            Needs-attention card; matches clients with ANY business in the
+            selected bucket. */}
+        <Select
+          value={filterMomentum}
+          onValueChange={(v) => {
+            setFilterMomentum(v);
+            setPage(0);
+          }}
+        >
+          <SelectTrigger className="h-10 w-48 bg-white text-sm text-black">
+            <SelectValue placeholder="Momentum" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Momentum</SelectItem>
+            {MOMENTUM_FILTER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {/* Clear filters */}
-        {(search ||
+        {(selectedClientId ||
+          search ||
           filterLocation ||
           filterAccountType !== "all" ||
           filterStatus !== "all" ||
-          filterPlan !== "all") && (
+          filterPlan !== "all" ||
+          filterMomentum !== "all") && (
           <Button
             variant="ghost"
             size="sm"
             className="h-10 text-sm text-slate-500 hover:text-slate-900"
             onClick={() => {
+              setSelectedClientId(null);
               setSearch("");
               setFilterLocation("");
               setFilterAccountType("all");
               setFilterStatus("all");
               setFilterPlan("all");
+              setFilterMomentum("all");
               setPage(0);
             }}
           >
@@ -906,18 +1030,20 @@ export default function Clients() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={client.status === "active"}
-                        onCheckedChange={() =>
-                          toggleStatus(
-                            client.id,
-                            client.status,
-                            client.businessName,
-                          )
-                        }
-                        className="data-[state=checked]:bg-emerald-500"
-                        disabled={togglingId === client.id}
-                      />
+                      {isEditor && (
+                        <Switch
+                          checked={client.status === "active"}
+                          onCheckedChange={() =>
+                            toggleStatus(
+                              client.id,
+                              client.status,
+                              client.businessName,
+                            )
+                          }
+                          className="data-[state=checked]:bg-emerald-500"
+                          disabled={togglingId === client.id}
+                        />
+                      )}
                       <span
                         className={`text-xs font-semibold ${
                           client.status === "active"
@@ -934,44 +1060,50 @@ export default function Clients() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
-                        onClick={() =>
-                          setAddBusinessFor({
-                            clientId: client.id,
-                            clientName: client.businessName,
-                          })
-                        }
-                        title="Add Business"
-                      >
-                        <Building2 className="h-4 w-4" />
-                      </Button>
-                      <Link href={`/clients/${client.id}?edit=biz`}>
+                      {isAdmin && (
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
-                          title="Edit Client"
+                          onClick={() =>
+                            setAddBusinessFor({
+                              clientId: client.id,
+                              clientName: client.businessName,
+                            })
+                          }
+                          title="Add Business"
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Building2 className="h-4 w-4" />
                         </Button>
-                      </Link>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
-                        onClick={() =>
-                          setConfirmDelete({
-                            id: client.id,
-                            name: client.businessName,
-                          })
-                        }
-                        title="Delete Client"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      )}
+                      {isEditor && (
+                        <Link href={`/clients/${client.id}?edit=biz`}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-slate-600 hover:text-primary"
+                            title="Edit Client"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-slate-600 hover:text-destructive"
+                          onClick={() =>
+                            setConfirmDelete({
+                              id: client.id,
+                              name: client.businessName,
+                            })
+                          }
+                          title="Archive Client"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
