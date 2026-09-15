@@ -178,6 +178,7 @@ const navGroups: NavGroup[] = [
         salesAllowed: true,
         accountManagerAllowed: true,
       },
+      { name: "Executions", href: "/rankings/executions", icon: Radio, ownerOnly: true },
       {
         name: "Sent Emails",
         href: "/sent-emails",

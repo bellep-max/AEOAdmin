@@ -350,6 +350,7 @@ function parseRankVisible(raw: unknown): boolean | null | undefined {
 router.post("/", requireExecutorToken, async (req, res) => {
   try {
     const body = req.body;
+    if (body.mode === "voice" || body.inputMode === "voice") return res.status(400).json({ error: "Voice results must use /api/executions; legacy reports are typed imports" });
     const platform =
       typeof body.platform === "string" ? body.platform.toLowerCase() : null;
     const rankVisible = parseRankVisible(body.screenshotRankVisible);
