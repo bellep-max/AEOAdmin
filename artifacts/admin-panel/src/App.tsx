@@ -18,6 +18,7 @@ import Keywords from "@/pages/keywords";
 import KeywordsAll from "@/pages/keywords-all";
 import KeywordDetail from "@/pages/keyword-detail";
 import Plans from "@/pages/plans";
+import RankingExecutions from "@/pages/ranking-executions";
 import Rankings from "@/pages/rankings";
 import RankingsBiWeekly from "@/pages/rankings-bi-weekly";
 import Metrics from "@/pages/metrics";
@@ -90,6 +91,7 @@ function ProtectedRoutes() {
         <Route path="/plans" component={Plans} />
         <Route path="/keywords" component={Keywords} />
         <Route path="/keywords/all" component={KeywordsAll} />
+        <Route path="/rankings/executions" component={RankingExecutions} />
         <Route path="/rankings/bi-weekly" component={RankingsBiWeekly} />
         <Route path="/rankings" component={Rankings} />
         <Route path="/metrics" component={Metrics} />

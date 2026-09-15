@@ -119,6 +119,7 @@ const navGroups: NavGroup[] = [
         icon: Trophy,
         children: [
           { name: "Period Comparison", href: "/rankings", icon: BarChart3 },
+          { name: "Executions", href: "/rankings/executions", icon: Radio, ownerOnly: true },
           {
             name: "Bi-Weekly Report",
             href: "/rankings/bi-weekly",

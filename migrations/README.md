@@ -29,3 +29,7 @@ psql "$DATABASE_URL" -c "\d user_sessions"   # should show 3 columns + index
 
 Number sequentially. Use `IF NOT EXISTS` / `IF EXISTS` for idempotency.
 Don't combine multiple unrelated changes in one file.
+
+- `0003_ranking_executions.sql` — additive shared Type/Voice execution queue and
+  artifact manifests. See [Voice integration](../docs/voice-integration/README.md)
+  for API/worker deployment; historical ranking reports are not rewritten.

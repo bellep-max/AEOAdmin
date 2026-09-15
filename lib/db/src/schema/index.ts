@@ -23,3 +23,5 @@ export * from "./farm_metrics";
 export * from "./audit_logs";
 export * from "./device_rotations";
 export * from "./email_sends";
+
+export * from "./ranking_executions";

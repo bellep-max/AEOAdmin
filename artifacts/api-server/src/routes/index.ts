@@ -26,7 +26,10 @@ import llmRouter from "./llm";
 import rankingsEmailRouter from "./rankings-email";
 import portalRouter from "./portal";
 
+import executionsRouter from "./executions";
+
 const router: IRouter = Router();
+router.use("/executions", executionsRouter);
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
