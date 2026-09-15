@@ -60,7 +60,7 @@ shows pending artifacts until uploads have completed.
 1. In the voice-search repo, follow `agent/INSTALL.md` in full. Qualify each phone
    and platform. This is Mac-controlled silent injection, not an Android-only APK.
 2. Back up AEO before applying the additive migration:
-   `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0003_ranking_executions.sql`.
+   `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0004_ranking_executions.sql`.
    Do not use `drizzle-kit push` on existing/production databases. Existing auth
    migrations/session tables must already be installed; the execution migration
    intentionally does not create or rewrite authentication tables.
