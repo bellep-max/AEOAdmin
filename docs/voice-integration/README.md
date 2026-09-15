@@ -1,8 +1,17 @@
 # Shared AEO Voice execution — deployment and session handoff
 
+
+**Hosted deployment completed on 2026-09-15:** PR #74 / API source `cdf8ea7`,
+Vercel production UI and App Runner API. Owner page:
+https://aeo-admin-admin-panel.vercel.app/rankings/executions (Analytics → Executions).
+Migration 0004 is applied; private S3 storage is configured; `seolocal3-voice`
+is online with a reserved Samsung phone. See the voice-search repository's
+[hosted deployment record](https://github.com/DeviceFarm1/voice-search/blob/main/agent/HOSTED-DEPLOYMENT.md)
+for evidence, backup/rollback details and remaining qualification boundaries.
+
 ## Architecture and scope (2026-09-15)
 
-AEO is the shared admin. `Rankings → Executions` (`/rankings/executions`, owner only)
+AEO is the shared admin. `Analytics → Executions` (`/rankings/executions`, owner only)
 queues immutable Type/Voice execution records. The Mac polls AEO over authenticated
 HTTP; no inbound Mac/ADB port or separate Voice Admin is required.
 
@@ -91,7 +100,7 @@ shows pending artifacts until uploads have completed.
    concurrency. Host locks refuse conflicting ports/phones instead of racing.
    Launch via the host's normal service supervisor with absolute executable/working
    directory paths and the same environment/PATH used for qualification.
-6. Open **Rankings → Executions** as an owner. Select Voice, platform, keyword,
+6. Open **Analytics → Executions** as an owner. Select Voice, platform, keyword,
    online worker and phone. Optionally override the prompt and enable proxy/voice
    variation. Queue the audit; inspect exact transcript, voice attempts, WAV and PNG.
 
@@ -168,7 +177,7 @@ explicit rerun. There is no automatic force-release endpoint.
 - API/UI builds and UI typecheck pass. Full repository typecheck currently fails
   in unchanged generated API exports and legacy route parameter typings; this is
   not a clean repository-wide typecheck. Python: 229 tests, OK (3 skipped).
-- Production rollout still requires S3/HTTPS verification, each intended platform
+- Further rollout requires qualification of each intended platform
   on the target devices, typed adapter qualification before queueing Type, and a
   mode-aware historical reporting projection if those reports should include Voice.
 
