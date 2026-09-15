@@ -326,7 +326,7 @@ router.post(
         .json({ error: "No online worker with this mode/device" });
     const keyword = (
       await pool.query(
-        `SELECT k.*,c.business_name AS expected_business FROM keywords k JOIN clients c ON c.id=k.client_id WHERE k.id=$1 AND k.is_active=true AND k.archived_at IS NULL`,
+        `SELECT k.*,COALESCE(b.name,c.business_name) AS expected_business FROM keywords k JOIN clients c ON c.id=k.client_id LEFT JOIN businesses b ON b.id=k.business_id WHERE k.id=$1 AND k.is_active=true AND k.archived_at IS NULL`,
         [b.keywordId],
       )
     ).rows[0];
